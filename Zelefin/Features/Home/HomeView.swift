@@ -186,6 +186,10 @@ struct SectionGridView: View {
         .navigationTitle(section.title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
     }
 }
@@ -326,6 +330,7 @@ struct CatalogGridView: View {
     enum Query: Hashable {
         case genre(String)
         case parent(String)
+        case person(String)
     }
 
     @State private var items: [MediaItem] = []
@@ -374,6 +379,10 @@ struct CatalogGridView: View {
         .navigationTitle(title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
         .task { await load() }
     }
@@ -389,6 +398,8 @@ struct CatalogGridView: View {
                 items = try await library.items(genreID: id)
             case let .parent(id):
                 items = try await library.items(parentID: id)
+            case let .person(id):
+                items = try await library.items(personID: id)
             }
         } catch is CancellationError {
             return

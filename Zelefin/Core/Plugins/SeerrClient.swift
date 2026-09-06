@@ -154,6 +154,12 @@ struct SeerrClient: Sendable {
         try await get(baseURL.appending(path: "api/v1/tv/\(id)"))
     }
 
+    func videos(tmdbID: Int, isSeries: Bool) async -> [TitleTrailer] {
+        let path = isSeries ? "api/v1/tv/\(tmdbID)" : "api/v1/movie/\(tmdbID)"
+        guard let payload: SeerrRelatedVideosPayload = try? await fetch(path) else { return [] }
+        return payload.trailers
+    }
+
     func currentUser() async throws -> SeerrUser {
         try await get(baseURL.appending(path: "api/v1/auth/me"))
     }
@@ -607,6 +613,7 @@ struct SeerrTvDetails: Decodable, Sendable {
     var name: String?
     var seasons: [SeerrSeason]
     var mediaInfo: SeerrMediaInfo?
+    var relatedVideos: [SeerrRelatedVideo]?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -614,10 +621,45 @@ struct SeerrTvDetails: Decodable, Sendable {
         name = try container.decodeIfPresent(String.self, forKey: .name)
         seasons = try container.decodeIfPresent([SeerrSeason].self, forKey: .seasons) ?? []
         mediaInfo = try container.decodeIfPresent(SeerrMediaInfo.self, forKey: .mediaInfo)
+        relatedVideos = try container.decodeIfPresent([SeerrRelatedVideo].self, forKey: .relatedVideos)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, seasons, mediaInfo
+        case id, name, seasons, mediaInfo, relatedVideos
+    }
+}
+
+struct SeerrRelatedVideosPayload: Decodable, Sendable {
+    var relatedVideos: [SeerrRelatedVideo]?
+
+    var trailers: [TitleTrailer] {
+        (relatedVideos ?? [])
+            .compactMap(\.titleTrailer)
+            .sorted { $0.trailerRank < $1.trailerRank }
+    }
+}
+
+struct SeerrRelatedVideo: Decodable, Sendable {
+    var key: String?
+    var name: String?
+    var site: String?
+    var type: String?
+    var url: String?
+    var official: Bool?
+
+    var titleTrailer: TitleTrailer? {
+        let title = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let display = (title?.isEmpty == false) ? title! : "Trailer"
+        guard TitleTrailer.isOfficialTrailer(title: display, type: type, official: official) else {
+            return nil
+        }
+        if let key, let youtubeID = TrailerLinkParser.youtubeVideoID(from: key) {
+            return .youtube(id: youtubeID, title: display)
+        }
+        if let url, let youtubeID = TrailerLinkParser.youtubeVideoID(from: url) {
+            return .youtube(id: youtubeID, title: display)
+        }
+        return nil
     }
 }
 

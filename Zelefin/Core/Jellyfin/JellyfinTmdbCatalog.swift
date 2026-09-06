@@ -24,4 +24,19 @@ struct JellyfinTmdbCatalog: Equatable, Sendable {
         }
         return nil
     }
+
+    /// Returns the IMDb identifier stored in Jellyfin provider IDs (`tt1375666`).
+    static func imdbID(from providerIDs: [String: String]?) -> String? {
+        guard let providerIDs else { return nil }
+        for (key, raw) in providerIDs where key.compare("Imdb", options: [.caseInsensitive]) == .orderedSame {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("tt"), trimmed.dropFirst(2).allSatisfy(\.isNumber) {
+                return trimmed
+            }
+            if !trimmed.isEmpty, trimmed.allSatisfy(\.isNumber) {
+                return "tt\(trimmed)"
+            }
+        }
+        return nil
+    }
 }

@@ -49,6 +49,86 @@ final class MediaItemProgressTests: XCTestCase {
         XCTAssertEqual(item.audioFormat.displayName, "Dolby Atmos")
         XCTAssertEqual(item.heroMetadataLine, "Movie  ·  Action  ·  Adventure")
         XCTAssertEqual(item.searchListSubtitle, "Movie · Action · 2024")
+        XCTAssertEqual(item.playActionDurationLabel, "1m")
+        XCTAssertEqual(item.ageGateLabel, "13+")
+        XCTAssertEqual(item.runtimeLabel, "2m")
+    }
+
+    func testPlayActionDurationLabelUsesRemainingWhenInProgress() {
+        let item = MediaItem(
+            id: "1",
+            name: "Batman Begins",
+            kind: .movie,
+            overview: "As a young boy, Bruce Wayne watched in horror.",
+            year: 2005,
+            runtime: 8400,
+            officialRating: "PG-13",
+            genres: ["Action", "Crime"],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 600,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .surround
+        )
+
+        XCTAssertEqual(item.playActionDurationLabel, "2h 10m")
+        XCTAssertEqual(item.kindLabel, "Movie")
+        XCTAssertEqual(item.runtimeLabel, "2h 20m")
+        XCTAssertEqual(item.ageGateLabel, "13+")
+    }
+
+    func testPlayActionDurationLabelUsesRuntimeWhenUnwatched() {
+        let item = MediaItem(
+            id: "1",
+            name: "Batman Begins",
+            kind: .movie,
+            overview: nil,
+            year: 2005,
+            runtime: 8400,
+            officialRating: "PG-13",
+            genres: ["Action", "Crime"],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .nextUp,
+            videoRange: .sdr,
+            audioFormat: .surround
+        )
+
+        XCTAssertEqual(item.playActionDurationLabel, "2h 20m")
     }
 
     func testEpisodeLabel() {
@@ -521,5 +601,93 @@ final class SearchHistoryStoreTests: XCTestCase {
             videoRange: .sdr,
             audioFormat: .stereo
         )
+    }
+}
+
+final class TrailerLinkParserTests: XCTestCase {
+    func testParsesYouTubeURLVariants() {
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "https://www.youtube.com/watch?v=YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "https://youtu.be/YoHD9XEInc0?t=12"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "https://www.youtube.com/embed/YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "https://www.youtube-nocookie.com/embed/YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "https://www.youtube.com/shorts/YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "https://www.youtube.com/watch?feature=share&v=YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(TrailerLinkParser.youtubeVideoID(from: "YoHD9XEInc0"), "YoHD9XEInc0")
+        XCTAssertNil(TrailerLinkParser.youtubeVideoID(from: "https://vimeo.com/123456789"))
+        XCTAssertNil(TrailerLinkParser.youtubeVideoID(from: "not a trailer"))
+        XCTAssertNil(TrailerLinkParser.youtubeVideoID(from: "short"))
+    }
+
+    func testParsesVimeoURLVariants() {
+        XCTAssertEqual(TrailerLinkParser.vimeoVideoID(from: "https://vimeo.com/123456789"), "123456789")
+        XCTAssertEqual(
+            TrailerLinkParser.vimeoVideoID(from: "https://player.vimeo.com/video/123456789"),
+            "123456789"
+        )
+        XCTAssertNil(TrailerLinkParser.vimeoVideoID(from: "https://www.youtube.com/watch?v=YoHD9XEInc0"))
+    }
+
+    func testYouTubeTrailerBuildsWatchURLAndThumbnail() {
+        let trailer = TitleTrailer.youtube(id: "YoHD9XEInc0", title: "Official Trailer")
+        XCTAssertEqual(trailer.thumbnailURL?.absoluteString, "https://i.ytimg.com/vi/YoHD9XEInc0/mqdefault.jpg")
+        XCTAssertEqual(
+            trailer.externalWatchURL?.absoluteString,
+            "https://www.youtube.com/watch?v=YoHD9XEInc0"
+        )
+        XCTAssertEqual(trailer.caption, "Trailer")
+        XCTAssertEqual(trailer.trailerRank, 0)
+    }
+
+    func testOnlyOfficialTrailersPassFilter() {
+        XCTAssertTrue(TitleTrailer.isOfficialTrailer(title: "Official Trailer"))
+        XCTAssertTrue(TitleTrailer.isOfficialTrailer(title: "Trailer"))
+        XCTAssertTrue(TitleTrailer.isOfficialTrailer(title: "Final Trailer"))
+        XCTAssertTrue(TitleTrailer.isOfficialTrailer(title: "International Trailer"))
+        XCTAssertTrue(TitleTrailer.isOfficialTrailer(title: "Official Trailer", type: "Trailer"))
+        XCTAssertFalse(TitleTrailer.isOfficialTrailer(title: "Official Teaser"))
+        XCTAssertFalse(TitleTrailer.isOfficialTrailer(title: "Teaser Trailer"))
+        XCTAssertFalse(TitleTrailer.isOfficialTrailer(title: "Official Trailer", type: "Teaser"))
+        XCTAssertFalse(TitleTrailer.isOfficialTrailer(title: "Clip"))
+        XCTAssertFalse(TitleTrailer.isOfficialTrailer(title: "Behind the Scenes"))
+        XCTAssertFalse(TitleTrailer.isOfficialTrailer(title: "Official Trailer", official: false))
+    }
+
+    func testCatalogPagesUseTMDBAndIMDb() {
+        let tmdb = TitleTrailer.tmdbPage(id: 27205, isSeries: false)
+        XCTAssertEqual(tmdb.externalWatchURL?.absoluteString, "https://www.themoviedb.org/movie/27205")
+        XCTAssertEqual(tmdb.caption, "TMDB")
+
+        let imdb = TitleTrailer.imdbPage(id: "tt1375666")
+        XCTAssertEqual(imdb.externalWatchURL?.absoluteString, "https://www.imdb.com/title/tt1375666/")
+        XCTAssertEqual(imdb.caption, "IMDb")
+    }
+
+    func testWikidataSparqlUsesImdbAndTmdb() {
+        let query = WikidataTrailers.sparql(imdbID: "tt1375666", tmdbID: 27205, isSeries: false)
+        XCTAssertTrue(query?.contains("P345 \"tt1375666\"") == true)
+        XCTAssertTrue(query?.contains("P4947 \"27205\"") == true)
+        XCTAssertTrue(query?.contains("P1651") == true)
+        XCTAssertNil(WikidataTrailers.sparql(imdbID: nil, tmdbID: nil, isSeries: false))
+
+        let series = WikidataTrailers.sparql(imdbID: nil, tmdbID: 1396, isSeries: true)
+        XCTAssertTrue(series?.contains("P4983 \"1396\"") == true)
     }
 }

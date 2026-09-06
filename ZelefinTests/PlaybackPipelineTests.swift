@@ -194,8 +194,8 @@ final class DeviceProfileTests: XCTestCase {
 
 final class OpenSourceNoticeTests: XCTestCase {
     func testCreditsCoverFFmpeg() {
-        let names = OpenSourceNotice.works.map(\.name)
-        XCTAssertTrue(names.contains("FFmpeg"))
+        XCTAssertEqual(OpenSourceNotice.works.map(\.name), ["AetherEngine", "FFmpeg"])
+        XCTAssertEqual(OpenSourceNotice.works.last?.bundledLicenses.map(\.name), ["dav1d", "libdovi", "libzvbi", "zimg"])
         XCTAssertFalse(OpenSourceNotice.summary.isEmpty)
     }
 }

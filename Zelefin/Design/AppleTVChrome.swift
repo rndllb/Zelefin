@@ -294,6 +294,54 @@ struct ReplayLandscapeCard: View {
     }
 }
 
+struct TrailerLandscapeCard: View {
+    let title: String
+    let caption: String
+    let imageURL: URL?
+
+    var body: some View {
+        PosterImage(url: imageURL, aspectRatio: 16 / 9)
+            .frame(width: PosterMetrics.landscapeSize.width, height: PosterMetrics.landscapeSize.height)
+            .overlay {
+                Image(systemName: "play.fill")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.black.opacity(0.48), in: Circle())
+                    .overlay {
+                        Circle().strokeBorder(.white.opacity(0.55), lineWidth: 0.8)
+                    }
+            }
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.78)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 62)
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Text(caption)
+                            .font(.caption2.weight(.semibold))
+                            .opacity(0.78)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+                }
+            }
+            .posterCard()
+            .frame(width: PosterMetrics.landscapeSize.width, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(title), \(caption)")
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
 struct LabeledPortraitCard: View {
     let title: String
     let imageURL: URL?
@@ -386,6 +434,34 @@ struct PortraitPoster: View {
         }
         .frame(width: PosterMetrics.portraitSize.width, alignment: .leading)
         .accessibilityLabel(item.name)
+    }
+}
+
+struct CastMemberCard: View {
+    let person: CreditPerson
+    let imageURL: URL?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            PosterImage(url: imageURL, aspectRatio: 1)
+                .frame(width: 110, height: 110)
+                .clipShape(Circle())
+
+            VStack(spacing: 2) {
+                Text(person.name)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                Text(person.roleLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+        }
+        .frame(width: 116)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(person.name), \(person.roleLabel)")
     }
 }
 

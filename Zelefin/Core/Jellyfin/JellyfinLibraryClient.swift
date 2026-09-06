@@ -136,6 +136,168 @@ final class JellyfinLibraryClient: Sendable {
         return (item, dto)
     }
 
+    func trailers(for dto: BaseItemDto) async -> [TitleTrailer] {
+        guard let itemID = dto.id else { return [] }
+        var trailers: [TitleTrailer] = []
+        var seenYouTube: Set<String> = []
+        var seenVimeo: Set<String> = []
+        let isSeries = dto.type == .series
+        let tmdbID = JellyfinTmdbCatalog.tmdbID(from: dto.providerIDs)
+        let imdbID = JellyfinTmdbCatalog.imdbID(from: dto.providerIDs)
+
+        func appendYouTube(id: String, title: String) {
+            guard TitleTrailer.isOfficialTrailer(title: title) else { return }
+            if seenYouTube.insert(id).inserted {
+                trailers.append(.youtube(id: id, title: title))
+            }
+        }
+
+        if let locals = try? await client.send(Paths.getLocalTrailers(itemID: itemID, userID: userID)).value {
+            for local in locals {
+                if let item = ItemMapper.mediaItem(from: local) {
+                    trailers.append(.jellyfin(item))
+                }
+            }
+        }
+
+        for remote in dto.remoteTrailers ?? [] {
+            guard let url = remote.url else { continue }
+            let title = displayTitle(remote.name)
+            if let youtubeID = TrailerLinkParser.youtubeVideoID(from: url) {
+                appendYouTube(id: youtubeID, title: title)
+            } else if let vimeoID = TrailerLinkParser.vimeoVideoID(from: url),
+                      TitleTrailer.isOfficialTrailer(title: title),
+                      seenVimeo.insert(vimeoID).inserted
+            {
+                trailers.append(.vimeo(id: vimeoID, title: title))
+            }
+        }
+
+        if let tmdbID, let seerr = PluginSettings.seerrClient {
+            for video in await seerr.videos(tmdbID: tmdbID, isSeries: isSeries) {
+                if case .youtube(let youtubeID) = video.kind {
+                    appendYouTube(id: youtubeID, title: video.title)
+                }
+            }
+        }
+
+        if seenYouTube.isEmpty, seenVimeo.isEmpty, trailers.isEmpty {
+            let extras = await WikidataTrailers.youtubeIDs(
+                imdbID: imdbID,
+                tmdbID: tmdbID,
+                isSeries: isSeries
+            )
+            if let youtubeID = extras.first {
+                appendYouTube(id: youtubeID, title: "Official Trailer")
+            }
+        }
+
+        let locals = trailers.filter { $0.jellyfinItem != nil }
+        let remotes = trailers.filter { $0.jellyfinItem == nil }
+            .sorted { $0.trailerRank < $1.trailerRank }
+        return locals + remotes
+    }
+
+    func similarItems(for itemID: String) async -> [MediaItem] {
+        let result = try? await client.send(
+            Paths.getSimilarItems(
+                itemID: itemID,
+                parameters: .init(
+                    userID: userID,
+                    limit: 16,
+                    fields: ItemMapper.listFields
+                )
+            )
+        ).value
+        return (result?.items ?? [])
+            .compactMap(ItemMapper.mediaItem(from:))
+            .filter { $0.id != itemID && ($0.kind == .movie || $0.kind == .series) }
+    }
+
+    func collections(containing itemID: String) async -> [ItemCollectionMembership] {
+        let boxSets = ((try? await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    limit: 80,
+                    isRecursive: true,
+                    fields: ItemMapper.listFields,
+                    includeItemTypes: [.boxSet],
+                    sortBy: [.sortName],
+                    enableUserData: true,
+                    enableImageTypes: ItemMapper.listImageTypes
+                )
+            )
+        ).value.items) ?? []).compactMap(ItemMapper.mediaItem(from:))
+
+        return await withTaskGroup(of: ItemCollectionMembership?.self) { group in
+            for boxSet in boxSets {
+                group.addTask {
+                    let members = (try? await self.catalogItems(
+                        genreID: nil,
+                        parentID: boxSet.id,
+                        include: [.movie, .series, .video]
+                    )) ?? []
+                    guard members.contains(where: { $0.id == itemID }) else { return nil }
+                    return ItemCollectionMembership(collection: boxSet, items: members)
+                }
+            }
+            var found: [ItemCollectionMembership] = []
+            for await membership in group {
+                if let membership { found.append(membership) }
+            }
+            found.sort {
+                $0.collection.name.localizedCaseInsensitiveCompare($1.collection.name) == .orderedAscending
+            }
+            return found
+        }
+    }
+
+    func items(personID: String) async throws -> [MediaItem] {
+        let result = try await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    startIndex: 0,
+                    limit: 100,
+                    isRecursive: true,
+                    fields: ItemMapper.listFields,
+                    includeItemTypes: [.movie, .series],
+                    sortBy: [.sortName],
+                    enableUserData: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    personIDs: [personID]
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
+
+    func credits(for itemID: String, from dto: BaseItemDto) async -> [CreditPerson] {
+        let fromDTO = ItemMapper.credits(from: dto.people)
+        if !fromDTO.isEmpty { return fromDTO }
+        let result = try? await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    fields: [.people],
+                    enableImageTypes: [.primary],
+                    ids: [itemID]
+                )
+            )
+        ).value
+        return ItemMapper.credits(from: result?.items?.first?.people)
+    }
+
+    func personImageURL(id: String, tag: String?, maxHeight: Int = 360) -> URL? {
+        artwork.image(itemID: id, type: "Primary", tag: tag, maxHeight: maxHeight)
+    }
+
+    private func displayTitle(_ name: String?) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Trailer" : trimmed
+    }
+
     func seasons(seriesID: String) async throws -> [MediaItem] {
         let result = try await client.send(
             Paths.getSeasons(
@@ -581,5 +743,67 @@ final class JellyfinLibraryClient: Sendable {
         }
 
         return ids
+    }
+}
+
+/// YouTube video IDs published on Wikidata for a title (no API key).
+enum WikidataTrailers {
+    static func youtubeIDs(imdbID: String?, tmdbID: Int?, isSeries: Bool) async -> [String] {
+        guard let query = sparql(imdbID: imdbID, tmdbID: tmdbID, isSeries: isSeries) else { return [] }
+        var components = URLComponents(string: "https://query.wikidata.org/sparql")
+        components?.queryItems = [
+            URLQueryItem(name: "format", value: "json"),
+            URLQueryItem(name: "query", value: query)
+        ]
+        guard let url = components?.url else { return [] }
+
+        var request = URLRequest(url: url)
+        request.setValue(
+            "Zelefin/\(DeviceIdentity.version) (https://github.com/rndllb/Zelefin)",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("application/sparql-results+json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 12
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200 ..< 300).contains(http.statusCode),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = object["results"] as? [String: Any],
+              let bindings = results["bindings"] as? [[String: Any]]
+        else {
+            return []
+        }
+
+        var seen: Set<String> = []
+        var ids: [String] = []
+        for binding in bindings {
+            guard let youtube = binding["youtube"] as? [String: Any],
+                  let value = youtube["value"] as? String,
+                  let videoID = TrailerLinkParser.youtubeVideoID(from: value) ?? TrailerLinkParser.youtubeVideoID(from: "https://youtu.be/\(value)"),
+                  seen.insert(videoID).inserted
+            else { continue }
+            ids.append(videoID)
+        }
+        return ids
+    }
+
+    static func sparql(imdbID: String?, tmdbID: Int?, isSeries: Bool) -> String? {
+        var clauses: [String] = []
+        if let imdbID, imdbID.hasPrefix("tt"), imdbID.dropFirst(2).allSatisfy(\.isNumber) {
+            clauses.append("{ ?item wdt:P345 \"\(imdbID)\" }")
+        }
+        if let tmdbID {
+            let property = isSeries ? "P4983" : "P4947"
+            clauses.append("{ ?item wdt:\(property) \"\(tmdbID)\" }")
+        }
+        guard !clauses.isEmpty else { return nil }
+        return """
+        SELECT DISTINCT ?youtube WHERE {
+          \(clauses.joined(separator: " UNION "))
+          ?item wdt:P1651 ?youtube.
+        }
+        LIMIT 6
+        """
     }
 }

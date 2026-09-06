@@ -37,7 +37,7 @@ struct FileHomeSnapshotStore: HomeSnapshotStoring {
 
         do {
             let data = try Data(contentsOf: url)
-            let snapshot = try Self.decoder.decode(HomeSnapshot.self, from: data)
+            let snapshot = try SnapshotCoding.decoder.decode(HomeSnapshot.self, from: data)
             guard snapshot.version == HomeSnapshot.currentVersion else {
                 try removeFile(at: url)
                 return nil
@@ -52,7 +52,7 @@ struct FileHomeSnapshotStore: HomeSnapshotStoring {
 
     func save(_ snapshot: HomeSnapshot) throws {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let data = try Self.encoder.encode(snapshot)
+        let data = try SnapshotCoding.encoder.encode(snapshot)
         let url = fileURL(userID: snapshot.userID, serverURLHost: snapshot.serverHost)
         try data.write(to: url, options: .atomic)
     }
@@ -63,14 +63,14 @@ struct FileHomeSnapshotStore: HomeSnapshotStoring {
     }
 
     private func fileURL(userID: String, serverURL: URL) -> URL {
-        fileURL(userID: userID, serverURLHost: Self.host(from: serverURL))
+        fileURL(userID: userID, serverURLHost: SnapshotCoding.host(from: serverURL))
     }
 
     private func fileURL(userID: String, serverURLHost: String) -> URL {
-        let fileName = "\(serverURLHost)-\(userID).json"
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: ":", with: "_")
-        return directory.appendingPathComponent(fileName, isDirectory: false)
+        directory.appendingPathComponent(
+            SnapshotCoding.fileName(joining: [serverURLHost, userID]),
+            isDirectory: false
+        )
     }
 
     private func removeFile(at url: URL) throws {
@@ -79,33 +79,12 @@ struct FileHomeSnapshotStore: HomeSnapshotStoring {
     }
 
     private static func defaultDirectory(fileManager: FileManager) -> URL {
-        let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-        let base = caches.first ?? fileManager.temporaryDirectory
-        return base
-            .appendingPathComponent("Zelefin", isDirectory: true)
-            .appendingPathComponent("HomeSnapshots", isDirectory: true)
+        SnapshotCoding.cachesDirectory(named: "HomeSnapshots", fileManager: fileManager)
     }
-
-    private static func host(from serverURL: URL) -> String {
-        serverURL.host ?? serverURL.absoluteString
-    }
-
-    private static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys]
-        return encoder
-    }()
-
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
 }
 
 extension HomeSnapshot {
     static func host(from serverURL: URL) -> String {
-        serverURL.host ?? serverURL.absoluteString
+        SnapshotCoding.host(from: serverURL)
     }
 }

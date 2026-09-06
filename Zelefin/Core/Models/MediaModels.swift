@@ -44,6 +44,22 @@ enum AudioFormat: String, Hashable, Sendable, Codable {
     }
 }
 
+enum VideoResolution: String, Hashable, Sendable, Codable {
+    case sd
+    case hd
+    case fourK
+    case unknown
+
+    var displayName: String? {
+        switch self {
+        case .sd: "SD"
+        case .hd: "HD"
+        case .fourK: "4K"
+        case .unknown: nil
+        }
+    }
+}
+
 enum PlaybackQueueKind: String, Hashable, Sendable, Codable {
     case resume
     case nextUp
@@ -101,6 +117,10 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     let queueKind: PlaybackQueueKind
     let videoRange: VideoRange
     let audioFormat: AudioFormat
+    var criticRating: Double? = nil
+    var videoResolution: VideoResolution = .unknown
+    var hasClosedCaptions: Bool = false
+    var hasAudioDescription: Bool = false
 
     var progress: Double {
         guard let runtime, runtime > 0 else { return 0 }
@@ -123,6 +143,33 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var remainingPlayback: TimeInterval? {
         guard let runtime, runtime > 0 else { return nil }
         return max(0, runtime - playbackPosition)
+    }
+
+    var runtimeLabel: String? {
+        guard let runtime, runtime > 0 else { return nil }
+        return Self.minutesLabel(runtime)
+    }
+
+    /// Parental-guidance mark derived from Jellyfin’s `OfficialRating` (PG-13 → 13+, and so on).
+    var ageGateLabel: String? {
+        guard let officialRating else { return nil }
+        let compact = officialRating.uppercased().filter { !$0.isWhitespace }
+        if compact.contains("NC-17") || compact == "X" { return "18+" }
+        if compact == "R" || compact.contains("TV-MA") { return "17+" }
+        if compact.contains("PG-13") || compact.contains("TV-14") { return "13+" }
+        if compact.contains("TV-Y7") || compact == "PG" || compact.contains("TV-PG") { return "7+" }
+        if compact == "G" || compact.hasPrefix("TV-Y") || compact.contains("TV-G") { return "All" }
+        if compact.hasSuffix("+") { return officialRating }
+        return nil
+    }
+
+    /// Hours and minutes shown on the detail play control: time left while in progress, otherwise runtime.
+    var playActionDurationLabel: String? {
+        if playbackPosition > 5, let remainingPlayback, remainingPlayback >= 45 {
+            return Self.minutesLabel(remainingPlayback)
+        }
+        guard let runtime, runtime > 0 else { return nil }
+        return Self.minutesLabel(runtime)
     }
 
     var continueWatchingCaption: String? {
@@ -284,7 +331,11 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             imageItemID: cover.id,
             queueKind: queueKind,
             videoRange: videoRange,
-            audioFormat: audioFormat
+            audioFormat: audioFormat,
+            criticRating: criticRating,
+            videoResolution: videoResolution,
+            hasClosedCaptions: hasClosedCaptions,
+            hasAudioDescription: hasAudioDescription
         )
     }
 }
@@ -386,6 +437,20 @@ struct HomeLayout: Hashable, Sendable, Codable {
     var sections: [HomeSection]
 }
 
+struct CreditPerson: Identifiable, Hashable, Sendable, Codable {
+    let id: String
+    let name: String
+    let roleLabel: String
+    let imageTag: String?
+    let rank: Int
+}
+
+struct ItemCollectionMembership: Identifiable, Hashable, Sendable, Codable {
+    var id: String { collection.id }
+    let collection: MediaItem
+    let items: [MediaItem]
+}
+
 struct MediaTrack: Identifiable, Hashable, Sendable {
     enum Kind: Hashable, Sendable {
         case audio
@@ -414,4 +479,181 @@ struct PlaybackPlan: Hashable, Sendable {
     let extraHTTPHeaders: [String: String]
     let audioTracks: [MediaTrack]
     let subtitleTracks: [MediaTrack]
+}
+
+struct TitleTrailer: Identifiable, Hashable, Sendable, Codable {
+    enum Kind: Hashable, Sendable, Codable {
+        case youtube(String)
+        case vimeo(String)
+        case jellyfin(MediaItem)
+        case catalog(URL)
+    }
+
+    let id: String
+    let title: String
+    let kind: Kind
+
+    var caption: String {
+        switch kind {
+        case .youtube, .vimeo:
+            return "Trailer"
+        case .jellyfin:
+            return "From your server"
+        case .catalog(let url):
+            let host = (url.host ?? "").lowercased()
+            if host.contains("imdb") { return "IMDb" }
+            if host.contains("themoviedb") { return "TMDB" }
+            return "Trailer"
+        }
+    }
+
+    var trailerRank: Int {
+        let name = title.lowercased()
+        if name.contains("official") && name.contains("trailer") { return 0 }
+        if name.contains("trailer") { return 1 }
+        if name.contains("teaser") { return 2 }
+        return 3
+    }
+
+    var isOfficialTrailer: Bool {
+        Self.isOfficialTrailer(title: title)
+    }
+
+    /// Trailers only — not teasers, clips, featurettes, or other extras.
+    static func isOfficialTrailer(title: String, type: String? = nil, official: Bool? = nil) -> Bool {
+        if official == false { return false }
+        if let type {
+            let normalized = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !normalized.isEmpty, normalized != "trailer" { return false }
+        }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if name.isEmpty { return true }
+        let extras = [
+            "teaser", "clip", "featurette", "behind the scenes", "blooper",
+            "interview", "deleted", "sneak peek", "promo", "spot", "excerpt",
+            "scene", "endboard", "announcement"
+        ]
+        if extras.contains(where: { name.contains($0) }) { return false }
+        return name.contains("trailer")
+    }
+
+    var jellyfinItem: MediaItem? {
+        if case .jellyfin(let item) = kind { return item }
+        return nil
+    }
+
+    var thumbnailURL: URL? {
+        switch kind {
+        case .youtube(let videoID):
+            return URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg")
+        case .vimeo, .jellyfin, .catalog:
+            return nil
+        }
+    }
+
+    var externalWatchURL: URL? {
+        switch kind {
+        case .youtube(let videoID):
+            return URL(string: "https://www.youtube.com/watch?v=\(videoID)")
+        case .vimeo(let videoID):
+            return URL(string: "https://vimeo.com/\(videoID)")
+        case .catalog(let url):
+            return url
+        case .jellyfin:
+            return nil
+        }
+    }
+
+    static func youtube(id: String, title: String) -> TitleTrailer {
+        TitleTrailer(id: "yt-\(id)", title: title, kind: .youtube(id))
+    }
+
+    static func vimeo(id: String, title: String) -> TitleTrailer {
+        TitleTrailer(id: "vimeo-\(id)", title: title, kind: .vimeo(id))
+    }
+
+    static func jellyfin(_ item: MediaItem) -> TitleTrailer {
+        TitleTrailer(id: "jf-\(item.id)", title: item.name, kind: .jellyfin(item))
+    }
+
+    static func tmdbPage(id: Int, isSeries: Bool) -> TitleTrailer {
+        let path = isSeries ? "tv" : "movie"
+        let url = URL(string: "https://www.themoviedb.org/\(path)/\(id)")!
+        return TitleTrailer(id: "tmdb-\(id)", title: "Trailer", kind: .catalog(url))
+    }
+
+    static func imdbPage(id: String) -> TitleTrailer {
+        let url = URL(string: "https://www.imdb.com/title/\(id)/")!
+        return TitleTrailer(id: "imdb-\(id)", title: "Trailer", kind: .catalog(url))
+    }
+}
+
+enum TrailerLinkParser {
+    static func youtubeVideoID(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isYouTubeID(trimmed) { return trimmed }
+        guard let url = URL(string: trimmed) else { return nil }
+        let host = (url.host ?? "").lowercased()
+
+        if host == "youtu.be" || host.hasSuffix(".youtu.be") {
+            let id = url.path.split(separator: "/").first.map(String.init)
+            return validatedYouTubeID(id)
+        }
+
+        let isYouTubeHost = host == "youtube.com"
+            || host.hasSuffix(".youtube.com")
+            || host == "youtube-nocookie.com"
+            || host.hasSuffix(".youtube-nocookie.com")
+        guard isYouTubeHost else { return nil }
+
+        if let videoID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "v" })?
+            .value
+        {
+            return validatedYouTubeID(videoID)
+        }
+
+        let parts = url.path.split(separator: "/").map(String.init)
+        if let marker = parts.firstIndex(where: { ["embed", "v", "shorts", "live", "e"].contains($0.lowercased()) }),
+           marker + 1 < parts.count
+        {
+            return validatedYouTubeID(parts[marker + 1])
+        }
+        return nil
+    }
+
+    static func vimeoVideoID(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed) else { return nil }
+        let host = (url.host ?? "").lowercased()
+        guard host == "vimeo.com" || host.hasSuffix(".vimeo.com") else { return nil }
+        let parts = url.path.split(separator: "/").map(String.init)
+        if let marker = parts.firstIndex(where: { $0.lowercased() == "video" }),
+           marker + 1 < parts.count,
+           isVimeoID(parts[marker + 1])
+        {
+            return parts[marker + 1]
+        }
+        if let last = parts.last, isVimeoID(last) {
+            return last
+        }
+        return nil
+    }
+
+    private static func validatedYouTubeID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let id = value.split(whereSeparator: { $0 == "?" || $0 == "&" }).first.map(String.init) ?? value
+        return isYouTubeID(id) ? id : nil
+    }
+
+    private static func isYouTubeID(_ value: String) -> Bool {
+        value.count == 11 && value.unicodeScalars.allSatisfy { scalar in
+            CharacterSet.alphanumerics.contains(scalar) || scalar == "_" || scalar == "-"
+        }
+    }
+
+    private static func isVimeoID(_ value: String) -> Bool {
+        value.count >= 5 && value.count <= 12 && value.allSatisfy(\.isNumber)
+    }
 }

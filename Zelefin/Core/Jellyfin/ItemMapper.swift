@@ -21,8 +21,59 @@ enum ItemMapper {
         .genres,
         .chapters,
         .trickplay,
-        .primaryImageAspectRatio
+        .primaryImageAspectRatio,
+        .remoteTrailers,
+        .localTrailerCount,
+        .providerIDs,
+        .people
     ]
+
+    static func credits(from people: [BaseItemPerson]?) -> [CreditPerson] {
+        guard let people else { return [] }
+        let mapped = people.compactMap { person -> CreditPerson? in
+            guard let id = person.id, let name = person.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                return nil
+            }
+            return CreditPerson(
+                id: id,
+                name: name,
+                roleLabel: creditRoleLabel(type: person.type, role: person.role),
+                imageTag: person.primaryImageTag,
+                rank: creditRank(person.type)
+            )
+        }
+        let sorted = mapped.sorted { lhs, rhs in
+            if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+            return false
+        }
+        var seen = Set<String>()
+        return sorted.filter { seen.insert($0.id).inserted }
+    }
+
+    private static func creditRank(_ type: PersonKind?) -> Int {
+        switch type {
+        case .actor, .guestStar: 0
+        case .director: 1
+        case .creator: 2
+        case .writer: 3
+        case .producer: 4
+        default: 5
+        }
+    }
+
+    private static func creditRoleLabel(type: PersonKind?, role: String?) -> String {
+        let trimmed = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty { return trimmed }
+        switch type {
+        case .director: return "Director"
+        case .writer: return "Writer"
+        case .producer: return "Producer"
+        case .creator: return "Creator"
+        case .composer: return "Composer"
+        case .guestStar: return "Guest Star"
+        default: return "Cast"
+        }
+    }
 
     static func mediaItem(from dto: BaseItemDto) -> MediaItem? {
         mediaItem(from: dto, queueKind: .resume)
@@ -61,7 +112,11 @@ enum ItemMapper {
             imageItemID: nil,
             queueKind: queueKind,
             videoRange: videoRange(from: dto.mediaStreams),
-            audioFormat: audioFormat(from: dto.mediaStreams)
+            audioFormat: audioFormat(from: dto.mediaStreams),
+            criticRating: dto.criticRating.map(Double.init),
+            videoResolution: videoResolution(from: dto.mediaStreams),
+            hasClosedCaptions: hasClosedCaptions(from: dto.mediaStreams),
+            hasAudioDescription: hasAudioDescription(from: dto.mediaStreams)
         )
     }
 
@@ -118,7 +173,10 @@ enum ItemMapper {
             .joined(separator: " ")
             .lowercased()
 
-        if joined.contains("atmos") || joined.contains("joc") || joined.contains("eac3") && joined.contains("atmos") {
+        if audioStreams.contains(where: { $0.audioSpatialFormat == .dolbyAtmos }) {
+            return .atmos
+        }
+        if joined.contains("atmos") || joined.contains("joc") || (joined.contains("eac3") && joined.contains("atmos")) {
             return .atmos
         }
         if audioStreams.contains(where: { ($0.channels ?? 0) >= 6 }) {
@@ -128,6 +186,34 @@ enum ItemMapper {
             return .unknown
         }
         return .stereo
+    }
+
+    static func videoResolution(from streams: [MediaStream]?) -> VideoResolution {
+        guard let video = streams?.first(where: { $0.type == .video }) else { return .unknown }
+        let longEdge = max(video.width ?? 0, video.height ?? 0)
+        if longEdge >= 3800 { return .fourK }
+        if longEdge >= 1200 { return .hd }
+        if longEdge > 0 { return .sd }
+        return .unknown
+    }
+
+    static func hasClosedCaptions(from streams: [MediaStream]?) -> Bool {
+        (streams ?? []).contains { $0.type == .subtitle }
+    }
+
+    static func hasAudioDescription(from streams: [MediaStream]?) -> Bool {
+        (streams ?? []).contains { stream in
+            guard stream.type == .audio else { return false }
+            let blob = [stream.title, stream.displayTitle, stream.comment]
+                .compactMap { $0 }
+                .joined(separator: " ")
+                .lowercased()
+            return blob.contains("audio description")
+                || blob.contains("described")
+                || blob.contains("ad -")
+                || blob.hasPrefix("ad ")
+                || blob.contains(" visually")
+        }
     }
 
     static func playbackMethod(from source: MediaSourceInfo) -> PlaybackMethod {

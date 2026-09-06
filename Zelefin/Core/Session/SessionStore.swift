@@ -8,6 +8,8 @@ final class SessionStore {
     private let vault = SessionVault()
     private let probe = ServerProbe()
     private let snapshotStore: any HomeSnapshotStoring
+    private let itemDetailStore: any ItemDetailSnapshotStoring
+    private var itemDetailMemory: [String: ItemDetailSnapshot] = [:]
 
     private(set) var session: SavedSession?
     private(set) var client: JellyfinClient?
@@ -23,8 +25,12 @@ final class SessionStore {
 
     private var homeTask: Task<Void, Never>?
 
-    init(snapshotStore: any HomeSnapshotStoring = FileHomeSnapshotStore()) {
+    init(
+        snapshotStore: any HomeSnapshotStoring = FileHomeSnapshotStore(),
+        itemDetailStore: any ItemDetailSnapshotStoring = FileItemDetailSnapshotStore()
+    ) {
         self.snapshotStore = snapshotStore
+        self.itemDetailStore = itemDetailStore
     }
 
     var avatarURL: URL? {
@@ -129,6 +135,7 @@ final class SessionStore {
         isLoadingHome = false
         introSkipperAvailable = false
         tmdbCatalog = JellyfinTmdbCatalog()
+        itemDetailMemory = [:]
         PluginSettings.clearSeerrSession()
     }
 
@@ -156,6 +163,7 @@ final class SessionStore {
         client = jellyfin
         library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID)
         introSkipperAvailable = false
+        itemDetailMemory = [:]
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
         Task { await loadHome(force: true) }
@@ -204,6 +212,52 @@ final class SessionStore {
             libraries: libraries
         )
         try? snapshotStore.save(snapshot)
+    }
+
+    func cachedItemDetail(itemID: String) -> ItemDetailSnapshot? {
+        if let snapshot = itemDetailMemory[itemID] {
+            return snapshot
+        }
+        guard let session else { return nil }
+        guard let snapshot = try? itemDetailStore.load(
+            userID: session.userID,
+            serverURL: session.serverURL,
+            itemID: itemID
+        ) else {
+            return nil
+        }
+        itemDetailMemory[itemID] = snapshot
+        return snapshot
+    }
+
+    func persistItemDetail(
+        item: MediaItem,
+        trailers: [TitleTrailer],
+        related: [MediaItem],
+        credits: [CreditPerson],
+        collections: [ItemCollectionMembership],
+        seasons: [MediaItem],
+        episodes: [MediaItem],
+        selectedSeasonID: String?
+    ) {
+        guard let session else { return }
+        let snapshot = ItemDetailSnapshot(
+            version: ItemDetailSnapshot.currentVersion,
+            userID: session.userID,
+            serverHost: SnapshotCoding.host(from: session.serverURL),
+            itemID: item.id,
+            savedAt: Date(),
+            item: item,
+            trailers: trailers,
+            related: related,
+            credits: credits,
+            collections: collections,
+            seasons: seasons,
+            episodes: episodes,
+            selectedSeasonID: selectedSeasonID
+        )
+        itemDetailMemory[item.id] = snapshot
+        try? itemDetailStore.save(snapshot)
     }
 
     private func loadHome(force: Bool) async {

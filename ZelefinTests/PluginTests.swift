@@ -130,6 +130,42 @@ final class SeerrTitleTests: XCTestCase {
         XCTAssertNil(JellyfinTmdbCatalog.tmdbID(from: ["Imdb": "tt1375666"]))
     }
 
+    func testReadsImdbProviderID() {
+        XCTAssertEqual(JellyfinTmdbCatalog.imdbID(from: ["Imdb": "tt1375666"]), "tt1375666")
+        XCTAssertEqual(JellyfinTmdbCatalog.imdbID(from: ["imdb": "1375666"]), "tt1375666")
+        XCTAssertNil(JellyfinTmdbCatalog.imdbID(from: ["Tmdb": "27205"]))
+    }
+
+    func testMapsSeerrRelatedVideosToTrailers() throws {
+        let json = Data("""
+        {
+          "relatedVideos": [
+            {
+              "url": "https://youtube.com/watch?v=YoHD9XEInc0",
+              "site": "YouTube",
+              "key": "YoHD9XEInc0",
+              "name": "Official Trailer",
+              "size": 1080,
+              "type": "Trailer"
+            },
+            {
+              "key": "abc",
+              "site": "YouTube",
+              "name": "Official Teaser",
+              "type": "Teaser"
+            }
+          ]
+        }
+        """.utf8)
+        let payload = try JSONDecoder().decode(SeerrRelatedVideosPayload.self, from: json)
+        XCTAssertEqual(payload.trailers.count, 1)
+        XCTAssertEqual(payload.trailers.first?.title, "Official Trailer")
+        XCTAssertEqual(
+            payload.trailers.first?.externalWatchURL?.absoluteString,
+            "https://www.youtube.com/watch?v=YoHD9XEInc0"
+        )
+    }
+
     func testCookieParsesConnectSid() {
         let cookie = SeerrCookie.parse(
             setCookie: "connect.sid=s%3Aabc.signature; Path=/; HttpOnly; SameSite=Lax"
