@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+extension CGSize {
+    func scaled(by factor: CGFloat) -> CGSize {
+        CGSize(width: width * factor, height: height * factor)
+    }
+}
+
 enum PosterMetrics {
     static var landscapeSize: CGSize {
         #if os(tvOS)
@@ -116,11 +122,13 @@ struct PosterImage: View {
                 Image(uiImage: shown)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isLoading {
                 ProgressView()
                     .tint(progressTint)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: url) { await load() }
     }
@@ -138,22 +146,9 @@ struct PosterImage: View {
         }
         image = nil
         isLoading = true
-        do {
-            let (data, response) = try await JellyfinNetworking.data(from: url)
+        if let loaded = await ArtworkCache.shared.load(from: url) {
             guard !Task.isCancelled else { return }
-            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
-                  let loaded = UIImage(data: data)
-            else {
-                isLoading = false
-                return
-            }
-            ArtworkCache.shared.store(loaded, for: url)
             image = loaded
-        } catch is CancellationError {
-            return
-        } catch {
-            isLoading = false
-            return
         }
         isLoading = false
     }
@@ -169,6 +164,47 @@ private final class ArtworkCache: @unchecked Sendable {
 
     func store(_ image: UIImage, for url: URL) {
         cache.setObject(image, forKey: url as NSURL)
+    }
+
+    func load(from url: URL) async -> UIImage? {
+        if let cached = image(for: url) { return cached }
+        do {
+            let (data, response) = try await JellyfinNetworking.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+                  let loaded = UIImage(data: data)
+            else { return nil }
+            store(loaded, for: url)
+            return loaded
+        } catch {
+            return nil
+        }
+    }
+}
+
+/// UIImageView fills its SwiftUI frame; resizable Image often letterboxes instead.
+private final class FillingUIImageView: UIImageView {
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
+    }
+}
+
+private struct FillingImageView: UIViewRepresentable {
+    var image: UIImage?
+
+    func makeUIView(context: Context) -> FillingUIImageView {
+        let view = FillingUIImageView()
+        view.contentMode = .scaleAspectFill
+        view.clipsToBounds = true
+        view.backgroundColor = .clear
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        return view
+    }
+
+    func updateUIView(_ view: FillingUIImageView, context: Context) {
+        view.image = image
     }
 }
 
@@ -196,15 +232,20 @@ struct LandscapeCard: View {
     let item: MediaItem
     let imageURL: URL?
     var showsOverflowIcon = true
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+
+    private var size: CGSize {
+        PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
+    }
 
     var body: some View {
         PosterImage(url: imageURL, aspectRatio: 16 / 9)
-            .frame(width: PosterMetrics.landscapeSize.width, height: PosterMetrics.landscapeSize.height)
+            .frame(width: size.width, height: size.height)
             .overlay(alignment: .bottom) {
                 footer
             }
             .posterCard()
-            .frame(width: PosterMetrics.landscapeSize.width, alignment: .leading)
+            .frame(width: size.width, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityCaption)
     }
@@ -272,17 +313,22 @@ struct ReplayLandscapeCard: View {
     let item: MediaItem
     let imageURL: URL?
     var showsOverflowIcon = true
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+
+    private var size: CGSize {
+        PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
+    }
 
     var body: some View {
         PosterImage(url: imageURL, aspectRatio: 16 / 9)
-            .frame(width: PosterMetrics.landscapeSize.width, height: PosterMetrics.landscapeSize.height)
+            .frame(width: size.width, height: size.height)
             .overlay(alignment: .bottom) {
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.78)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 62)
+                .frame(height: 62 * sidebarLayout.scale)
                 .overlay(alignment: .bottom) {
                     HStack(alignment: .bottom, spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
@@ -317,7 +363,7 @@ struct ReplayLandscapeCard: View {
                 }
             }
             .posterCard()
-            .frame(width: PosterMetrics.landscapeSize.width, alignment: .leading)
+            .frame(width: size.width, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
                 [item.continueWatchingTitle, item.recentlyWatchedCaption]
@@ -331,10 +377,15 @@ struct TrailerLandscapeCard: View {
     let title: String
     let caption: String
     let imageURL: URL?
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+
+    private var size: CGSize {
+        PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
+    }
 
     var body: some View {
         PosterImage(url: imageURL, aspectRatio: 16 / 9)
-            .frame(width: PosterMetrics.landscapeSize.width, height: PosterMetrics.landscapeSize.height)
+            .frame(width: size.width, height: size.height)
             .overlay {
                 Image(systemName: "play.fill")
                     .font(.title3.weight(.bold))
@@ -351,7 +402,7 @@ struct TrailerLandscapeCard: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 62)
+                .frame(height: 62 * sidebarLayout.scale)
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title)
@@ -368,7 +419,7 @@ struct TrailerLandscapeCard: View {
                 }
             }
             .posterCard()
-            .frame(width: PosterMetrics.landscapeSize.width, alignment: .leading)
+            .frame(width: size.width, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(title), \(caption)")
             .accessibilityAddTraits(.isButton)
@@ -378,8 +429,11 @@ struct TrailerLandscapeCard: View {
 struct EpisodeShowcaseCard: View {
     let item: MediaItem
     let imageURL: URL?
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
-    private var size: CGSize { PosterMetrics.episodeCardSize }
+    private var size: CGSize {
+        PosterMetrics.episodeCardSize.scaled(by: sidebarLayout.scale)
+    }
     private var imageHeight: CGFloat { size.width * 9 / 16 }
 
     var body: some View {
@@ -484,9 +538,18 @@ struct LabeledPortraitCard: View {
     let title: String
     let imageURL: URL?
     var washColor: Color? = nil
-    var width: CGFloat = PosterMetrics.portraitSize.width
-    var height: CGFloat = PosterMetrics.portraitSize.height
+    var width: CGFloat? = nil
+    var height: CGFloat? = nil
     var cornerRadius: CGFloat = PosterMetrics.cornerRadius
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+
+    private var fittedWidth: CGFloat {
+        width ?? PosterMetrics.portraitSize.width * sidebarLayout.scale
+    }
+
+    private var fittedHeight: CGFloat {
+        height ?? PosterMetrics.portraitSize.height * sidebarLayout.scale
+    }
 
     static func genreWash(for title: String) -> Color {
         let palette: [(hue: Double, saturation: Double, brightness: Double)] = [
@@ -508,12 +571,12 @@ struct LabeledPortraitCard: View {
 
     var body: some View {
         Color.clear
-            .frame(width: width, height: height)
+            .frame(width: fittedWidth, height: fittedHeight)
             .background {
                 ZStack {
                     fallbackFill
                     PosterImage(url: imageURL)
-                        .frame(width: width, height: height)
+                        .frame(width: fittedWidth, height: fittedHeight)
                 }
             }
             .overlay {
@@ -535,7 +598,7 @@ struct LabeledPortraitCard: View {
                     .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                    .frame(width: width - 16, alignment: .leading)
+                    .frame(width: max(0, fittedWidth - 16), alignment: .leading)
                     .padding(.leading, 8)
                     .padding(.bottom, 8)
             }
@@ -555,34 +618,55 @@ struct PortraitPoster: View {
     let item: MediaItem
     let imageURL: URL?
     var rank: Int?
+    var size: CGSize? = nil
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+
+    private var fittedSize: CGSize {
+        size ?? PosterMetrics.portraitSize.scaled(by: sidebarLayout.scale)
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             PosterImage(url: imageURL)
-                .frame(width: PosterMetrics.portraitSize.width, height: PosterMetrics.portraitSize.height)
+                .frame(width: fittedSize.width, height: fittedSize.height)
                 .posterCard()
 
             if let rank {
                 Text("\(rank)")
-                    .font(.system(size: 44, weight: .bold))
+                    .font(.system(size: 44 * sidebarLayout.scale, weight: .bold))
                     .foregroundStyle(.white.opacity(0.55))
                     .padding(.leading, 8)
                     .padding(.top, 4)
             }
         }
-        .frame(width: PosterMetrics.portraitSize.width, alignment: .leading)
+        .frame(width: fittedSize.width, alignment: .leading)
         .accessibilityLabel(item.name)
+    }
+}
+
+struct FillingPortraitPoster: View {
+    let item: MediaItem
+    let imageURL: URL?
+    var rank: Int? = nil
+
+    var body: some View {
+        FillingPosterCell { size in
+            PortraitPoster(item: item, imageURL: imageURL, rank: rank, size: size)
+        }
     }
 }
 
 struct CastMemberCard: View {
     let person: CreditPerson
     let imageURL: URL?
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+
+    private var photoSize: CGFloat { 110 * sidebarLayout.scale }
 
     var body: some View {
         VStack(spacing: 8) {
             PosterImage(url: imageURL, aspectRatio: 1)
-                .frame(width: 110, height: 110)
+                .frame(width: photoSize, height: photoSize)
                 .clipShape(Circle())
 
             VStack(spacing: 2) {
@@ -597,7 +681,7 @@ struct CastMemberCard: View {
                     .lineLimit(1)
             }
         }
-        .frame(width: 116)
+        .frame(width: photoSize + 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(person.name), \(person.roleLabel)")
     }
@@ -676,37 +760,105 @@ struct RatingBadge: View {
     }
 }
 
+
+/// Sharp hero art that fills its frame.
+struct HeroArtwork: View {
+    let url: URL?
+    var size: CGSize? = nil
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let size, size.width > 1, size.height > 1 {
+                layers(in: size)
+            } else {
+                GeometryReader { geo in
+                    layers(in: geo.size)
+                }
+            }
+        }
+        .task(id: url) { await load() }
+    }
+
+    @ViewBuilder
+    private func layers(in size: CGSize) -> some View {
+        ZStack {
+            if let image {
+                FillingImageView(image: image)
+                    .frame(width: size.width, height: size.height)
+            } else {
+                Color.black
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
+        .allowsHitTesting(false)
+    }
+
+    private func load() async {
+        image = url.flatMap { ArtworkCache.shared.image(for: $0) }
+        guard let url, image == nil else { return }
+        image = await ArtworkCache.shared.load(from: url)
+    }
+}
+
+extension View {
+    /// Mirrors the hero under the sidebar frost — Apple's split-view / Liquid Glass treatment.
+    @ViewBuilder
+    func zelefinHeroBackgroundExtension() -> some View {
+        if #available(iOS 26, tvOS 26, *) {
+            backgroundExtensionEffect()
+        } else {
+            self
+        }
+    }
+}
+
 struct FeaturedHero: View {
     let items: [MediaItem]
+    let size: CGSize
     let imageURL: (MediaItem) -> URL?
 
     @Environment(SessionStore.self) private var session
     @State private var selection: String?
+    @State private var slideStartedAt = Date()
     @State private var playbackPlan: PlaybackPlan?
     @State private var playbackError: String?
+
+    private static let dwell: TimeInterval = 6
+    private static let dotSize: CGFloat = 7
+    private static let pillWidth: CGFloat = 24
 
     private var slides: [MediaItem] {
         Array(items.prefix(8))
     }
 
     var body: some View {
-        TabView(selection: $selection) {
-            ForEach(slides) { item in
+        ZStack(alignment: .bottom) {
+            if let item = currentSlide {
                 slide(item)
-                    .tag(Optional(item.id))
+            }
+
+            if slides.count > 1 {
+                TimelineView(.periodic(from: .now, by: 1 / 30)) { context in
+                    heroPageDots(progress: slideProgress(at: context.date))
+                }
+                .padding(.bottom, 14)
             }
         }
-        #if os(iOS)
-        .tabViewStyle(.page(indexDisplayMode: .automatic))
-        #endif
-        .ignoresSafeArea(edges: .top)
+        .frame(width: size.width, height: size.height)
+        .contentShape(Rectangle())
+        .simultaneousGesture(turnPageGesture)
         .onAppear {
             if selection == nil {
                 selection = slides.first?.id
             }
         }
-        .task(id: slides.map(\.id)) {
-            await autoAdvance()
+        .task(id: currentSlide?.id) {
+            await dwellThenAdvance()
+        }
+        .onChange(of: currentSlide?.id) { _, _ in
+            slideStartedAt = Date()
         }
         .fullScreenCover(item: $playbackPlan) { plan in
             PlayerView(plan: plan)
@@ -721,22 +873,74 @@ struct FeaturedHero: View {
         }
     }
 
+    private var currentSlide: MediaItem? {
+        slides.first(where: { $0.id == selection }) ?? slides.first
+    }
+
+    private func slideProgress(at date: Date) -> CGFloat {
+        let elapsed = date.timeIntervalSince(slideStartedAt)
+        return min(1, max(0, elapsed / Self.dwell))
+    }
+
+    private func heroPageDots(progress: CGFloat) -> some View {
+        HStack(spacing: 6) {
+            ForEach(slides) { item in
+                let isActive = item.id == currentSlide?.id
+                Capsule()
+                    .fill(Color.white.opacity(0.38))
+                    .frame(width: isActive ? Self.pillWidth : Self.dotSize, height: Self.dotSize)
+                    .overlay(alignment: .leading) {
+                        if isActive {
+                            Capsule()
+                                .fill(Color.white)
+                                .frame(width: max(0, Self.pillWidth * progress), height: Self.dotSize)
+                        }
+                    }
+                    .clipShape(Capsule())
+                    .accessibilityHidden(true)
+            }
+        }
+        .animation(.easeInOut(duration: 0.28), value: currentSlide?.id)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Featured titles")
+        .accessibilityValue(pageAccessibilityValue)
+    }
+
+    private var pageAccessibilityValue: String {
+        guard let current = currentSlide, let index = slides.firstIndex(of: current) else { return "" }
+        return "Slide \(index + 1) of \(slides.count)"
+    }
+
+    private var turnPageGesture: some Gesture {
+        DragGesture(minimumDistance: 50)
+            .onEnded { value in
+                guard slides.count > 1 else { return }
+                if value.translation.width < -50 {
+                    moveSelection(by: 1)
+                } else if value.translation.width > 50 {
+                    moveSelection(by: -1)
+                }
+            }
+    }
+
     private func slide(_ item: MediaItem) -> some View {
         ZStack(alignment: .bottom) {
-            PosterImage(url: imageURL(item), aspectRatio: 16 / 9)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ZStack {
+                HeroArtwork(url: imageURL(item), size: size)
 
-            LinearGradient(
-                colors: [.black.opacity(0.55), .clear],
-                startPoint: .top,
-                endPoint: .center
-            )
+                LinearGradient(
+                    colors: [.black.opacity(0.55), .clear],
+                    startPoint: .top,
+                    endPoint: .center
+                )
 
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.55), .black.opacity(0.96)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.55), .black.opacity(0.96)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+            }
+            .zelefinHeroBackgroundExtension()
 
             VStack(spacing: 16) {
                 VStack(spacing: 5) {
@@ -786,27 +990,29 @@ struct FeaturedHero: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 56)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
+        .frame(width: size.width, height: size.height)
     }
 
-    private func autoAdvance() async {
+    private func moveSelection(by delta: Int) {
         let ids = slides.map(\.id)
         guard ids.count > 1 else { return }
-        if selection == nil {
-            selection = ids.first
+        let current = selection ?? ids[0]
+        let index = ids.firstIndex(of: current) ?? 0
+        let next = ids[(index + delta + ids.count) % ids.count]
+        withAnimation(.easeInOut(duration: 0.35)) {
+            selection = next
         }
+    }
 
-        while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled else { return }
-            let current = selection ?? ids[0]
-            let index = ids.firstIndex(of: current) ?? 0
-            let next = ids[(index + 1) % ids.count]
-            withAnimation(.easeInOut(duration: 0.55)) {
-                selection = next
-            }
+    private func dwellThenAdvance() async {
+        guard slides.count > 1 else { return }
+        if selection == nil {
+            selection = slides.first?.id
         }
+        slideStartedAt = Date()
+        try? await Task.sleep(for: .seconds(Self.dwell))
+        guard !Task.isCancelled else { return }
+        moveSelection(by: 1)
     }
 
     private func play(_ item: MediaItem) async {
@@ -857,13 +1063,25 @@ extension View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ProfileMenu()
+                    PageHeaderProfileButton()
                 }
             }
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif
     }
 }
+
+#if os(iOS)
+private struct PageHeaderProfileButton: View {
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+
+    var body: some View {
+        if tabBarPlacement != .sidebar {
+            ProfileMenu()
+        }
+    }
+}
+#endif
 
 enum ScreenInsets {
     @MainActor
@@ -882,19 +1100,181 @@ enum ScreenInsets {
     }
 }
 
-struct FloatingPageHeader: View {
-    let title: String
+enum ZelefinMotion {
+    static let sidebarChrome: Animation = .smooth(duration: 0.38)
+}
+
+struct ZelefinSidebarLayout: Equatable {
+    var scale: CGFloat
+    var contentWidth: CGFloat
+    var expandedWidth: CGFloat
+
+    static let identity = ZelefinSidebarLayout(scale: 1, contentWidth: 0, expandedWidth: 0)
+
+    /// Extra width the sidebar stole from the content column.
+    var leadingBleed: CGFloat {
+        guard expandedWidth > 1, contentWidth > 1 else { return 0 }
+        return max(0, expandedWidth - contentWidth)
+    }
+}
+
+enum SidebarLayoutMetrics {
+    static func scale(contentWidth: CGFloat, expandedWidth: CGFloat) -> CGFloat {
+        guard expandedWidth > 1, contentWidth > 1 else { return 1 }
+        let raw = contentWidth / expandedWidth
+        if raw > 0.98 { return 1 }
+        return min(1, max(0.55, raw))
+    }
+
+    static func expandedWidth(
+        currentWidth: CGFloat,
+        previousExpandedWidth: CGFloat,
+        isSidebarVisible: Bool
+    ) -> CGFloat {
+        if currentWidth < 1 { return previousExpandedWidth }
+        if !isSidebarVisible { return currentWidth }
+        if previousExpandedWidth < 1 { return currentWidth }
+        return previousExpandedWidth
+    }
+}
+
+enum PosterGridLayout {
+    static let horizontalInset: CGFloat = 16
+
+    static func columnCount(expandedWidth: CGFloat) -> Int {
+        let inner = max(expandedWidth - horizontalInset * 2, PosterMetrics.portraitSize.width)
+        let cell = PosterMetrics.portraitSize.width + PosterMetrics.rowSpacing
+        return max(3, Int((inner + PosterMetrics.rowSpacing) / cell))
+    }
+
+    static func columns(for layout: ZelefinSidebarLayout) -> [GridItem] {
+        let width = layout.expandedWidth > 1 ? layout.expandedWidth : max(layout.contentWidth, 390)
+        let count = columnCount(expandedWidth: width)
+        return Array(repeating: GridItem(.flexible(), spacing: PosterMetrics.rowSpacing), count: count)
+    }
+}
+
+private struct ZelefinSidebarLayoutKey: EnvironmentKey {
+    static let defaultValue = ZelefinSidebarLayout.identity
+}
+
+extension EnvironmentValues {
+    var zelefinSidebarLayout: ZelefinSidebarLayout {
+        get { self[ZelefinSidebarLayoutKey.self] }
+        set { self[ZelefinSidebarLayoutKey.self] = newValue }
+    }
+}
+
+extension View {
+    func zelefinSidebarLayout() -> some View {
+        #if os(iOS)
+        modifier(SidebarLayoutModifier())
+        #else
+        self
+        #endif
+    }
+}
+
+#if os(iOS)
+private struct SidebarLayoutModifier: ViewModifier {
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+    @State private var contentWidth: CGFloat = 0
+    @State private var expandedWidth: CGFloat = 0
+
+    private var isSidebarVisible: Bool {
+        tabBarPlacement == .sidebar
+    }
+
+    private var layout: ZelefinSidebarLayout {
+        ZelefinSidebarLayout(
+            scale: SidebarLayoutMetrics.scale(contentWidth: contentWidth, expandedWidth: expandedWidth),
+            contentWidth: contentWidth,
+            expandedWidth: expandedWidth
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.zelefinSidebarLayout, layout)
+            .geometryGroup()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .animation(ZelefinMotion.sidebarChrome, value: layout)
+            .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                updateWidths(width)
+            }
+    }
+
+    private func updateWidths(_ width: CGFloat) {
+        let nextExpanded = SidebarLayoutMetrics.expandedWidth(
+            currentWidth: width,
+            previousExpandedWidth: expandedWidth,
+            isSidebarVisible: isSidebarVisible
+        )
+        let shouldAnimate = expandedWidth > 1 && abs(width - contentWidth) > 2
+        let apply = {
+            contentWidth = width
+            expandedWidth = nextExpanded
+        }
+        if shouldAnimate {
+            withAnimation(ZelefinMotion.sidebarChrome, apply)
+        } else {
+            apply()
+        }
+    }
+}
+#endif
+
+struct FillingPosterCell<Content: View>: View {
+    var aspectRatio: CGFloat = 2 / 3
+    @ViewBuilder var content: (CGSize) -> Content
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(title)
-                .font(.largeTitle.bold())
-                .foregroundStyle(.white)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
-            ProfileMenu(diameter: 45)
+        Color.clear
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .overlay {
+                GeometryReader { geo in
+                    content(geo.size)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                }
+            }
+    }
+}
+
+/// Trailing profile control for root tabs. Apple TV does not show a page title here.
+struct FloatingPageHeader: View {
+    #if os(iOS)
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+    #endif
+
+    private var showsProfile: Bool {
+        #if os(iOS)
+        tabBarPlacement != .sidebar
+        #else
+        true
+        #endif
+    }
+
+    var body: some View {
+        profileRow
+            #if os(iOS)
+            .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
+            #endif
+    }
+
+    @ViewBuilder
+    private var profileRow: some View {
+        if showsProfile {
+            HStack(spacing: 12) {
+                Spacer(minLength: 0)
+                ProfileMenu(diameter: 45)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 10)
+            .transition(.opacity.combined(with: .scale(scale: 0.86)))
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
     }
 }

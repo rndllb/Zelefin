@@ -153,6 +153,24 @@ final class JellyfinLibraryClient: Sendable {
         return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
     }
 
+    func items(inLibraries libraries: [MediaLibrary]) async -> [MediaItem] {
+        await withTaskGroup(of: [MediaItem].self) { group in
+            for library in libraries {
+                group.addTask { (try? await self.items(in: library)) ?? [] }
+            }
+            var merged: [MediaItem] = []
+            var seen = Set<String>()
+            for await batch in group {
+                for item in batch where seen.insert(item.id).inserted {
+                    merged.append(item)
+                }
+            }
+            return merged.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        }
+    }
+
     func item(id: String) async throws -> (MediaItem, BaseItemDto) {
         let dto = try await client.send(Paths.getItem(itemID: id, userID: userID)).value
         guard let item = ItemMapper.mediaItem(from: dto) else {

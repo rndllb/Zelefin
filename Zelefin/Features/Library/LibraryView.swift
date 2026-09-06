@@ -2,6 +2,9 @@ import SwiftUI
 
 struct LibraryView: View {
     @Environment(SessionStore.self) private var session
+    #if os(iOS)
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+    #endif
     @State private var libraries: [MediaLibrary] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -40,8 +43,9 @@ struct LibraryView: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            FloatingPageHeader(title: "Library")
+            FloatingPageHeader()
         }
+        .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         #else
         .navigationTitle("Library")
         #endif
@@ -126,13 +130,14 @@ struct LibraryPreviewSection: View {
 
 struct LibraryItemsView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let library: MediaLibrary
     @State private var items: [MediaItem] = []
     @State private var isLoading = true
 
-    private let columns = [
-        GridItem(.adaptive(minimum: PosterMetrics.portraitSize.width), spacing: PosterMetrics.rowSpacing)
-    ]
+    private var columns: [GridItem] {
+        PosterGridLayout.columns(for: sidebarLayout)
+    }
 
     var body: some View {
         ScrollView {
@@ -144,7 +149,7 @@ struct LibraryItemsView: View {
                         NavigationLink {
                             ItemDetailView(item: item)
                         } label: {
-                            PortraitPoster(
+                            FillingPortraitPoster(
                                 item: item,
                                 imageURL: session.library?.primaryURL(for: item)
                             )

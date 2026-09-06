@@ -64,6 +64,10 @@ enum HomeLayoutPreferences {
         libraries.filter(\.libraryKind.appearsInLibrary)
     }
 
+    static func libraries(_ libraries: [MediaLibrary], matching kind: LibraryKind) -> [MediaLibrary] {
+        libraries.filter { $0.libraryKind == kind }
+    }
+
     static func librarySectionsExcludingCollections(_ sections: [HomeSection]) -> [HomeSection] {
         sections.filter { !$0.isRecentlyAddedCollections }
     }

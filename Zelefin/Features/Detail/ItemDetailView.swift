@@ -6,6 +6,7 @@ import SafariServices
 struct ItemDetailView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.openURL) private var openURL
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let itemID: String
     let focusEpisodeID: String?
 
@@ -56,7 +57,7 @@ struct ItemDetailView: View {
                 } else if let item {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            hero(for: item, width: geo.size.width, height: detailHeroHeight(geo.size))
+                            hero(for: item, width: geo.size.width, height: PosterMetrics.heroHeight(for: geo.size))
 
                             if item.kind == .series, !seasons.isEmpty {
                                 seasonsSection
@@ -88,6 +89,7 @@ struct ItemDetailView: View {
                         .padding(.bottom, 40)
                     }
                     .scrollIndicators(.hidden)
+                    .scrollClipDisabled()
                 } else {
                     ContentUnavailableView("Title Unavailable", systemImage: "film")
                 }
@@ -130,13 +132,8 @@ struct ItemDetailView: View {
         }
     }
 
-    /// Short enough that title + play sit above the tab bar on iPhone.
-    private func detailHeroHeight(_ size: CGSize) -> CGFloat {
-        max(520, min(size.height * 0.7, size.height - 170))
-    }
-
     private func hero(for item: MediaItem, width: CGFloat, height: CGFloat) -> some View {
-        VStack(spacing: 14) {
+        return VStack(spacing: 14) {
             TitleLogo(
                 item: item,
                 maxHeight: 72,
@@ -170,9 +167,10 @@ struct ItemDetailView: View {
         .frame(width: width, height: height, alignment: .bottom)
         .background {
             ZStack {
-                PosterImage(url: session.library?.backdropURL(for: item), aspectRatio: 16 / 9)
-                    .frame(width: width, height: height)
-                    .clipped()
+                HeroArtwork(
+                    url: session.library?.backdropURL(for: item),
+                    size: CGSize(width: width, height: height)
+                )
 
                 LinearGradient(
                     colors: [.black.opacity(0.5), .clear],
@@ -191,10 +189,8 @@ struct ItemDetailView: View {
                     endPoint: .bottom
                 )
             }
-            .frame(width: width, height: height)
-            .clipped()
+            .zelefinHeroBackgroundExtension()
         }
-        .clipped()
     }
 
     private func detailMetadataLine(for item: MediaItem) -> String {
@@ -420,15 +416,15 @@ struct ItemDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .frame(
-                            width: PosterMetrics.episodeCardSize.width,
-                            height: PosterMetrics.episodeCardSize.height
+                            width: PosterMetrics.episodeCardSize.width * sidebarLayout.scale,
+                            height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale
                         )
                         .accessibilityHidden(card.copy != EpisodeCarousel.homeCopy)
                     }
                 }
                 .scrollTargetLayout()
             }
-            .frame(height: PosterMetrics.episodeCardSize.height)
+            .frame(height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale)
             .contentMargins(.horizontal, 16, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledEpisodeID)
@@ -478,7 +474,7 @@ struct ItemDetailView: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .frame(height: PosterMetrics.landscapeSize.height)
+            .frame(height: PosterMetrics.landscapeSize.height * sidebarLayout.scale)
         }
     }
 
@@ -559,7 +555,7 @@ struct ItemDetailView: View {
             }
             .padding(.horizontal, 16)
         }
-        .frame(height: PosterMetrics.portraitSize.height)
+        .frame(height: PosterMetrics.portraitSize.height * sidebarLayout.scale)
     }
 
     private func thumbnailURL(for trailer: TitleTrailer, title: MediaItem) -> URL? {

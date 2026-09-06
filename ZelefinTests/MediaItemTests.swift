@@ -712,6 +712,14 @@ final class HomeLayoutPreferencesTests: XCTestCase {
             HomeLayoutPreferences.libraryTabLibraries(libraries).map(\.id),
             ["m", "s", "tv", "mix"]
         )
+        XCTAssertEqual(
+            HomeLayoutPreferences.libraries(libraries, matching: .movies).map(\.id),
+            ["m"]
+        )
+        XCTAssertEqual(
+            HomeLayoutPreferences.libraries(libraries, matching: .shows).map(\.id),
+            ["s"]
+        )
         XCTAssertTrue(LibraryKind.liveTV.appearsInLibrary)
         XCTAssertTrue(LibraryKind.other.appearsInLibrary)
         XCTAssertFalse(LibraryKind.music.appearsInLibrary)
@@ -1065,5 +1073,156 @@ final class TrailerLinkParserTests: XCTestCase {
 
         let series = WikidataTrailers.sparql(imdbID: nil, tmdbID: 1396, isSeries: true)
         XCTAssertTrue(series?.contains("P4983 \"1396\"") == true)
+    }
+}
+
+final class AppTabTests: XCTestCase {
+    func testOrderedKeepsKnownTabsAndFillsMissing() {
+        XCTAssertEqual(AppTab.ordered(from: "library,movies"), [.library, .movies, .home, .shows])
+        XCTAssertEqual(AppTab.ordered(from: "nope,home"), [.home, .movies, .shows, .library])
+        XCTAssertEqual(AppTab.raw(from: [.shows, .home, .shows]), "shows,home")
+    }
+
+    func testHomeCannotBeHidden() {
+        XCTAssertFalse(AppTab.home.canHide)
+        XCTAssertTrue(AppTab.movies.canHide)
+        XCTAssertEqual(AppTab.library.customizationID, "app.zelefin.tab.library")
+    }
+}
+
+final class SearchChromeMetricsTests: XCTestCase {
+    func testPhoneStaysUnderTheStatusBar() {
+        XCTAssertEqual(
+            SearchChromeMetrics.topInset(
+                statusBarHeight: 59,
+                usesPadTopChrome: false,
+                isSidebarVisible: false
+            ),
+            59
+        )
+    }
+
+    func testPadTabBarLeavesRoomBelowTheFloatingBar() {
+        XCTAssertEqual(
+            SearchChromeMetrics.topInset(
+                statusBarHeight: 24,
+                usesPadTopChrome: true,
+                isSidebarVisible: false
+            ),
+            24 + SearchChromeMetrics.topTabBarClearance
+        )
+    }
+
+    func testPadSidebarMovesSearchIntoTheTabBarSlot() {
+        XCTAssertEqual(
+            SearchChromeMetrics.topInset(
+                statusBarHeight: 24,
+                usesPadTopChrome: true,
+                isSidebarVisible: true
+            ),
+            24
+        )
+    }
+
+    func testPhoneIgnoresSidebarWhenMeasuringChrome() {
+        XCTAssertEqual(
+            SearchChromeMetrics.topInset(
+                statusBarHeight: 59,
+                usesPadTopChrome: false,
+                isSidebarVisible: true
+            ),
+            59
+        )
+    }
+}
+
+final class SearchGenreGridTests: XCTestCase {
+    func testPhoneKeepsThreeColumns() {
+        XCTAssertEqual(
+            SearchGenreGrid.columnCount(gridWidth: 390, isRegularWidth: false, isPortrait: true),
+            3
+        )
+    }
+
+    func testPadPortraitUsesFiveColumns() {
+        XCTAssertEqual(
+            SearchGenreGrid.columnCount(gridWidth: 834, isRegularWidth: true, isPortrait: true),
+            5
+        )
+    }
+
+    func testPadLandscapeUsesSevenColumns() {
+        XCTAssertEqual(
+            SearchGenreGrid.columnCount(gridWidth: 1366, isRegularWidth: true, isPortrait: false),
+            7
+        )
+        XCTAssertEqual(
+            SearchGenreGrid.columnCount(gridWidth: 1194, isRegularWidth: true, isPortrait: false),
+            7
+        )
+        XCTAssertEqual(
+            SearchGenreGrid.columnCount(gridWidth: 500, isRegularWidth: true, isPortrait: false),
+            7
+        )
+    }
+}
+
+final class HeroMetricsTests: XCTestCase {
+    func testHomeAndDetailShareTheSameHeroHeight() {
+        let phone = CGSize(width: 390, height: 844)
+        let pad = CGSize(width: 1024, height: 1366)
+        XCTAssertEqual(PosterMetrics.heroHeight(for: phone), max(680, 844 * 0.82))
+        XCTAssertEqual(PosterMetrics.heroHeight(for: pad), max(680, 1366 * 0.82))
+    }
+}
+
+final class SidebarLayoutMetricsTests: XCTestCase {
+    func testScaleStaysIdentityWhenWidthsMatch() {
+        XCTAssertEqual(SidebarLayoutMetrics.scale(contentWidth: 1366, expandedWidth: 1366), 1)
+        XCTAssertEqual(SidebarLayoutMetrics.scale(contentWidth: 0, expandedWidth: 1366), 1)
+    }
+
+    func testScaleShrinksWhenSidebarTakesWidth() {
+        XCTAssertEqual(
+            SidebarLayoutMetrics.scale(contentWidth: 1046, expandedWidth: 1366),
+            1046 / 1366,
+            accuracy: 0.0001
+        )
+    }
+
+    func testLeadingBleedIsTheSidebarWidth() {
+        let layout = ZelefinSidebarLayout(scale: 1046 / 1366, contentWidth: 1046, expandedWidth: 1366)
+        XCTAssertEqual(layout.leadingBleed, 320, accuracy: 0.0001)
+        XCTAssertEqual(ZelefinSidebarLayout.identity.leadingBleed, 0)
+    }
+
+    func testExpandedWidthFreezesWhileSidebarIsVisible() {
+        XCTAssertEqual(
+            SidebarLayoutMetrics.expandedWidth(
+                currentWidth: 1046,
+                previousExpandedWidth: 1366,
+                isSidebarVisible: true
+            ),
+            1366
+        )
+    }
+
+    func testExpandedWidthFollowsContentWhenSidebarCloses() {
+        XCTAssertEqual(
+            SidebarLayoutMetrics.expandedWidth(
+                currentWidth: 834,
+                previousExpandedWidth: 1366,
+                isSidebarVisible: false
+            ),
+            834
+        )
+    }
+
+    func testGridColumnCountUsesExpandedWidth() {
+        XCTAssertGreaterThan(
+            PosterGridLayout.columnCount(expandedWidth: 1366),
+            PosterGridLayout.columnCount(expandedWidth: 834)
+        )
+        XCTAssertEqual(PosterGridLayout.columnCount(expandedWidth: 100), 3)
     }
 }

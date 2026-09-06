@@ -20,6 +20,18 @@ struct SettingsView: View {
                 Text(footerCopy)
             }
 
+            #if os(iOS)
+            Section {
+                NavigationLink {
+                    TabCustomizationView()
+                } label: {
+                    Label("Tabs", systemImage: "rectangle.stack")
+                }
+            } footer: {
+                Text("Hide or reorder Home, Movies, Shows, and Library. Search stays in the tab bar.")
+            }
+            #endif
+
             Section {
                 HStack {
                     Text("Skip Intro / Outro")

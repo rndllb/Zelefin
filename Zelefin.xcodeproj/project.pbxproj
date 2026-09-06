@@ -21,8 +21,10 @@
 		28C3A4A5337C545359F6B80C /* MediaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF605DE82AE378D8A40E1763 /* MediaModels.swift */; };
 		28C98FA55462B84BCC71ED2A /* AetherEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 8D890F71C8543B7D47D25005 /* AetherEngine */; };
 		29DF0C509FE5F4289D61CAAE /* EpisodeCarousel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1337D502A25D8AA405B0E8A /* EpisodeCarousel.swift */; };
+		2B35899C2515671294D3F0F0 /* CatalogBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553FADF6F3C90EFC2BCED684 /* CatalogBrowseView.swift */; };
 		2D9AF06D9B34FBF16CBD18D3 /* PlaybackTimeFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46842F4BE5C58220DF85053 /* PlaybackTimeFormatting.swift */; };
 		2F0C24304F71488EAABFE598 /* AppleTVChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA634249D6C166F245B90A45 /* AppleTVChrome.swift */; };
+		323A0B8BCBB2EC06BF99EA7C /* AppTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D701163F71B1CB95716F54 /* AppTab.swift */; };
 		3313E963D44272ED07173A02 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34790E1449A8CBE8D327D1E4 /* SettingsView.swift */; };
 		34D27A52A5A555F55CBD3515 /* SearchHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FD723FEAF5DE24252DABD24 /* SearchHistoryStore.swift */; };
 		35BFA5527F1B486A4A0747FA /* HomeLayoutPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8CF0158CA4E96DCC858822 /* HomeLayoutPreferences.swift */; };
@@ -62,6 +64,7 @@
 		B7DB6266F2566087E1FF63D4 /* Licenses in Resources */ = {isa = PBXBuildFile; fileRef = 087ADE8AFAB2900FF978DFD0 /* Licenses */; };
 		B87F2230574F51DB7C008706 /* JellyfinTmdbCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A049A2A3C763D6DBCCD33AF /* JellyfinTmdbCatalog.swift */; };
 		B90B4305A38D0DBC06D62915 /* DirectPlaySubtitleOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 354AF3BEFBAC89F7E6EE1765 /* DirectPlaySubtitleOverlay.swift */; };
+		B91A4EBC1918AD68F1EFEF33 /* TabCustomizationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4FE59017DB61C5773E8D6A /* TabCustomizationView.swift */; };
 		B976FE6BCCD46C9C6F12A30F /* PlaybackHTTPHeaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B24E8FADBBBCD16273C11EE /* PlaybackHTTPHeaders.swift */; };
 		BA129C04F5B720941B9B4518 /* ServerProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC3CEF5FD1587F586B9C4F4C /* ServerProbe.swift */; };
 		BB7A3025A3F0D44AC6476EF0 /* OpenSourceNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13397ED488A80F9812180ED4 /* OpenSourceNotice.swift */; };
@@ -118,6 +121,7 @@
 		35520B035EA3BB6DD34F49EE /* PluginTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginTests.swift; sourceTree = "<group>"; };
 		367E0E143CAAF64A02812E01 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		38A3420636CC744549112CED /* ZelefinApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinApp.swift; sourceTree = "<group>"; };
+		3A4FE59017DB61C5773E8D6A /* TabCustomizationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabCustomizationView.swift; sourceTree = "<group>"; };
 		3A90307D5A735115F2D523BC /* QuickConnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickConnectTests.swift; sourceTree = "<group>"; };
 		3D7753376297B77BE467E0F6 /* JellyfinLibraryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinLibraryClient.swift; sourceTree = "<group>"; };
 		3FD723FEAF5DE24252DABD24 /* SearchHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchHistoryStore.swift; sourceTree = "<group>"; };
@@ -128,6 +132,7 @@
 		50A15815C057CE45878100BC /* Zelefin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zelefin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		52F6473A39AADF9EEFBB2882 /* TickClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickClock.swift; sourceTree = "<group>"; };
 		533892AF69D1B7A279174A72 /* SeerrDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeerrDiscoverView.swift; sourceTree = "<group>"; };
+		553FADF6F3C90EFC2BCED684 /* CatalogBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogBrowseView.swift; sourceTree = "<group>"; };
 		56AA28FBDD57FE579C318883 /* StreamURLBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamURLBuilder.swift; sourceTree = "<group>"; };
 		5A644AA5A3EBA09AB7E7D0C4 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		5BF1D880FC511E84A138A487 /* AccessGatewaySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGatewaySection.swift; sourceTree = "<group>"; };
@@ -137,6 +142,7 @@
 		701A570AFFC8E6919725D4E9 /* ZelefinTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ZelefinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		70570648810229F4C3D58AD9 /* ServerURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerURLTests.swift; sourceTree = "<group>"; };
 		718BE9CE0F1DAEE939B194EB /* JellyfinItemCollections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinItemCollections.swift; sourceTree = "<group>"; };
+		72D701163F71B1CB95716F54 /* AppTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTab.swift; sourceTree = "<group>"; };
 		73413AFEA74159ABE3AB3815 /* AVKitPlaybackChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AVKitPlaybackChrome.swift; sourceTree = "<group>"; };
 		771117D10F521DABAE7167FC /* EpisodeCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpisodeCarouselTests.swift; sourceTree = "<group>"; };
 		7940008AB391DA5EF5BF3770 /* AccessGateway.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGateway.swift; sourceTree = "<group>"; };
@@ -250,6 +256,7 @@
 			children = (
 				5BF1D880FC511E84A138A487 /* AccessGatewaySection.swift */,
 				34790E1449A8CBE8D327D1E4 /* SettingsView.swift */,
+				3A4FE59017DB61C5773E8D6A /* TabCustomizationView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -392,6 +399,7 @@
 		BCA0D0554F29331D44A0A20D /* Library */ = {
 			isa = PBXGroup;
 			children = (
+				553FADF6F3C90EFC2BCED684 /* CatalogBrowseView.swift */,
 				367E0E143CAAF64A02812E01 /* LibraryView.swift */,
 			);
 			path = Library;
@@ -422,6 +430,7 @@
 		CB3860F38CCDB98E3AEA36A1 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				72D701163F71B1CB95716F54 /* AppTab.swift */,
 				DE4E2B90C9DECA3639523A79 /* MainTabView.swift */,
 				457E9B144A6EBE782C3BFB5D /* RootView.swift */,
 			);
@@ -545,8 +554,10 @@
 				D024A4466316494A01DF1001 /* AVKitPlaybackChrome.swift in Sources */,
 				FAEA902B02CC3EE0FCB3A9FC /* AccessGateway.swift in Sources */,
 				59278DC5A4B724C1B9712DAD /* AccessGatewaySection.swift in Sources */,
+				323A0B8BCBB2EC06BF99EA7C /* AppTab.swift in Sources */,
 				2F0C24304F71488EAABFE598 /* AppleTVChrome.swift in Sources */,
 				DB541D3D8049970601FC31CE /* ArtworkURLBuilder.swift in Sources */,
+				2B35899C2515671294D3F0F0 /* CatalogBrowseView.swift in Sources */,
 				BE1B47F1109A3A44A4D7436D /* ConnectBrandMark.swift in Sources */,
 				76C1C02412837F4D637A43EE /* ConnectView.swift in Sources */,
 				24A542EDE832BBC84AF91CF9 /* DeviceIdentity.swift in Sources */,
@@ -602,6 +613,7 @@
 				CB99EF44E406A58BAE1C3BDC /* SnapshotCoding.swift in Sources */,
 				40FA69DBA1FDD94D5400596D /* StreamContainer.swift in Sources */,
 				40D1D42CE546482596FA337F /* StreamURLBuilder.swift in Sources */,
+				B91A4EBC1918AD68F1EFEF33 /* TabCustomizationView.swift in Sources */,
 				4CA57B1DB2BEF0DAB03C84B6 /* TickClock.swift in Sources */,
 				CB918BC23B07B8F6FB49597E /* ZelefinApp.swift in Sources */,
 				794E2EB4A02821A5709F1E05 /* ZelefinError.swift in Sources */,

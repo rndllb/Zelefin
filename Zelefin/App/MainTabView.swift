@@ -3,46 +3,101 @@ import UIKit
 
 struct MainTabView: View {
     @Environment(SessionStore.self) private var session
+    #if os(iOS)
+    @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = TabViewCustomization()
+    @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
+    #endif
 
     var body: some View {
+        tabView
+    }
+
+    private var tabView: some View {
         TabView {
-            Tab("Home", systemImage: "house.fill") {
+            ForEach(visibleTabs) { tab in
+            Tab(tab.title, systemImage: tab.systemImage) {
                 NavigationStack {
-                    HomeView()
+                    tabRoot(tab)
                 }
+                .zelefinSidebarLayout()
             }
-            Tab("Library", systemImage: "rectangle.stack.fill") {
-                NavigationStack {
-                    LibraryView()
-                }
+                #if os(iOS)
+                .customizationID(tab.customizationID)
+                .customizationBehavior(tab.canHide ? .automatic : .reorderable, for: .sidebar, .tabBar)
+                #endif
             }
-            Tab("Search", systemImage: "magnifyingglass") {
+
+            Tab("Search", systemImage: "magnifyingglass", role: .search) {
                 NavigationStack {
                     SearchView()
                 }
+                .zelefinSidebarLayout()
             }
+            #if os(iOS)
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
+            #endif
         }
         #if os(iOS)
+        .tabViewStyle(.sidebarAdaptable)
+        .tabViewCustomization($tabCustomization)
+        .tabViewSidebarBottomBar {
+            ProfileMenu(diameter: 36, showsName: true)
+                .padding(.leading, 20)
+                .padding(.trailing, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         #endif
+        .background(.clear)
+    }
+
+    private var visibleTabs: [AppTab] {
+        #if os(iOS)
+        let ordered = AppTab.ordered(from: tabOrderRaw)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return ordered
+        }
+        return ordered.filter { tab in
+            !tab.canHide || tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
+        }
+        #else
+        AppTab.allCases.map { $0 }
+        #endif
+    }
+
+    @ViewBuilder
+    private func tabRoot(_ tab: AppTab) -> some View {
+        switch tab {
+        case .home:
+            HomeView()
+        case .movies:
+            CatalogBrowseView(title: "Movies", libraryKind: .movies)
+        case .shows:
+            CatalogBrowseView(title: "Shows", libraryKind: .shows)
+        case .library:
+            LibraryView()
+        }
     }
 }
 
 struct ProfileMenu: View {
     @Environment(SessionStore.self) private var session
     var diameter: CGFloat = 45
+    var showsName = false
     @State private var avatar: UIImage?
     @State private var showSettings = false
 
     /// Thin glass outline; photo fills most of the circle.
     private var glassInset: CGFloat { max(3, (diameter * 0.08).rounded()) }
     private var photoDiameter: CGFloat { diameter - glassInset * 2 }
+    private var displayName: String {
+        let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "Account" : name
+    }
 
     var body: some View {
         Menu {
-            if let name = session.session?.userName {
-                Text(name)
-            }
             if let server = session.serverName {
                 Text(server)
             }
@@ -53,21 +108,46 @@ struct ProfileMenu: View {
                 Task { await session.signOut() }
             }
         } label: {
-            avatarContent
-                .frame(width: photoDiameter, height: photoDiameter)
-                .clipShape(Circle())
-                .padding(glassInset)
-                .zelefinLiquidGlassCircle()
+            if showsName {
+                HStack(spacing: 10) {
+                    avatarBadge
+                    Text(displayName)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            } else {
+                avatarBadge
+            }
         }
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
-        .accessibilityLabel("Profile")
-        .navigationDestination(isPresented: $showSettings) {
-            SettingsView()
+        .accessibilityLabel(showsName ? displayName : "Profile")
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                SettingsView()
+                    #if os(iOS)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showSettings = false }
+                        }
+                    }
+                    #endif
+            }
         }
         .task(id: session.avatarURL) {
             await loadAvatar()
         }
+    }
+
+    private var avatarBadge: some View {
+        avatarContent
+            .frame(width: photoDiameter, height: photoDiameter)
+            .clipShape(Circle())
+            .padding(glassInset)
+            .zelefinLiquidGlassCircle()
     }
 
     @ViewBuilder

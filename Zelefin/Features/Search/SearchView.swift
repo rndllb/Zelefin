@@ -7,11 +7,11 @@ struct SearchView: View {
     @State private var term = ""
     @State private var scope: SearchScope = .library
     @FocusState private var searchFieldFocused: Bool
-    @State private var scrollDistance: CGFloat = 0
-    @State private var titleHeight: CGFloat = 56
     @State private var searchChromeHeight: CGFloat = 68
+    #if os(iOS)
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+    #endif
 
-    /// iPad’s top tab bar overlaps the field; iPhone keeps the system top safe area.
     private var usesPadTopChrome: Bool {
         #if os(iOS)
         UIDevice.current.userInterfaceIdiom == .pad
@@ -25,23 +25,24 @@ struct SearchView: View {
             || !term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// iPad’s top tab bar covers the pinned field; hide it while searching or scrolling.
-    private var hidesPadTabBar: Bool {
-        usesPadTopChrome && (isSearchSessionActive || scrollDistance > 10)
+    private var isSidebarVisible: Bool {
+        #if os(iOS)
+        tabBarPlacement == .sidebar
+        #else
+        false
+        #endif
     }
 
-    /// Spacing between the title row and the search field in `SearchTabChrome`.
-    private var titleFieldSpacing: CGFloat { isSearchSessionActive ? 10 : 12 }
-
-    /// Shrink only the title row. The field stays pinned below the top safe area / iPad tab bar.
-    private var headerLift: CGFloat {
-        isSearchSessionActive ? 0 : min(max(0, scrollDistance), titleHeight)
+    private var searchChromeTopInset: CGFloat {
+        SearchChromeMetrics.topInset(
+            statusBarHeight: ScreenInsets.top,
+            usesPadTopChrome: usesPadTopChrome,
+            isSidebarVisible: isSidebarVisible
+        )
     }
 
     private var reservedHeaderHeight: CGFloat {
-        ScreenInsets.top
-            + (isSearchSessionActive ? 0 : titleHeight + titleFieldSpacing)
-            + searchChromeHeight
+        searchChromeTopInset + searchChromeHeight
     }
 
     var body: some View {
@@ -52,7 +53,6 @@ struct SearchView: View {
                 isSearchPresented: isSearchSessionActive,
                 scope: scope,
                 reservedHeaderHeight: reservedHeaderHeight,
-                scrollDistance: $scrollDistance,
                 onDismissKeyboard: {
                     guard searchFieldFocused else { return }
                     dismissSearchKeyboard()
@@ -64,19 +64,19 @@ struct SearchView: View {
                 scope: $scope,
                 searchFieldFocused: $searchFieldFocused,
                 isSearchSessionActive: isSearchSessionActive,
-                showTitle: !isSearchSessionActive,
-                headerLift: headerLift,
-                titleHeight: $titleHeight,
+                showsProfile: !isSidebarVisible,
                 fieldHeight: $searchChromeHeight,
                 onCancel: endSearch
             )
             .frame(maxWidth: .infinity, alignment: .top)
-            .padding(.top, ScreenInsets.top)
+            .padding(.top, searchChromeTopInset)
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .toolbar(hidesPadTabBar ? .hidden : .automatic, for: .tabBar)
         .ignoresSafeArea(edges: .top)
+        .animation(ZelefinMotion.sidebarChrome, value: searchChromeTopInset)
+        .animation(ZelefinMotion.sidebarChrome, value: isSidebarVisible)
+        .animation(.smooth(duration: 0.25), value: isSearchSessionActive)
         .onChange(of: searchFieldFocused) { _, focused in
             if !focused, term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 dismissSearchKeyboard()
@@ -86,7 +86,7 @@ struct SearchView: View {
         VStack(spacing: 12) {
             SearchScopeBar(scope: $scope)
                 .padding(.horizontal, 16)
-            SearchPage(term: $term, isSearchPresented: !term.isEmpty, scope: scope, reservedHeaderHeight: 0, scrollDistance: .constant(0))
+            SearchPage(term: $term, isSearchPresented: !term.isEmpty, scope: scope, reservedHeaderHeight: 0)
         }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Search")
@@ -113,9 +113,7 @@ private struct SearchTabChrome: View {
     @Binding var scope: SearchScope
     @FocusState.Binding var searchFieldFocused: Bool
     var isSearchSessionActive: Bool
-    var showTitle: Bool
-    var headerLift: CGFloat
-    @Binding var titleHeight: CGFloat
+    var showsProfile: Bool
     @Binding var fieldHeight: CGFloat
     var onCancel: () -> Void
 
@@ -123,94 +121,80 @@ private struct SearchTabChrome: View {
         UIDevice.current.userInterfaceIdiom == .pad || searchFieldFocused
     }
 
-    private var titleSlotHeight: CGFloat {
-        guard showTitle else { return 0 }
-        return max(0, titleHeight - headerLift)
-    }
-
     var body: some View {
-        VStack(spacing: titleSlotHeight > 8 ? 12 : 0) {
-            FloatingPageHeader(title: "Search")
-                .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.height
-                } action: { height in
-                    if height > 1 { titleHeight = height }
-                }
-                .frame(height: titleSlotHeight, alignment: .bottom)
-                .clipped()
-                .opacity(titleSlotHeight > 4 ? 1 : 0)
-                .allowsHitTesting(titleSlotHeight > 8)
-                .accessibilityHidden(titleSlotHeight <= 8)
-
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.55))
-                        TextField(
-                            "",
-                            text: $term,
-                            prompt: Text(scope.searchPrompt).foregroundStyle(.white.opacity(0.45))
-                        )
-                        .focused($searchFieldFocused)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.search)
-                        .foregroundStyle(.white)
-                        .tint(.white)
-                        if !term.isEmpty {
-                            Button {
-                                term = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.white.opacity(0.45))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Clear")
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .zelefinLiquidGlassCapsule()
-
-                    if isSearchSessionActive {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                    TextField(
+                        "",
+                        text: $term,
+                        prompt: Text(scope.searchPrompt).foregroundStyle(.white.opacity(0.45))
+                    )
+                    .focused($searchFieldFocused)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .foregroundStyle(.white)
+                    .tint(.white)
+                    if !term.isEmpty {
                         Button {
                             term = ""
-                            searchFieldFocused = false
-                            onCancel()
                         } label: {
-                            Image(systemName: "xmark")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.7))
-                                .frame(width: 46, height: 46)
-                                .contentShape(Circle())
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.white.opacity(0.45))
                         }
                         .buttonStyle(.plain)
-                        .zelefinLiquidGlassCircle()
-                        .zIndex(1)
-                        .accessibilityLabel("Cancel search")
-                        .transition(.opacity.combined(with: .scale(scale: 0.6)))
+                        .accessibilityLabel("Clear")
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .zelefinLiquidGlassCapsule()
 
-                if showsScopeBar {
-                    SearchScopeBar(scope: $scope)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                if isSearchSessionActive {
+                    Button {
+                        term = ""
+                        searchFieldFocused = false
+                        onCancel()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .frame(width: 46, height: 46)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .zelefinLiquidGlassCircle()
+                    .zIndex(1)
+                    .accessibilityLabel("Cancel search")
+                    .transition(.opacity.combined(with: .scale(scale: 0.6)))
+                }
+
+                if showsProfile {
+                    ProfileMenu(diameter: 45)
+                        .transition(.opacity.combined(with: .scale(scale: 0.86)))
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, isSearchSessionActive ? 8 : 0)
-            .padding(.bottom, showsScopeBar ? 4 : 12)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height
-            } action: { height in
-                fieldHeight = height
+
+            if showsScopeBar {
+                SearchScopeBar(scope: $scope)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, isSearchSessionActive ? 8 : 0)
+        .padding(.bottom, showsScopeBar ? 4 : 12)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            fieldHeight = height
         }
         .animation(.smooth(duration: 0.25), value: isSearchSessionActive)
         .animation(.easeInOut(duration: 0.22), value: searchFieldFocused)
+        .animation(ZelefinMotion.sidebarChrome, value: showsProfile)
     }
 }
 #endif
@@ -251,6 +235,22 @@ private struct SearchScopeBar: View {
     }
 }
 
+enum SearchChromeMetrics {
+    /// Space the iPad floating top tab bar occupies below the status bar.
+    static let topTabBarClearance: CGFloat = 62
+
+    static func topInset(
+        statusBarHeight: CGFloat,
+        usesPadTopChrome: Bool,
+        isSidebarVisible: Bool
+    ) -> CGFloat {
+        guard usesPadTopChrome, !isSidebarVisible else {
+            return statusBarHeight
+        }
+        return statusBarHeight + topTabBarClearance
+    }
+}
+
 enum SearchScope: String, CaseIterable, Identifiable, Hashable, Sendable {
     case library
     case discover
@@ -272,13 +272,69 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 }
 
+enum SearchGenreGrid {
+    static let spacing: CGFloat = 12
+    static let horizontalInset: CGFloat = 36
+    static let cardScale: CGFloat = 0.92
+
+    static func columnCount(gridWidth _: CGFloat, isRegularWidth: Bool, isPortrait: Bool) -> Int {
+        if !isRegularWidth { return 3 }
+        if isPortrait { return 5 }
+        return 7
+    }
+
+    /// Window orientation, not content width — opening the sidebar must not flip 7 columns to 5.
+    @MainActor
+    static func isWindowPortrait() -> Bool? {
+        #if os(iOS)
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
+        switch scene?.interfaceOrientation {
+        case .portrait, .portraitUpsideDown:
+            return true
+        case .landscapeLeft, .landscapeRight:
+            return false
+        default:
+            return nil
+        }
+        #else
+        return nil
+        #endif
+    }
+}
+
+private struct SearchGenreTile: View {
+    @Environment(SessionStore.self) private var session
+    let genre: MediaItem
+    var compact = false
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(1 / 1.52, contentMode: .fit)
+            .overlay {
+                GeometryReader { geo in
+                    let width = floor(geo.size.width * SearchGenreGrid.cardScale)
+                    let height = floor(geo.size.height * SearchGenreGrid.cardScale)
+                    LabeledPortraitCard(
+                        title: genre.name,
+                        imageURL: session.library?.artworkURL(for: genre, style: .labeledPortrait),
+                        washColor: LabeledPortraitCard.genreWash(for: genre.name),
+                        width: width,
+                        height: height,
+                        cornerRadius: compact ? 10 : 14
+                    )
+                    .frame(width: geo.size.width, height: geo.size.height)
+                }
+            }
+    }
+}
+
 private struct SearchPage: View {
     @Environment(SessionStore.self) private var session
     @Binding var term: String
     var isSearchPresented: Bool
     var scope: SearchScope
     var reservedHeaderHeight: CGFloat
-    @Binding var scrollDistance: CGFloat
     var onDismissKeyboard: (() -> Void)? = nil
 
     @State private var results: [MediaItem] = []
@@ -292,7 +348,8 @@ private struct SearchPage: View {
     @State private var discoverError: String?
     @State private var playbackPlan: PlaybackPlan?
     @State private var playbackError: String?
-    @State private var gridWidth: CGFloat = 390
+    @State private var scrollDistance: CGFloat = 0
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var trimmedTerm: String {
         term.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -302,16 +359,16 @@ private struct SearchPage: View {
         isSearchPresented || !trimmedTerm.isEmpty
     }
 
-    private var genreCardSize: CGSize {
-        let columns: CGFloat = 3
-        let spacing: CGFloat = 10
-        let horizontal: CGFloat = 32
-        let width = floor((gridWidth - horizontal - spacing * (columns - 1)) / columns)
-        return CGSize(width: max(96, width), height: floor(max(96, width) * 1.52))
+    private var genreColumnCount: Int {
+        SearchGenreGrid.columnCount(
+            gridWidth: 0,
+            isRegularWidth: sizeClass == .regular,
+            isPortrait: SearchGenreGrid.isWindowPortrait() ?? (sizeClass != .regular)
+        )
     }
 
     private var genreColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+        Array(repeating: GridItem(.flexible(), spacing: SearchGenreGrid.spacing), count: genreColumnCount)
     }
 
     var body: some View {
@@ -320,6 +377,7 @@ private struct SearchPage: View {
                 Color.clear
                     .frame(height: reservedHeaderHeight)
                     .accessibilityHidden(true)
+                    .animation(ZelefinMotion.sidebarChrome, value: reservedHeaderHeight)
                 Group {
                     if scope == .discover {
                         if PluginSettings.isSeerrConfigured {
@@ -360,11 +418,6 @@ private struct SearchPage: View {
             TapGesture().onEnded { onDismissKeyboard?() }
         )
         #endif
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            gridWidth = width
-        }
         .task {
             await loadGenres()
         }
@@ -492,25 +545,19 @@ private struct SearchPage: View {
     }
 
     private var genreGrid: some View {
-        LazyVGrid(columns: genreColumns, spacing: 10) {
+        LazyVGrid(columns: genreColumns, spacing: SearchGenreGrid.spacing) {
             ForEach(genres) { genre in
                 NavigationLink {
                     CatalogGridView(title: genre.name, query: .genre(genre.id))
                 } label: {
-                    LabeledPortraitCard(
-                        title: genre.name,
-                        imageURL: session.library?.artworkURL(for: genre, style: .labeledPortrait),
-                        washColor: LabeledPortraitCard.genreWash(for: genre.name),
-                        width: genreCardSize.width,
-                        height: genreCardSize.height,
-                        cornerRadius: 14
-                    )
+                    SearchGenreTile(genre: genre, compact: genreColumnCount >= 5)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, SearchGenreGrid.horizontalInset / 2)
         .padding(.top, 8)
+        .geometryGroup()
     }
 
     private func searchRow(_ item: MediaItem, isRecent: Bool) -> some View {

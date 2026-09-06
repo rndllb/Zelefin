@@ -4,6 +4,7 @@ struct SeerrDiscoverHomeView: View {
     @Binding var home: SeerrDiscoverHome
     var isLoading: Bool
     var onSelect: (SeerrTitle) -> Void
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -83,7 +84,7 @@ struct SeerrDiscoverHomeView: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .frame(width: PosterMetrics.portraitSize.width, alignment: .leading)
+                            .frame(width: PosterMetrics.portraitSize.width * sidebarLayout.scale, alignment: .leading)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -120,6 +121,7 @@ struct SeerrDiscoverHomeView: View {
 struct SeerrDiscoverGridView: View {
     let query: SeerrDiscoverQuery
     var onRequested: (SeerrTitle) -> Void = { _ in }
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
     @State private var titles: [SeerrTitle] = []
     @State private var page = 1
@@ -128,9 +130,9 @@ struct SeerrDiscoverGridView: View {
     @State private var errorMessage: String?
     @State private var requestTitle: SeerrTitle?
 
-    private let columns = [
-        GridItem(.adaptive(minimum: PosterMetrics.portraitSize.width), spacing: PosterMetrics.rowSpacing)
-    ]
+    private var columns: [GridItem] {
+        PosterGridLayout.columns(for: sidebarLayout)
+    }
 
     var body: some View {
         ScrollView {
@@ -152,7 +154,9 @@ struct SeerrDiscoverGridView: View {
                         Button {
                             requestTitle = title
                         } label: {
-                            SeerrPoster(title: title)
+                            FillingPosterCell { size in
+                                SeerrPoster(title: title, size: size)
+                            }
                         }
                         .buttonStyle(.plain)
                         .onAppear {
@@ -217,7 +221,13 @@ struct SeerrDiscoverGridView: View {
 
 private struct SeerrPoster: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: SeerrTitle
+    var size: CGSize? = nil
+
+    private var fittedSize: CGSize {
+        size ?? PosterMetrics.portraitSize.scaled(by: sidebarLayout.scale)
+    }
 
     private var isInJellyfin: Bool {
         title.isInJellyfin(catalog: session.tmdbCatalog)
@@ -225,7 +235,7 @@ private struct SeerrPoster: View {
 
     var body: some View {
         PosterImage(url: title.posterURL)
-            .frame(width: PosterMetrics.portraitSize.width, height: PosterMetrics.portraitSize.height)
+            .frame(width: fittedSize.width, height: fittedSize.height)
             .overlay(alignment: .topLeading) {
                 SeerrKindMark(kind: title.kind)
                     .padding(6)
@@ -246,12 +256,12 @@ private struct SeerrPoster: View {
                         .padding(.vertical, 5)
                         .background(Color.white, in: Capsule(style: .continuous))
                         .shadow(color: .black.opacity(0.28), radius: 3, y: 1)
-                        .frame(maxWidth: PosterMetrics.portraitSize.width - 12, alignment: .leading)
+                        .frame(maxWidth: max(0, fittedSize.width - 12), alignment: .leading)
                         .padding(6)
                 }
             }
             .posterCard()
-            .frame(width: PosterMetrics.portraitSize.width, alignment: .leading)
+            .frame(width: fittedSize.width, alignment: .leading)
             .accessibilityLabel(accessibilityName)
     }
 
@@ -294,12 +304,16 @@ struct JellyfinLibraryMark: View {
 
 private struct SeerrCompanyCard: View {
     let company: SeerrCompany
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
     /// Grey used by TMDB’s studio/network duotone (`#2e2e2e`).
     private static let logoBackdrop = Color(red: 46 / 255, green: 46 / 255, blue: 46 / 255)
 
     private var size: CGSize {
-        CGSize(width: PosterMetrics.landscapeSize.width * 0.62, height: PosterMetrics.landscapeSize.height * 0.72)
+        CGSize(
+            width: PosterMetrics.landscapeSize.width * 0.62 * sidebarLayout.scale,
+            height: PosterMetrics.landscapeSize.height * 0.72 * sidebarLayout.scale
+        )
     }
 
     var body: some View {

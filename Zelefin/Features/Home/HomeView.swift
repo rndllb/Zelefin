@@ -2,6 +2,9 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(SessionStore.self) private var session
+    #if os(iOS)
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+    #endif
 
     var body: some View {
         GeometryReader { geo in
@@ -27,10 +30,14 @@ struct HomeView: View {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 28) {
                                 if !session.homeLayout.featured.isEmpty {
-                                    FeaturedHero(items: session.homeLayout.featured) { item in
+                                    let heroSize = CGSize(
+                                        width: geo.size.width,
+                                        height: PosterMetrics.heroHeight(for: geo.size)
+                                    )
+                                    FeaturedHero(items: session.homeLayout.featured, size: heroSize) { item in
                                         session.library?.backdropURL(for: item)
                                     }
-                                    .frame(height: PosterMetrics.heroHeight(for: geo.size))
+                                    .frame(width: heroSize.width, height: heroSize.height)
                                 }
 
                                 ForEach(session.homeLayout.sections) { section in
@@ -40,12 +47,16 @@ struct HomeView: View {
                             .padding(.bottom, 32)
                         }
                         .refreshable { await session.refreshHome() }
+                        .scrollClipDisabled()
                     }
                 }
 
                 #if os(iOS)
-                FloatingPageHeader(title: "Home")
-                    .padding(.top, ScreenInsets.top)
+                if tabBarPlacement != .sidebar {
+                    FloatingPageHeader()
+                        .padding(.top, ScreenInsets.top)
+                        .transition(.opacity)
+                }
                 #endif
             }
         }
@@ -53,6 +64,7 @@ struct HomeView: View {
         #if os(iOS)
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
+        .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         #else
         .navigationTitle("Home")
         .toolbar {
@@ -66,6 +78,7 @@ struct HomeView: View {
 
 struct MediaRow: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let section: HomeSection
     @State private var playbackPlan: PlaybackPlan?
     @State private var playbackError: String?
@@ -211,11 +224,12 @@ struct MediaRow: View {
     }
 
     private func cardWidth(for style: HomeSection.Style) -> CGFloat {
+        let scale = sidebarLayout.scale
         switch style {
         case .landscape, .replayLandscape:
-            PosterMetrics.landscapeSize.width
+            return PosterMetrics.landscapeSize.width * scale
         case .portrait, .ranked, .labeledPortrait:
-            PosterMetrics.portraitSize.width
+            return PosterMetrics.portraitSize.width * scale
         }
     }
 
@@ -253,11 +267,12 @@ struct MediaRow: View {
 
 struct SectionGridView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let section: HomeSection
 
-    private let columns = [
-        GridItem(.adaptive(minimum: PosterMetrics.portraitSize.width), spacing: PosterMetrics.rowSpacing)
-    ]
+    private var columns: [GridItem] {
+        PosterGridLayout.columns(for: sidebarLayout)
+    }
 
     var body: some View {
         ScrollView {
@@ -270,7 +285,7 @@ struct SectionGridView: View {
                             ItemDetailView(item: item)
                         }
                     } label: {
-                        PortraitPoster(
+                        FillingPortraitPoster(
                             item: item,
                             imageURL: session.library?.primaryURL(for: item)
                         )
@@ -446,11 +461,12 @@ private struct ContinueWatchingRow: View {
 
 struct CatalogCardGridView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let section: HomeSection
 
-    private let columns = [
-        GridItem(.adaptive(minimum: PosterMetrics.portraitSize.width), spacing: PosterMetrics.rowSpacing)
-    ]
+    private var columns: [GridItem] {
+        PosterGridLayout.columns(for: sidebarLayout)
+    }
 
     var body: some View {
         ScrollView {
@@ -463,14 +479,17 @@ struct CatalogCardGridView: View {
                             CatalogGridView(title: item.name, query: .parent(item.id))
                         }
                     } label: {
-                        LabeledPortraitCard(
-                            title: item.browsingCardTitle,
-                            imageURL: session.library?.artworkURL(for: item, style: .labeledPortrait),
-                            washColor: item.kind == .genre ? LabeledPortraitCard.genreWash(for: item.name) : nil
-                        )
+                        FillingPosterCell { size in
+                            LabeledPortraitCard(
+                                title: item.browsingCardTitle,
+                                imageURL: session.library?.artworkURL(for: item, style: .labeledPortrait),
+                                washColor: item.kind == .genre ? LabeledPortraitCard.genreWash(for: item.name) : nil,
+                                width: size.width,
+                                height: size.height
+                            )
+                        }
                     }
                     .buttonStyle(.plain)
-                    .frame(width: PosterMetrics.portraitSize.width)
                 }
             }
             .padding(16)
@@ -485,6 +504,7 @@ struct CatalogCardGridView: View {
 
 struct CatalogGridView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: String
     let query: Query
 
@@ -497,9 +517,9 @@ struct CatalogGridView: View {
     @State private var items: [MediaItem] = []
     @State private var isLoading = true
 
-    private let columns = [
-        GridItem(.adaptive(minimum: PosterMetrics.portraitSize.width), spacing: PosterMetrics.rowSpacing)
-    ]
+    private var columns: [GridItem] {
+        PosterGridLayout.columns(for: sidebarLayout)
+    }
 
     var body: some View {
         ScrollView {
@@ -525,7 +545,7 @@ struct CatalogGridView: View {
                                 ItemDetailView(item: item)
                             }
                         } label: {
-                            PortraitPoster(
+                            FillingPortraitPoster(
                                 item: item,
                                 imageURL: session.library?.primaryURL(for: item)
                             )
