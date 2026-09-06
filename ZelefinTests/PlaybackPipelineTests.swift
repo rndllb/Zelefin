@@ -2,12 +2,12 @@ import XCTest
 @testable import Zelefin
 
 final class PlaybackPipelineTests: XCTestCase {
-    func testMP4DirectPlayUsesAppleNative() {
+    func testMP4DirectPlayUsesDirectDecode() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.mp4?static=true")
         guard let url else {
             return XCTFail("URL")
         }
-        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .appleNative)
+        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .directDecode)
     }
 
     func testHLSRemuxUsesAppleNative() {
@@ -27,6 +27,32 @@ final class PlaybackPipelineTests: XCTestCase {
         XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .directDecode)
     }
 
+    func testMPEG4InMP4UsesDirectDecode() {
+        let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.mp4?static=true")
+        guard let url else {
+            return XCTFail("URL")
+        }
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, container: "mp4", videoCodec: "mpeg4"),
+            .directDecode
+        )
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, container: "mp4", videoCodec: "mpeg2video"),
+            .directDecode
+        )
+    }
+
+    func testH264InMP4UsesDirectDecode() {
+        let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.mp4?static=true")
+        guard let url else {
+            return XCTFail("URL")
+        }
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, container: "mp4", videoCodec: "h264"),
+            .directDecode
+        )
+    }
+
     func testMPEGTSDirectPlayUsesDirectDecode() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.ts?static=true")
         guard let url else {
@@ -37,6 +63,12 @@ final class PlaybackPipelineTests: XCTestCase {
 }
 
 final class DirectPlayEngineTests: XCTestCase {
+    func testAudioOnlyProbeRetriesThroughTheHTTPURL() {
+        XCTAssertTrue(DirectPlayLoadPolicy.shouldReloadAsURL(isAudioOnlyBackend: true, expectsVideo: true))
+        XCTAssertFalse(DirectPlayLoadPolicy.shouldReloadAsURL(isAudioOnlyBackend: false, expectsVideo: true))
+        XCTAssertFalse(DirectPlayLoadPolicy.shouldReloadAsURL(isAudioOnlyBackend: true, expectsVideo: false))
+    }
+
     func testMKVDirectPlayUsesSampleBufferDecode() {
         XCTAssertTrue(DirectPlayLoadOptions.usesSampleBufferDecode(for: .directDecode))
         XCTAssertFalse(DirectPlayLoadOptions.usesSampleBufferDecode(for: .appleNative))
@@ -164,19 +196,34 @@ final class StreamContainerTests: XCTestCase {
         XCTAssertEqual(StreamContainer.pathExtension(fromContainer: "mpegts,ts"), "ts")
     }
 
-    func testMissingContainerDefaultsToMP4() {
-        XCTAssertEqual(StreamContainer.pathExtension(fromContainer: nil), "mp4")
+    func testMPEGProgramStreamMapsToMPG() {
+        XCTAssertEqual(StreamContainer.pathExtension(fromContainer: "mpegps"), "mpg")
+        XCTAssertEqual(StreamContainer.pathExtension(fromContainer: "mpg"), "mpg")
+    }
+
+    func testMissingContainerDefaultsToMKVForDirectPlay() {
+        XCTAssertNil(StreamContainer.pathExtension(fromContainer: nil))
+        XCTAssertEqual(StreamContainer.pathExtension(container: nil, path: nil), "mkv")
+    }
+
+    func testContainerFallsBackToFilePath() {
+        XCTAssertEqual(
+            StreamContainer.pathExtension(container: nil, path: "/mnt/media/Futurama/S01E01.mkv"),
+            "mkv"
+        )
     }
 
     func testFormatHintMapsExtensionsForDirectPlay() {
         let mkv = URL(string: "https://jellyfin.example.com/Videos/1/stream.mkv")
         let ts = URL(string: "https://jellyfin.example.com/Videos/1/stream.ts")
+        let mpg = URL(string: "https://jellyfin.example.com/Videos/1/stream.mpg")
         let bare = URL(string: "https://jellyfin.example.com/Videos/1/stream")
-        guard let mkv, let ts, let bare else {
+        guard let mkv, let ts, let mpg, let bare else {
             return XCTFail("URL")
         }
         XCTAssertEqual(StreamContainer.formatHint(from: mkv), "matroska")
         XCTAssertEqual(StreamContainer.formatHint(from: ts), "mpegts")
+        XCTAssertEqual(StreamContainer.formatHint(from: mpg), "mpeg")
         XCTAssertNil(StreamContainer.formatHint(from: bare))
     }
 }
@@ -185,10 +232,44 @@ final class DeviceProfileTests: XCTestCase {
     func testDirectPlayAdvertisesMatroska() {
         XCTAssertTrue(AVDeviceProfileFactory.videoDirectPlayContainers.contains("mkv"))
         XCTAssertTrue(AVDeviceProfileFactory.videoDirectPlayContainers.contains("matroska"))
+        XCTAssertTrue(AVDeviceProfileFactory.videoDirectPlayContainers.contains("mpegps"))
         XCTAssertTrue(AVDeviceProfileFactory.videoDirectPlayCodecs.contains("hevc"))
+        XCTAssertTrue(AVDeviceProfileFactory.videoDirectPlayCodecs.contains("mpeg2video"))
         XCTAssertTrue(AVDeviceProfileFactory.audioDirectPlayCodecs.contains("eac3"))
         XCTAssertTrue(AVDeviceProfileFactory.audioDirectPlayCodecs.contains("dts"))
         XCTAssertTrue(AVDeviceProfileFactory.audioDirectPlayCodecs.contains("truehd"))
+    }
+}
+
+final class PlaybackMethodTests: XCTestCase {
+    func testDirectPlayWinsWhenJellyfinAlsoReturnsATranscodeURL() {
+        XCTAssertEqual(
+            ItemMapper.playbackMethod(
+                supportsDirectPlay: true,
+                supportsDirectStream: true,
+                transcodingURL: "/Videos/1/master.m3u8"
+            ),
+            .directPlay
+        )
+    }
+
+    func testTranscodeURLIsUsedWhenDirectPlayIsNotSupported() {
+        XCTAssertEqual(
+            ItemMapper.playbackMethod(
+                supportsDirectPlay: false,
+                supportsDirectStream: true,
+                transcodingURL: "/Videos/1/master.m3u8"
+            ),
+            .remux
+        )
+        XCTAssertEqual(
+            ItemMapper.playbackMethod(
+                supportsDirectPlay: false,
+                supportsDirectStream: false,
+                transcodingURL: "/Videos/1/master.m3u8"
+            ),
+            .transcode
+        )
     }
 }
 

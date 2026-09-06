@@ -5,7 +5,8 @@ struct StreamURLBuilder: Sendable {
     let client: JellyfinClient
 
     func url(itemID: String, source: MediaSourceInfo) throws -> URL {
-        if let transcodingPath = source.transcodingURL {
+        let method = ItemMapper.playbackMethod(from: source)
+        if method != .directPlay, let transcodingPath = source.transcodingURL {
             guard let url = ServerURL.resolve(base: client.configuration.url, path: transcodingPath, token: client.accessToken) else {
                 throw ZelefinError.missingStreamURL
             }

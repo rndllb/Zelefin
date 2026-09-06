@@ -8,6 +8,7 @@ struct SavedSession: Codable, Equatable, Sendable {
     var userName: String
     var deviceID: String
     var userImageTag: String?
+    var serverVersion: String?
 }
 
 /// Persists the signed-in session. Keychain is preferred; UserDefaults is used when

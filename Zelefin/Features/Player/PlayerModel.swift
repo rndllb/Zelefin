@@ -46,6 +46,7 @@ final class PlayerModel {
     private var lastTrustedTime: TimeInterval = 0
     private var engineIsBuffering = false
     private var engineIsSeeking = false
+    private var isSurfaceBound = false
     #if os(iOS) || os(tvOS)
     private let pictureInPicture = DirectPlayPictureInPicture()
     #endif
@@ -90,6 +91,7 @@ final class PlayerModel {
                 observeNativeTime()
                 observeNativeEnd()
             case .directDecode:
+                await waitUntilSurfaceReady()
                 try await startDirectPlay()
             }
             await reporter?.started(at: currentSeconds)
@@ -254,12 +256,21 @@ final class PlayerModel {
         }
     }
 
+    func noteSurfaceReady() {
+        isSurfaceBound = true
+    }
+
+    private func waitUntilSurfaceReady() async {
+        let deadline = Date().addingTimeInterval(DirectPlaySurfaceGate.waitBudget)
+        while !isSurfaceBound, Date() < deadline {
+            try? await Task.sleep(nanoseconds: DirectPlaySurfaceGate.pollNanoseconds)
+        }
+    }
+
     private func startDirectPlay() async throws {
         guard let created = engine else {
             throw ZelefinError.playbackEngineUnavailable
         }
-        // Bind the sample-buffer surface before decode starts so the first frames land on screen.
-        await Task.yield()
 
         let url = plan.streamURL
         var headers = PlaybackHTTPHeaders.fields(for: url)
@@ -278,10 +289,15 @@ final class PlayerModel {
             return reader
         }.value
         let options = DirectPlayLoadOptions.make(for: plan)
-        try await created.load(
-            source: .custom(reader, formatHint: StreamContainer.formatHint(from: url)),
-            options: options
-        )
+        // Custom IO has no filename. A forced libavformat name that does not match the
+        // bytes makes the probe miss the video stream; Aether then plays audio only.
+        try await created.load(source: .custom(reader, formatHint: nil), options: options)
+        if DirectPlayLoadPolicy.shouldReloadAsURL(
+            isAudioOnlyBackend: created.playbackBackend == .audio,
+            expectsVideo: true
+        ) {
+            try await created.load(source: .url(url), options: options)
+        }
         hasFirstFrame = created.hasFirstFrameReadyForDisplay
         updatePictureSize(from: created)
     }

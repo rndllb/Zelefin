@@ -185,6 +185,54 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     var artworkItemID: String { imageItemID ?? id }
 
+    /// Series id to open instead of a standalone episode or season page.
+    var seriesDetailItemID: String? {
+        guard kind == .episode || kind == .season else { return nil }
+        guard let seriesID, !seriesID.isEmpty else { return nil }
+        return seriesID
+    }
+
+    /// Placeholder series item so the show hero paints before `getItem` returns.
+    func seriesShowcasePreview() -> MediaItem {
+        let showID = seriesDetailItemID ?? id
+        return MediaItem(
+            id: showID,
+            name: seriesName ?? name,
+            kind: .series,
+            overview: nil,
+            year: year,
+            runtime: nil,
+            officialRating: officialRating,
+            genres: genres,
+            seriesName: seriesName,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: unplayedCount,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: seriesThumbImageTag,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: parentBackdropItemID ?? showID,
+            parentThumbItemID: parentThumbItemID ?? showID,
+            parentThumbImageTag: parentThumbImageTag ?? seriesThumbImageTag,
+            parentLogoItemID: parentLogoItemID ?? showID,
+            parentLogoImageTag: parentLogoImageTag,
+            seriesThumbImageTag: seriesThumbImageTag,
+            seriesID: showID,
+            imageItemID: parentBackdropItemID ?? showID,
+            queueKind: queueKind,
+            videoRange: .sdr,
+            audioFormat: .unknown,
+            criticRating: criticRating,
+            videoResolution: .unknown,
+            hasClosedCaptions: false,
+            hasAudioDescription: false
+        )
+    }
+
     var hasGenreCoverArt: Bool {
         !backdropImageTags.isEmpty
             || backdropImageTag != nil
@@ -260,6 +308,11 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         progress > 0.02 && progress < 0.98
     }
 
+    /// Finished in Jellyfin, or played through to the end when `Played` was not set.
+    var isWatched: Bool {
+        isPlayed || progress >= 0.98
+    }
+
     var kindLabel: String {
         switch kind {
         case .movie: "Movie"
@@ -268,6 +321,55 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         case .genre: "Genre"
         case .unknown: "Title"
         }
+    }
+
+    /// Jellyfin seasons store the number in `IndexNumber`; older snapshots may still have it on `episodeIndex`.
+    var resolvedSeasonNumber: Int? {
+        if kind == .season {
+            return seasonIndex ?? episodeIndex
+        }
+        return seasonIndex
+    }
+
+    var seasonMenuTitle: String {
+        guard let number = resolvedSeasonNumber else { return name }
+        if number == 0 { return "Specials" }
+        return "Season \(number)"
+    }
+
+    var episodeOrdinalLabel: String? {
+        guard kind == .episode, let episodeIndex else { return nil }
+        return "EPISODE \(episodeIndex)"
+    }
+
+    static func orderedSeasons(_ items: [MediaItem]) -> [MediaItem] {
+        items.sorted { lhs, rhs in
+            lhs.seasonSortKey < rhs.seasonSortKey
+        }
+    }
+
+    static func orderedEpisodes(_ items: [MediaItem]) -> [MediaItem] {
+        items.sorted { ($0.episodeIndex ?? Int.max) < ($1.episodeIndex ?? Int.max) }
+    }
+
+    static func orderedShowEpisodes(_ episodes: [MediaItem], seasons: [MediaItem]) -> [MediaItem] {
+        let rank = Dictionary(
+            uniqueKeysWithValues: seasons.enumerated().compactMap { index, season -> (Int, Int)? in
+                season.resolvedSeasonNumber.map { ($0, index) }
+            }
+        )
+        return episodes.sorted { lhs, rhs in
+            let left = rank[lhs.seasonIndex ?? Int.min] ?? Int.max
+            let right = rank[rhs.seasonIndex ?? Int.min] ?? Int.max
+            if left != right { return left < right }
+            return (lhs.episodeIndex ?? Int.max) < (rhs.episodeIndex ?? Int.max)
+        }
+    }
+
+    private var seasonSortKey: Int {
+        let number = resolvedSeasonNumber ?? Int.max
+        if number == 0 { return Int.max - 1 }
+        return number
     }
 
     var heroMetadataLine: String {
@@ -472,6 +574,8 @@ struct PlaybackPlan: Hashable, Sendable {
     let playSessionID: String?
     let mediaSourceID: String?
     let method: PlaybackMethod
+    let container: String
+    let videoCodec: String?
     let videoRange: VideoRange
     let audioFormat: AudioFormat
     let startTime: TimeInterval

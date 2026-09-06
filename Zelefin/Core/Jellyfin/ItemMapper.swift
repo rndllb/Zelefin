@@ -14,6 +14,11 @@ enum ItemMapper {
         .primaryImageAspectRatio
     ]
 
+    static let episodeFields: [ItemFields] = [
+        .overview,
+        .primaryImageAspectRatio
+    ]
+
     static let detailFields: [ItemFields] = [
         .mediaStreams,
         .mediaSources,
@@ -92,8 +97,8 @@ enum ItemMapper {
             officialRating: dto.officialRating,
             genres: dto.genres ?? [],
             seriesName: dto.seriesName,
-            seasonIndex: dto.parentIndexNumber,
-            episodeIndex: dto.indexNumber,
+            seasonIndex: kind == .season ? dto.indexNumber : dto.parentIndexNumber,
+            episodeIndex: kind == .episode ? dto.indexNumber : nil,
             playbackPosition: TickClock.seconds(from: dto.userData?.playbackPositionTicks ?? 0),
             unplayedCount: dto.userData?.unplayedItemCount,
             isPlayed: dto.userData?.isPlayed ?? false,
@@ -217,13 +222,32 @@ enum ItemMapper {
     }
 
     static func playbackMethod(from source: MediaSourceInfo) -> PlaybackMethod {
-        if source.transcodingURL != nil {
-            if source.isSupportsDirectStream == true {
+        playbackMethod(
+            supportsDirectPlay: source.isSupportsDirectPlay,
+            supportsDirectStream: source.isSupportsDirectStream,
+            transcodingURL: source.transcodingURL
+        )
+    }
+
+    static func playbackMethod(
+        supportsDirectPlay: Bool?,
+        supportsDirectStream: Bool?,
+        transcodingURL: String?
+    ) -> PlaybackMethod {
+        if supportsDirectPlay == true {
+            return .directPlay
+        }
+        if transcodingURL != nil {
+            if supportsDirectStream == true {
                 return .remux
             }
             return .transcode
         }
         return .directPlay
+    }
+
+    static func videoCodec(from streams: [MediaStream]?) -> String? {
+        streams?.first(where: { $0.type == .video })?.codec
     }
 
     private static func kind(from type: BaseItemKind?) -> MediaKind? {
@@ -264,7 +288,7 @@ enum ItemMapper {
     }
 
     private static func primaryTag(from dto: BaseItemDto) -> String? {
-        imageTag(from: dto, named: "Primary") ?? dto.seriesPrimaryImageTag
+        imageTag(from: dto, named: "Primary")
     }
 
     private static func imageTag(from dto: BaseItemDto, named name: String) -> String? {

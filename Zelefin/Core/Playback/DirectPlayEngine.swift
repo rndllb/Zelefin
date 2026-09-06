@@ -16,6 +16,21 @@ typealias DirectPlayAudioDelivery = AudioDelivery
 typealias DirectPlayPlaybackPhase = PlaybackPhase
 typealias DirectPlaySeekEvent = SeekEvent
 
+/// How long Direct Play waits for SwiftUI to insert `AetherPlayerView` before `load()`.
+enum DirectPlaySurfaceGate {
+    static let waitBudget: TimeInterval = 2
+    static let pollNanoseconds: UInt64 = 20_000_000
+}
+
+/// Aether plays audio with no picture when the probe opens the file but never finds a
+/// video stream (`playbackBackend == .audio`). A second open through the HTTP URL lets
+/// libavformat see the path extension instead of a forced custom-IO hint.
+enum DirectPlayLoadPolicy {
+    static func shouldReloadAsURL(isAudioOnlyBackend: Bool, expectsVideo: Bool) -> Bool {
+        isAudioOnlyBackend && expectsVideo
+    }
+}
+
 /// Session options for Zelefin Direct Play: FFmpeg demux through `JellyfinByteRangeReader`,
 /// VideoToolbox decode, `AVSampleBufferDisplayLayer` presentation.
 enum DirectPlayLoadOptions {

@@ -100,7 +100,7 @@ struct LibraryPreviewSection: View {
                     HStack(spacing: PosterMetrics.rowSpacing) {
                         ForEach(items.prefix(12)) { item in
                             NavigationLink {
-                                ItemDetailView(itemID: item.id)
+                                ItemDetailView(item: item)
                             } label: {
                                 PortraitPoster(
                                     item: item,
@@ -142,7 +142,7 @@ struct LibraryItemsView: View {
                 LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(items) { item in
                         NavigationLink {
-                            ItemDetailView(itemID: item.id)
+                            ItemDetailView(item: item)
                         } label: {
                             PortraitPoster(
                                 item: item,

@@ -43,10 +43,7 @@ final class SessionStore {
     func restore() async {
         defer { isRestoring = false }
         guard let saved = try? vault.load() else { return }
-        apply(saved)
-        Task {
-            serverName = try? await probe.publicInfo(at: saved.serverURL).serverName
-        }
+        apply(saved, serverVersion: saved.serverVersion)
     }
 
     func connect(serverAddress: String, username: String, password: String) async throws {
@@ -114,10 +111,11 @@ final class SessionStore {
             userID: userID,
             userName: user.name ?? fallbackName,
             deviceID: deviceID,
-            userImageTag: user.primaryImageTag
+            userImageTag: user.primaryImageTag,
+            serverVersion: info.version
         )
         serverName = info.serverName
-        apply(saved, client: jellyfin)
+        apply(saved, client: jellyfin, serverVersion: info.version)
         try vault.save(saved)
     }
 
@@ -143,6 +141,25 @@ final class SessionStore {
         await loadHome(force: true)
     }
 
+    func markWatched(_ item: MediaItem) async throws {
+        guard let library else { throw ZelefinError.missingUser }
+        try await library.markPlayed(itemID: item.id)
+        removeFromHome(itemID: item.id)
+        Task { await refreshHome() }
+    }
+
+    func hideFromRecentlyWatched(_ item: MediaItem) async throws {
+        guard let library else { throw ZelefinError.missingUser }
+        try await library.markUnplayed(itemID: item.id)
+        removeFromHome(itemID: item.id)
+        Task { await refreshHome() }
+    }
+
+    private func removeFromHome(itemID: String) {
+        homeLayout = HomeLayoutPreferences.removing(itemID, from: homeLayout)
+        persistSnapshot()
+    }
+
     private func refreshAccount() async {
         guard let client else { return }
         guard let user = try? await client.send(Paths.getCurrentUser).value else { return }
@@ -153,7 +170,7 @@ final class SessionStore {
         try? vault.save(saved)
     }
 
-    private func apply(_ saved: SavedSession, client existing: JellyfinClient? = nil) {
+    private func apply(_ saved: SavedSession, client existing: JellyfinClient? = nil, serverVersion: String? = nil) {
         let jellyfin = existing ?? JellyfinNetworking.client(
             url: saved.serverURL,
             accessToken: saved.accessToken,
@@ -161,14 +178,26 @@ final class SessionStore {
         )
         session = saved
         client = jellyfin
-        library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID)
+        library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion)
         introSkipperAvailable = false
         itemDetailMemory = [:]
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
         Task { await loadHome(force: true) }
         Task { await detectIntroSkipper() }
-        Task { await refreshTmdbCatalog() }
+        if serverVersion == nil {
+            Task { await refreshServerCapabilities(at: saved.serverURL) }
+        }
+    }
+
+    private func refreshServerCapabilities(at url: URL) async {
+        guard let info = try? await probe.publicInfo(at: url) else { return }
+        serverName = info.serverName
+        library?.updateServerVersion(info.version)
+        guard var saved = session else { return }
+        saved.serverVersion = info.version
+        session = saved
+        try? vault.save(saved)
     }
 
     func detectIntroSkipper() async {
@@ -184,6 +213,7 @@ final class SessionStore {
             tmdbCatalog = JellyfinTmdbCatalog()
             return
         }
+        guard tmdbCatalog.movieIDs.isEmpty, tmdbCatalog.seriesIDs.isEmpty else { return }
         tmdbCatalog = await library.tmdbCatalog()
     }
 
@@ -343,6 +373,7 @@ final class SessionStore {
             homeError = "The server did not return any titles."
         }
         isLoadingHome = false
+        Task { await refreshTmdbCatalog() }
     }
 
     private func publishHome(

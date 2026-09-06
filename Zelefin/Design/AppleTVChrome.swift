@@ -10,6 +10,25 @@ enum PosterMetrics {
         #endif
     }
 
+    /// Episode still width; text stacks tightly under the image.
+    static var episodeCardWidth: CGFloat {
+        #if os(tvOS)
+        400
+        #else
+        252
+        #endif
+    }
+
+    static var episodeCardSize: CGSize {
+        let width = episodeCardWidth
+        #if os(tvOS)
+        let textHeight: CGFloat = 148
+        #else
+        let textHeight: CGFloat = 132
+        #endif
+        return CGSize(width: width, height: (width * 9 / 16) + textHeight)
+    }
+
     static var portraitSize: CGSize {
         #if os(tvOS)
         CGSize(width: 200, height: 300)
@@ -93,8 +112,8 @@ struct PosterImage: View {
         ZStack {
             Rectangle()
                 .fill(fill)
-            if let image {
-                Image(uiImage: image)
+            if let shown = image ?? url.flatMap({ ArtworkCache.shared.image(for: $0) }) {
+                Image(uiImage: shown)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
             } else if isLoading {
@@ -107,9 +126,8 @@ struct PosterImage: View {
     }
 
     private func load() async {
-        image = nil
-        isLoading = true
         guard let url else {
+            image = nil
             isLoading = false
             return
         }
@@ -118,6 +136,8 @@ struct PosterImage: View {
             isLoading = false
             return
         }
+        image = nil
+        isLoading = true
         do {
             let (data, response) = try await JellyfinNetworking.data(from: url)
             guard !Task.isCancelled else { return }
@@ -175,6 +195,7 @@ struct SectionHeader: View {
 struct LandscapeCard: View {
     let item: MediaItem
     let imageURL: URL?
+    var showsOverflowIcon = true
 
     var body: some View {
         PosterImage(url: imageURL, aspectRatio: 16 / 9)
@@ -210,8 +231,13 @@ struct LandscapeCard: View {
                             .minimumScaleFactor(0.8)
                     }
                     Spacer(minLength: 4)
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 18, weight: .bold))
+                    if showsOverflowIcon {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 18, weight: .bold))
+                    } else {
+                        Color.clear
+                            .frame(width: 18, height: 18)
+                    }
                 }
                 .foregroundStyle(.white.opacity(0.75))
                 .padding(.horizontal, 10)
@@ -245,6 +271,7 @@ struct LandscapeCard: View {
 struct ReplayLandscapeCard: View {
     let item: MediaItem
     let imageURL: URL?
+    var showsOverflowIcon = true
 
     var body: some View {
         PosterImage(url: imageURL, aspectRatio: 16 / 9)
@@ -274,9 +301,15 @@ struct ReplayLandscapeCard: View {
                             .opacity(0.78)
                         }
                         Spacer(minLength: 4)
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 18, weight: .bold))
-                            .padding(.bottom, 2)
+                        if showsOverflowIcon {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 18, weight: .bold))
+                                .padding(.bottom, 2)
+                        } else {
+                            Color.clear
+                                .frame(width: 18, height: 18)
+                                .padding(.bottom, 2)
+                        }
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -339,6 +372,111 @@ struct TrailerLandscapeCard: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(title), \(caption)")
             .accessibilityAddTraits(.isButton)
+    }
+}
+
+struct EpisodeShowcaseCard: View {
+    let item: MediaItem
+    let imageURL: URL?
+
+    private var size: CGSize { PosterMetrics.episodeCardSize }
+    private var imageHeight: CGFloat { size.width * 9 / 16 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PosterImage(url: imageURL, aspectRatio: 16 / 9)
+                .frame(width: size.width, height: imageHeight)
+                .clipped()
+                .overlay(alignment: .topTrailing) {
+                    if item.isWatched {
+                        watchedMark
+                    }
+                }
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(item.episodeOrdinalLabel ?? " ")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(0.7)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .opacity(item.episodeOrdinalLabel == nil ? 0 : 1)
+                    .lineLimit(1)
+                    .padding(.bottom, 3)
+
+                Text(item.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .padding(.bottom, 4)
+
+                Text(item.overview ?? " ")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(3)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48, alignment: .topLeading)
+                    .padding(.bottom, 8)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 9, weight: .bold))
+                    if let runtime = item.runtimeLabel {
+                        Text(runtime)
+                            .font(.caption.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .foregroundStyle(.white.opacity(0.84))
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .frame(width: size.width, height: size.height - imageHeight, alignment: .topLeading)
+        }
+        .frame(width: size.width, height: size.height, alignment: .top)
+        .background(Color.white.opacity(0.08))
+        .posterCard()
+        .clipped()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityCaption)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var watchedMark: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, Color.black.opacity(0.78))
+            .font(.system(size: markSize, weight: .semibold))
+            .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+            .padding(markPadding)
+            .accessibilityHidden(true)
+    }
+
+    private var markSize: CGFloat {
+        #if os(tvOS)
+        28
+        #else
+        22
+        #endif
+    }
+
+    private var markPadding: CGFloat {
+        #if os(tvOS)
+        10
+        #else
+        8
+        #endif
+    }
+
+    private var accessibilityCaption: String {
+        var parts = [item.episodeOrdinalLabel, item.name, item.runtimeLabel].compactMap { $0 }
+        if item.isWatched {
+            parts.append("Watched")
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -633,7 +771,7 @@ struct FeaturedHero: View {
                     .accessibilityLabel("Play")
 
                     NavigationLink {
-                        ItemDetailView(itemID: item.id)
+                        ItemDetailView(item: item)
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.body.weight(.bold))

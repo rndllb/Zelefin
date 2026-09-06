@@ -172,6 +172,258 @@ final class MediaItemProgressTests: XCTestCase {
         XCTAssertEqual(episode.recentlyWatchedCaption, "S1, E2  ·  1h")
         XCTAssertEqual(episode.recentlyWatchedListSubtitle, "S1, E2  ·  1H")
         XCTAssertTrue(episode.showsResumeProgress)
+        XCTAssertFalse(episode.isWatched)
+        XCTAssertEqual(episode.episodeOrdinalLabel, "EPISODE 2")
+    }
+
+    func testPlayedEpisodeIsWatched() {
+        let episode = MediaItem(
+            id: "e1",
+            name: "The One Where Monica Gets a Roommate",
+            kind: .episode,
+            overview: nil,
+            year: 1994,
+            runtime: 1362,
+            officialRating: nil,
+            genres: [],
+            seriesName: "Friends",
+            seasonIndex: 1,
+            episodeIndex: 1,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: true,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "friends",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+        XCTAssertTrue(episode.isWatched)
+        XCTAssertFalse(episode.showsResumeProgress)
+    }
+
+    func testEpisodePlayedToTheEndIsWatchedWithoutPlayedFlag() {
+        let episode = MediaItem(
+            id: "e2",
+            name: "The One with the Sonogram at the End",
+            kind: .episode,
+            overview: nil,
+            year: 1994,
+            runtime: 100,
+            officialRating: nil,
+            genres: [],
+            seriesName: "Friends",
+            seasonIndex: 1,
+            episodeIndex: 2,
+            playbackPosition: 99,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "friends",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+        XCTAssertTrue(episode.isWatched)
+        XCTAssertFalse(episode.showsResumeProgress)
+    }
+
+    func testSeasonMenuTitleAndOrdering() {
+        let specials = MediaItem(
+            id: "s0",
+            name: "Specials",
+            kind: .season,
+            overview: nil,
+            year: nil,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: "Ted Lasso",
+            seasonIndex: 0,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "ted",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+        let season2 = MediaItem(
+            id: "s2",
+            name: "Season 2",
+            kind: .season,
+            overview: nil,
+            year: nil,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: "Ted Lasso",
+            seasonIndex: 2,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "ted",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+        let season1FromLegacySnapshot = MediaItem(
+            id: "s1",
+            name: "Season 1",
+            kind: .season,
+            overview: nil,
+            year: nil,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: "Ted Lasso",
+            seasonIndex: nil,
+            episodeIndex: 1,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "ted",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+
+        XCTAssertEqual(specials.seasonMenuTitle, "Specials")
+        XCTAssertEqual(season2.seasonMenuTitle, "Season 2")
+        XCTAssertEqual(season1FromLegacySnapshot.seasonMenuTitle, "Season 1")
+        XCTAssertEqual(
+            MediaItem.orderedSeasons([specials, season2, season1FromLegacySnapshot]).map(\.id),
+            ["s1", "s2", "s0"]
+        )
+        XCTAssertEqual(
+            MediaItem.orderedEpisodes([
+                MediaItem(
+                    id: "e2",
+                    name: "Biscuits",
+                    kind: .episode,
+                    overview: nil,
+                    year: nil,
+                    runtime: 1740,
+                    officialRating: nil,
+                    genres: [],
+                    seriesName: "Ted Lasso",
+                    seasonIndex: 1,
+                    episodeIndex: 2,
+                    playbackPosition: 0,
+                    unplayedCount: nil,
+                    isPlayed: false,
+                    primaryImageTag: nil,
+                    thumbImageTag: nil,
+                    backdropImageTag: nil,
+                    backdropImageTags: [],
+                    logoImageTag: nil,
+                    parentBackdropItemID: nil,
+                    parentThumbItemID: nil,
+                    parentThumbImageTag: nil,
+                    parentLogoItemID: nil,
+                    parentLogoImageTag: nil,
+                    seriesThumbImageTag: nil,
+                    seriesID: "ted",
+                    imageItemID: nil,
+                    queueKind: .resume,
+                    videoRange: .sdr,
+                    audioFormat: .unknown
+                ),
+                MediaItem(
+                    id: "e1",
+                    name: "Pilot",
+                    kind: .episode,
+                    overview: nil,
+                    year: nil,
+                    runtime: 1800,
+                    officialRating: nil,
+                    genres: [],
+                    seriesName: "Ted Lasso",
+                    seasonIndex: 1,
+                    episodeIndex: 1,
+                    playbackPosition: 0,
+                    unplayedCount: nil,
+                    isPlayed: false,
+                    primaryImageTag: nil,
+                    thumbImageTag: nil,
+                    backdropImageTag: nil,
+                    backdropImageTags: [],
+                    logoImageTag: nil,
+                    parentBackdropItemID: nil,
+                    parentThumbItemID: nil,
+                    parentThumbImageTag: nil,
+                    parentLogoItemID: nil,
+                    parentLogoImageTag: nil,
+                    seriesThumbImageTag: nil,
+                    seriesID: "ted",
+                    imageItemID: nil,
+                    queueKind: .resume,
+                    videoRange: .sdr,
+                    audioFormat: .unknown
+                )
+            ]).map(\.id),
+            ["e1", "e2"]
+        )
     }
 
     func testNextUpListSubtitle() {
@@ -212,10 +464,112 @@ final class MediaItemProgressTests: XCTestCase {
         XCTAssertFalse(episode.showsResumeProgress)
     }
 
+    func testEpisodeOpensSeriesDetailNotItsOwnPage() {
+        let episode = MediaItem(
+            id: "e3",
+            name: "The Janitor's Boy",
+            kind: .episode,
+            overview: nil,
+            year: 2024,
+            runtime: 3600,
+            officialRating: nil,
+            genres: ["Drama"],
+            seriesName: "Silo",
+            seasonIndex: 1,
+            episodeIndex: 3,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: "silo",
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: "silo",
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "silo",
+            imageItemID: nil,
+            queueKind: .nextUp,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+
+        XCTAssertEqual(episode.seriesDetailItemID, "silo")
+        let preview = episode.seriesShowcasePreview()
+        XCTAssertEqual(preview.id, "silo")
+        XCTAssertEqual(preview.kind, .series)
+        XCTAssertEqual(preview.name, "Silo")
+        XCTAssertNil(preview.episodeIndex)
+    }
+
+    func testMovieHasNoSeriesDetailRedirect() {
+        let movie = MediaItem(
+            id: "m1",
+            name: "Dune",
+            kind: .movie,
+            overview: nil,
+            year: 2024,
+            runtime: 100,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+
+        XCTAssertNil(movie.seriesDetailItemID)
+    }
+
     func testCollectionCardTitleDropsCollectionSuffix() {
         XCTAssertEqual(MediaItem.strippingCollectionSuffix("The Accountant Collection"), "The Accountant")
         XCTAssertEqual(MediaItem.strippingCollectionSuffix("101 Dalmatians (Animated) Collection"), "101 Dalmatians (Animated)")
         XCTAssertEqual(MediaItem.strippingCollectionSuffix("Action"), "Action")
+    }
+}
+
+final class PlaybackQueueMenuLayoutTests: XCTestCase {
+    func testContinueWatchingMenuOrder() {
+        XCTAssertEqual(
+            PlaybackQueueMenuLayout.actions(context: .continueWatching, kind: .episode),
+            [.download, .play, .goToShow, .markWatched]
+        )
+        XCTAssertEqual(PlaybackQueueMenuLayout.playTitle(for: .episode), "Play Episode")
+        XCTAssertEqual(PlaybackQueueMenuLayout.goToTitle(for: .episode), "Go to Show")
+    }
+
+    func testMovieUsesPlayAndGoToMovie() {
+        XCTAssertEqual(PlaybackQueueMenuLayout.playTitle(for: .movie), "Play")
+        XCTAssertEqual(PlaybackQueueMenuLayout.goToTitle(for: .movie), "Go to Movie")
+    }
+
+    func testRecentlyWatchedAddsRemove() {
+        XCTAssertEqual(
+            PlaybackQueueMenuLayout.actions(context: .recentlyWatched, kind: .episode),
+            [.download, .play, .goToShow, .markWatched, .removeFromRecentlyWatched]
+        )
     }
 }
 
@@ -228,6 +582,28 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(sections.map(\.id), ["continue", "next-up"])
         XCTAssertEqual(sections[0].items.map(\.id), ["r1"])
         XCTAssertEqual(sections[1].items.map(\.id), ["n1"])
+    }
+
+    func testRemovingAContinueWatchingTitleDropsEmptyQueueRows() {
+        let layout = HomeLayout(
+            featured: [Self.item(id: "r1", queueKind: .resume)],
+            sections: HomeLayoutPreferences.playbackQueueSections(
+                resume: [Self.item(id: "r1", queueKind: .resume)],
+                nextUp: [Self.item(id: "n1", queueKind: .nextUp)],
+                merge: false
+            )
+        )
+        let next = HomeLayoutPreferences.removing("r1", from: layout)
+        XCTAssertEqual(next.featured.map(\.id), [])
+        XCTAssertEqual(next.sections.map(\.id), ["next-up"])
+        XCTAssertEqual(next.sections.first?.items.map(\.id), ["n1"])
+    }
+
+    func testQueueMenuContextMatchesHomeSectionIDs() {
+        XCTAssertEqual(HomeLayoutPreferences.menuContext(forSectionID: "continue"), .continueWatching)
+        XCTAssertEqual(HomeLayoutPreferences.menuContext(forSectionID: "next-up"), .nextUp)
+        XCTAssertEqual(HomeLayoutPreferences.menuContext(forSectionID: "recently-watched"), .recentlyWatched)
+        XCTAssertNil(HomeLayoutPreferences.menuContext(forSectionID: "library-movies"))
     }
 
     func testMergePutsNextUpAfterResumeAndDropsDuplicates() {

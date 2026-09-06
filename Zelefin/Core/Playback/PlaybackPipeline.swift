@@ -2,30 +2,31 @@ import Foundation
 
 /// Which Apple-facing decoder path should open a planned stream.
 enum PlaybackPipeline: Equatable, Sendable {
-    /// AVPlayer opens the URL itself (MP4/MOV or server HLS).
+    /// AVPlayer opens server HLS (remux / transcode).
     case appleNative
     /// Zelefin Direct Play: FFmpeg demuxes the container, VideoToolbox decodes, and a sample-buffer layer paints.
     case directDecode
 }
 
 enum PlaybackPipelineResolver {
-    private static let appleVideoExtensions: Set<String> = ["mp4", "m4v", "mov"]
-
     static func pipeline(for plan: PlaybackPlan) -> PlaybackPipeline {
         pipeline(url: plan.streamURL, method: plan.method)
     }
 
-    static func pipeline(url: URL, method: PlaybackMethod) -> PlaybackPipeline {
+    static func pipeline(
+        url: URL,
+        method: PlaybackMethod,
+        container _: String? = nil,
+        videoCodec _: String? = nil
+    ) -> PlaybackPipeline {
         if method != .directPlay {
             return .appleNative
         }
         if isHLS(url) {
             return .appleNative
         }
-        let fileExtension = url.pathExtension.lowercased()
-        if appleVideoExtensions.contains(fileExtension) {
-            return .appleNative
-        }
+        // Direct Play files go through Aether. AVPlayer on a mislabeled MP4/MKV, or on
+        // MPEG-4 ASP / 4:2:2 H.264, plays audio into a black picture.
         return .directDecode
     }
 

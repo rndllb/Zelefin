@@ -1,17 +1,33 @@
 import Foundation
+import Get
 import JellyfinAPI
+import os
 
 final class JellyfinLibraryClient: Sendable {
     private let client: JellyfinClient
     private let userID: String
     private let artwork: ArtworkURLBuilder
     private let streams: StreamURLBuilder
+    private let serverCapabilities: OSAllocatedUnfairLock<JellyfinServerCapabilities>
+    /// `nil` until version is known or the first collections lookup probes `/Items/{id}/Collections`.
+    private let hasItemCollectionsEndpoint: OSAllocatedUnfairLock<Bool?>
 
-    init(client: JellyfinClient, userID: String) {
+    init(client: JellyfinClient, userID: String, serverVersion: String? = nil) {
         self.client = client
         self.userID = userID
         self.artwork = ArtworkURLBuilder(client: client)
         self.streams = StreamURLBuilder(client: client)
+        let capabilities = JellyfinServerCapabilities(version: serverVersion)
+        self.serverCapabilities = OSAllocatedUnfairLock(uncheckedState: capabilities)
+        self.hasItemCollectionsEndpoint = OSAllocatedUnfairLock(uncheckedState: capabilities.itemCollectionsAvailability)
+    }
+
+    func updateServerVersion(_ raw: String?) {
+        let capabilities = JellyfinServerCapabilities(version: raw)
+        serverCapabilities.withLock { $0 = capabilities }
+        if let known = capabilities.itemCollectionsAvailability {
+            hasItemCollectionsEndpoint.withLock { $0 = known }
+        }
     }
 
     func artworkURL(for item: MediaItem, style: HomeSection.Style) -> URL? {
@@ -60,6 +76,14 @@ final class JellyfinLibraryClient: Sendable {
 
     func recentlyWatchedIgnoringErrors() async -> [MediaItem] {
         await ignoringErrors { try await recentlyWatchedItems() } ?? []
+    }
+
+    func markPlayed(itemID: String) async throws {
+        _ = try await client.send(Paths.markPlayedItem(itemID: itemID, userID: userID, datePlayed: Date()))
+    }
+
+    func markUnplayed(itemID: String) async throws {
+        _ = try await client.send(Paths.markUnplayedItem(itemID: itemID, userID: userID))
     }
 
     func libraryHomeIgnoringErrors() async -> (libraries: [MediaLibrary], sections: [HomeSection]) {
@@ -121,7 +145,8 @@ final class JellyfinLibraryClient: Sendable {
                     includeItemTypes: include,
                     sortBy: [.sortName],
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -198,8 +223,40 @@ final class JellyfinLibraryClient: Sendable {
         return locals + remotes
     }
 
-    func similarItems(for itemID: String) async -> [MediaItem] {
-        let result = try? await client.send(
+    func similarItems(for item: MediaItem) async -> [MediaItem] {
+        let result = await similarResult(itemID: item.id, kind: item.kind)
+        return (result?.items ?? [])
+            .compactMap(ItemMapper.mediaItem(from:))
+            .filter { $0.id != item.id && ($0.kind == .movie || $0.kind == .series) }
+    }
+
+    /// Jellyfin 12 tightened similar-item permissions on the typed routes.
+    /// `/Movies/{id}/Similar` and `/Shows/{id}/Similar` exist on 10.11 too;
+    /// generic `/Items/{id}/Similar` is the fallback.
+    private func similarResult(itemID: String, kind: MediaKind) async -> BaseItemDtoQueryResult? {
+        switch kind {
+        case .movie:
+            if let result = try? await client.send(
+                Paths.getSimilarMovies(
+                    itemID: itemID,
+                    parameters: .init(userID: userID, limit: 16, fields: ItemMapper.listFields)
+                )
+            ).value {
+                return result
+            }
+        case .series:
+            if let result = try? await client.send(
+                Paths.getSimilarShows(
+                    itemID: itemID,
+                    parameters: .init(userID: userID, limit: 16, fields: ItemMapper.listFields)
+                )
+            ).value {
+                return result
+            }
+        default:
+            break
+        }
+        return try? await client.send(
             Paths.getSimilarItems(
                 itemID: itemID,
                 parameters: .init(
@@ -209,36 +266,97 @@ final class JellyfinLibraryClient: Sendable {
                 )
             )
         ).value
-        return (result?.items ?? [])
-            .compactMap(ItemMapper.mediaItem(from:))
-            .filter { $0.id != itemID && ($0.kind == .movie || $0.kind == .series) }
     }
 
     func collections(containing itemID: String) async -> [ItemCollectionMembership] {
-        let boxSets = ((try? await client.send(
+        switch hasItemCollectionsEndpoint.withLock({ $0 }) {
+        case true:
+            return await memberships(for: await collectionsFromItemEndpoint(itemID: itemID) ?? [])
+        case false:
+            return await collectionsByThrottledScan(containing: itemID)
+        case nil:
+            if let collections = await collectionsFromItemEndpoint(itemID: itemID) {
+                hasItemCollectionsEndpoint.withLock { $0 = true }
+                return await memberships(for: collections)
+            }
+            hasItemCollectionsEndpoint.withLock { $0 = false }
+            return await collectionsByThrottledScan(containing: itemID)
+        }
+    }
+
+    /// Jellyfin 12+: one lookup. Returns `nil` when the server is older and lacks the endpoint.
+    private func collectionsFromItemEndpoint(itemID: String) async -> [MediaItem]? {
+        do {
+            let result = try await client.send(
+                Paths.getItemCollections(
+                    itemID: itemID,
+                    userID: userID,
+                    fields: ItemMapper.listFields
+                )
+            ).value
+            return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        } catch let APIError.unacceptableStatusCode(status) where (400...404).contains(status) || status == 501 {
+            return nil
+        } catch {
+            return []
+        }
+    }
+
+    /// 10.11 fallback: walk BoxSets a couple at a time instead of querying every collection at once.
+    private func collectionsByThrottledScan(containing itemID: String) async -> [ItemCollectionMembership] {
+        let boxSets = await listedBoxSets(limit: 24)
+        guard !boxSets.isEmpty else { return [] }
+
+        var found: [ItemCollectionMembership] = []
+        var index = 0
+        while index < boxSets.count {
+            let end = min(index + 2, boxSets.count)
+            let slice = Array(boxSets[index..<end])
+            index = end
+            await withTaskGroup(of: ItemCollectionMembership?.self) { group in
+                for boxSet in slice {
+                    group.addTask {
+                        let members = await self.collectionMembers(parentID: boxSet.id)
+                        guard members.contains(where: { $0.id == itemID }) else { return nil }
+                        return ItemCollectionMembership(collection: boxSet, items: members)
+                    }
+                }
+                for await membership in group {
+                    if let membership { found.append(membership) }
+                }
+            }
+        }
+        found.sort {
+            $0.collection.name.localizedCaseInsensitiveCompare($1.collection.name) == .orderedAscending
+        }
+        return found
+    }
+
+    private func listedBoxSets(limit: Int) async -> [MediaItem] {
+        let result = try? await client.send(
             Paths.getItems(
                 parameters: .init(
                     userID: userID,
-                    limit: 80,
+                    limit: limit,
                     isRecursive: true,
                     fields: ItemMapper.listFields,
                     includeItemTypes: [.boxSet],
                     sortBy: [.sortName],
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
-        ).value.items) ?? []).compactMap(ItemMapper.mediaItem(from:))
+        ).value
+        return (result?.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
 
+    private func memberships(for boxSets: [MediaItem]) async -> [ItemCollectionMembership] {
+        guard !boxSets.isEmpty else { return [] }
         return await withTaskGroup(of: ItemCollectionMembership?.self) { group in
             for boxSet in boxSets {
                 group.addTask {
-                    let members = (try? await self.catalogItems(
-                        genreID: nil,
-                        parentID: boxSet.id,
-                        include: [.movie, .series, .video]
-                    )) ?? []
-                    guard members.contains(where: { $0.id == itemID }) else { return nil }
+                    let members = await self.collectionMembers(parentID: boxSet.id)
                     return ItemCollectionMembership(collection: boxSet, items: members)
                 }
             }
@@ -251,6 +369,22 @@ final class JellyfinLibraryClient: Sendable {
             }
             return found
         }
+    }
+
+    private func collectionMembers(parentID: String) async -> [MediaItem] {
+        let direct = (try? await catalogItems(
+            genreID: nil,
+            parentID: parentID,
+            include: [.movie, .series, .video],
+            recursive: false
+        )) ?? []
+        if !direct.isEmpty { return direct }
+        return (try? await catalogItems(
+            genreID: nil,
+            parentID: parentID,
+            include: [.movie, .series, .video],
+            recursive: true
+        )) ?? []
     }
 
     func items(personID: String) async throws -> [MediaItem] {
@@ -266,7 +400,8 @@ final class JellyfinLibraryClient: Sendable {
                     sortBy: [.sortName],
                     enableUserData: true,
                     enableImageTypes: ItemMapper.listImageTypes,
-                    personIDs: [personID]
+                    personIDs: [personID],
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -304,23 +439,23 @@ final class JellyfinLibraryClient: Sendable {
                 seriesID: seriesID,
                 parameters: .init(
                     userID: userID,
-                    fields: ItemMapper.detailFields,
+                    fields: ItemMapper.listFields,
                     enableImages: true,
                     enableImageTypes: ItemMapper.listImageTypes,
                     enableUserData: true
                 )
             )
         ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        return MediaItem.orderedSeasons((result.items ?? []).compactMap(ItemMapper.mediaItem(from:)))
     }
 
-    func episodes(seriesID: String, seasonID: String) async throws -> [MediaItem] {
+    func episodes(seriesID: String, seasonID: String? = nil) async throws -> [MediaItem] {
         let result = try await client.send(
             Paths.getEpisodes(
                 seriesID: seriesID,
                 parameters: .init(
                     userID: userID,
-                    fields: ItemMapper.detailFields,
+                    fields: ItemMapper.episodeFields,
                     seasonID: seasonID,
                     enableImages: true,
                     enableImageTypes: ItemMapper.listImageTypes,
@@ -328,7 +463,7 @@ final class JellyfinLibraryClient: Sendable {
                 )
             )
         ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        return MediaItem.orderedEpisodes((result.items ?? []).compactMap(ItemMapper.mediaItem(from:)))
     }
 
     func search(term: String) async throws -> [MediaItem] {
@@ -342,7 +477,8 @@ final class JellyfinLibraryClient: Sendable {
                     fields: ItemMapper.listFields,
                     includeItemTypes: [.movie, .series, .episode],
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -383,20 +519,23 @@ final class JellyfinLibraryClient: Sendable {
             userID: userID
         )
 
+        let query: Paths.GetPostedPlaybackInfoParameters? = serverCapabilities.withLock({ $0.prefersPlaybackInfoBody })
+            ? nil
+            : .init(
+                userID: userID,
+                maxStreamingBitrate: AVDeviceProfileFactory.maxBitrate,
+                startTimeTicks: TickClock.intTicks(from: item.playbackPosition),
+                audioStreamIndex: audioIndex,
+                subtitleStreamIndex: subtitleIndex,
+                isAutoOpenLiveStream: true,
+                enableDirectPlay: enableDirectPlay,
+                enableDirectStream: true,
+                enableTranscoding: true
+            )
         let response = try await client.send(
             Paths.getPostedPlaybackInfo(
                 itemID: item.id,
-                parameters: .init(
-                    userID: userID,
-                    maxStreamingBitrate: AVDeviceProfileFactory.maxBitrate,
-                    startTimeTicks: TickClock.intTicks(from: item.playbackPosition),
-                    audioStreamIndex: audioIndex,
-                    subtitleStreamIndex: subtitleIndex,
-                    isAutoOpenLiveStream: true,
-                    enableDirectPlay: enableDirectPlay,
-                    enableDirectStream: true,
-                    enableTranscoding: true
-                ),
+                parameters: query,
                 body
             )
         ).value
@@ -415,6 +554,8 @@ final class JellyfinLibraryClient: Sendable {
             playSessionID: response.playSessionID,
             mediaSourceID: source.id,
             method: method,
+            container: StreamContainer.pathExtension(from: source),
+            videoCodec: ItemMapper.videoCodec(from: streams),
             videoRange: ItemMapper.videoRange(from: streams),
             audioFormat: ItemMapper.audioFormat(from: streams),
             startTime: item.playbackPosition,
@@ -434,7 +575,8 @@ final class JellyfinLibraryClient: Sendable {
                     fields: ItemMapper.listFields,
                     mediaTypes: [.video],
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -450,7 +592,8 @@ final class JellyfinLibraryClient: Sendable {
                     fields: ItemMapper.listFields,
                     enableImages: true,
                     enableImageTypes: ItemMapper.listImageTypes,
-                    enableUserData: true
+                    enableUserData: true,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -472,7 +615,8 @@ final class JellyfinLibraryClient: Sendable {
                     sortBy: [.datePlayed],
                     isPlayed: true,
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -536,7 +680,8 @@ final class JellyfinLibraryClient: Sendable {
                     includeItemTypes: [.series],
                     sortBy: [.dateCreated],
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -556,7 +701,8 @@ final class JellyfinLibraryClient: Sendable {
                     includeItemTypes: [.boxSet],
                     sortBy: [.sortName],
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
@@ -587,7 +733,7 @@ final class JellyfinLibraryClient: Sendable {
             id: "genres",
             title: "Browse by Genre",
             style: .labeledPortrait,
-            items: await fillMissingGenreCovers(assigned)
+            items: assigned
         )
     }
 
@@ -602,69 +748,35 @@ final class JellyfinLibraryClient: Sendable {
                     includeItemTypes: [.movie, .series],
                     sortBy: [.random],
                     enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
                 )
             )
         ).value
         return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
     }
 
-    private func fillMissingGenreCovers(_ genres: [MediaItem]) async -> [MediaItem] {
-        let missing = genres.enumerated().filter { $0.element.imageItemID == nil }
-        guard !missing.isEmpty else { return genres }
-
-        return await withTaskGroup(of: (Int, MediaItem).self) { group in
-            for (index, genre) in missing {
-                group.addTask {
-                    if let cover = try? await self.randomItemInGenre(genre.id) {
-                        return (index, genre.withCover(from: cover))
-                    }
-                    return (index, genre)
-                }
-            }
-            var filled = genres
-            for await (index, item) in group {
-                filled[index] = item
-            }
-            return filled
-        }
-    }
-
-    private func randomItemInGenre(_ genreID: String) async throws -> MediaItem? {
-        let result = try await client.send(
-            Paths.getItems(
-                parameters: .init(
-                    userID: userID,
-                    limit: 12,
-                    isRecursive: true,
-                    fields: ItemMapper.listFields,
-                    includeItemTypes: [.movie, .series],
-                    sortBy: [.random],
-                    enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes,
-                    genreIDs: [genreID]
-                )
-            )
-        ).value
-        let items = (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
-        return items.first(where: \.hasGenreCoverArt) ?? items.first
-    }
-
-    private func catalogItems(genreID: String?, parentID: String?, include: [BaseItemKind]) async throws -> [MediaItem] {
+    private func catalogItems(
+        genreID: String?,
+        parentID: String?,
+        include: [BaseItemKind],
+        recursive: Bool = true
+    ) async throws -> [MediaItem] {
         let result = try await client.send(
             Paths.getItems(
                 parameters: .init(
                     userID: userID,
                     startIndex: 0,
                     limit: 100,
-                    isRecursive: true,
+                    isRecursive: recursive,
                     parentID: parentID,
                     fields: ItemMapper.listFields,
                     includeItemTypes: include,
                     sortBy: [.sortName],
                     enableUserData: true,
                     enableImageTypes: ItemMapper.listImageTypes,
-                    genreIDs: genreID.map { [$0] }
+                    genreIDs: genreID.map { [$0] },
+                    enableTotalRecordCount: false
                 )
             )
         ).value

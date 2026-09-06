@@ -112,6 +112,28 @@ enum HomeLayoutPreferences {
         id == "continue" || id == "next-up"
     }
 
+    static func menuContext(forSectionID id: String) -> PlaybackQueueMenuContext? {
+        switch id {
+        case "continue": .continueWatching
+        case "next-up": .nextUp
+        case "recently-watched": .recentlyWatched
+        default: nil
+        }
+    }
+
+    static func removing(_ itemID: String, from layout: HomeLayout) -> HomeLayout {
+        HomeLayout(
+            featured: layout.featured.filter { $0.id != itemID },
+            sections: layout.sections.compactMap { section in
+                let items = section.items.filter { $0.id != itemID }
+                if items.isEmpty, isPlaybackQueueSection(section.id) || section.isRecentlyWatched {
+                    return nil
+                }
+                return HomeSection(id: section.id, title: section.title, style: section.style, items: items)
+            }
+        )
+    }
+
     private static func mergedQueue(resume: [MediaItem], nextUp: [MediaItem]) -> [MediaItem] {
         let resumeIDs = Set(resume.map(\.id))
         return resume + nextUp.filter { !resumeIDs.contains($0.id) }

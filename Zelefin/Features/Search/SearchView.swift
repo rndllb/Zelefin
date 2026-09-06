@@ -516,7 +516,7 @@ private struct SearchPage: View {
     private func searchRow(_ item: MediaItem, isRecent: Bool) -> some View {
         HStack(spacing: 14) {
             NavigationLink {
-                ItemDetailView(itemID: item.id)
+                ItemDetailView(item: item)
                     .onAppear { recordRecent(item) }
             } label: {
                 HStack(spacing: 14) {
@@ -545,7 +545,7 @@ private struct SearchPage: View {
                     Task { await play(item) }
                 }
                 NavigationLink("View Details") {
-                    ItemDetailView(itemID: item.id)
+                    ItemDetailView(item: item)
                 }
                 if isRecent {
                     Button("Remove", systemImage: "trash", role: .destructive) {

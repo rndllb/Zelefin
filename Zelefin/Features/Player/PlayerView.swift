@@ -64,8 +64,6 @@ struct PlayerView: View {
             }
         }
         model = created
-        // Direct Play binds its sample-buffer layer in `makeUIView`. Yield so that
-        // attach happens before demux/decode, otherwise the first frames never appear.
         await Task.yield()
         await created.start()
     }
@@ -93,7 +91,13 @@ struct PlayerView: View {
     private func playerSurface(_ model: PlayerModel) -> some View {
         if let engine = model.engine {
             ZStack {
-                DirectPlayVideoLayer(engine: engine)
+                Color.black
+                    .ignoresSafeArea()
+                    .overlay {
+                        DirectPlayVideoLayer(engine: engine) {
+                            model.noteSurfaceReady()
+                        }
+                    }
                     .ignoresSafeArea()
                 DirectPlaySubtitleOverlay(
                     cues: model.subtitleCues,
@@ -144,18 +148,82 @@ struct PlayerView: View {
     }
 }
 
-/// Binds the Direct Play layer once. Rebinding on every SwiftUI pass cycles AttributeGraph and can
-/// detach the player layer while audio keeps running.
+/// Hosts `AetherPlayerView` at the size SwiftUI actually proposes. A zero-size
+/// representable leaves Aether decoding into a layer that is never visible: audio
+/// plays, the picture stays black.
+private final class DirectPlaySurfaceView: UIView {
+    let playerView = DirectPlayPlayerView()
+    var onReady: (() -> Void)?
+    private var didNotify = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        isOpaque = true
+        playerView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(playerView)
+        NSLayoutConstraint.activate([
+            playerView.topAnchor.constraint(equalTo: topAnchor),
+            playerView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            playerView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            playerView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        notifyIfReady()
+    }
+
+    func notifyIfReady() {
+        guard !didNotify, bounds.width > 1, bounds.height > 1 else { return }
+        didNotify = true
+        onReady?()
+    }
+}
+
+/// Rebinds on every SwiftUI update (Aether #188). An empty `updateUIView` leaves a
+/// reused surface showing a detached layer: black video over working audio.
 private struct DirectPlayVideoLayer: UIViewRepresentable {
     let engine: DirectPlayEngine
+    var onBound: () -> Void
 
-    func makeUIView(context: Context) -> DirectPlayPlayerView {
-        let view = DirectPlayPlayerView()
-        engine.bind(view: view)
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onBound: onBound)
+    }
+
+    func makeUIView(context: Context) -> DirectPlaySurfaceView {
+        let view = DirectPlaySurfaceView()
+        context.coordinator.bind(engine, to: view, onBound: onBound)
         return view
     }
 
-    func updateUIView(_: DirectPlayPlayerView, context _: Context) {}
+    func updateUIView(_ uiView: DirectPlaySurfaceView, context: Context) {
+        context.coordinator.bind(engine, to: uiView, onBound: onBound)
+    }
+
+    @MainActor
+    final class Coordinator {
+        var onBound: () -> Void
+
+        init(onBound: @escaping () -> Void) {
+            self.onBound = onBound
+        }
+
+        func bind(_ engine: DirectPlayEngine, to view: DirectPlaySurfaceView, onBound: @escaping () -> Void) {
+            self.onBound = onBound
+            engine.bind(view: view.playerView)
+            view.onReady = { [weak self] in
+                self?.onBound()
+            }
+            view.notifyIfReady()
+        }
+    }
 }
 
 struct NativePlayerContainer: UIViewControllerRepresentable {

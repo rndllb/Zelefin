@@ -5,7 +5,7 @@ enum AVDeviceProfileFactory {
     static let maxBitrate = 200_000_000
     static let videoDirectPlayContainers = [
         "mp4", "m4v", "mov", "mkv", "matroska", "avi", "mpegts", "ts",
-        "m2ts", "mts", "3gp", "3g2", "vob", "ogg", "webm", "flv"
+        "m2ts", "mts", "mpeg", "mpg", "mpegps", "3gp", "3g2", "vob", "ogg", "webm", "flv"
     ]
     static let videoDirectPlayCodecs = [
         "h264", "hevc", "av1", "vp9", "vp8", "mpeg4", "mpeg2video", "vc1",

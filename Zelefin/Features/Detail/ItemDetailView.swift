@@ -7,6 +7,7 @@ struct ItemDetailView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.openURL) private var openURL
     let itemID: String
+    let focusEpisodeID: String?
 
     @State private var item: MediaItem?
     @State private var seasons: [MediaItem] = []
@@ -16,13 +17,35 @@ struct ItemDetailView: View {
     @State private var credits: [CreditPerson] = []
     @State private var collections: [ItemCollectionMembership] = []
     @State private var selectedSeasonID: String?
+    @State private var scrolledEpisodeID: EpisodeCarouselCard.ID?
+    @State private var isJumpingSeason = false
     @State private var isLoading = true
+    @State private var hasLoadedDetail = false
     @State private var isOverviewExpanded = false
     @State private var playbackPlan: PlaybackPlan?
     #if os(iOS)
     @State private var playingWebTrailer: TitleTrailer?
     #endif
     @State private var errorMessage: String?
+
+    init(itemID: String, preview: MediaItem? = nil, focusEpisodeID: String? = nil) {
+        self.itemID = itemID
+        self.focusEpisodeID = focusEpisodeID
+        _item = State(initialValue: preview)
+        _isLoading = State(initialValue: preview == nil)
+    }
+
+    init(item: MediaItem) {
+        if let seriesID = item.seriesDetailItemID {
+            self.init(
+                itemID: seriesID,
+                preview: item.seriesShowcasePreview(),
+                focusEpisodeID: item.kind == .episode ? item.id : nil
+            )
+        } else {
+            self.init(itemID: item.id, preview: item)
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -35,9 +58,15 @@ struct ItemDetailView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             hero(for: item, width: geo.size.width, height: detailHeroHeight(geo.size))
 
+                            if item.kind == .series, !seasons.isEmpty {
+                                seasonsSection
+                                    .padding(.top, 4)
+                                    .padding(.bottom, 20)
+                            }
+
                             if !trailers.isEmpty {
                                 trailersSection(for: item)
-                                    .padding(.top, 4)
+                                    .padding(.top, item.kind == .series ? 0 : 4)
                                     .padding(.bottom, 20)
                             }
 
@@ -55,18 +84,8 @@ struct ItemDetailView: View {
                                 collectionSection(membership)
                                     .padding(.bottom, 20)
                             }
-
-                            VStack(alignment: .leading, spacing: 12) {
-                                if !seasons.isEmpty {
-                                    seasonPicker
-                                }
-                                if !episodes.isEmpty {
-                                    episodeList
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 40)
                         }
+                        .padding(.bottom, 40)
                     }
                     .scrollIndicators(.hidden)
                 } else {
@@ -355,19 +374,77 @@ struct ItemDetailView: View {
         !isOverviewExpanded && overview.count > 90
     }
 
-    @ViewBuilder
-    private var seasonPicker: some View {
-        Picker("Season", selection: $selectedSeasonID) {
-            ForEach(seasons) { season in
-                Text(season.name).tag(Optional(season.id))
+    private var selectedSeasonTitle: String {
+        seasons.first(where: { $0.id == selectedSeasonID })?.seasonMenuTitle ?? "Season"
+    }
+
+    private var episodeStrip: [EpisodeCarouselCard] {
+        EpisodeCarousel.cards(seasons: seasons, episodes: episodes)
+    }
+
+    private var seasonsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Menu {
+                ForEach(seasons) { season in
+                    Button(season.seasonMenuTitle) {
+                        selectSeason(season)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(selectedSeasonTitle)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .contentShape(Rectangle())
             }
-        }
-        #if os(iOS)
-        .pickerStyle(.menu)
-        #endif
-        .onChange(of: selectedSeasonID) { _, newValue in
-            guard let newValue, let seriesID = item?.id else { return }
-            Task { await loadEpisodes(seriesID: seriesID, seasonID: newValue) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(selectedSeasonTitle)
+            .accessibilityHint("Choose a season")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
+                    ForEach(episodeStrip) { card in
+                        Button {
+                            Task { await play(card.episode) }
+                        } label: {
+                            EpisodeShowcaseCard(
+                                item: card.episode,
+                                imageURL: session.library?.primaryURL(for: card.episode, maxHeight: 480)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(
+                            width: PosterMetrics.episodeCardSize.width,
+                            height: PosterMetrics.episodeCardSize.height
+                        )
+                        .accessibilityHidden(card.copy != EpisodeCarousel.homeCopy)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .frame(height: PosterMetrics.episodeCardSize.height)
+            .contentMargins(.horizontal, 16, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $scrolledEpisodeID)
+            .onChange(of: scrolledEpisodeID) { _, newValue in
+                handleEpisodeScroll(newValue)
+            }
+            .onScrollPhaseChange { _, phase in
+                guard phase == .idle else { return }
+                isJumpingSeason = false
+                recenterLoopIfNeeded()
+            }
+            .onAppear {
+                if scrolledEpisodeID == nil, !episodeStrip.isEmpty {
+                    syncCarouselPosition(forceSeasonStart: true)
+                }
+            }
         }
     }
 
@@ -469,7 +546,7 @@ struct ItemDetailView: View {
                         if item.kind == .collection {
                             CatalogGridView(title: item.name, query: .parent(item.id))
                         } else {
-                            ItemDetailView(itemID: item.id)
+                            ItemDetailView(item: item)
                         }
                     } label: {
                         PortraitPoster(
@@ -510,49 +587,24 @@ struct ItemDetailView: View {
         #endif
     }
 
-    private var episodeList: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Episodes")
-                .font(.title3.weight(.semibold))
-            ForEach(episodes) { episode in
-                Button {
-                    Task { await play(episode) }
-                } label: {
-                    HStack(spacing: 12) {
-                        PosterImage(
-                            url: session.library?.artworkURL(for: episode, style: .landscape),
-                            aspectRatio: 16 / 9
-                        )
-                        .frame(width: 140, height: 80)
-                        .posterCard(cornerRadius: 8)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(episode.name)
-                                .foregroundStyle(.white)
-                                .lineLimit(2)
-                            if let label = episode.episodeLabel {
-                                Text(label)
-                                    .font(.footnote)
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                        }
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     private func load() async {
         guard session.library != nil else { return }
+        if hasLoadedDetail { return }
+
         isOverviewExpanded = false
         if let snapshot = session.cachedItemDetail(itemID: itemID) {
             apply(snapshot)
+            applyFocusedEpisode()
             isLoading = false
+            hasLoadedDetail = true
+            return
         }
 
+        if item != nil {
+            isLoading = false
+        }
         await refreshFromServer()
+        hasLoadedDetail = true
     }
 
     private func apply(_ snapshot: ItemDetailSnapshot) {
@@ -561,9 +613,16 @@ struct ItemDetailView: View {
         related = snapshot.related
         credits = snapshot.credits
         collections = snapshot.collections
-        seasons = snapshot.seasons
-        episodes = snapshot.episodes
+        seasons = MediaItem.orderedSeasons(snapshot.seasons)
+        episodes = MediaItem.orderedShowEpisodes(snapshot.episodes, seasons: seasons)
         selectedSeasonID = snapshot.selectedSeasonID
+        if scrolledEpisodeID == nil {
+            scrolledEpisodeID = EpisodeCarousel.homePosition(
+                seasonID: selectedSeasonID,
+                seasons: seasons,
+                episodes: episodes
+            )
+        }
     }
 
     private func persistSnapshot() {
@@ -585,31 +644,41 @@ struct ItemDetailView: View {
         do {
             let (loaded, dto) = try await library.item(id: itemID)
             item = loaded
+            isLoading = false
+
             async let fetchedTrailers = library.trailers(for: dto)
-            async let fetchedRelated = library.similarItems(for: loaded.id)
+            async let fetchedRelated = library.similarItems(for: loaded)
             async let fetchedCredits = library.credits(for: loaded.id, from: dto)
-            async let fetchedCollections = library.collections(containing: loaded.id)
+
             if loaded.kind == .series {
-                do {
-                    seasons = try await library.seasons(seriesID: loaded.id)
-                    if selectedSeasonID == nil || !seasons.contains(where: { $0.id == selectedSeasonID }) {
-                        selectedSeasonID = seasons.first?.id
-                    }
-                    if let seasonID = selectedSeasonID {
-                        episodes = try await library.episodes(seriesID: loaded.id, seasonID: seasonID)
-                    }
-                } catch {
-                    errorMessage = error.localizedDescription
+                async let fetchedSeasons = library.seasons(seriesID: loaded.id)
+                async let fetchedEpisodes = library.episodes(seriesID: loaded.id)
+                seasons = MediaItem.orderedSeasons((try? await fetchedSeasons) ?? [])
+                if selectedSeasonID == nil || !seasons.contains(where: { $0.id == selectedSeasonID }) {
+                    selectedSeasonID = seasons.first?.id
                 }
+                episodes = MediaItem.orderedShowEpisodes(
+                    (try? await fetchedEpisodes) ?? [],
+                    seasons: seasons
+                )
+                applyFocusedEpisode()
+                syncCarouselPosition(forceSeasonStart: scrolledEpisodeID == nil)
+                persistSnapshot()
             } else {
                 seasons = []
                 episodes = []
                 selectedSeasonID = nil
+                scrolledEpisodeID = nil
             }
-            trailers = await fetchedTrailers
+
             related = await fetchedRelated
             credits = await fetchedCredits
-            collections = await fetchedCollections
+            persistSnapshot()
+
+            trailers = await fetchedTrailers
+            persistSnapshot()
+
+            collections = await library.collections(containing: loaded.id)
             persistSnapshot()
         } catch {
             if item == nil {
@@ -619,8 +688,78 @@ struct ItemDetailView: View {
         isLoading = false
     }
 
-    private func loadEpisodes(seriesID: String, seasonID: String) async {
-        episodes = (try? await session.library?.episodes(seriesID: seriesID, seasonID: seasonID)) ?? []
+    private func applyFocusedEpisode() {
+        guard let focusEpisodeID, episodes.contains(where: { $0.id == focusEpisodeID }) else { return }
+        if let seasonID = EpisodeCarousel.seasonID(for: focusEpisodeID, in: episodeStrip) {
+            selectedSeasonID = seasonID
+        }
+        scrolledEpisodeID = EpisodeCarousel.position(episodeID: focusEpisodeID)
+    }
+
+    private func selectSeason(_ season: MediaItem) {
+        selectedSeasonID = season.id
+        guard let position = EpisodeCarousel.homePosition(
+            seasonID: season.id,
+            seasons: seasons,
+            episodes: episodes
+        ) else { return }
+        isJumpingSeason = true
+        withAnimation(.smooth(duration: 0.5)) {
+            scrolledEpisodeID = position
+        }
+        persistSnapshot()
+    }
+
+    private func jumpToSeasonStart(_ seasonID: String) {
+        guard let position = EpisodeCarousel.homePosition(
+            seasonID: seasonID,
+            seasons: seasons,
+            episodes: episodes
+        ) else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            scrolledEpisodeID = position
+        }
+    }
+
+    private func syncCarouselPosition(forceSeasonStart: Bool) {
+        let strip = episodeStrip
+        if forceSeasonStart {
+            jumpToSeasonStart(selectedSeasonID ?? seasons.first?.id ?? "")
+            return
+        }
+        if let scrolledEpisodeID, strip.contains(where: { $0.id == scrolledEpisodeID }) {
+            return
+        }
+        if let scrolledEpisodeID,
+           strip.contains(where: { $0.copy == EpisodeCarousel.homeCopy && $0.episode.id == scrolledEpisodeID.episodeID }) {
+            self.scrolledEpisodeID = EpisodeCarouselCard.ID(
+                copy: EpisodeCarousel.homeCopy,
+                episodeID: scrolledEpisodeID.episodeID
+            )
+            return
+        }
+        jumpToSeasonStart(selectedSeasonID ?? seasons.first?.id ?? "")
+    }
+
+    private func handleEpisodeScroll(_ id: EpisodeCarouselCard.ID?) {
+        guard let id else { return }
+        if let seasonID = EpisodeCarousel.seasonID(for: id.episodeID, in: episodeStrip),
+           selectedSeasonID != seasonID {
+            selectedSeasonID = seasonID
+        }
+    }
+
+    private func recenterLoopIfNeeded() {
+        guard !isJumpingSeason, let id = scrolledEpisodeID,
+              let recentered = EpisodeCarousel.recentered(id)
+        else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            scrolledEpisodeID = recentered
+        }
         persistSnapshot()
     }
 
