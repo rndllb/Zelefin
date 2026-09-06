@@ -1,0 +1,88 @@
+name: Zelefin
+options:
+  bundleIdPrefix: app.zelefin
+  deploymentTarget:
+    iOS: "18.0"
+    tvOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+  xcodeVersion: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    DISABLE_DIAMOND_PROBLEM_DIAGNOSTIC: YES
+    INFOPLIST_KEY_CFBundleDisplayName: Zelefin
+    INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.entertainment
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+packages:
+  JellyfinAPI:
+    url: https://github.com/jellyfin/jellyfin-sdk-swift.git
+    from: "1.0.0"
+  AetherEngine:
+    url: https://github.com/superuser404notfound/AetherEngine
+    from: "6.67.2"
+targets:
+  Zelefin:
+    type: application
+    platform: iOS
+    supportedDestinations: [iOS, tvOS]
+    sources:
+      - path: Zelefin
+        excludes:
+          - "**/*.md"
+          - "Resources/Licenses/**"
+      - path: Zelefin/Resources/Licenses
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.zelefin.client
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: YES
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        INFOPLIST_KEY_UIBackgroundModes: audio
+        ENABLE_PREVIEWS: YES
+        TARGETED_DEVICE_FAMILY: "1,2,3"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Zelefin/Zelefin.entitlements
+    dependencies:
+      - package: JellyfinAPI
+        product: JellyfinAPI
+      - package: AetherEngine
+        product: AetherEngine
+    info:
+      path: Zelefin/Info.plist
+      properties:
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIRequiresFullScreen: false
+  ZelefinTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - ZelefinTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.zelefin.client.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+    dependencies:
+      - target: Zelefin
+schemes:
+  Zelefin:
+    build:
+      targets:
+        Zelefin: all
+        ZelefinTests: [test]
+    test:
+      targets:
+        - ZelefinTests
