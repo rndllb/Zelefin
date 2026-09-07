@@ -16,18 +16,34 @@ struct LibraryView: View {
         Group {
             if isLoading {
                 ProgressView().tint(.white)
-            } else if let errorMessage {
-                ContentUnavailableView("Couldn’t Load Library", systemImage: "books.vertical", description: Text(errorMessage))
             } else {
                 List {
                     Section {
+                        if let errorMessage, libraries.isEmpty {
+                            Text(errorMessage)
+                                .foregroundStyle(.secondary)
+                                .zelefinLibraryListRow()
+                        }
                         ForEach(libraries) { library in
                             NavigationLink {
                                 LibraryItemsView(library: library)
                             } label: {
                                 Label(library.name, systemImage: icon(for: library))
                             }
+                            .zelefinLibraryListRow()
                         }
+                        NavigationLink {
+                            DownloadedItemsView()
+                        } label: {
+                            Label("Downloaded", systemImage: "arrow.down.circle")
+                        }
+                        .zelefinLibraryListRow()
+                        NavigationLink {
+                            LibraryGenresView()
+                        } label: {
+                            Label("Genres", systemImage: "square.grid.2x2")
+                        }
+                        .zelefinLibraryListRow()
                     }
 
                     if let movies = libraries.first(where: { $0.kind == .movie }) {
@@ -37,6 +53,7 @@ struct LibraryView: View {
                         LibraryPreviewSection(title: "TV Shows", library: shows)
                     }
                 }
+                .listStyle(.plain)
                 #if os(iOS)
                 .scrollContentBackground(.hidden)
                 .zelefinScrollEdgeBlur()
@@ -127,14 +144,86 @@ struct LibraryPreviewSection: View {
                     .padding(.vertical, 8)
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color.clear)
+                .listRowBackground(Color.black)
+                .listRowSeparator(.hidden)
             }
         } header: {
-            Text(title)
+            NavigationLink {
+                LibraryItemsView(library: library)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(title)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+            }
         }
         .task {
             items = (try? await session.library?.items(in: library)) ?? []
         }
+    }
+}
+
+struct LibraryGenresView: View {
+    @Environment(SessionStore.self) private var session
+    @State private var genres: [MediaItem] = []
+    @State private var isLoading = true
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView()
+                    .tint(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if genres.isEmpty {
+                ContentUnavailableView(
+                    "No Genres",
+                    systemImage: "square.grid.2x2",
+                    description: Text("Genres from your libraries will show up here.")
+                )
+            } else {
+                List {
+                    ForEach(genres) { genre in
+                        NavigationLink {
+                            CatalogGridView(title: genre.name, query: .genre(genre.id))
+                        } label: {
+                            Label {
+                                Text(genre.name)
+                            } icon: {
+                                Image(systemName: GenreSymbol.systemImage(for: genre.name))
+                                    .foregroundStyle(Color.blue)
+                            }
+                        }
+                        .zelefinLibraryListRow()
+                    }
+                }
+                .listStyle(.plain)
+                #if os(iOS)
+                .scrollContentBackground(.hidden)
+                #endif
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .navigationTitle("Genres")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        #endif
+        .task { await load() }
+    }
+
+    private func load() async {
+        if let cached = session.homeLayout.sections.first(where: { $0.id == "genres" })?.items, !cached.isEmpty {
+            genres = cached
+            isLoading = false
+            return
+        }
+        genres = await session.library?.genresSectionIgnoringErrors()?.items ?? []
+        isLoading = false
     }
 }
 

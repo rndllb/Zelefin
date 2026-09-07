@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(DownloadStore.self) private var downloads
     @State private var profileSheet: ProfileSheet?
 
     var body: some View {
@@ -21,6 +22,7 @@ struct RootView: View {
         .sheet(item: $profileSheet) { destination in
             ProfileSheetContainer(destination: destination)
                 .environment(session)
+                .environment(downloads)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinProfileSheet)) { notification in
             guard session.isSignedIn else { return }

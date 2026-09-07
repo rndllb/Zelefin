@@ -754,6 +754,58 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
 }
 
 final class HomeLayoutPreferencesTests: XCTestCase {
+    func testGenreSymbolsMatchAppleTVLibraryRows() {
+        XCTAssertEqual(GenreSymbol.systemImage(for: "Action & Adventure"), "burst.fill")
+        XCTAssertEqual(GenreSymbol.systemImage(for: "Documentary"), "photo.on.rectangle.angled")
+        XCTAssertEqual(GenreSymbol.systemImage(for: "Horror"), "theatermasks.fill")
+        XCTAssertEqual(GenreSymbol.systemImage(for: "Kids & Family"), "balloon.2.fill")
+        XCTAssertEqual(GenreSymbol.systemImage(for: "Comedy"), "face.smiling")
+        XCTAssertEqual(GenreSymbol.systemImage(for: "Crime"), "lock.shield.fill")
+        XCTAssertEqual(GenreSymbol.systemImage(for: "True Crime"), "lock.shield.fill")
+    }
+
+    func testCommonGenresUseDistinctSymbols() {
+        let names = [
+            "Action", "Adventure", "Animation", "Anime", "Biography", "Comedy", "Crime",
+            "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Kids",
+            "Music", "Musical", "Mystery", "News", "Reality", "Romance", "Science Fiction",
+            "Sport", "Talk", "Thriller", "War", "Western"
+        ]
+        let symbols = names.map(GenreSymbol.systemImage)
+        XCTAssertEqual(Set(symbols).count, names.count, "Shared icons: \(Dictionary(grouping: zip(names, symbols), by: \.1).filter { $0.value.count > 1 })")
+        XCTAssertNotEqual(GenreSymbol.systemImage(for: "Action"), GenreSymbol.systemImage(for: "Adventure"))
+        XCTAssertNotEqual(GenreSymbol.systemImage(for: "Drama"), GenreSymbol.systemImage(for: "Horror"))
+        XCTAssertNotEqual(GenreSymbol.systemImage(for: "Kids"), GenreSymbol.systemImage(for: "Family"))
+        XCTAssertNotEqual(GenreSymbol.systemImage(for: "Unknown Shelf"), GenreSymbol.systemImage(for: "Custom Mix"))
+        XCTAssertNotEqual(GenreSymbol.systemImage(for: "Unknown Shelf"), "square.grid.2x2")
+    }
+
+    func testCatalogPagingContinuesUntilTheServerIsExhausted() {
+        XCTAssertEqual(
+            CatalogPaging.nextStartIndex(fetchedCount: 40, currentStart: 0, totalCount: 250),
+            40
+        )
+        XCTAssertEqual(
+            CatalogPaging.nextStartIndex(fetchedCount: 200, currentStart: 0, totalCount: 450),
+            200
+        )
+        XCTAssertEqual(
+            CatalogPaging.nextStartIndex(fetchedCount: 200, currentStart: 200, totalCount: 450),
+            400
+        )
+        XCTAssertEqual(
+            CatalogPaging.nextStartIndex(fetchedCount: 200, currentStart: 200, totalCount: 600),
+            400
+        )
+        XCTAssertNil(CatalogPaging.nextStartIndex(fetchedCount: 50, currentStart: 400, totalCount: 450))
+        XCTAssertNil(CatalogPaging.nextStartIndex(fetchedCount: 200, currentStart: 400, totalCount: 600))
+        XCTAssertNil(CatalogPaging.nextStartIndex(fetchedCount: 0, currentStart: 0, totalCount: 100))
+        XCTAssertEqual(
+            CatalogPaging.nextStartIndex(fetchedCount: 200, currentStart: 0, totalCount: nil),
+            200
+        )
+    }
+
     func testSeparateKeepsTwoRows() {
         let resume = [Self.item(id: "r1", queueKind: .resume)]
         let nextUp = [Self.item(id: "n1", queueKind: .nextUp)]

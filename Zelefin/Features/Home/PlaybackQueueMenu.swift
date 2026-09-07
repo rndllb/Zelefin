@@ -48,7 +48,7 @@ struct PlaybackQueueMenuContent: View {
     var onRemoveFromRecentlyWatched: (() -> Void)? = nil
 
     var body: some View {
-        Button("Download", systemImage: "arrow.down.to.line") {}
+        DownloadActionButton(item: item)
         Button(PlaybackQueueMenuLayout.playTitle(for: item.kind), systemImage: "play.fill") {
             onPlay()
         }

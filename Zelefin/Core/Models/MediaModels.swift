@@ -510,6 +510,215 @@ enum LibraryKind: String, Hashable, Sendable, Codable {
     }
 }
 
+enum GenreSymbol {
+    static func systemImage(for name: String) -> String {
+        let key = normalized(name)
+        if let exact = exactSymbols[key] {
+            return exact
+        }
+        if let matched = keywordSymbols.first(where: { key.contains($0.key) })?.value {
+            return matched
+        }
+        return fallbackSymbol(for: name)
+    }
+
+    private static func normalized(_ name: String) -> String {
+        let lowered = name.lowercased()
+            .replacingOccurrences(of: "&", with: " and ")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "/", with: " ")
+        let letters = lowered.map { character -> Character in
+            character.isLetter || character.isNumber || character == " " ? character : " "
+        }
+        let collapsed = String(letters)
+            .split(separator: " ")
+            .joined(separator: " ")
+        return collapsed
+            .replacingOccurrences(of: "science fiction", with: "scifi")
+            .replacingOccurrences(of: "sci fi", with: "scifi")
+    }
+
+    private static let exactSymbols: [String: String] = [
+        "action": "flame.fill",
+        "action and adventure": "burst.fill",
+        "adventure": "figure.hiking",
+        "animation": "sparkle",
+        "anime": "moon.stars.fill",
+        "awards": "trophy.fill",
+        "biography": "person.text.rectangle",
+        "children": "teddybear.fill",
+        "classic": "clock.fill",
+        "comedy": "face.smiling",
+        "concert": "music.mic",
+        "crime": "lock.shield.fill",
+        "true crime": "lock.shield.fill",
+        "crime drama": "lock.shield.fill",
+        "cult": "star.circle.fill",
+        "cyberpunk": "cpu.fill",
+        "dark comedy": "cloud.moon.fill",
+        "disaster": "hurricane",
+        "documentary": "photo.on.rectangle.angled",
+        "drama": "text.book.closed.fill",
+        "education": "graduationcap.fill",
+        "faith": "heart.circle.fill",
+        "family": "figure.2.and.child.holdinghands",
+        "fantasy": "wand.and.stars",
+        "film noir": "moon.fill",
+        "food": "fork.knife",
+        "foreign": "globe",
+        "game show": "gamecontroller.fill",
+        "historical": "building.columns.fill",
+        "history": "building.columns.fill",
+        "holiday": "gift.fill",
+        "home and garden": "leaf.fill",
+        "horror": "theatermasks.fill",
+        "independent": "film",
+        "indie": "film",
+        "kids": "balloon.2.fill",
+        "kids and family": "balloon.2.fill",
+        "legal": "hammer.fill",
+        "lgbt": "rainbow",
+        "lgbtq": "rainbow",
+        "martial arts": "figure.martial.arts",
+        "medical": "cross.case.fill",
+        "miniseries": "rectangle.stack.fill",
+        "music": "music.note",
+        "musical": "music.quarternote.3",
+        "mystery": "magnifyingglass",
+        "nature": "tree.fill",
+        "news": "newspaper.fill",
+        "noir": "moon.fill",
+        "paranormal": "eye.trianglebadge.exclamationmark",
+        "politics": "building.columns",
+        "reality": "video.fill",
+        "religion": "book.closed.fill",
+        "romance": "heart.fill",
+        "romantic comedy": "heart.circle.fill",
+        "satire": "quote.bubble.fill",
+        "science": "atom",
+        "scifi": "sparkles",
+        "scifi and fantasy": "sparkles",
+        "short": "timer",
+        "sitcom": "tv.fill",
+        "soap": "drop.fill",
+        "special": "star.fill",
+        "sport": "sportscourt.fill",
+        "sports": "sportscourt.fill",
+        "spy": "binoculars.fill",
+        "stand up": "mic.fill",
+        "superhero": "bolt.shield.fill",
+        "suspense": "eye.fill",
+        "talk": "bubble.left.and.bubble.right.fill",
+        "teen": "person.2.fill",
+        "thriller": "bolt.fill",
+        "travel": "airplane",
+        "tv movie": "play.tv.fill",
+        "vampire": "moon.haze.fill",
+        "war": "shield.fill",
+        "war and politics": "shield.lefthalf.filled",
+        "western": "sun.horizon.fill",
+        "zombie": "figure.walk"
+    ]
+
+    private static let keywordSymbols: [(key: String, value: String)] = [
+        ("martial arts", "figure.martial.arts"),
+        ("action and adventure", "burst.fill"),
+        ("kids and family", "balloon.2.fill"),
+        ("romantic comedy", "heart.circle.fill"),
+        ("dark comedy", "cloud.moon.fill"),
+        ("stand up", "mic.fill"),
+        ("game show", "gamecontroller.fill"),
+        ("home and garden", "leaf.fill"),
+        ("film noir", "moon.fill"),
+        ("scifi and fantasy", "sparkles"),
+        ("war and politics", "shield.lefthalf.filled"),
+        ("documentary", "photo.on.rectangle.angled"),
+        ("biography", "person.text.rectangle"),
+        ("animation", "sparkle"),
+        ("adventure", "figure.hiking"),
+        ("thriller", "bolt.fill"),
+        ("suspense", "eye.fill"),
+        ("superhero", "bolt.shield.fill"),
+        ("fantasy", "wand.and.stars"),
+        ("mystery", "magnifyingglass"),
+        ("western", "sun.horizon.fill"),
+        ("romance", "heart.fill"),
+        ("romantic", "heart.fill"),
+        ("horror", "theatermasks.fill"),
+        ("comedy", "face.smiling"),
+        ("family", "figure.2.and.child.holdinghands"),
+        ("children", "teddybear.fill"),
+        ("kids", "balloon.2.fill"),
+        ("anime", "moon.stars.fill"),
+        ("true crime", "lock.shield.fill"),
+        ("crime drama", "lock.shield.fill"),
+        ("crime", "lock.shield.fill"),
+        ("drama", "text.book.closed.fill"),
+        ("action", "flame.fill"),
+        ("history", "building.columns.fill"),
+        ("historical", "building.columns.fill"),
+        ("musical", "music.quarternote.3"),
+        ("music", "music.note"),
+        ("sports", "sportscourt.fill"),
+        ("sport", "sportscourt.fill"),
+        ("news", "newspaper.fill"),
+        ("reality", "video.fill"),
+        ("scifi", "sparkles"),
+        ("science", "atom"),
+        ("nature", "tree.fill"),
+        ("travel", "airplane"),
+        ("holiday", "gift.fill"),
+        ("christmas", "gift.fill"),
+        ("food", "fork.knife"),
+        ("legal", "hammer.fill"),
+        ("medical", "cross.case.fill"),
+        ("politics", "building.columns"),
+        ("war", "shield.fill"),
+        ("spy", "binoculars.fill"),
+        ("teen", "person.2.fill"),
+        ("talk", "bubble.left.and.bubble.right.fill"),
+        ("soap", "drop.fill"),
+        ("sitcom", "tv.fill"),
+        ("concert", "music.mic"),
+        ("awards", "trophy.fill"),
+        ("education", "graduationcap.fill"),
+        ("faith", "heart.circle.fill"),
+        ("religion", "book.closed.fill"),
+        ("foreign", "globe"),
+        ("independent", "film"),
+        ("classic", "clock.fill"),
+        ("short", "timer"),
+        ("zombie", "figure.walk"),
+        ("vampire", "moon.haze.fill"),
+        ("paranormal", "eye.trianglebadge.exclamationmark"),
+        ("disaster", "hurricane"),
+        ("cyberpunk", "cpu.fill")
+    ]
+
+    private static let fallbackSymbols = [
+        "tag.fill",
+        "star.square.fill",
+        "hexagon.fill",
+        "rhombus.fill",
+        "seal.fill",
+        "pentagon.fill",
+        "diamond.fill",
+        "octagon.fill",
+        "triangle.fill",
+        "capsule.fill",
+        "oval.fill",
+        "button.programmable",
+        "app.fill",
+        "circle.hexagongrid.fill",
+        "square.on.circle.fill"
+    ]
+
+    private static func fallbackSymbol(for name: String) -> String {
+        let hash = name.unicodeScalars.reduce(0) { $0 &+ Int($1.value) &* 37 }
+        return fallbackSymbols[abs(hash) % fallbackSymbols.count]
+    }
+}
+
 struct MediaLibrary: Identifiable, Hashable, Sendable, Codable {
     let id: String
     let name: String

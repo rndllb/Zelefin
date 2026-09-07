@@ -34,6 +34,27 @@ enum DirectPlayLoadPolicy {
     static func shouldOpenAsHTTPURL(method: PlaybackMethod, isHLS: Bool) -> Bool {
         method != .directPlay || isHLS
     }
+
+    /// On-device files have no HTTP ranges. Open through a file reader so libavformat
+    /// never has to parse a path with spaces, and AVPlayer never gets gateway headers.
+    static func shouldOpenAsURL(url: URL, method: PlaybackMethod, isHLS: Bool) -> Bool {
+        url.isFileURL || shouldOpenAsHTTPURL(method: method, isHLS: isHLS)
+    }
+}
+
+/// Local downloads must not wait on Jellyfin (intro skipper, remux fallback, progress).
+enum OfflinePlaybackPolicy {
+    static func shouldFetchSkipSegments(isLocalFile: Bool) -> Bool {
+        !isLocalFile
+    }
+
+    static func shouldReportToServer(isLocalFile: Bool) -> Bool {
+        !isLocalFile
+    }
+
+    static func shouldFallBackToRemux(isLocalFile: Bool) -> Bool {
+        !isLocalFile
+    }
 }
 
 /// Returning from background leaves audio on a dead sample-buffer layer. Aether
@@ -116,5 +137,72 @@ enum DirectPlayLoadOptions {
     @MainActor
     private static var isPanelInHDRMode: Bool {
         UIScreen.main.currentEDRHeadroom > 1
+    }
+}
+
+/// Seekable file source for downloaded media. Custom IO keeps FFmpeg off `Application Support` paths.
+final class LocalMediaByteReader: DirectPlayByteSource, @unchecked Sendable {
+    private let handle: FileHandle
+    private let url: URL
+    private let size: Int64
+    private let lock = NSLock()
+
+    var discImageProbeEnabled: Bool { false }
+
+    init?(url: URL) {
+        guard url.isFileURL, let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        guard size > 0 else {
+            try? handle.close()
+            return nil
+        }
+        self.handle = handle
+        self.url = url
+        self.size = size
+    }
+
+    func read(_ buffer: UnsafeMutablePointer<UInt8>?, size n: Int32) -> Int32 {
+        guard let buffer, n > 0 else { return -1 }
+        lock.lock()
+        defer { lock.unlock() }
+        return autoreleasepool { () -> Int32 in
+            guard let data = try? handle.read(upToCount: Int(n)) else { return -1 }
+            if data.isEmpty { return 0 }
+            data.copyBytes(to: buffer, count: data.count)
+            return Int32(data.count)
+        }
+    }
+
+    func seek(offset: Int64, whence: Int32) -> Int64 {
+        if whence == 65536 { return size }
+        lock.lock()
+        defer { lock.unlock() }
+        let target: Int64
+        switch whence {
+        case SEEK_SET:
+            target = offset
+        case SEEK_CUR:
+            target = Int64((try? handle.offset()) ?? 0) + offset
+        case SEEK_END:
+            target = size + offset
+        default:
+            return -1
+        }
+        guard target >= 0 else { return -1 }
+        do {
+            try handle.seek(toOffset: UInt64(target))
+            return target
+        } catch {
+            return -1
+        }
+    }
+
+    func close() {
+        try? handle.close()
+    }
+
+    func makeIndependentReader() -> DirectPlayByteSource? {
+        LocalMediaByteReader(url: url)
     }
 }

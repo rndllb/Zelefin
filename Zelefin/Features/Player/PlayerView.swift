@@ -5,6 +5,7 @@ import UIKit
 struct PlayerView: View {
     let item: MediaItem
     @Environment(SessionStore.self) private var session
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @State private var activeItem: MediaItem
@@ -55,7 +56,11 @@ struct PlayerView: View {
         .onChange(of: model?.errorMessage) { _, message in
             guard let message, !didFallBackToRemux else { return }
             guard let plan = model?.plan, plan.method == .directPlay else { return }
-            Task { await fallBackToRemux(from: message) }
+            if OfflinePlaybackPolicy.shouldFallBackToRemux(isLocalFile: plan.streamURL.isFileURL) {
+                Task { await fallBackToRemux(from: message) }
+                return
+            }
+            fallbackError = message
         }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhase(phase)
@@ -100,6 +105,11 @@ struct PlayerView: View {
     }
 
     private func prepareAndStart() async {
+        if let local = downloads.playbackPlan(for: activeItem, account: session.session) {
+            guard !Task.isCancelled else { return }
+            await startPlayback(local)
+            return
+        }
         guard let library = session.library else {
             fallbackError = "Sign in to play this title."
             return
@@ -126,7 +136,8 @@ struct PlayerView: View {
 
     private func startPlayback(_ plan: PlaybackPlan, skipSegments: [SkipSegment]? = nil) async {
         let reporter: PlaybackReporter?
-        if let client = session.client {
+        if OfflinePlaybackPolicy.shouldReportToServer(isLocalFile: plan.streamURL.isFileURL),
+           let client = session.client {
             reporter = PlaybackReporter(client: client, plan: plan)
         } else {
             reporter = nil
@@ -138,7 +149,9 @@ struct PlayerView: View {
         model = created
         await Task.yield()
         do {
-            if skipSegments == nil, let client = session.client {
+            if skipSegments == nil,
+               OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
+               let client = session.client {
                 let skipper = IntroSkipperClient(client: client)
                 if await skipper.isInstalled() {
                     try Task.checkCancellation()

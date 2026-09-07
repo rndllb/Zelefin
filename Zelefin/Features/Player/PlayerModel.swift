@@ -373,7 +373,17 @@ final class PlayerModel {
         }
         let options = DirectPlayLoadOptions.make(for: plan)
         try Task.checkCancellation()
-        if DirectPlayLoadPolicy.shouldOpenAsHTTPURL(
+        if url.isFileURL {
+            guard let reader = LocalMediaByteReader(url: url) else {
+                throw ZelefinError.offlineFileUnreadable
+            }
+            var fileOptions = options
+            fileOptions.httpHeaders = [:]
+            try await created.load(
+                source: .custom(reader, formatHint: StreamContainer.formatHint(from: url)),
+                options: fileOptions
+            )
+        } else if DirectPlayLoadPolicy.shouldOpenAsHTTPURL(
             method: plan.method,
             isHLS: PlaybackPipelineResolver.isHLS(url)
         ) {
@@ -875,18 +885,22 @@ final class PlayerModel {
 
     private static func makeNativePlayer(url: URL) -> AVPlayer {
         let item: AVPlayerItem
-        let headers = PlaybackHTTPHeaders.fields(for: url)
-        if !headers.isEmpty || !(HTTPCookieStorage.shared.cookies(for: url) ?? []).isEmpty {
-            var options: [String: Any] = [:]
-            if !headers.isEmpty {
-                options["AVURLAssetHTTPHeaderFieldsKey"] = headers
-            }
-            if let cookies = HTTPCookieStorage.shared.cookies(for: url), !cookies.isEmpty {
-                options["AVURLAssetHTTPCookiesKey"] = cookies
-            }
-            item = AVPlayerItem(asset: AVURLAsset(url: url, options: options))
-        } else {
+        if url.isFileURL {
             item = AVPlayerItem(url: url)
+        } else {
+            let headers = PlaybackHTTPHeaders.fields(for: url)
+            if !headers.isEmpty || !(HTTPCookieStorage.shared.cookies(for: url) ?? []).isEmpty {
+                var options: [String: Any] = [:]
+                if !headers.isEmpty {
+                    options["AVURLAssetHTTPHeaderFieldsKey"] = headers
+                }
+                if let cookies = HTTPCookieStorage.shared.cookies(for: url), !cookies.isEmpty {
+                    options["AVURLAssetHTTPCookiesKey"] = cookies
+                }
+                item = AVPlayerItem(asset: AVURLAsset(url: url, options: options))
+            } else {
+                item = AVPlayerItem(url: url)
+            }
         }
         let player = AVPlayer(playerItem: item)
         player.appliesMediaSelectionCriteriaAutomatically = true

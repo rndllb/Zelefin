@@ -412,6 +412,11 @@ final class PlaybackHTTPHeadersTests: XCTestCase {
         XCTAssertEqual(fields["X-Emby-Token"], "secret")
         XCTAssertEqual(fields["Authorization"], "MediaBrowser Token=\"secret\"")
     }
+
+    func testFileURLsDoNotCarryGatewayHeaders() {
+        let url = URL(fileURLWithPath: "/tmp/Zelefin/media.mkv")
+        XCTAssertEqual(PlaybackHTTPHeaders.fields(for: url), [:])
+    }
 }
 
 final class StreamContainerTests: XCTestCase {

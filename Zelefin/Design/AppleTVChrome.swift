@@ -169,10 +169,17 @@ private final class ArtworkCache: @unchecked Sendable {
     func load(from url: URL) async -> UIImage? {
         if let cached = image(for: url) { return cached }
         do {
-            let (data, response) = try await JellyfinNetworking.data(from: url)
-            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
-                  let loaded = UIImage(data: data)
-            else { return nil }
+            let data: Data
+            if url.isFileURL {
+                data = try Data(contentsOf: url)
+            } else {
+                let (bytes, response) = try await JellyfinNetworking.data(from: url)
+                guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+                    return nil
+                }
+                data = bytes
+            }
+            guard let loaded = UIImage(data: data) else { return nil }
             store(loaded, for: url)
             return loaded
         } catch {
@@ -233,16 +240,21 @@ struct LandscapeCard: View {
     let imageURL: URL?
     var showsOverflowIcon = true
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(SessionStore.self) private var session
 
     private var size: CGSize {
         PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
     }
 
     var body: some View {
-        PosterImage(url: imageURL, aspectRatio: 16 / 9)
+        PosterImage(url: downloads.posterURL(for: item, account: session.session, remote: imageURL), aspectRatio: 16 / 9)
             .frame(width: size.width, height: size.height)
             .overlay(alignment: .bottom) {
                 footer
+            }
+            .overlay {
+                DownloadCoverBadge(item: item)
             }
             .posterCard()
             .frame(width: size.width, alignment: .leading)
@@ -303,9 +315,11 @@ struct LandscapeCard: View {
     }
 
     private var accessibilityCaption: String {
-        [item.name, item.continueWatchingCaption]
-            .compactMap { $0 }
-            .joined(separator: ", ")
+        var parts = [item.name, item.continueWatchingCaption].compactMap { $0 }
+        if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
+            parts.append(download)
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -314,14 +328,19 @@ struct ReplayLandscapeCard: View {
     let imageURL: URL?
     var showsOverflowIcon = true
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(SessionStore.self) private var session
 
     private var size: CGSize {
         PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
     }
 
     var body: some View {
-        PosterImage(url: imageURL, aspectRatio: 16 / 9)
+        PosterImage(url: downloads.posterURL(for: item, account: session.session, remote: imageURL), aspectRatio: 16 / 9)
             .frame(width: size.width, height: size.height)
+            .overlay {
+                DownloadCoverBadge(item: item)
+            }
             .overlay(alignment: .bottom) {
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.78)],
@@ -366,9 +385,11 @@ struct ReplayLandscapeCard: View {
             .frame(width: size.width, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
-                [item.continueWatchingTitle, item.recentlyWatchedCaption]
+                ([item.continueWatchingTitle, item.recentlyWatchedCaption]
                     .compactMap { $0 }
-                    .joined(separator: ", ")
+                    + [downloads.coverMark(for: item, account: session.session).accessibilityCaption].compactMap { $0 }
+                )
+                .joined(separator: ", ")
             )
     }
 }
@@ -430,6 +451,8 @@ struct EpisodeShowcaseCard: View {
     let item: MediaItem
     let imageURL: URL?
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(SessionStore.self) private var session
 
     private var size: CGSize {
         PosterMetrics.episodeCardSize.scaled(by: sidebarLayout.scale)
@@ -438,12 +461,19 @@ struct EpisodeShowcaseCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PosterImage(url: imageURL, aspectRatio: 16 / 9)
+            PosterImage(
+                url: downloads.posterURL(for: item, account: session.session, remote: imageURL),
+                aspectRatio: 16 / 9
+            )
                 .frame(width: size.width, height: imageHeight)
                 .clipped()
+                .overlay {
+                    DownloadCoverBadge(item: item, padded: false)
+                }
                 .overlay(alignment: .topTrailing) {
                     if item.isWatched {
                         watchedMark
+                            .padding(markPadding)
                     }
                 }
 
@@ -505,7 +535,6 @@ struct EpisodeShowcaseCard: View {
             .foregroundStyle(.white, Color.black.opacity(0.78))
             .font(.system(size: markSize, weight: .semibold))
             .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
-            .padding(markPadding)
             .accessibilityHidden(true)
     }
 
@@ -529,6 +558,9 @@ struct EpisodeShowcaseCard: View {
         var parts = [item.episodeOrdinalLabel, item.name, item.runtimeLabel].compactMap { $0 }
         if item.isWatched {
             parts.append("Watched")
+        }
+        if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
+            parts.append(download)
         }
         return parts.joined(separator: ", ")
     }
@@ -620,6 +652,8 @@ struct PortraitPoster: View {
     var rank: Int?
     var size: CGSize? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(SessionStore.self) private var session
 
     private var fittedSize: CGSize {
         size ?? PosterMetrics.portraitSize.scaled(by: sidebarLayout.scale)
@@ -627,8 +661,11 @@ struct PortraitPoster: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PosterImage(url: imageURL)
+            PosterImage(url: downloads.posterURL(for: item, account: session.session, remote: imageURL))
                 .frame(width: fittedSize.width, height: fittedSize.height)
+                .overlay {
+                    DownloadCoverBadge(item: item)
+                }
                 .posterCard()
 
             if let rank {
@@ -640,7 +677,15 @@ struct PortraitPoster: View {
             }
         }
         .frame(width: fittedSize.width, alignment: .leading)
-        .accessibilityLabel(item.name)
+        .accessibilityLabel(accessibilityCaption)
+    }
+
+    private var accessibilityCaption: String {
+        var parts = [item.name]
+        if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
+            parts.append(download)
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -1084,6 +1129,12 @@ extension View {
         #else
         self
         #endif
+    }
+
+    func zelefinLibraryListRow() -> some View {
+        self
+            .listRowBackground(Color.black)
+            .listRowSeparatorTint(Color.white.opacity(0.16))
     }
 }
 

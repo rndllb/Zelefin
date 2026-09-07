@@ -8,6 +8,8 @@ enum ZelefinError: LocalizedError, Sendable {
     case byteRangeUnsupported
     case playbackEngineUnavailable
     case emptyPlaybackSources
+    case downloadFailed
+    case offlineFileUnreadable
     case accessGateway
     case quickConnectDisabled
     case quickConnectExpired
@@ -31,6 +33,10 @@ enum ZelefinError: LocalizedError, Sendable {
             "Zelefin could not start the Direct Play engine."
         case .emptyPlaybackSources:
             "The server did not return a playable stream."
+        case .downloadFailed:
+            "Zelefin could not download this title. Check the connection and try again."
+        case .offlineFileUnreadable:
+            "Zelefin could not open the downloaded file."
         case .accessGateway:
             "This server is behind an access gateway such as Cloudflare Zero Trust or Pangolin. Add the gateway client ID and token, then try again."
         case .quickConnectDisabled:

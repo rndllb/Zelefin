@@ -5,6 +5,7 @@ import SafariServices
 
 struct ItemDetailView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.openURL) private var openURL
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let itemID: String
@@ -104,7 +105,9 @@ struct ItemDetailView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Download", systemImage: "arrow.down.to.line") {}
+                if let item {
+                    DownloadActionButton(item: item, episodes: episodes)
+                }
                 Button("Share", systemImage: "square.and.arrow.up") {}
             }
         }
@@ -152,7 +155,7 @@ struct ItemDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
-            playProgressButton(for: MediaItem.heroPlaybackItem(title: item, episodes: episodes))
+            playProgressRow(for: MediaItem.heroPlaybackItem(title: item, episodes: episodes))
 
             if let overview = item.overview, !overview.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -201,9 +204,20 @@ struct ItemDetailView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func playProgressButton(for item: MediaItem) -> some View {
+    private func playProgressRow(for playbackItem: MediaItem) -> some View {
+        let title = item ?? playbackItem
+        return VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                playProgressButton(for: playbackItem, allowRelatedDownload: true)
+                DownloadHeroButton(item: title, episodes: episodes)
+            }
+            DownloadStatusBanner(item: title, episodes: episodes)
+        }
+    }
+
+    private func playProgressButton(for item: MediaItem, allowRelatedDownload: Bool = false) -> some View {
         Button {
-            play(item)
+            play(item, allowRelatedDownload: allowRelatedDownload)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "play.fill")
@@ -417,6 +431,9 @@ struct ItemDetailView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            DownloadActionButton(item: card.episode)
+                        }
                         .frame(
                             width: PosterMetrics.episodeCardSize.width * sidebarLayout.scale,
                             height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale
@@ -768,7 +785,15 @@ struct ItemDetailView: View {
         persistSnapshot()
     }
 
-    private func play(_ item: MediaItem) {
+    private func play(_ item: MediaItem, allowRelatedDownload: Bool = false) {
+        if let local = downloads.playableItem(
+            for: item,
+            allowRelated: allowRelatedDownload,
+            account: session.session
+        ) {
+            playingItem = local
+            return
+        }
         playingItem = item
     }
 }

@@ -17,6 +17,12 @@
 		1A8154B7236C12B68B7B9A8E /* ItemMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A9F260D3001AF2186355ED /* ItemMapper.swift */; };
 		21EE13145E4831A498FFDEBF /* SeerrDiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533892AF69D1B7A279174A72 /* SeerrDiscoverView.swift */; };
 		24A542EDE832BBC84AF91CF9 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 959AD1E0A6E5CA2A60595B6C /* DeviceIdentity.swift */; };
+		0A1B2C3D4E5F60718293A008 /* DownloadControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A007 /* DownloadControls.swift */; };
+		0A1B2C3D4E5F60718293A002 /* DownloadRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A001 /* DownloadRecord.swift */; };
+		0A1B2C3D4E5F60718293A006 /* DownloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A005 /* DownloadStore.swift */; };
+		0A1B2C3D4E5F60718293A00D /* DownloadStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A00C /* DownloadStoreTests.swift */; };
+		0A1B2C3D4E5F60718293A004 /* DownloadTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A003 /* DownloadTransfer.swift */; };
+		0A1B2C3D4E5F60718293A00A /* DownloadedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A009 /* DownloadedItemsView.swift */; };
 		25F99F407BA393BCDCFF2399 /* SeerrDiscover.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC535123280EBE8E0BC7162F /* SeerrDiscover.swift */; };
 		28C3A4A5337C545359F6B80C /* MediaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF605DE82AE378D8A40E1763 /* MediaModels.swift */; };
 		28C98FA55462B84BCC71ED2A /* AetherEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 8D890F71C8543B7D47D25005 /* AetherEngine */; };
@@ -106,6 +112,12 @@
 		01253E1D158D0BBE9905263D /* SkipSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkipSegment.swift; sourceTree = "<group>"; };
 		031C51CE3CBE5E9195D22124 /* PlaybackStatsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackStatsOverlay.swift; sourceTree = "<group>"; };
 		087ADE8AFAB2900FF978DFD0 /* Licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Licenses; path = Zelefin/Resources/Licenses; sourceTree = SOURCE_ROOT; };
+		0A1B2C3D4E5F60718293A001 /* DownloadRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadRecord.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A003 /* DownloadTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadTransfer.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A005 /* DownloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadStore.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A007 /* DownloadControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadControls.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A009 /* DownloadedItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadedItemsView.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A00C /* DownloadStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadStoreTests.swift; sourceTree = "<group>"; };
 		1046D5D2E1462B7C9A995DE7 /* PlaybackPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackPipelineTests.swift; sourceTree = "<group>"; };
 		13397ED488A80F9812180ED4 /* OpenSourceNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenSourceNotice.swift; sourceTree = "<group>"; };
 		16B2DE224480E8D4210A2A50 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
@@ -270,6 +282,7 @@
 		52B4D05728B8AC7DFBC60D08 /* ZelefinTests */ = {
 			isa = PBXGroup;
 			children = (
+				0A1B2C3D4E5F60718293A00C /* DownloadStoreTests.swift */,
 				771117D10F521DABAE7167FC /* EpisodeCarouselTests.swift */,
 				43A7C44161BBD27AF47EFB94 /* HomeSnapshotStoreTests.swift */,
 				9FEE7EEAB1A7D487B6A6570E /* ItemDetailSnapshotStoreTests.swift */,
@@ -406,6 +419,8 @@
 			isa = PBXGroup;
 			children = (
 				553FADF6F3C90EFC2BCED684 /* CatalogBrowseView.swift */,
+				0A1B2C3D4E5F60718293A007 /* DownloadControls.swift */,
+				0A1B2C3D4E5F60718293A009 /* DownloadedItemsView.swift */,
 				367E0E143CAAF64A02812E01 /* LibraryView.swift */,
 			);
 			path = Library;
@@ -423,6 +438,7 @@
 		C192D89E46B7E9C3B966BC0B /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				0A1B2C3D4E5F60718293A00B /* Downloads */,
 				530B1C3F98DA277CCC9821E5 /* Jellyfin */,
 				20EC6BCC7C3CBCA131C4FEC3 /* Models */,
 				A3EA3EA60D203D1960972197 /* Networking */,
@@ -457,6 +473,16 @@
 				AEFEB3E7B67400FFCDE9FAF2 /* SnapshotCoding.swift */,
 			);
 			path = Session;
+			sourceTree = "<group>";
+		};
+		0A1B2C3D4E5F60718293A00B /* Downloads */ = {
+			isa = PBXGroup;
+			children = (
+				0A1B2C3D4E5F60718293A001 /* DownloadRecord.swift */,
+				0A1B2C3D4E5F60718293A005 /* DownloadStore.swift */,
+				0A1B2C3D4E5F60718293A003 /* DownloadTransfer.swift */,
+			);
+			path = Downloads;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -567,6 +593,11 @@
 				BE1B47F1109A3A44A4D7436D /* ConnectBrandMark.swift in Sources */,
 				76C1C02412837F4D637A43EE /* ConnectView.swift in Sources */,
 				24A542EDE832BBC84AF91CF9 /* DeviceIdentity.swift in Sources */,
+				0A1B2C3D4E5F60718293A008 /* DownloadControls.swift in Sources */,
+				0A1B2C3D4E5F60718293A002 /* DownloadRecord.swift in Sources */,
+				0A1B2C3D4E5F60718293A006 /* DownloadStore.swift in Sources */,
+				0A1B2C3D4E5F60718293A004 /* DownloadTransfer.swift in Sources */,
+				0A1B2C3D4E5F60718293A00A /* DownloadedItemsView.swift in Sources */,
 				CBBF41E4A5A1BA5A12DB8439 /* DirectPlayEngine.swift in Sources */,
 				0DF3A11C372D63C15F3DDBB8 /* DirectPlayPictureInPicture.swift in Sources */,
 				A23CB99A908A54D5F034A158 /* DirectPlayPictureLayout.swift in Sources */,
@@ -632,6 +663,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A1B2C3D4E5F60718293A00D /* DownloadStoreTests.swift in Sources */,
 				87AC8BBF623640763A06A4D7 /* EpisodeCarouselTests.swift in Sources */,
 				18E43A2A27FC9C896CE14F27 /* HomeSnapshotStoreTests.swift in Sources */,
 				ABB01E7405BB9A93D6708650 /* ItemDetailSnapshotStoreTests.swift in Sources */,

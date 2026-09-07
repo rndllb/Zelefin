@@ -29,8 +29,23 @@ enum SnapshotCoding {
         named folder: String,
         fileManager: FileManager = .default
     ) -> URL {
-        let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-        let base = caches.first ?? fileManager.temporaryDirectory
+        directory(.cachesDirectory, named: folder, fileManager: fileManager)
+    }
+
+    static func applicationSupportDirectory(
+        named folder: String,
+        fileManager: FileManager = .default
+    ) -> URL {
+        directory(.applicationSupportDirectory, named: folder, fileManager: fileManager)
+    }
+
+    private static func directory(
+        _ search: FileManager.SearchPathDirectory,
+        named folder: String,
+        fileManager: FileManager
+    ) -> URL {
+        let urls = fileManager.urls(for: search, in: .userDomainMask)
+        let base = urls.first ?? fileManager.temporaryDirectory
         return base
             .appendingPathComponent("Zelefin", isDirectory: true)
             .appendingPathComponent(folder, isDirectory: true)

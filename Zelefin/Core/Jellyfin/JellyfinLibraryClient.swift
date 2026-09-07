@@ -132,25 +132,21 @@ final class JellyfinLibraryClient: Sendable {
     }
 
     func items(in library: MediaLibrary) async throws -> [MediaItem] {
-        let include: [BaseItemKind] = library.kind == .series ? [.series] : [.movie, .series, .boxSet]
-        let result = try await client.send(
-            Paths.getItems(
-                parameters: .init(
-                    userID: userID,
-                    startIndex: 0,
-                    limit: 100,
-                    isRecursive: true,
-                    parentID: library.id,
-                    fields: ItemMapper.listFields,
-                    includeItemTypes: include,
-                    sortBy: [.sortName],
-                    enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes,
-                    enableTotalRecordCount: false
-                )
+        return try await pagedMediaItems { start, pageSize in
+            .init(
+                userID: userID,
+                startIndex: start,
+                limit: pageSize,
+                isRecursive: true,
+                parentID: library.id,
+                fields: ItemMapper.listFields,
+                includeItemTypes: browseIncludeTypes(for: library),
+                sortBy: [.sortName],
+                enableUserData: true,
+                enableImageTypes: ItemMapper.listImageTypes,
+                enableTotalRecordCount: true
             )
-        ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        }
     }
 
     func items(inLibraries libraries: [MediaLibrary]) async -> [MediaItem] {
@@ -406,24 +402,21 @@ final class JellyfinLibraryClient: Sendable {
     }
 
     func items(personID: String) async throws -> [MediaItem] {
-        let result = try await client.send(
-            Paths.getItems(
-                parameters: .init(
-                    userID: userID,
-                    startIndex: 0,
-                    limit: 100,
-                    isRecursive: true,
-                    fields: ItemMapper.listFields,
-                    includeItemTypes: [.movie, .series],
-                    sortBy: [.sortName],
-                    enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes,
-                    personIDs: [personID],
-                    enableTotalRecordCount: false
-                )
+        try await pagedMediaItems { start, limit in
+            .init(
+                userID: userID,
+                startIndex: start,
+                limit: limit,
+                isRecursive: true,
+                fields: ItemMapper.listFields,
+                includeItemTypes: [.movie, .series],
+                sortBy: [.sortName],
+                enableUserData: true,
+                enableImageTypes: ItemMapper.listImageTypes,
+                personIDs: [personID],
+                enableTotalRecordCount: true
             )
-        ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        }
     }
 
     func credits(for itemID: String, from dto: BaseItemDto) async -> [CreditPerson] {
@@ -513,6 +506,17 @@ final class JellyfinLibraryClient: Sendable {
             )
         ).value
         return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
+
+    func originalFileDownloadURL(for itemID: String) throws -> URL {
+        guard let url = ServerURL.resolve(
+            base: client.configuration.url,
+            path: "/Items/\(itemID)/Download",
+            token: client.accessToken
+        ) else {
+            throw ZelefinError.missingStreamURL
+        }
+        return url
     }
 
     func playbackPlan(
@@ -793,25 +797,64 @@ final class JellyfinLibraryClient: Sendable {
         include: [BaseItemKind],
         recursive: Bool = true
     ) async throws -> [MediaItem] {
-        let result = try await client.send(
-            Paths.getItems(
-                parameters: .init(
-                    userID: userID,
-                    startIndex: 0,
-                    limit: 100,
-                    isRecursive: recursive,
-                    parentID: parentID,
-                    fields: ItemMapper.listFields,
-                    includeItemTypes: include,
-                    sortBy: [.sortName],
-                    enableUserData: true,
-                    enableImageTypes: ItemMapper.listImageTypes,
-                    genreIDs: genreID.map { [$0] },
-                    enableTotalRecordCount: false
-                )
+        try await pagedMediaItems { start, limit in
+            .init(
+                userID: userID,
+                startIndex: start,
+                limit: limit,
+                isRecursive: recursive,
+                parentID: parentID,
+                fields: ItemMapper.listFields,
+                includeItemTypes: include,
+                sortBy: [.sortName],
+                enableUserData: true,
+                enableImageTypes: ItemMapper.listImageTypes,
+                genreIDs: genreID.map { [$0] },
+                enableTotalRecordCount: true
             )
+        }
+    }
+
+    private func pagedMediaItems(
+        parameters: (Int, Int) -> Paths.GetItemsParameters
+    ) async throws -> [MediaItem] {
+        var items: [MediaItem] = []
+        var start = 0
+        while true {
+            let page = try await mediaPage(start: start, parameters: parameters)
+            items.append(contentsOf: page.items)
+            guard let next = page.nextStart else { break }
+            start = next
+        }
+        return items
+    }
+
+    private func mediaPage(
+        start: Int,
+        pageSize: Int = CatalogPaging.pageSize,
+        parameters: (Int, Int) -> Paths.GetItemsParameters
+    ) async throws -> CatalogPage {
+        let result = try await client.send(
+            Paths.getItems(parameters: parameters(start, pageSize))
         ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        let raw = result.items ?? []
+        return CatalogPage(
+            items: raw.compactMap(ItemMapper.mediaItem(from:)),
+            nextStart: CatalogPaging.nextStartIndex(
+                fetchedCount: raw.count,
+                currentStart: start,
+                totalCount: result.totalRecordCount,
+                pageSize: pageSize
+            )
+        )
+    }
+
+    private func browseIncludeTypes(for library: MediaLibrary) -> [BaseItemKind] {
+        switch library.libraryKind {
+        case .movies: [.movie, .boxSet]
+        case .shows: [.series]
+        default: includeTypes(for: library)
+        }
     }
 
     private func includeTypes(for library: MediaLibrary) -> [BaseItemKind] {
@@ -887,6 +930,31 @@ final class JellyfinLibraryClient: Sendable {
 
         return ids
     }
+}
+
+enum CatalogPaging {
+    static let pageSize = 200
+    static let maxItems = 20_000
+
+    static func nextStartIndex(
+        fetchedCount: Int,
+        currentStart: Int,
+        totalCount: Int?,
+        pageSize: Int = pageSize,
+        maxItems: Int = maxItems
+    ) -> Int? {
+        guard fetchedCount > 0 else { return nil }
+        let next = currentStart + fetchedCount
+        if next >= maxItems { return nil }
+        if let totalCount, next >= totalCount { return nil }
+        if fetchedCount < pageSize { return nil }
+        return next
+    }
+}
+
+struct CatalogPage: Sendable {
+    let items: [MediaItem]
+    let nextStart: Int?
 }
 
 /// YouTube video IDs published on Wikidata for a title (no API key).

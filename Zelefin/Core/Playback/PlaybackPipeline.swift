@@ -188,13 +188,24 @@ enum PlaybackPipelineResolver {
     }
 
     static func pipeline(
-        url _: URL,
-        method _: PlaybackMethod,
-        container _: String? = nil,
-        videoCodec _: String? = nil,
+        url: URL,
+        method: PlaybackMethod,
+        container: String? = nil,
+        videoCodec: String? = nil,
         usesNativePlayer: Bool = true
     ) -> PlaybackPipeline {
-        usesNativePlayer ? .appleNative : .directDecode
+        if url.isFileURL {
+            if usesNativePlayer, canNativePlayerOpen(
+                url: url,
+                method: method,
+                container: container,
+                videoCodec: videoCodec
+            ) {
+                return .appleNative
+            }
+            return .directDecode
+        }
+        return usesNativePlayer ? .appleNative : .directDecode
     }
 
     /// AVPlayer cannot demux MKV or MPEG-4 ASP. Native-on asks Jellyfin for HLS first.
@@ -206,6 +217,7 @@ enum PlaybackPipelineResolver {
         usesNativePlayer: Bool = true
     ) -> Bool {
         guard usesNativePlayer else { return false }
+        if url.isFileURL { return false }
         return !canNativePlayerOpen(url: url, method: method, container: container, videoCodec: videoCodec)
     }
 

@@ -3,6 +3,7 @@ import Foundation
 enum PlaybackHTTPHeaders {
     /// Gateway tokens, Jellyfin token, and cookies the player must send with every byte of the stream.
     static func fields(for url: URL) -> [String: String] {
+        guard !url.isFileURL else { return [:] }
         var fields = AccessGateway.httpHeaders
         if let token = apiKey(from: url), !token.isEmpty {
             fields["X-Emby-Token"] = token
