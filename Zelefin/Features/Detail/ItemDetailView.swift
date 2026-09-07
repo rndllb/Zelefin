@@ -29,6 +29,8 @@ struct ItemDetailView: View {
     @State private var playingWebTrailer: TitleTrailer?
     #endif
     @State private var errorMessage: String?
+    @State private var downloadRemovalPrompt: DownloadRemovalPrompt?
+    @State private var downloadRemovalItem: MediaItem?
 
     init(itemID: String, preview: MediaItem? = nil, focusEpisodeID: String? = nil) {
         self.itemID = itemID
@@ -91,6 +93,7 @@ struct ItemDetailView: View {
                     }
                     .scrollIndicators(.hidden)
                     .scrollClipDisabled()
+                    .zelefinScrollEdgeHidden()
                 } else {
                     ContentUnavailableView("Title Unavailable", systemImage: "film")
                 }
@@ -102,14 +105,15 @@ struct ItemDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 if let item {
-                    DownloadActionButton(item: item, episodes: episodes)
+                    DetailDownloadSharePill(item: item, episodes: episodes)
                 }
-                Button("Share", systemImage: "square.and.arrow.up") {}
             }
+            .catalogToolbarHidesSystemBackground()
         }
         .tint(.white)
         #endif
@@ -134,6 +138,12 @@ struct ItemDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
+        }
+        .downloadRemovalConfirmation($downloadRemovalPrompt) {
+            if let downloadRemovalItem {
+                downloads.removeDownloaded(item: downloadRemovalItem, account: session.session)
+            }
+            downloadRemovalItem = nil
         }
     }
 
@@ -174,6 +184,7 @@ struct ItemDetailView: View {
             ZStack {
                 HeroArtwork(
                     url: session.library?.backdropURL(for: item),
+                    placeholderURL: session.library?.primaryURL(for: item),
                     size: CGSize(width: width, height: height)
                 )
 
@@ -206,12 +217,9 @@ struct ItemDetailView: View {
 
     private func playProgressRow(for playbackItem: MediaItem) -> some View {
         let title = item ?? playbackItem
-        return VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                playProgressButton(for: playbackItem, allowRelatedDownload: true)
-                DownloadHeroButton(item: title, episodes: episodes)
-            }
-            DownloadStatusBanner(item: title, episodes: episodes)
+        return VStack(spacing: 10) {
+            playProgressButton(for: playbackItem, allowRelatedDownload: true)
+            DownloadStatusBanner(item: title)
         }
     }
 
@@ -422,18 +430,40 @@ struct ItemDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
                     ForEach(episodeStrip) { card in
-                        Button {
-                            play(card.episode)
-                        } label: {
-                            EpisodeShowcaseCard(
+                        ZStack(alignment: .bottomTrailing) {
+                            Button {
+                                play(card.episode)
+                            } label: {
+                                EpisodeShowcaseCard(
+                                    item: card.episode,
+                                    imageURL: session.library?.primaryURL(for: card.episode, maxHeight: 480),
+                                    showsOverflowIcon: false
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            PlaybackQueueOverflowButton(
                                 item: card.episode,
-                                imageURL: session.library?.primaryURL(for: card.episode, maxHeight: 480)
+                                context: .episode,
+                                onPlay: { play(card.episode) },
+                                onDidChange: { Task { await refreshPlaybackProgress() } },
+                                labelOpacity: 0.72,
+                                usesCardChrome: false
+                            )
+                            .padding(.trailing, 2)
+                            .padding(.bottom, 2)
+                        }
+                        #if os(tvOS)
+                        .contextMenu {
+                            PlaybackQueueMenuContent(
+                                item: card.episode,
+                                context: .episode,
+                                onPlay: { play(card.episode) },
+                                onDownload: { Task { await toggleEpisodeDownload(card.episode) } },
+                                onMarkWatched: { Task { await toggleEpisodeWatched(card.episode) } }
                             )
                         }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            DownloadActionButton(item: card.episode)
-                        }
+                        #endif
                         .frame(
                             width: PosterMetrics.episodeCardSize.width * sidebarLayout.scale,
                             height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale
@@ -796,6 +826,44 @@ struct ItemDetailView: View {
         }
         playingItem = item
     }
+
+    #if os(tvOS)
+    private func toggleEpisodeDownload(_ episode: MediaItem) async {
+        switch downloads.control(for: episode, account: session.session) {
+        case .unavailable:
+            return
+        case .downloading:
+            downloads.cancelTransfer(for: episode, account: session.session)
+        case .downloaded:
+            downloadRemovalItem = episode
+            downloadRemovalPrompt = .make(item: episode)
+        case .idle:
+            do {
+                try await downloads.toggle(
+                    item: episode,
+                    library: session.library,
+                    account: session.session
+                )
+            } catch {
+                guard !DownloadFailure.isCancellation(error) else { return }
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func toggleEpisodeWatched(_ episode: MediaItem) async {
+        do {
+            if episode.isWatched {
+                try await session.markUnwatched(episode)
+            } else {
+                try await session.markWatched(episode)
+            }
+            await refreshPlaybackProgress()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    #endif
 }
 
 extension PlaybackPlan: Identifiable {

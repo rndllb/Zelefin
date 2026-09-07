@@ -35,17 +35,17 @@ final class JellyfinLibraryClient: Sendable {
         case .landscape, .replayLandscape:
             artwork.thumb(for: item, maxWidth: 640)
         case .portrait, .ranked:
-            artwork.primary(for: item, maxHeight: 420)
+            artwork.primary(for: item, maxHeight: ArtworkURLBuilder.posterMaxHeight)
         case .labeledPortrait:
             if item.kind == .genre {
                 artwork.genreCover(for: item, maxWidth: 480)
             } else {
-                artwork.primary(for: item, maxHeight: 420)
+                artwork.primary(for: item, maxHeight: ArtworkURLBuilder.posterMaxHeight)
             }
         }
     }
 
-    func primaryURL(for item: MediaItem, maxHeight: Int = 900) -> URL? {
+    func primaryURL(for item: MediaItem, maxHeight: Int = ArtworkURLBuilder.posterMaxHeight) -> URL? {
         artwork.primary(for: item, maxHeight: maxHeight)
     }
 
@@ -57,10 +57,28 @@ final class JellyfinLibraryClient: Sendable {
         artwork.logo(for: item, maxHeight: maxHeight)
     }
 
+    /// Every remote image this item can show in the app. Prefetch uses this so thumbs,
+    /// backdrops, and logos warm without waiting to be scrolled into view.
+    func cacheableArtworkURLs(for item: MediaItem) -> [URL] {
+        var urls: [URL] = []
+        var seen = Set<String>()
+        let candidates: [URL?] = [
+            primaryURL(for: item),
+            artworkURL(for: item, style: .landscape),
+            backdropURL(for: item),
+            logoURL(for: item)
+        ]
+        for url in candidates.compactMap({ $0 }) where seen.insert(url.absoluteString).inserted {
+            urls.append(url)
+        }
+        return urls
+    }
+
     enum HomeChunk: Sendable {
         case continueWatching([MediaItem])
         case nextUp([MediaItem])
         case recentlyWatched([MediaItem])
+        case featured([MediaItem])
         case collections(HomeSection?)
         case genres(HomeSection?)
         case libraryHome(libraries: [MediaLibrary], sections: [HomeSection])
@@ -76,6 +94,10 @@ final class JellyfinLibraryClient: Sendable {
 
     func recentlyWatchedIgnoringErrors() async -> [MediaItem] {
         await ignoringErrors { try await recentlyWatchedItems() } ?? []
+    }
+
+    func featuredItemsIgnoringErrors() async -> [MediaItem] {
+        await ignoringErrors { try await featuredItems() } ?? []
     }
 
     func markPlayed(itemID: String) async throws {
@@ -98,12 +120,77 @@ final class JellyfinLibraryClient: Sendable {
         await ignoringErrors { try await genresSection() } ?? nil
     }
 
-    func items(genreID: String) async throws -> [MediaItem] {
-        try await catalogItems(genreID: genreID, parentID: nil, include: [.movie, .series])
+    func items(genreID: String, query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
+        try await catalogItems(genreID: genreID, parentID: nil, include: [.movie, .series], query: query, onPage: onPage)
     }
 
-    func items(parentID: String) async throws -> [MediaItem] {
-        try await catalogItems(genreID: nil, parentID: parentID, include: [.movie, .series, .boxSet, .video])
+    func items(parentID: String, query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
+        try await catalogItems(
+            genreID: nil,
+            parentID: parentID,
+            include: [.movie, .series, .boxSet, .video],
+            query: query,
+            onPage: onPage
+        )
+    }
+
+    func catalogFilterOptions(
+        parentID: String?,
+        include: [BaseItemKind]
+    ) async -> CatalogFilterOptions {
+        async let legacy = ignoringErrors {
+            try await client.send(
+                Paths.getQueryFiltersLegacy(
+                    parameters: .init(
+                        userID: userID,
+                        parentID: parentID,
+                        includeItemTypes: include
+                    )
+                )
+            ).value
+        }
+        async let studios = ignoringErrors {
+            try await client.send(
+                Paths.getStudios(
+                    parameters: .init(
+                        parentID: parentID,
+                        includeItemTypes: include,
+                        userID: userID,
+                        enableImages: false,
+                        enableTotalRecordCount: false
+                    )
+                )
+            ).value
+        }
+        async let cultures = ignoringErrors {
+            try await client.send(Paths.getCultures).value
+        }
+        let filters = await legacy
+        let studioItems = await studios?.items ?? []
+        return CatalogFilterOptions(
+            genres: CatalogFilterLists.choices(from: filters?.genres),
+            officialRatings: CatalogFilterLists.choices(from: filters?.officialRatings),
+            tags: CatalogFilterLists.choices(from: filters?.tags),
+            years: CatalogFilterLists.yearChoices(from: filters?.years),
+            studios: CatalogFilterLists.choices(from: studioItems.compactMap(\.name)),
+            languages: CatalogFilterLists.languageChoices(from: await cultures ?? [])
+        )
+    }
+
+    func mixedCatalogFilterOptions(parentID: String? = nil) async -> CatalogFilterOptions {
+        await catalogFilterOptions(parentID: parentID, include: mixedCatalogFilterTypes())
+    }
+
+    func collectionFilterOptions(parentID: String) async -> CatalogFilterOptions {
+        await catalogFilterOptions(parentID: parentID, include: collectionFilterTypes())
+    }
+
+    func catalogFilterOptions(for library: MediaLibrary) async -> CatalogFilterOptions {
+        await catalogFilterOptions(parentID: library.id, include: browseIncludeTypes(for: library))
+    }
+
+    func catalogFilterOptions(for kind: LibraryKind) async -> CatalogFilterOptions {
+        await catalogFilterOptions(parentID: nil, include: filterIncludeTypes(for: kind))
     }
 
     private func ignoringErrors<T: Sendable>(_ work: @Sendable () async throws -> T) async -> T? {
@@ -131,8 +218,8 @@ final class JellyfinLibraryClient: Sendable {
         )
     }
 
-    func items(in library: MediaLibrary) async throws -> [MediaItem] {
-        return try await pagedMediaItems { start, pageSize in
+    func items(in library: MediaLibrary, query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
+        try await pagedMediaItems(query: query, onPage: onPage) { start, pageSize in
             .init(
                 userID: userID,
                 startIndex: start,
@@ -149,10 +236,13 @@ final class JellyfinLibraryClient: Sendable {
         }
     }
 
-    func items(inLibraries libraries: [MediaLibrary]) async -> [MediaItem] {
-        await withTaskGroup(of: [MediaItem].self) { group in
+    func items(inLibraries libraries: [MediaLibrary], query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async -> [MediaItem] {
+        if libraries.count == 1 {
+            return (try? await items(in: libraries[0], query: query, onPage: onPage)) ?? []
+        }
+        return await withTaskGroup(of: [MediaItem].self) { group in
             for library in libraries {
-                group.addTask { (try? await self.items(in: library)) ?? [] }
+                group.addTask { (try? await self.items(in: library, query: query)) ?? [] }
             }
             var merged: [MediaItem] = []
             var seen = Set<String>()
@@ -161,10 +251,82 @@ final class JellyfinLibraryClient: Sendable {
                     merged.append(item)
                 }
             }
-            return merged.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
+            let sorted = query.sorted(merged)
+            await onPage?(CatalogPageUpdate(items: sorted, totalCount: sorted.count))
+            return sorted
         }
+    }
+
+    func collectionItems(query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
+        try await catalogItems(genreID: nil, parentID: nil, include: [.boxSet], query: query, onPage: onPage)
+    }
+
+    /// Movies/Shows are scoped to their libraries. Collections use a Collections library when
+    /// the server has one, otherwise every box set on the server.
+    func browseCatalog(
+        kind: LibraryKind,
+        libraries: [MediaLibrary],
+        query: CatalogBrowseQuery = .default,
+        onPage: CatalogPageHandler? = nil
+    ) async -> [MediaItem] {
+        if kind == .collections {
+            let matches = HomeLayoutPreferences.libraries(libraries, matching: .collections)
+            if !matches.isEmpty {
+                let scoped = await items(inLibraries: matches, query: query, onPage: onPage)
+                if !scoped.isEmpty { return scoped }
+            }
+            return (try? await collectionItems(query: query, onPage: onPage)) ?? []
+        }
+        let matches = HomeLayoutPreferences.libraries(libraries, matching: kind)
+        return await items(inLibraries: matches, query: query, onPage: onPage)
+    }
+
+    func catalogCount(kind: LibraryKind, libraries: [MediaLibrary]) async -> Int {
+        if kind == .collections {
+            let matches = HomeLayoutPreferences.libraries(libraries, matching: .collections)
+            if !matches.isEmpty {
+                let scoped = await countItems(in: matches)
+                if scoped > 0 { return scoped }
+            }
+            return await countItems(include: [.boxSet], parentID: nil)
+        }
+        let matches = HomeLayoutPreferences.libraries(libraries, matching: kind)
+        return await countItems(in: matches)
+    }
+
+    private func countItems(in libraries: [MediaLibrary]) async -> Int {
+        await withTaskGroup(of: Int.self) { group in
+            for library in libraries {
+                group.addTask { await self.countItems(in: library) }
+            }
+            var total = 0
+            for await count in group {
+                total += count
+            }
+            return total
+        }
+    }
+
+    private func countItems(in library: MediaLibrary) async -> Int {
+        await countItems(include: browseIncludeTypes(for: library), parentID: library.id)
+    }
+
+    private func countItems(include: [BaseItemKind], parentID: String?) async -> Int {
+        let result = try? await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    limit: 1,
+                    isRecursive: true,
+                    parentID: parentID,
+                    includeItemTypes: include,
+                    enableUserData: false,
+                    enableTotalRecordCount: true,
+                    enableImages: false
+                )
+            )
+        ).value
+        return result?.totalRecordCount ?? result?.items?.count ?? 0
     }
 
     func item(id: String) async throws -> (MediaItem, BaseItemDto) {
@@ -401,8 +563,8 @@ final class JellyfinLibraryClient: Sendable {
         )) ?? []
     }
 
-    func items(personID: String) async throws -> [MediaItem] {
-        try await pagedMediaItems { start, limit in
+    func items(personID: String, query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
+        try await pagedMediaItems(query: query, onPage: onPage) { start, limit in
             .init(
                 userID: userID,
                 startIndex: start,
@@ -795,9 +957,11 @@ final class JellyfinLibraryClient: Sendable {
         genreID: String?,
         parentID: String?,
         include: [BaseItemKind],
-        recursive: Bool = true
+        recursive: Bool = true,
+        query: CatalogBrowseQuery = .default,
+        onPage: CatalogPageHandler? = nil
     ) async throws -> [MediaItem] {
-        try await pagedMediaItems { start, limit in
+        try await pagedMediaItems(query: query, onPage: onPage) { start, limit in
             .init(
                 userID: userID,
                 startIndex: start,
@@ -816,13 +980,72 @@ final class JellyfinLibraryClient: Sendable {
     }
 
     private func pagedMediaItems(
+        query: CatalogBrowseQuery = .default,
+        onPage: CatalogPageHandler? = nil,
+        parameters: (Int, Int) -> Paths.GetItemsParameters
+    ) async throws -> [MediaItem] {
+        let passes = query.resolutionPasses
+        let streamPages = query.sort != .random && passes.count == 1
+        if passes.count == 1 {
+            let items = try await pagedMediaItemsOnce(
+                query: query,
+                isHd: passes[0].isHd,
+                is4K: passes[0].is4K,
+                onPage: streamPages ? onPage : nil,
+                parameters: parameters
+            )
+            if query.sort == .random {
+                let shuffled = items.shuffled()
+                await onPage?(CatalogPageUpdate(items: shuffled, totalCount: shuffled.count))
+                return shuffled
+            }
+            return items
+        }
+        var merged: [MediaItem] = []
+        var seen = Set<String>()
+        for pass in passes {
+            let batch = try await pagedMediaItemsOnce(
+                query: query,
+                isHd: pass.isHd,
+                is4K: pass.is4K,
+                parameters: parameters
+            )
+            for item in batch where seen.insert(item.id).inserted {
+                merged.append(item)
+            }
+        }
+        let sorted = query.sorted(merged)
+        await onPage?(CatalogPageUpdate(items: sorted, totalCount: sorted.count))
+        return sorted
+    }
+
+    private func pagedMediaItemsOnce(
+        query: CatalogBrowseQuery,
+        isHd: Bool?,
+        is4K: Bool?,
+        onPage: CatalogPageHandler? = nil,
         parameters: (Int, Int) -> Paths.GetItemsParameters
     ) async throws -> [MediaItem] {
         var items: [MediaItem] = []
         var start = 0
+        var isFirst = true
+        var totalCount: Int?
         while true {
-            let page = try await mediaPage(start: start, parameters: parameters)
+            let pageSize = (isFirst && onPage != nil) ? CatalogPaging.firstPaintSize : CatalogPaging.pageSize
+            isFirst = false
+            let page = try await mediaPage(
+                start: start,
+                pageSize: pageSize,
+                query: query,
+                isHd: isHd,
+                is4K: is4K,
+                parameters: parameters
+            )
+            if let total = page.totalCount {
+                totalCount = total
+            }
             items.append(contentsOf: page.items)
+            await onPage?(CatalogPageUpdate(items: items, totalCount: totalCount))
             guard let next = page.nextStart else { break }
             start = next
         }
@@ -832,11 +1055,19 @@ final class JellyfinLibraryClient: Sendable {
     private func mediaPage(
         start: Int,
         pageSize: Int = CatalogPaging.pageSize,
+        query: CatalogBrowseQuery = .default,
+        isHd: Bool? = nil,
+        is4K: Bool? = nil,
         parameters: (Int, Int) -> Paths.GetItemsParameters
     ) async throws -> CatalogPage {
-        let result = try await client.send(
-            Paths.getItems(parameters: parameters(start, pageSize))
-        ).value
+        var params = parameters(start, pageSize)
+        query.apply(to: &params, isHd: isHd, is4K: is4K)
+        var request = Paths.getItems(parameters: params)
+        let extra = query.extraLanguageQuery
+        if !extra.isEmpty {
+            request.query = (request.query ?? []) + extra
+        }
+        let result = try await client.send(request).value
         let raw = result.items ?? []
         return CatalogPage(
             items: raw.compactMap(ItemMapper.mediaItem(from:)),
@@ -845,7 +1076,8 @@ final class JellyfinLibraryClient: Sendable {
                 currentStart: start,
                 totalCount: result.totalRecordCount,
                 pageSize: pageSize
-            )
+            ),
+            totalCount: result.totalRecordCount
         )
     }
 
@@ -853,15 +1085,34 @@ final class JellyfinLibraryClient: Sendable {
         switch library.libraryKind {
         case .movies: [.movie, .boxSet]
         case .shows: [.series]
+        case .collections: [.boxSet]
         default: includeTypes(for: library)
         }
     }
+
+    func filterIncludeTypes(for library: MediaLibrary) -> [BaseItemKind] {
+        browseIncludeTypes(for: library)
+    }
+
+    func filterIncludeTypes(for kind: LibraryKind) -> [BaseItemKind] {
+        switch kind {
+        case .movies: [.movie]
+        case .shows: [.series]
+        case .collections: [.boxSet]
+        default: [.movie, .series]
+        }
+    }
+
+    func mixedCatalogFilterTypes() -> [BaseItemKind] { [.movie, .series] }
+
+    func collectionFilterTypes() -> [BaseItemKind] { [.movie, .series, .boxSet, .video] }
 
     private func includeTypes(for library: MediaLibrary) -> [BaseItemKind] {
         switch library.libraryKind {
         case .movies: [.movie]
         case .shows: [.series]
         case .homeVideos: [.video, .movie]
+        case .collections: [.boxSet]
         default: [.movie, .series, .video]
         }
     }
@@ -877,18 +1128,40 @@ final class JellyfinLibraryClient: Sendable {
         return HomeSection(id: id, title: title, style: .portrait, items: items)
     }
 
+    private func featuredItems() async throws -> [MediaItem] {
+        async let movies = featuredLatest(include: [.movie])
+        async let shows = featuredLatest(include: [.series])
+        return HomeLayoutPreferences.featured(
+            latestMovies: try await movies,
+            latestShows: try await shows
+        )
+    }
+
+    private func featuredLatest(include: [BaseItemKind]) async throws -> [MediaItem] {
+        try await latestMedia(include: include, parentID: nil, fields: ItemMapper.listFields, limit: 16)
+    }
+
     private func latestMedia(include: [BaseItemKind]?, parentID: String?) async throws -> [MediaItem] {
+        try await latestMedia(include: include, parentID: parentID, fields: ItemMapper.homeFields, limit: 12)
+    }
+
+    private func latestMedia(
+        include: [BaseItemKind]?,
+        parentID: String?,
+        fields: [ItemFields],
+        limit: Int
+    ) async throws -> [MediaItem] {
         try await client.send(
             Paths.getLatestMedia(
                 parameters: .init(
                     userID: userID,
                     parentID: parentID,
-                    fields: ItemMapper.homeFields,
+                    fields: fields,
                     includeItemTypes: include,
                     enableImages: true,
                     enableImageTypes: ItemMapper.listImageTypes,
                     enableUserData: true,
-                    limit: 12,
+                    limit: limit,
                     isGroupItems: true
                 )
             )
@@ -932,8 +1205,60 @@ final class JellyfinLibraryClient: Sendable {
     }
 }
 
+struct CatalogPageUpdate: Sendable {
+    var items: [MediaItem]
+    var totalCount: Int?
+}
+
+typealias CatalogPageHandler = @MainActor @Sendable (CatalogPageUpdate) -> Void
+
+struct CatalogIndexProgress: Equatable, Sendable {
+    enum Phase: Equatable, Sendable {
+        case listing
+        case artwork
+    }
+
+    var phase: Phase
+    var completed: Int
+    var total: Int
+
+    var fraction: Double {
+        guard total > 0 else { return 0 }
+        return min(1, Double(completed) / Double(total))
+    }
+
+    var isDeterminate: Bool { total > 0 }
+
+    var isFinished: Bool { total > 0 && completed >= total }
+
+    var label: String {
+        switch phase {
+        case .listing: "Indexing"
+        case .artwork: "Caching artwork"
+        }
+    }
+
+    var countLabel: String {
+        if total > 0 {
+            return "\(completed.formatted()) of \(total.formatted())"
+        }
+        return completed.formatted()
+    }
+
+    static func listing(loaded: Int, total: Int?) -> CatalogIndexProgress {
+        CatalogIndexProgress(phase: .listing, completed: loaded, total: total ?? 0)
+    }
+
+    static func artwork(cached: Int, total: Int) -> CatalogIndexProgress {
+        CatalogIndexProgress(phase: .artwork, completed: cached, total: total)
+    }
+}
+
 enum CatalogPaging {
     static let pageSize = 200
+    /// First request when a grid is waiting to paint. One screen plus a little extra, then
+    /// the rest of the catalog continues in the usual page size.
+    static let firstPaintSize = 48
     static let maxItems = 20_000
 
     static func nextStartIndex(
@@ -946,7 +1271,12 @@ enum CatalogPaging {
         guard fetchedCount > 0 else { return nil }
         let next = currentStart + fetchedCount
         if next >= maxItems { return nil }
-        if let totalCount, next >= totalCount { return nil }
+        // When the server reports a total, trust it: keep paging until we reach it, even if a
+        // page came back short. The short-page heuristic is only a fallback for an unknown total —
+        // otherwise a single undersized page would stop the catalog before it finished loading.
+        if let totalCount {
+            return next >= totalCount ? nil : next
+        }
         if fetchedCount < pageSize { return nil }
         return next
     }
@@ -955,6 +1285,7 @@ enum CatalogPaging {
 struct CatalogPage: Sendable {
     let items: [MediaItem]
     let nextStart: Int?
+    let totalCount: Int?
 }
 
 /// YouTube video IDs published on Wikidata for a title (no API key).

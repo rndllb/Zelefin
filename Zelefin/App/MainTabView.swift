@@ -75,6 +75,8 @@ struct MainTabView: View {
             CatalogBrowseView(title: "Movies", libraryKind: .movies)
         case .shows:
             CatalogBrowseView(title: "Shows", libraryKind: .shows)
+        case .collections:
+            CatalogBrowseView(title: "Collections", libraryKind: .collections)
         case .library:
             LibraryView()
         }

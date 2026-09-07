@@ -9,7 +9,9 @@ final class SessionStore {
     private let probe = ServerProbe()
     private let snapshotStore: any HomeSnapshotStoring
     private let itemDetailStore: any ItemDetailSnapshotStoring
+    private let catalogStore: any CatalogSnapshotStoring
     private var itemDetailMemory: [String: ItemDetailSnapshot] = [:]
+    private var prefetchTask: Task<Void, Never>?
 
     private(set) var session: SavedSession?
     private(set) var accounts: [SavedSession] = []
@@ -28,10 +30,59 @@ final class SessionStore {
 
     init(
         snapshotStore: any HomeSnapshotStoring = FileHomeSnapshotStore(),
-        itemDetailStore: any ItemDetailSnapshotStoring = FileItemDetailSnapshotStore()
+        itemDetailStore: any ItemDetailSnapshotStoring = FileItemDetailSnapshotStore(),
+        catalogStore: any CatalogSnapshotStoring = FileCatalogSnapshotStore()
     ) {
         self.snapshotStore = snapshotStore
         self.itemDetailStore = itemDetailStore
+        self.catalogStore = catalogStore
+    }
+
+    /// Cached full catalog for a Movies/Shows tab, so the grid paints instantly on a cold launch.
+    func cachedCatalog(kind: LibraryKind) -> [MediaItem]? {
+        guard let session else { return nil }
+        return catalogStore.load(userID: session.userID, serverURL: session.serverURL, kind: kind)?.items
+    }
+
+    /// Persist a freshly fetched catalog for later cold launches.
+    func saveCatalog(_ items: [MediaItem], kind: LibraryKind) {
+        guard let session, !items.isEmpty else { return }
+        catalogStore.save(
+            CatalogSnapshot(
+                version: CatalogSnapshot.currentVersion,
+                userID: session.userID,
+                serverHost: SnapshotCoding.host(from: session.serverURL),
+                libraryKind: kind,
+                savedAt: Date(),
+                items: items
+            )
+        )
+    }
+
+    /// Wait until Home has finished, then warm each library tab from smallest catalog to
+    /// largest. First launch caches the whole library; later launches only fetch newly
+    /// added titles.
+    private func startPosterPrefetch(for saved: SavedSession) {
+        guard let library else { return }
+        prefetchTask?.cancel()
+        let catalogStore = self.catalogStore
+        let knownLibraries = libraries
+        prefetchTask = Task(priority: .background) {
+            var catalog = knownLibraries
+            if catalog.isEmpty {
+                catalog = (try? await library.libraries()) ?? []
+            }
+            guard !catalog.isEmpty, !Task.isCancelled else { return }
+            await PosterPrefetcher.run(
+                library: library,
+                libraries: catalog,
+                userID: saved.userID,
+                serverURL: saved.serverURL,
+                snapshotStore: catalogStore
+            )
+            guard !Task.isCancelled else { return }
+            await refreshTmdbCatalog()
+        }
     }
 
     private(set) var avatarRevision = 0
@@ -231,6 +282,12 @@ final class SessionStore {
         Task { await refreshHome() }
     }
 
+    func markUnwatched(_ item: MediaItem) async throws {
+        guard let library else { throw ZelefinError.missingUser }
+        try await library.markUnplayed(itemID: item.id)
+        Task { await refreshHome() }
+    }
+
     func hideFromRecentlyWatched(_ item: MediaItem) async throws {
         guard let library else { throw ZelefinError.missingUser }
         try await library.markUnplayed(itemID: item.id)
@@ -259,6 +316,8 @@ final class SessionStore {
     }
 
     private func clearLocalSession() {
+        prefetchTask?.cancel()
+        prefetchTask = nil
         session = nil
         client = nil
         library = nil
@@ -455,6 +514,7 @@ final class SessionStore {
         var continueWatching: [MediaItem] = []
         var nextUp: [MediaItem] = []
         var recentlyWatched: [MediaItem] = []
+        var featured: [MediaItem] = []
         var librarySections: [HomeSection] = []
         var collections: HomeSection?
         var genres: HomeSection?
@@ -464,6 +524,7 @@ final class SessionStore {
             group.addTask { .continueWatching(await library.resumeItemsIgnoringErrors()) }
             group.addTask { .nextUp(await library.nextUpItemsIgnoringErrors()) }
             group.addTask { .recentlyWatched(await library.recentlyWatchedIgnoringErrors()) }
+            group.addTask { .featured(await library.featuredItemsIgnoringErrors()) }
             group.addTask {
                 let bundle = await library.libraryHomeIgnoringErrors()
                 return .libraryHome(libraries: bundle.libraries, sections: bundle.sections)
@@ -480,6 +541,8 @@ final class SessionStore {
                     nextUp = items
                 case let .recentlyWatched(items):
                     recentlyWatched = items
+                case let .featured(items):
+                    featured = items
                 case let .libraryHome(items, sections):
                     catalog = items
                     librarySections = sections
@@ -493,6 +556,7 @@ final class SessionStore {
                 publishHome(
                     continueWatching: continueWatching,
                     nextUp: nextUp,
+                    featured: featured,
                     librarySections: librarySections,
                     collections: collections,
                     genres: genres,
@@ -508,6 +572,7 @@ final class SessionStore {
         publishHome(
             continueWatching: continueWatching,
             nextUp: nextUp,
+            featured: featured,
             librarySections: librarySections,
             collections: collections,
             genres: genres,
@@ -520,12 +585,15 @@ final class SessionStore {
             homeError = "The server did not return any titles."
         }
         isLoadingHome = false
-        Task { await refreshTmdbCatalog() }
+        if let session {
+            startPosterPrefetch(for: session)
+        }
     }
 
     private func publishHome(
         continueWatching: [MediaItem],
         nextUp: [MediaItem],
+        featured: [MediaItem],
         librarySections: [HomeSection],
         collections: HomeSection?,
         genres: HomeSection?,
@@ -550,11 +618,7 @@ final class SessionStore {
 
         guard !sections.isEmpty else { return }
         homeLayout = HomeLayout(
-            featured: HomeLayoutPreferences.featured(
-                resume: continueWatching,
-                nextUp: nextUp,
-                merge: merge
-            ),
+            featured: featured,
             sections: sections
         )
         homeError = nil

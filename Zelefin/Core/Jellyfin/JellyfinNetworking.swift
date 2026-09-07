@@ -17,6 +17,7 @@ enum JellyfinNetworking {
         configuration.timeoutIntervalForRequest = 45
         configuration.timeoutIntervalForResource = cacheImages ? 60 : 300
         if cacheImages {
+            configuration.httpMaximumConnectionsPerHost = 8
             configuration.requestCachePolicy = .returnCacheDataElseLoad
             configuration.urlCache = URLCache(
                 memoryCapacity: 80 * 1_024 * 1_024,
@@ -48,10 +49,19 @@ enum JellyfinNetworking {
         )
     }
 
-    static func data(from url: URL, ignoreCache: Bool = false) async throws -> (Data, URLResponse) {
+    static func data(
+        from url: URL,
+        ignoreCache: Bool = false,
+        serviceType: URLRequest.NetworkServiceType = .default,
+        timeout: TimeInterval? = nil
+    ) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         if ignoreCache {
             request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
+        request.networkServiceType = serviceType
+        if let timeout {
+            request.timeoutInterval = timeout
         }
         return try await data(for: request)
     }

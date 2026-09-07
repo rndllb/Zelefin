@@ -43,6 +43,29 @@ struct DownloadProgress: Equatable, Identifiable, Sendable {
     var sizeLabel: String {
         DownloadByteCount.sizeLabel(written: bytesWritten, expected: bytesExpected)
     }
+
+    var bannerTitle: String {
+        let subject: String?
+        if let item, item.kind == .episode {
+            if let episodeIndex = item.episodeIndex {
+                subject = "Episode \(episodeIndex)"
+            } else {
+                subject = item.name
+            }
+        } else {
+            subject = nil
+        }
+        if let subject {
+            if let percentLabel {
+                return "Downloading \(subject) · \(percentLabel)"
+            }
+            return "Downloading \(subject)"
+        }
+        if let percentLabel {
+            return "Downloading \(percentLabel)"
+        }
+        return "Downloading"
+    }
 }
 
 enum DownloadByteCount {
@@ -99,6 +122,71 @@ enum DownloadControlState: Equatable, Sendable {
     case idle
     case downloading(Double)
     case downloaded
+}
+
+enum DownloadFailure {
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if (error as? URLError)?.code == .cancelled { return true }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+}
+
+struct DownloadRemovalPrompt: Identifiable, Equatable, Sendable {
+    var id: String
+    var title: String
+    var message: String
+
+    static func make(item: MediaItem) -> DownloadRemovalPrompt {
+        DownloadRemovalPrompt(
+            id: item.id,
+            title: "Delete Download?",
+            message: "Are you sure you want to delete the downloaded file for \(label(for: item))? You can download it again later."
+        )
+    }
+
+    static func make(row: DownloadLibraryRow) -> DownloadRemovalPrompt {
+        if row.kind == .series, row.episodeCount > 1 {
+            return DownloadRemovalPrompt(
+                id: row.id,
+                title: "Delete Download?",
+                message: "Are you sure you want to delete \(row.episodeCount) downloaded episodes of \(row.title.name)? You can download them again later."
+            )
+        }
+        return make(item: row.records.first?.item ?? row.title)
+    }
+
+    private static func label(for item: MediaItem) -> String {
+        if item.kind == .episode, let show = item.seriesName, !show.isEmpty {
+            return "\(show) — \(item.name)"
+        }
+        return item.name
+    }
+}
+
+enum DownloadControlCopy {
+    static func title(for state: DownloadControlState) -> String {
+        switch state {
+        case .unavailable, .idle:
+            "Download"
+        case .downloading(let fraction):
+            fraction > 0 ? "Cancel Download · \(Int((fraction * 100).rounded()))%" : "Cancel Download"
+        case .downloaded:
+            "Remove Download"
+        }
+    }
+
+    static func symbol(for state: DownloadControlState) -> String {
+        switch state {
+        case .unavailable, .idle:
+            "arrow.down.to.line"
+        case .downloading:
+            "stop.circle"
+        case .downloaded:
+            "checkmark.circle.fill"
+        }
+    }
 }
 
 enum DownloadEligibility {

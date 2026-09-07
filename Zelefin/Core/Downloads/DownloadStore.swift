@@ -128,6 +128,18 @@ final class DownloadStore {
         return DownloadPlaybackSelection.record(for: item, in: records)
     }
 
+    func cancelTransfer(for item: MediaItem, account: SavedSession?) {
+        let scoped = scopedProgress(account)
+        guard let active = DownloadCoverLogic.activeProgress(for: item, progress: scoped) else {
+            return
+        }
+        let id = scoped.first(where: { $0.value == active })?.key ?? active.item?.id ?? item.id
+        guard !id.isEmpty else { return }
+        tasks[id]?.cancel()
+        tasks[id] = nil
+        progress[id] = nil
+    }
+
     func toggle(
         item: MediaItem,
         episodes: [MediaItem] = [],
@@ -169,14 +181,21 @@ final class DownloadStore {
             try await work.value
             tasks[target.id] = nil
             progress[target.id] = nil
-        } catch is CancellationError {
-            tasks[target.id] = nil
-            progress[target.id] = nil
         } catch {
             tasks[target.id] = nil
             progress[target.id] = nil
+            if DownloadFailure.isCancellation(error) {
+                return
+            }
             throw error
         }
+    }
+
+    func removeDownloaded(item: MediaItem, episodes: [MediaItem] = [], account: SavedSession?) {
+        guard let target = DownloadEligibility.playableItem(from: item, episodes: episodes) else {
+            return
+        }
+        remove(id: target.id, account: account)
     }
 
     func remove(id: String, account: SavedSession?) {

@@ -4,6 +4,8 @@ struct DownloadedItemsView: View {
     @Environment(SessionStore.self) private var session
     @Environment(DownloadStore.self) private var downloads
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @State private var pendingRemoval: DownloadLibraryRow?
+    @State private var removalPrompt: DownloadRemovalPrompt?
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -57,7 +59,8 @@ struct DownloadedItemsView: View {
                             .buttonStyle(.plain)
                             .contextMenu {
                                 Button("Remove Download", systemImage: "trash", role: .destructive) {
-                                    downloads.remove(row: row, account: session.session)
+                                    pendingRemoval = row
+                                    removalPrompt = .make(row: row)
                                 }
                             }
                             .accessibilityHint(row.kind == .series ? "\(row.episodeCount) episodes" : "")
@@ -72,5 +75,11 @@ struct DownloadedItemsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .downloadRemovalConfirmation($removalPrompt) {
+            if let pendingRemoval {
+                downloads.remove(row: pendingRemoval, account: session.session)
+            }
+            pendingRemoval = nil
+        }
     }
 }

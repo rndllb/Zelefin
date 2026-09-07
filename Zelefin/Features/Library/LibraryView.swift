@@ -33,6 +33,12 @@ struct LibraryView: View {
                             .zelefinLibraryListRow()
                         }
                         NavigationLink {
+                            CatalogBrowseView(title: "Collections", libraryKind: .collections)
+                        } label: {
+                            Label("Collections", systemImage: "square.stack.fill")
+                        }
+                        .zelefinLibraryListRow()
+                        NavigationLink {
                             DownloadedItemsView()
                         } label: {
                             Label("Downloaded", systemImage: "arrow.down.circle")
@@ -96,6 +102,7 @@ struct LibraryView: View {
         case .movies: "film"
         case .shows: "tv"
         case .liveTV: "dot.radiowaves.left.and.right"
+        case .collections: "square.stack.fill"
         default: "rectangle.stack"
         }
     }
@@ -233,6 +240,11 @@ struct LibraryItemsView: View {
     let library: MediaLibrary
     @State private var items: [MediaItem] = []
     @State private var isLoading = true
+    @State private var query = CatalogBrowseQuery.default
+    @State private var options = CatalogFilterOptions()
+    @State private var showFilters = false
+    @State private var showSort = false
+    @State private var indexProgress: CatalogIndexProgress?
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -240,33 +252,106 @@ struct LibraryItemsView: View {
 
     var body: some View {
         ScrollView {
-            if isLoading {
+            if isLoading && items.isEmpty {
                 ProgressView().tint(.white).padding(.top, 80)
+            } else if items.isEmpty {
+                ContentUnavailableView(
+                    query.isDefault ? "No Titles Yet" : "No Matches",
+                    systemImage: "rectangle.stack",
+                    description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
+                )
+                .padding(.top, 40)
             } else {
-                LazyVGrid(columns: columns, spacing: 20) {
-                    ForEach(items) { item in
-                        NavigationLink {
-                            ItemDetailView(item: item)
-                        } label: {
-                            FillingPortraitPoster(
-                                item: item,
-                                imageURL: session.library?.primaryURL(for: item)
-                            )
+                VStack(alignment: .leading, spacing: 0) {
+                    CatalogIndexBar(progress: indexProgress)
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(items) { item in
+                            NavigationLink {
+                                if item.kind == .collection {
+                                    CatalogGridView(title: item.name, query: .parent(item.id))
+                                } else {
+                                    ItemDetailView(item: item)
+                                }
+                            } label: {
+                                FillingPortraitPoster(
+                                    item: item,
+                                    imageURL: session.library?.primaryURL(for: item)
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(library.name)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
-        .task {
-            items = (try? await session.library?.items(in: library)) ?? []
-            isLoading = false
+        .catalogFilterSortToolbar(
+            filterCount: query.activeFilterCount,
+            sortTitle: query.sort.title,
+            showFilters: $showFilters,
+            showSort: $showSort
+        )
+        .catalogFilterSheets(
+            query: $query,
+            options: options,
+            showFilters: $showFilters,
+            showSort: $showSort
+        )
+        .task { await loadOptions() }
+        .task { await load() }
+        .onChange(of: query) { _, _ in
+            guard !showFilters, !showSort else { return }
+            Task { await load() }
         }
+        .onChange(of: showFilters) { _, open in
+            if !open { Task { await load() } }
+        }
+        .onChange(of: showSort) { _, open in
+            if !open { Task { await load() } }
+        }
+    }
+
+    private func loadOptions() async {
+        guard let client = session.library else { return }
+        options = await client.catalogFilterOptions(for: library)
+    }
+
+    private func load() async {
+        guard let client = session.library else {
+            items = []
+            isLoading = false
+            indexProgress = nil
+            return
+        }
+        items = (try? await client.items(in: library, query: query) { update in
+            indexProgress = .listing(loaded: update.items.count, total: update.totalCount)
+            guard !update.items.isEmpty else { return }
+            items = update.items
+            isLoading = false
+        }) ?? []
+        isLoading = false
+        await finishArtwork(for: items, client: client)
+    }
+
+    private func finishArtwork(for items: [MediaItem], client: JellyfinLibraryClient) async {
+        guard PosterPrefetcher.prefetchesPosters(for: library.libraryKind), !items.isEmpty else {
+            indexProgress = nil
+            return
+        }
+        let urls = PosterPrefetcher.posterURLs(for: items, library: client)
+        await PosterPrefetcher.download(urls) { cached, total in
+            if cached >= total {
+                indexProgress = nil
+            } else {
+                indexProgress = .artwork(cached: cached, total: total)
+            }
+        }
+        indexProgress = nil
     }
 }

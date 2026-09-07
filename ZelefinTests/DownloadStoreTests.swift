@@ -76,6 +76,52 @@ final class DownloadLayoutTests: XCTestCase {
         XCTAssertTrue(DownloadByteCount.sizeLabel(written: 1_024, expected: 2_048).contains(" of "))
     }
 
+    func testDownloadCopyAndBannerTitles() {
+        XCTAssertEqual(DownloadControlCopy.title(for: .idle), "Download")
+        XCTAssertEqual(DownloadControlCopy.title(for: .downloading(0)), "Cancel Download")
+        XCTAssertEqual(DownloadControlCopy.title(for: .downloading(0.42)), "Cancel Download · 42%")
+        XCTAssertEqual(DownloadControlCopy.title(for: .downloaded), "Remove Download")
+        XCTAssertEqual(DownloadControlCopy.symbol(for: .idle), "arrow.down.to.line")
+
+        let movieProgress = DownloadProgress(
+            fraction: 0.5,
+            bytesWritten: 50,
+            bytesExpected: 100,
+            userID: "user-1",
+            serverHost: "jellyfin.example.com"
+        )
+        XCTAssertEqual(movieProgress.bannerTitle, "Downloading 50%")
+
+        let episodeProgress = DownloadProgress(
+            item: sampleEpisode(id: "e2", season: 1, number: 2, watched: false),
+            fraction: 0.4,
+            bytesWritten: 40,
+            bytesExpected: 100,
+            seriesID: "show-1",
+            userID: "user-1",
+            serverHost: "jellyfin.example.com"
+        )
+        XCTAssertEqual(episodeProgress.bannerTitle, "Downloading Episode 2 · 40%")
+    }
+
+    func testCancellationDetection() {
+        XCTAssertTrue(DownloadFailure.isCancellation(CancellationError()))
+        XCTAssertTrue(DownloadFailure.isCancellation(URLError(.cancelled)))
+        XCTAssertTrue(DownloadFailure.isCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)))
+        XCTAssertFalse(DownloadFailure.isCancellation(ZelefinError.downloadFailed))
+    }
+
+    func testRemovalPromptAsksBeforeDeleting() {
+        let movie = DownloadRemovalPrompt.make(item: sampleMovie())
+        XCTAssertEqual(movie.title, "Delete Download?")
+        XCTAssertTrue(movie.message.contains("Are you sure"))
+        XCTAssertTrue(movie.message.contains("Dune"))
+
+        let episode = DownloadRemovalPrompt.make(item: sampleEpisode(id: "e2", season: 1, number: 2, watched: false))
+        XCTAssertTrue(episode.message.contains("Silo"))
+        XCTAssertTrue(episode.message.contains("Are you sure"))
+    }
+
     func testCoverAccessibilityNamesInFlightProgress() {
         XCTAssertEqual(DownloadCoverMark.downloaded.accessibilityCaption, "Downloaded")
         XCTAssertEqual(DownloadCoverMark.downloading(0).accessibilityCaption, "Downloading")

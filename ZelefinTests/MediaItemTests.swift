@@ -743,6 +743,23 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
     func testMovieUsesPlayAndGoToMovie() {
         XCTAssertEqual(PlaybackQueueMenuLayout.playTitle(for: .movie), "Play")
         XCTAssertEqual(PlaybackQueueMenuLayout.goToTitle(for: .movie), "Go to Movie")
+        XCTAssertEqual(PlaybackQueueMenuLayout.goToSymbol(for: .movie), "film")
+    }
+
+    func testSeriesUsesGoToShow() {
+        XCTAssertEqual(PlaybackQueueMenuLayout.goToTitle(for: .series), "Go to Show")
+        XCTAssertEqual(PlaybackQueueMenuLayout.goToSymbol(for: .series), "tv")
+    }
+
+    func testFeaturedMenuMatchesContinueWatching() {
+        XCTAssertEqual(
+            PlaybackQueueMenuLayout.actions(context: .featured, kind: .movie),
+            [.download, .play, .goToShow, .markWatched]
+        )
+        XCTAssertEqual(
+            PlaybackQueueMenuLayout.actions(context: .featured, kind: .series),
+            [.download, .play, .goToShow, .markWatched]
+        )
     }
 
     func testRecentlyWatchedAddsRemove() {
@@ -750,6 +767,15 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
             PlaybackQueueMenuLayout.actions(context: .recentlyWatched, kind: .episode),
             [.download, .play, .goToShow, .markWatched, .removeFromRecentlyWatched]
         )
+    }
+
+    func testEpisodeMenuOmitsGoToShow() {
+        XCTAssertEqual(
+            PlaybackQueueMenuLayout.actions(context: .episode, kind: .episode),
+            [.download, .play, .markWatched]
+        )
+        XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(isWatched: false), "Mark as Watched")
+        XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(isWatched: true), "Mark as Unwatched")
     }
 }
 
@@ -781,9 +807,10 @@ final class HomeLayoutPreferencesTests: XCTestCase {
     }
 
     func testCatalogPagingContinuesUntilTheServerIsExhausted() {
+        XCTAssertEqual(CatalogPaging.firstPaintSize, 48)
         XCTAssertEqual(
-            CatalogPaging.nextStartIndex(fetchedCount: 40, currentStart: 0, totalCount: 250),
-            40
+            CatalogPaging.nextStartIndex(fetchedCount: 48, currentStart: 0, totalCount: 2000, pageSize: 48),
+            48
         )
         XCTAssertEqual(
             CatalogPaging.nextStartIndex(fetchedCount: 200, currentStart: 0, totalCount: 450),
@@ -826,7 +853,7 @@ final class HomeLayoutPreferencesTests: XCTestCase {
             )
         )
         let next = HomeLayoutPreferences.removing("r1", from: layout)
-        XCTAssertEqual(next.featured.map(\.id), [])
+        XCTAssertEqual(next.featured.map(\.id), ["r1"])
         XCTAssertEqual(next.sections.map(\.id), ["next-up"])
         XCTAssertEqual(next.sections.first?.items.map(\.id), ["n1"])
     }
@@ -851,13 +878,38 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(sections[0].items.map(\.queueKind), [.resume, .nextUp])
     }
 
-    func testMergedFeaturedFallsBackToNextUp() {
+    func testFeaturedInterleavesLatestMoviesAndShows() {
         let featured = HomeLayoutPreferences.featured(
-            resume: [],
-            nextUp: [Self.item(id: "n1", queueKind: .nextUp)],
-            merge: true
+            latestMovies: [
+                Self.title(id: "m1", kind: .movie),
+                Self.title(id: "m2", kind: .movie)
+            ],
+            latestShows: [
+                Self.title(id: "s1", kind: .series),
+                Self.title(id: "s2", kind: .series)
+            ]
         )
-        XCTAssertEqual(featured.map(\.id), ["n1"])
+        XCTAssertEqual(featured.map(\.id), ["m1", "s1", "m2", "s2"])
+    }
+
+    func testFeaturedPrefersUnwatchedTitlesWithBackdrops() {
+        let featured = HomeLayoutPreferences.featured(
+            latestMovies: [
+                Self.title(id: "watched", kind: .movie, played: true),
+                Self.title(id: "no-art", kind: .movie, backdrop: nil),
+                Self.title(id: "fresh", kind: .movie)
+            ],
+            latestShows: []
+        )
+        XCTAssertEqual(featured.map(\.id), ["fresh", "watched"])
+    }
+
+    func testFeaturedCapsAtEightTitles() {
+        let movies = (1...6).map { Self.title(id: "m\($0)", kind: .movie) }
+        let shows = (1...6).map { Self.title(id: "s\($0)", kind: .series) }
+        let featured = HomeLayoutPreferences.featured(latestMovies: movies, latestShows: shows)
+        XCTAssertEqual(featured.count, 8)
+        XCTAssertEqual(featured.map(\.id), ["m1", "s1", "m2", "s2", "m3", "s3", "m4", "s4"])
     }
 
     func testAssemblePutsBrowseAndWatchedAtTheBottom() {
@@ -1132,6 +1184,46 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         )
     }
 
+    private static func title(
+        id: String,
+        kind: MediaKind,
+        played: Bool = false,
+        backdrop: String? = "bd"
+    ) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: id,
+            kind: kind,
+            overview: nil,
+            year: 2024,
+            runtime: 7200,
+            officialRating: nil,
+            genres: ["Drama"],
+            seriesName: kind == .series ? id : nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: played,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: backdrop,
+            backdropImageTags: backdrop.map { [$0] } ?? [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: kind == .series ? id : nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+    }
+
     private static func item(id: String, queueKind: PlaybackQueueKind) -> MediaItem {
         MediaItem(
             id: id,
@@ -1310,14 +1402,18 @@ final class TrailerLinkParserTests: XCTestCase {
 
 final class AppTabTests: XCTestCase {
     func testOrderedKeepsKnownTabsAndFillsMissing() {
-        XCTAssertEqual(AppTab.ordered(from: "library,movies"), [.library, .movies, .home, .shows])
-        XCTAssertEqual(AppTab.ordered(from: "nope,home"), [.home, .movies, .shows, .library])
+        XCTAssertEqual(AppTab.ordered(from: "library,movies"), [.library, .movies, .home, .shows, .collections])
+        XCTAssertEqual(AppTab.ordered(from: "nope,home"), [.home, .movies, .shows, .collections, .library])
         XCTAssertEqual(AppTab.raw(from: [.shows, .home, .shows]), "shows,home")
+        XCTAssertEqual(AppTab.defaultOrderRaw, "home,movies,shows,collections,library")
     }
 
     func testHomeCannotBeHidden() {
         XCTAssertFalse(AppTab.home.canHide)
         XCTAssertTrue(AppTab.movies.canHide)
+        XCTAssertTrue(AppTab.collections.canHide)
+        XCTAssertEqual(AppTab.collections.title, "Collections")
+        XCTAssertEqual(AppTab.collections.customizationID, "app.zelefin.tab.collections")
         XCTAssertEqual(AppTab.library.customizationID, "app.zelefin.tab.library")
     }
 }

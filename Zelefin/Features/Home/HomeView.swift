@@ -81,10 +81,13 @@ struct HomeView: View {
 
 struct MediaRow: View {
     @Environment(SessionStore.self) private var session
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let section: HomeSection
     @State private var playingItem: MediaItem?
     @State private var playbackError: String?
+    @State private var removalPrompt: DownloadRemovalPrompt?
+    @State private var removalItem: MediaItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -119,6 +122,12 @@ struct MediaRow: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(playbackError ?? "")
+        }
+        .downloadRemovalConfirmation($removalPrompt) {
+            if let removalItem {
+                downloads.removeDownloaded(item: removalItem, account: session.session)
+            }
+            removalItem = nil
         }
     }
 
@@ -195,7 +204,8 @@ struct MediaRow: View {
                     item: item,
                     context: context,
                     onPlay: { play(item) },
-                    onMarkWatched: { Task { await markWatched(item) } },
+                    onDownload: { Task { await requestDownload(item) } },
+                    onMarkWatched: { Task { await toggleWatched(item) } },
                     onRemoveFromRecentlyWatched: context == .recentlyWatched
                         ? { Task { await hideFromRecentlyWatched(item) } }
                         : nil
@@ -245,10 +255,37 @@ struct MediaRow: View {
     }
 
     #if os(tvOS)
-    private func markWatched(_ item: MediaItem) async {
+    private func toggleWatched(_ item: MediaItem) async {
         do {
-            try await session.markWatched(item)
+            if item.isWatched {
+                try await session.markUnwatched(item)
+            } else {
+                try await session.markWatched(item)
+            }
         } catch {
+            playbackError = error.localizedDescription
+        }
+    }
+
+    private func requestDownload(_ item: MediaItem) async {
+        switch downloads.control(for: item, account: session.session) {
+        case .unavailable:
+            return
+        case .downloading:
+            downloads.cancelTransfer(for: item, account: session.session)
+        case .downloaded:
+            removalItem = item
+            removalPrompt = .make(item: item)
+        case .idle:
+            await startDownload(item)
+        }
+    }
+
+    private func startDownload(_ item: MediaItem) async {
+        do {
+            try await downloads.toggle(item: item, library: session.library, account: session.session)
+        } catch {
+            guard !DownloadFailure.isCancellation(error) else { return }
             playbackError = error.localizedDescription
         }
     }
@@ -509,6 +546,11 @@ struct CatalogGridView: View {
 
     @State private var items: [MediaItem] = []
     @State private var isLoading = true
+    @State private var browseQuery = CatalogBrowseQuery.default
+    @State private var options = CatalogFilterOptions()
+    @State private var showFilters = false
+    @State private var showSort = false
+    @State private var indexProgress: CatalogIndexProgress?
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -523,30 +565,33 @@ struct CatalogGridView: View {
                     .frame(maxWidth: .infinity)
             } else if items.isEmpty {
                 ContentUnavailableView(
-                    "No Titles",
+                    browseQuery.isDefault ? "No Titles" : "No Matches",
                     systemImage: "rectangle.stack",
-                    description: Text("Nothing in this category yet.")
+                    description: Text(browseQuery.isDefault ? "Nothing in this category yet." : "No titles match these filters.")
                 )
                 .padding(.top, 40)
             } else {
-                LazyVGrid(columns: columns, spacing: 20) {
-                    ForEach(items) { item in
-                        NavigationLink {
-                            if item.kind == .collection {
-                                CatalogGridView(title: item.name, query: .parent(item.id))
-                            } else {
-                                ItemDetailView(item: item)
+                VStack(alignment: .leading, spacing: 0) {
+                    CatalogIndexBar(progress: indexProgress)
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(items) { item in
+                            NavigationLink {
+                                if item.kind == .collection {
+                                    CatalogGridView(title: item.name, query: .parent(item.id))
+                                } else {
+                                    ItemDetailView(item: item)
+                                }
+                            } label: {
+                                FillingPortraitPoster(
+                                    item: item,
+                                    imageURL: session.library?.primaryURL(for: item)
+                                )
                             }
-                        } label: {
-                            FillingPortraitPoster(
-                                item: item,
-                                imageURL: session.library?.primaryURL(for: item)
-                            )
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -558,22 +603,62 @@ struct CatalogGridView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
+        .catalogFilterSortToolbar(
+            filterCount: browseQuery.activeFilterCount,
+            sortTitle: browseQuery.sort.title,
+            showFilters: $showFilters,
+            showSort: $showSort
+        )
+        .catalogFilterSheets(
+            query: $browseQuery,
+            options: options,
+            showFilters: $showFilters,
+            showSort: $showSort
+        )
+        .task { await loadOptions() }
         .task { await load() }
+        .onChange(of: browseQuery) { _, _ in
+            guard !showFilters, !showSort else { return }
+            Task { await load() }
+        }
+        .onChange(of: showFilters) { _, open in
+            if !open { Task { await load() } }
+        }
+        .onChange(of: showSort) { _, open in
+            if !open { Task { await load() } }
+        }
+    }
+
+    private func loadOptions() async {
+        guard let library = session.library else { return }
+        switch query {
+        case .genre, .person:
+            options = await library.mixedCatalogFilterOptions()
+        case let .parent(id):
+            options = await library.collectionFilterOptions(parentID: id)
+        }
     }
 
     private func load() async {
         guard let library = session.library else {
             isLoading = false
+            indexProgress = nil
             return
         }
         do {
+            let onPage: CatalogPageHandler = { update in
+                indexProgress = .listing(loaded: update.items.count, total: update.totalCount)
+                guard !update.items.isEmpty else { return }
+                items = update.items
+                isLoading = false
+            }
             switch query {
             case let .genre(id):
-                items = try await library.items(genreID: id)
+                items = try await library.items(genreID: id, query: browseQuery, onPage: onPage)
             case let .parent(id):
-                items = try await library.items(parentID: id)
+                items = try await library.items(parentID: id, query: browseQuery, onPage: onPage)
             case let .person(id):
-                items = try await library.items(personID: id)
+                items = try await library.items(personID: id, query: browseQuery, onPage: onPage)
             }
         } catch is CancellationError {
             return
@@ -581,5 +666,22 @@ struct CatalogGridView: View {
             items = []
         }
         isLoading = false
+        await finishArtwork(for: items, library: library)
+    }
+
+    private func finishArtwork(for items: [MediaItem], library: JellyfinLibraryClient) async {
+        guard !items.isEmpty else {
+            indexProgress = nil
+            return
+        }
+        let urls = PosterPrefetcher.posterURLs(for: items, library: library)
+        await PosterPrefetcher.download(urls) { cached, total in
+            if cached >= total {
+                indexProgress = nil
+            } else {
+                indexProgress = .artwork(cached: cached, total: total)
+            }
+        }
+        indexProgress = nil
     }
 }

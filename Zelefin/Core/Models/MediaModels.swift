@@ -118,6 +118,10 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     let videoRange: VideoRange
     let audioFormat: AudioFormat
     var criticRating: Double? = nil
+    var communityRating: Double? = nil
+    var dateCreated: Date? = nil
+    var lastPlayedDate: Date? = nil
+    var playCount: Int = 0
     var videoResolution: VideoResolution = .unknown
     var hasClosedCaptions: Bool = false
     var hasAudioDescription: Bool = false
@@ -245,10 +249,12 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         )
     }
 
+    var hasHeroBackdrop: Bool {
+        backdropImageTag != nil || !backdropImageTags.isEmpty || parentBackdropItemID != nil
+    }
+
     var hasGenreCoverArt: Bool {
-        !backdropImageTags.isEmpty
-            || backdropImageTag != nil
-            || parentBackdropItemID != nil
+        hasHeroBackdrop
             || thumbImageTag != nil
             || primaryImageTag != nil
     }
@@ -457,7 +463,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
-enum LibraryKind: String, Hashable, Sendable, Codable {
+enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
     case movies
     case shows
     case music

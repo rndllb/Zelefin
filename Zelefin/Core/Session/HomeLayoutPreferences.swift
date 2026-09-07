@@ -107,9 +107,10 @@ enum HomeLayoutPreferences {
         }
     }
 
-    static func featured(resume: [MediaItem], nextUp: [MediaItem], merge: Bool) -> [MediaItem] {
-        let source = merge ? mergedQueue(resume: resume, nextUp: nextUp) : resume
-        return Array(source.prefix(8))
+    static let featuredLimit = 8
+
+    static func featured(latestMovies: [MediaItem], latestShows: [MediaItem]) -> [MediaItem] {
+        interleaveForHero(rankedForHero(latestMovies), rankedForHero(latestShows), limit: featuredLimit)
     }
 
     static func isPlaybackQueueSection(_ id: String) -> Bool {
@@ -127,7 +128,7 @@ enum HomeLayoutPreferences {
 
     static func removing(_ itemID: String, from layout: HomeLayout) -> HomeLayout {
         HomeLayout(
-            featured: layout.featured.filter { $0.id != itemID },
+            featured: layout.featured,
             sections: layout.sections.compactMap { section in
                 let items = section.items.filter { $0.id != itemID }
                 if items.isEmpty, isPlaybackQueueSection(section.id) || section.isRecentlyWatched {
@@ -141,5 +142,28 @@ enum HomeLayoutPreferences {
     private static func mergedQueue(resume: [MediaItem], nextUp: [MediaItem]) -> [MediaItem] {
         let resumeIDs = Set(resume.map(\.id))
         return resume + nextUp.filter { !resumeIDs.contains($0.id) }
+    }
+
+    private static func rankedForHero(_ items: [MediaItem]) -> [MediaItem] {
+        let withArt = items.filter(\.hasHeroBackdrop)
+        let source = withArt.isEmpty ? items : withArt
+        return source.filter { !$0.isPlayed } + source.filter(\.isPlayed)
+    }
+
+    private static func interleaveForHero(_ movies: [MediaItem], _ shows: [MediaItem], limit: Int) -> [MediaItem] {
+        var result: [MediaItem] = []
+        var seen = Set<String>()
+        let count = max(movies.count, shows.count)
+        for index in 0..<count {
+            if index < movies.count, seen.insert(movies[index].id).inserted {
+                result.append(movies[index])
+                if result.count == limit { return result }
+            }
+            if index < shows.count, seen.insert(shows[index].id).inserted {
+                result.append(shows[index])
+                if result.count == limit { return result }
+            }
+        }
+        return result
     }
 }

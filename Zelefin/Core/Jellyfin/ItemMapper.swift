@@ -119,6 +119,10 @@ enum ItemMapper {
             videoRange: videoRange(from: dto.mediaStreams),
             audioFormat: audioFormat(from: dto.mediaStreams),
             criticRating: dto.criticRating.map(Double.init),
+            communityRating: dto.communityRating.map(Double.init),
+            dateCreated: dto.dateCreated,
+            lastPlayedDate: dto.userData?.lastPlayedDate,
+            playCount: dto.userData?.playCount ?? 0,
             videoResolution: videoResolution(from: dto.mediaStreams),
             hasClosedCaptions: hasClosedCaptions(from: dto.mediaStreams),
             hasAudioDescription: hasAudioDescription(from: dto.mediaStreams)

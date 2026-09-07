@@ -154,37 +154,51 @@ struct PosterImage: View {
     }
 }
 
-private final class ArtworkCache: @unchecked Sendable {
-    static let shared = ArtworkCache()
-    private let cache = NSCache<NSURL, UIImage>()
+/// Lives in the scroll content under the header so it stays at the top of the page
+/// and leaves the screen when you scroll.
+struct CatalogIndexBar: View {
+    var progress: CatalogIndexProgress?
 
-    func image(for url: URL) -> UIImage? {
-        cache.object(forKey: url as NSURL)
-    }
-
-    func store(_ image: UIImage, for url: URL) {
-        cache.setObject(image, forKey: url as NSURL)
-    }
-
-    func load(from url: URL) async -> UIImage? {
-        if let cached = image(for: url) { return cached }
-        do {
-            let data: Data
-            if url.isFileURL {
-                data = try Data(contentsOf: url)
-            } else {
-                let (bytes, response) = try await JellyfinNetworking.data(from: url)
-                guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-                    return nil
+    var body: some View {
+        if let progress {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(progress.label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.72))
+                    Spacer(minLength: 8)
+                    Text(progress.countLabel)
+                        .font(.caption.monospacedDigit().weight(.medium))
+                        .foregroundStyle(.white.opacity(0.45))
                 }
-                data = bytes
+                CatalogIndexTrack(fraction: progress.fraction, isDeterminate: progress.isDeterminate)
             }
-            guard let loaded = UIImage(data: data) else { return nil }
-            store(loaded, for: url)
-            return loaded
-        } catch {
-            return nil
+            .padding(.horizontal, 16)
+            .padding(.top, 2)
+            .padding(.bottom, 10)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(progress.label)
+            .accessibilityValue(progress.countLabel)
         }
+    }
+}
+
+private struct CatalogIndexTrack: View {
+    var fraction: CGFloat
+    var isDeterminate: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.12))
+                Capsule()
+                    .fill(Color.white.opacity(isDeterminate ? 0.7 : 0.28))
+                    .frame(width: max(10, geo.size.width * (isDeterminate ? fraction : 0.32)))
+            }
+        }
+        .frame(height: 6)
+        .animation(.easeOut(duration: 0.2), value: fraction)
     }
 }
 
@@ -450,6 +464,7 @@ struct TrailerLandscapeCard: View {
 struct EpisodeShowcaseCard: View {
     let item: MediaItem
     let imageURL: URL?
+    var showsOverflowIcon = true
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
@@ -509,9 +524,14 @@ struct EpisodeShowcaseCard: View {
                             .monospacedDigit()
                     }
                     Spacer(minLength: 4)
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.72))
+                    if showsOverflowIcon {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.72))
+                    } else {
+                        Color.clear
+                            .frame(width: 16, height: 16)
+                    }
                 }
                 .foregroundStyle(.white.opacity(0.84))
             }
@@ -743,9 +763,10 @@ struct TitleLogo: View {
     @State private var failed = false
 
     var body: some View {
+        let shown = image ?? session.library?.logoURL(for: item).flatMap { ArtworkCache.shared.image(for: $0) }
         Group {
-            if let image {
-                Image(uiImage: image)
+            if let shown {
+                Image(uiImage: shown)
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: maxHeight)
@@ -762,27 +783,19 @@ struct TitleLogo: View {
     }
 
     private func load() async {
-        image = nil
         failed = false
-        guard let url = session.library?.logoURL(for: item) else { return }
+        guard let url = session.library?.logoURL(for: item) else {
+            image = nil
+            return
+        }
         if let cached = ArtworkCache.shared.image(for: url) {
             image = cached
             return
         }
-        do {
-            let (data, response) = try await JellyfinNetworking.data(from: url)
+        if let loaded = await ArtworkCache.shared.load(from: url) {
             guard !Task.isCancelled else { return }
-            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
-                  let loaded = UIImage(data: data)
-            else {
-                failed = true
-                return
-            }
-            ArtworkCache.shared.store(loaded, for: url)
             image = loaded
-        } catch is CancellationError {
-            return
-        } catch {
+        } else {
             failed = true
         }
     }
@@ -809,6 +822,7 @@ struct RatingBadge: View {
 /// Sharp hero art that fills its frame.
 struct HeroArtwork: View {
     let url: URL?
+    var placeholderURL: URL? = nil
     var size: CGSize? = nil
     @State private var image: UIImage?
 
@@ -827,9 +841,12 @@ struct HeroArtwork: View {
 
     @ViewBuilder
     private func layers(in size: CGSize) -> some View {
+        let shown = image
+            ?? url.flatMap { ArtworkCache.shared.image(for: $0) }
+            ?? placeholderURL.flatMap { ArtworkCache.shared.image(for: $0) }
         ZStack {
-            if let image {
-                FillingImageView(image: image)
+            if let shown {
+                FillingImageView(image: shown)
                     .frame(width: size.width, height: size.height)
             } else {
                 Color.black
@@ -842,8 +859,13 @@ struct HeroArtwork: View {
 
     private func load() async {
         image = url.flatMap { ArtworkCache.shared.image(for: $0) }
-        guard let url, image == nil else { return }
-        image = await ArtworkCache.shared.load(from: url)
+        if image != nil { return }
+        image = placeholderURL.flatMap { ArtworkCache.shared.image(for: $0) }
+        guard let url else { return }
+        if let loaded = await ArtworkCache.shared.load(from: url) {
+            guard !Task.isCancelled else { return }
+            image = loaded
+        }
     }
 }
 
@@ -869,6 +891,7 @@ struct FeaturedHero: View {
     @State private var slideStartedAt = Date()
     @State private var playingItem: MediaItem?
     @State private var playbackError: String?
+    @State private var pauseDwell = false
 
     private static let dwell: TimeInterval = 6
     private static let dotSize: CGFloat = 7
@@ -899,7 +922,8 @@ struct FeaturedHero: View {
                 selection = slides.first?.id
             }
         }
-        .task(id: currentSlide?.id) {
+        .task(id: "\(currentSlide?.id ?? "")-\(pauseDwell)") {
+            guard !pauseDwell else { return }
             await dwellThenAdvance()
         }
         .onChange(of: currentSlide?.id) { _, _ in
@@ -971,7 +995,11 @@ struct FeaturedHero: View {
     private func slide(_ item: MediaItem) -> some View {
         ZStack(alignment: .bottom) {
             ZStack {
-                HeroArtwork(url: imageURL(item), size: size)
+                HeroArtwork(
+                    url: imageURL(item),
+                    placeholderURL: session.library?.primaryURL(for: item),
+                    size: size
+                )
 
                 LinearGradient(
                     colors: [.black.opacity(0.55), .clear],
@@ -1019,17 +1047,13 @@ struct FeaturedHero: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Play")
 
-                    NavigationLink {
-                        ItemDetailView(item: item)
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.body.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 48, height: 48)
-                            .zelefinLiquidGlassCircle()
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("More")
+                    PlaybackQueueOverflowButton(
+                        item: item,
+                        context: .featured,
+                        onPlay: { play(item) },
+                        usesHeroChrome: true,
+                        onMenuVisibilityChange: { pauseDwell = $0 }
+                    )
                 }
             }
             .padding(.horizontal, 24)
@@ -1083,9 +1107,9 @@ extension View {
     }
 
     @ViewBuilder
-    func zelefinLiquidGlassCapsule() -> some View {
+    func zelefinLiquidGlassCapsule(interactive: Bool = true) -> some View {
         if #available(iOS 26, tvOS 26, *) {
-            self.glassEffect(.regular.interactive(), in: Capsule(style: .continuous))
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: Capsule(style: .continuous))
         } else {
             self
                 .background(.ultraThinMaterial, in: Capsule(style: .continuous))
@@ -1123,6 +1147,19 @@ extension View {
         #endif
     }
 
+    @ViewBuilder
+    func zelefinScrollEdgeHidden() -> some View {
+        #if os(iOS)
+        if #available(iOS 26, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
     func zelefinHeaderScrollVisibility(_ isVisible: Binding<Bool>) -> some View {
         #if os(iOS)
         modifier(HeaderScrollVisibilityModifier(isVisible: isVisible))
@@ -1135,6 +1172,42 @@ extension View {
         self
             .listRowBackground(Color.black)
             .listRowSeparatorTint(Color.white.opacity(0.16))
+    }
+}
+
+enum ZelefinPillMetrics {
+    static let height: CGFloat = 45
+    static let iconSegmentWidth: CGFloat = 46
+    static let dividerHeight: CGFloat = 20
+    static let iconPointSize: CGFloat = 17
+    static let iconFrame: CGFloat = 22
+}
+
+struct ZelefinGlassPillCluster<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+        }
+        .frame(height: ZelefinPillMetrics.height)
+        .background {
+            Color.clear
+                .zelefinLiquidGlassCapsule(interactive: false)
+        }
+        .imageScale(.medium)
+        .controlSize(.regular)
+        .tint(.white)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+struct ZelefinGlassPillDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(.white.opacity(0.28))
+            .frame(width: 1, height: ZelefinPillMetrics.dividerHeight)
+            .allowsHitTesting(false)
     }
 }
 
@@ -1372,15 +1445,28 @@ struct FillingPosterCell<Content: View>: View {
 }
 
 /// Trailing profile control for root tabs. iPhone also shows the tab title on this row.
-struct FloatingPageHeader: View {
+struct FloatingPageHeader<Accessory: View>: View {
     var title: String = ""
     var isVisible: Bool = true
     /// Home draws from the screen top. Other tabs sit in the content safe area and
     /// need this lift so the profile lands in the iPad top tab bar row.
     var liftsIntoPadTabBar: Bool = false
+    var accessory: Accessory
     #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     #endif
+
+    init(
+        title: String = "",
+        isVisible: Bool = true,
+        liftsIntoPadTabBar: Bool = false,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.title = title
+        self.isVisible = isVisible
+        self.liftsIntoPadTabBar = liftsIntoPadTabBar
+        self.accessory = accessory()
+    }
 
     private var showsTitle: Bool {
         RootPageChrome.showsTitle && !title.isEmpty
@@ -1406,7 +1492,7 @@ struct FloatingPageHeader: View {
     }
 
     var body: some View {
-        if showsTitle || showsProfile {
+        if showsTitle || showsProfile || Accessory.self != EmptyView.self {
             HStack(spacing: 12) {
                 if showsTitle {
                     Text(title)
@@ -1417,6 +1503,7 @@ struct FloatingPageHeader: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 Spacer(minLength: 0)
+                accessory
                 if showsProfile {
                     ProfileMenu(diameter: 45)
                 }
@@ -1432,6 +1519,14 @@ struct FloatingPageHeader: View {
             #if os(iOS)
             .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
             #endif
+        }
+    }
+}
+
+extension FloatingPageHeader where Accessory == EmptyView {
+    init(title: String = "", isVisible: Bool = true, liftsIntoPadTabBar: Bool = false) {
+        self.init(title: title, isVisible: isVisible, liftsIntoPadTabBar: liftsIntoPadTabBar) {
+            EmptyView()
         }
     }
 }

@@ -398,15 +398,9 @@ struct UserAvatarView: View {
         guard localImage == nil else { return }
         remoteImage = nil
         guard let url else { return }
-        do {
-            let (data, response) = try await JellyfinNetworking.data(from: url, ignoreCache: true)
+        if let loaded = await ArtworkCache.shared.load(from: url, persist: false) {
             guard !Task.isCancelled else { return }
-            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
-                  let loaded = UIImage(data: data)
-            else { return }
             remoteImage = loaded
-        } catch {
-            return
         }
     }
 }

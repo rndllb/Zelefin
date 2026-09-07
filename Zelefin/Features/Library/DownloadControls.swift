@@ -113,48 +113,167 @@ struct DownloadProgressRing: View {
 
 struct DownloadStatusBanner: View {
     let item: MediaItem
-    var episodes: [MediaItem] = []
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
 
     var body: some View {
         if let progress = downloads.transfer(for: item, account: session.session) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(progress.percentLabel.map { "Downloading \($0)" } ?? "Downloading")
-                        .font(.subheadline.weight(.semibold))
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(progress.bannerTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text(progress.sizeLabel)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.62))
+                            .monospacedDigit()
+                    }
                     Spacer(minLength: 8)
                     Button("Cancel") {
-                        Task {
-                            try? await downloads.toggle(
-                                item: item,
-                                episodes: episodes,
-                                library: session.library,
-                                account: session.session
-                            )
-                        }
+                        downloads.cancelTransfer(for: item, account: session.session)
                     }
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
                     .buttonStyle(.plain)
                 }
-                if progress.isDeterminate {
-                    ProgressView(value: min(1, max(0, progress.fraction)))
-                        .tint(.white)
-                } else {
-                    ProgressView()
-                        .tint(.white)
-                }
-                Text(progress.sizeLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .monospacedDigit()
+
+                downloadTrack(progress)
             }
-            .foregroundStyle(.white)
-            .padding(14)
-            .frame(maxWidth: 420)
-            .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(maxWidth: 300)
             .accessibilityElement(children: .combine)
+            .accessibilityLabel(progress.bannerTitle)
+            .accessibilityValue(progress.sizeLabel)
+            .accessibilityAction(named: "Cancel") {
+                downloads.cancelTransfer(for: item, account: session.session)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func downloadTrack(_ progress: DownloadProgress) -> some View {
+        if progress.isDeterminate {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.22))
+                    Capsule()
+                        .fill(Color.white)
+                        .frame(width: max(6, geo.size.width * CGFloat(min(1, max(0, progress.fraction)))))
+                }
+            }
+            .frame(height: 4)
+        } else {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .tint(.white)
+        }
+    }
+}
+
+struct DetailDownloadSharePill: View {
+    let item: MediaItem
+    var episodes: [MediaItem] = []
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(SessionStore.self) private var session
+    @State private var errorMessage: String?
+    @State private var removalPrompt: DownloadRemovalPrompt?
+
+    var body: some View {
+        let state = downloads.control(for: item, episodes: episodes, account: session.session)
+        let transfer = downloads.transfer(for: item, account: session.session)
+        ZelefinGlassPillCluster {
+            ZelefinPillIconSegment(
+                accessibilityLabel: title(for: state),
+                isEnabled: state != .unavailable,
+                action: { Task { await run() } }
+            ) {
+                switch state {
+                case .downloading:
+                    DownloadProgressRing(
+                        fraction: transfer?.fraction ?? 0,
+                        isDeterminate: transfer?.isDeterminate ?? false,
+                        size: 22
+                    )
+                default:
+                    Image(systemName: symbol(for: state))
+                        .font(.system(size: ZelefinPillMetrics.iconPointSize, weight: .semibold))
+                        .imageScale(.medium)
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.white)
+                }
+            }
+            ZelefinGlassPillDivider()
+            ZelefinPillIconSegment(
+                accessibilityLabel: "Share",
+                action: share
+            ) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: ZelefinPillMetrics.iconPointSize, weight: .semibold))
+                    .imageScale(.medium)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.white)
+            }
+        }
+        .alert("Download", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .downloadRemovalConfirmation($removalPrompt) {
+            downloads.removeDownloaded(item: item, episodes: episodes, account: session.session)
+        }
+    }
+
+    private func share() {
+        guard let serverURL = session.session?.serverURL else { return }
+        let payload = TitleShare.make(
+            item: item,
+            serverURL: serverURL,
+            serverName: session.serverName ?? session.session?.serverName
+        )
+        #if os(iOS)
+        TitleSharePresenter.present(payload)
+        #endif
+    }
+
+    private func run() async {
+        switch downloads.control(for: item, episodes: episodes, account: session.session) {
+        case .unavailable:
+            return
+        case .downloading:
+            downloads.cancelTransfer(for: item, account: session.session)
+        case .downloaded:
+            let target = DownloadEligibility.playableItem(from: item, episodes: episodes) ?? item
+            removalPrompt = .make(item: target)
+        case .idle:
+            await startDownload()
+        }
+    }
+
+    private func startDownload() async {
+        do {
+            try await downloads.toggle(
+                item: item,
+                episodes: episodes,
+                library: session.library,
+                account: session.session
+            )
+        } catch {
+            guard !DownloadFailure.isCancellation(error) else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func title(for state: DownloadControlState) -> String {
+        DownloadControlCopy.title(for: state)
+    }
+
+    private func symbol(for state: DownloadControlState) -> String {
+        DownloadControlCopy.symbol(for: state)
     }
 }
 
@@ -164,26 +283,17 @@ struct DownloadActionButton: View {
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
     @State private var errorMessage: String?
+    @State private var removalPrompt: DownloadRemovalPrompt?
 
     var body: some View {
         let state = downloads.control(for: item, episodes: episodes, account: session.session)
-        let transfer = downloads.transfer(for: item, account: session.session)
         Button {
             Task { await run() }
         } label: {
-            switch state {
-            case .downloading:
-                DownloadProgressRing(
-                    fraction: transfer?.fraction ?? 0,
-                    isDeterminate: transfer?.isDeterminate ?? false,
-                    size: 22
-                )
-            default:
-                Label(title(for: state), systemImage: symbol(for: state))
-            }
+            Label(DownloadControlCopy.title(for: state), systemImage: DownloadControlCopy.symbol(for: state))
         }
         .disabled(state == .unavailable)
-        .accessibilityLabel(title(for: state))
+        .accessibilityLabel(DownloadControlCopy.title(for: state))
         .alert("Download", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -192,114 +302,62 @@ struct DownloadActionButton: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .downloadRemovalConfirmation($removalPrompt) {
+            downloads.removeDownloaded(item: item, episodes: episodes, account: session.session)
+        }
     }
 
     private func run() async {
-        do {
-            try await downloads.toggle(
-                item: item,
-                episodes: episodes,
-                library: session.library,
-                account: session.session
-            )
-        } catch is CancellationError {
+        switch downloads.control(for: item, episodes: episodes, account: session.session) {
+        case .unavailable:
             return
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func title(for state: DownloadControlState) -> String {
-        switch state {
-        case .unavailable, .idle:
-            "Download"
-        case .downloading(let fraction):
-            fraction > 0 ? "\(Int((fraction * 100).rounded()))%" : "Downloading"
-        case .downloaded:
-            "Remove Download"
-        }
-    }
-
-    private func symbol(for state: DownloadControlState) -> String {
-        switch state {
-        case .unavailable, .idle:
-            "arrow.down.to.line"
         case .downloading:
-            "stop.circle"
+            downloads.cancelTransfer(for: item, account: session.session)
         case .downloaded:
-            "checkmark.circle.fill"
+            let target = DownloadEligibility.playableItem(from: item, episodes: episodes) ?? item
+            removalPrompt = .make(item: target)
+        case .idle:
+            do {
+                try await downloads.toggle(
+                    item: item,
+                    episodes: episodes,
+                    library: session.library,
+                    account: session.session
+                )
+            } catch {
+                guard !DownloadFailure.isCancellation(error) else { return }
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
 
-struct DownloadHeroButton: View {
-    let item: MediaItem
-    var episodes: [MediaItem] = []
-    @Environment(DownloadStore.self) private var downloads
-    @Environment(SessionStore.self) private var session
-    @State private var errorMessage: String?
+private struct DownloadRemovalConfirmation: ViewModifier {
+    @Binding var prompt: DownloadRemovalPrompt?
+    var onConfirm: () -> Void
 
-    var body: some View {
-        let state = downloads.control(for: item, episodes: episodes, account: session.session)
-        let transfer = downloads.transfer(for: item, account: session.session)
-        Button {
-            Task { await run() }
-        } label: {
-            Group {
-                switch state {
-                case .downloading:
-                    DownloadProgressRing(
-                        fraction: transfer?.fraction ?? 0,
-                        isDeterminate: transfer?.isDeterminate ?? false,
-                        size: 22
-                    )
-                case .downloaded:
-                    Image(systemName: "checkmark.circle.fill")
-                case .unavailable, .idle:
-                    Image(systemName: "arrow.down.to.line")
-                }
-            }
-            .font(.body.weight(.bold))
-            .foregroundStyle(.white)
-            .frame(width: 45, height: 45)
-            .background(Color.white.opacity(0.18), in: Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(state == .unavailable)
-        .accessibilityLabel(accessibilityTitle(for: state))
-        .alert("Download", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "")
+    func body(content: Content) -> some View {
+        content.alert(
+            prompt?.title ?? "Delete Download?",
+            isPresented: Binding(
+                get: { prompt != nil },
+                set: { if !$0 { prompt = nil } }
+            ),
+            presenting: prompt
+        ) { _ in
+            Button("Delete", role: .destructive, action: onConfirm)
+            Button("Cancel", role: .cancel) {}
+        } message: { item in
+            Text(item.message)
         }
     }
+}
 
-    private func run() async {
-        do {
-            try await downloads.toggle(
-                item: item,
-                episodes: episodes,
-                library: session.library,
-                account: session.session
-            )
-        } catch is CancellationError {
-            return
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func accessibilityTitle(for state: DownloadControlState) -> String {
-        switch state {
-        case .unavailable, .idle:
-            "Download"
-        case .downloading(let fraction):
-            fraction > 0 ? "Downloading \(Int((fraction * 100).rounded())) percent" : "Downloading"
-        case .downloaded:
-            "Remove Download"
-        }
+extension View {
+    func downloadRemovalConfirmation(
+        _ prompt: Binding<DownloadRemovalPrompt?>,
+        onConfirm: @escaping () -> Void
+    ) -> some View {
+        modifier(DownloadRemovalConfirmation(prompt: prompt, onConfirm: onConfirm))
     }
 }

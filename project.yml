@@ -62,6 +62,11 @@ targets:
     info:
       path: Zelefin/Info.plist
       properties:
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: app.zelefin.client
+            CFBundleURLSchemes:
+              - zelefin
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIRequiresFullScreen: false

@@ -4,11 +4,12 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case home
     case movies
     case shows
+    case collections
     case library
 
     static let orderStorageKey = "zelefin.tab-order"
     static let customizationStorageKey = "zelefin.tab-customization"
-    static let defaultOrderRaw = "home,movies,shows,library"
+    static let defaultOrderRaw = "home,movies,shows,collections,library"
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .home: "Home"
         case .movies: "Movies"
         case .shows: "Shows"
+        case .collections: "Collections"
         case .library: "Library"
         }
     }
@@ -26,6 +28,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .home: "house.fill"
         case .movies: "film"
         case .shows: "tv"
+        case .collections: "square.stack.fill"
         case .library: "rectangle.stack.fill"
         }
     }
