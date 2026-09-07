@@ -18,6 +18,13 @@ enum AVDeviceProfileFactory {
     ]
 
     static func make() -> DeviceProfile {
+        make(
+            preferFMP4InHLS: PlaybackPreferences.effectivePreferFMP4InHLS,
+            maxBitrate: PlaybackPreferences.maxStreamingBitrate
+        )
+    }
+
+    static func make(preferFMP4InHLS: Bool, maxBitrate: Int = maxBitrate) -> DeviceProfile {
         DeviceProfile(
             codecProfiles: codecProfiles,
             directPlayProfiles: directPlayProfiles,
@@ -26,7 +33,7 @@ enum AVDeviceProfileFactory {
             maxStreamingBitrate: maxBitrate,
             name: "Zelefin",
             subtitleProfiles: subtitleProfiles,
-            transcodingProfiles: transcodingProfiles
+            transcodingProfiles: transcodingProfiles(preferFMP4InHLS: preferFMP4InHLS)
         )
     }
 }
@@ -52,12 +59,12 @@ private extension AVDeviceProfileFactory {
 
     /// Server remux/transcode when the file is outside the Direct Play set. HLS fMP4 keeps
     /// HEVC HDR and E-AC-3 Atmos for the native AVPlayer path.
-    static var transcodingProfiles: [TranscodingProfile] {
+    static func transcodingProfiles(preferFMP4InHLS: Bool) -> [TranscodingProfile] {
         [
             TranscodingProfile(
                 protocol: .hls,
                 audioCodec: "aac,ac3,eac3",
-                container: "mp4",
+                container: preferFMP4InHLS ? "mp4" : "ts",
                 context: .streaming,
                 enableSubtitlesInManifest: true,
                 maxAudioChannels: "8",

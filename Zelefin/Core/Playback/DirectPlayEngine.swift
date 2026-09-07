@@ -29,6 +29,44 @@ enum DirectPlayLoadPolicy {
     static func shouldReloadAsURL(isAudioOnlyBackend: Bool, expectsVideo: Bool) -> Bool {
         isAudioOnlyBackend && expectsVideo
     }
+
+    /// Remux/transcode HLS has no file to range-request; open the playlist URL instead.
+    static func shouldOpenAsHTTPURL(method: PlaybackMethod, isHLS: Bool) -> Bool {
+        method != .directPlay || isHLS
+    }
+}
+
+/// Returning from background leaves audio on a dead sample-buffer layer. Aether
+/// asks the host to rebuild; Control Center / the app switcher peek should not.
+enum PlaybackForegroundRecovery {
+    static let settleNanoseconds: UInt64 = 100_000_000
+
+    static func shouldRestore(wasBackgrounded: Bool, pictureInPictureActive: Bool) -> Bool {
+        wasBackgrounded && !pictureInPictureActive
+    }
+}
+
+/// Sample-buffer PiP is refused if the controller is built before the layer is
+/// in a window, and a `.zero` playable range also makes AVKit refuse to start.
+enum PlaybackPictureInPicturePolicy {
+    static func canCreateController(isSupported: Bool, layerIsInWindow: Bool) -> Bool {
+        isSupported && layerIsInWindow
+    }
+
+    static func shouldStopOnViewDismiss(pictureInPictureActive: Bool) -> Bool {
+        !pictureInPictureActive
+    }
+
+    static func isLayerInWindow(_ layer: CALayer) -> Bool {
+        var node: CALayer? = layer
+        while let current = node {
+            if let view = current.delegate as? UIView, view.window != nil {
+                return true
+            }
+            node = current.superlayer
+        }
+        return false
+    }
 }
 
 /// Session options for Zelefin Direct Play: FFmpeg demux through `JellyfinByteRangeReader`,

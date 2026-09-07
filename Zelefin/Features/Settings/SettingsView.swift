@@ -15,6 +15,16 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
+                NavigationLink {
+                    PlaybackSettingsView()
+                } label: {
+                    Label("Playback and Controls", systemImage: "play.rectangle.on.rectangle")
+                }
+            } footer: {
+                Text("Skip intervals, quality, autoplay, and the video player.")
+            }
+
+            Section {
                 Toggle("Combine Continue Watching and Next Up", isOn: $mergeContinueAndNextUp)
             } footer: {
                 Text(footerCopy)
@@ -31,19 +41,6 @@ struct SettingsView: View {
                 Text("Hide or reorder Home, Movies, Shows, and Library. Search stays in the tab bar.")
             }
             #endif
-
-            Section {
-                HStack {
-                    Text("Skip Intro / Outro")
-                    Spacer()
-                    Text(session.introSkipperAvailable ? "Installed" : "Not on this server")
-                        .foregroundStyle(session.introSkipperAvailable ? .green : .secondary)
-                }
-            } header: {
-                Text("Intro Skipper")
-            } footer: {
-                Text("Skip Intro and Skip Outro appear during playback when the Intro Skipper plugin is installed on Jellyfin.")
-            }
 
             AccessGatewaySection()
 
@@ -118,23 +115,11 @@ struct SettingsView: View {
                 Text("Jellyseerr or Seerr lets you request movies and shows that are not on Jellyfin yet. Use your Jellyfin username and password. Search for a title, then tap Request.")
             }
         }
-        #if os(iOS)
-        .scrollContentBackground(.hidden)
-        #endif
-        .background(Color.black)
-        .preferredColorScheme(.dark)
-        .navigationTitle("Settings")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
+        .zelefinSettingsChrome(title: "Settings")
         .onChange(of: mergeContinueAndNextUp) {
             Task { await session.refreshHome() }
         }
         .task {
-            await session.detectIntroSkipper()
             if seerrUsername.isEmpty {
                 seerrUsername = session.session?.userName ?? ""
             }
@@ -204,5 +189,23 @@ struct SettingsView: View {
             seerrDisplayName = nil
             seerrStatus = "Seerr session expired. Sign in again."
         }
+    }
+}
+
+extension View {
+    func zelefinSettingsChrome(title: String) -> some View {
+        self
+            #if os(iOS)
+            .scrollContentBackground(.hidden)
+            #endif
+            .background(Color.black)
+            .preferredColorScheme(.dark)
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
     }
 }

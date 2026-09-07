@@ -12,6 +12,7 @@ final class SessionStore {
     private var itemDetailMemory: [String: ItemDetailSnapshot] = [:]
 
     private(set) var session: SavedSession?
+    private(set) var accounts: [SavedSession] = []
     private(set) var client: JellyfinClient?
     private(set) var library: JellyfinLibraryClient?
     private(set) var isRestoring = true
@@ -33,17 +34,50 @@ final class SessionStore {
         self.itemDetailStore = itemDetailStore
     }
 
+    private(set) var avatarRevision = 0
+
     var avatarURL: URL? {
-        guard let session, let client else { return nil }
-        return ArtworkURLBuilder(client: client).userAvatar(userID: session.userID, tag: session.userImageTag)
+        guard let session else { return nil }
+        return avatarURL(for: session)
+    }
+
+    func avatarURL(for account: SavedSession) -> URL? {
+        guard let client else { return nil }
+        let revision = account.accountID == session?.accountID ? avatarRevision : 0
+        return ArtworkURLBuilder(client: client).userAvatar(
+            userID: account.userID,
+            tag: account.userImageTag,
+            revision: revision
+        )
     }
 
     var isSignedIn: Bool { session != nil && library != nil }
 
+    var otherAccounts: [SavedSession] {
+        accounts.filter { $0.accountID != session?.accountID }
+    }
+
     func restore() async {
         defer { isRestoring = false }
-        guard let saved = try? vault.load() else { return }
+        guard let box = try? vault.loadBox(), let saved = box.current else { return }
+        accounts = box.accounts
         apply(saved, serverVersion: saved.serverVersion)
+    }
+
+    func addUserOnCurrentServer(username: String, password: String) async throws {
+        guard let current = session else { throw ZelefinError.missingUser }
+        let name = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw ZelefinError.server("Enter a username.")
+        }
+        guard !password.isEmpty else {
+            throw ZelefinError.server("Enter a password.")
+        }
+        try await connect(
+            serverAddress: current.serverURL.absoluteString,
+            username: name,
+            password: password
+        )
     }
 
     func connect(serverAddress: String, username: String, password: String) async throws {
@@ -112,29 +146,78 @@ final class SessionStore {
             userName: user.name ?? fallbackName,
             deviceID: deviceID,
             userImageTag: user.primaryImageTag,
-            serverVersion: info.version
+            serverVersion: info.version,
+            serverName: info.serverName
         )
         serverName = info.serverName
         apply(saved, client: jellyfin, serverVersion: info.version)
-        try vault.save(saved)
+        persist(saved)
+    }
+
+    func switchTo(_ account: SavedSession) async {
+        guard account.accountID != session?.accountID else { return }
+        if let current = session {
+            persist(current, select: false)
+        }
+        apply(account, serverVersion: account.serverVersion)
+        persist(account)
     }
 
     func signOut() async {
         homeTask?.cancel()
-        try? await client?.signOut()
-        vault.delete()
-        session = nil
-        client = nil
-        library = nil
-        serverName = nil
-        homeLayout = HomeLayout(featured: [], sections: [])
-        libraries = []
-        homeError = nil
-        isLoadingHome = false
-        introSkipperAvailable = false
-        tmdbCatalog = JellyfinTmdbCatalog()
-        itemDetailMemory = [:]
-        PluginSettings.clearSeerrSession()
+        let remote = client
+        let remaining: SavedSession?
+        if let id = session?.accountID, var box = try? vault.loadBox() {
+            remaining = box.remove(id: id)
+            try? vault.persist(box)
+            accounts = box.accounts
+        } else {
+            remaining = nil
+            vault.delete()
+            accounts = []
+        }
+        clearLocalSession()
+        if let remaining {
+            apply(remaining, serverVersion: remaining.serverVersion)
+            persist(remaining)
+        }
+        Task {
+            try? await remote?.signOut()
+        }
+    }
+
+    func changePassword(current: String, new: String) async throws {
+        guard let client, let session else { throw ZelefinError.missingUser }
+        let currentPassword = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newPassword = new.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !currentPassword.isEmpty, !newPassword.isEmpty else {
+            throw ZelefinError.server("Enter your current password and a new password.")
+        }
+        guard newPassword.count >= 1 else {
+            throw ZelefinError.server("Enter a new password.")
+        }
+        _ = try await client.send(
+            Paths.updateUserPassword(
+                userID: session.userID,
+                .init(currentPw: currentPassword, newPw: newPassword)
+            )
+        )
+    }
+
+    func updateProfileImage(_ jpeg: Data) async throws {
+        guard !jpeg.isEmpty else {
+            throw ZelefinError.server("Zelefin could not read that photo.")
+        }
+        try await postProfileImage(jpeg)
+        avatarRevision += 1
+        await refreshAccount()
+    }
+
+    func removeProfileImage() async throws {
+        guard let client, let session else { throw ZelefinError.missingUser }
+        _ = try await client.send(Paths.deleteUserImage(userID: session.userID))
+        avatarRevision += 1
+        await refreshAccount()
     }
 
     func refreshHome() async {
@@ -167,10 +250,72 @@ final class SessionStore {
         saved.userName = user.name ?? saved.userName
         saved.userImageTag = user.primaryImageTag
         session = saved
-        try? vault.save(saved)
+        persist(saved)
+    }
+
+    private func persist(_ session: SavedSession, select: Bool = true) {
+        try? vault.save(session, select: select)
+        accounts = (try? vault.loadBox())?.accounts ?? [session]
+    }
+
+    private func clearLocalSession() {
+        session = nil
+        client = nil
+        library = nil
+        serverName = nil
+        homeLayout = HomeLayout(featured: [], sections: [])
+        libraries = []
+        homeError = nil
+        isLoadingHome = false
+        introSkipperAvailable = false
+        tmdbCatalog = JellyfinTmdbCatalog()
+        itemDetailMemory = [:]
+        PluginSettings.clearSeerrSession()
+    }
+
+    private func postProfileImage(_ jpeg: Data) async throws {
+        guard let session, let client else { throw ZelefinError.missingUser }
+        guard var url = ServerURL.resolve(base: client.configuration.url, path: "/UserImage") else {
+            throw ZelefinError.invalidServerURL
+        }
+        url = ServerURL.appending([("userId", session.userID)], to: url)
+        let body = JellyfinImagePayload.requestBody(imageJPEG: jpeg)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.setValue("\(body.count)", forHTTPHeaderField: "Content-Length")
+        request.setValue(session.accessToken, forHTTPHeaderField: "X-Emby-Token")
+        request.setValue(
+            "MediaBrowser Client=\"\(DeviceIdentity.clientName)\", Device=\"\(DeviceIdentity.deviceName)\", DeviceId=\"\(session.deviceID)\", Version=\"\(DeviceIdentity.version)\", Token=\"\(session.accessToken)\"",
+            forHTTPHeaderField: "Authorization"
+        )
+        let (data, response) = try await JellyfinNetworking.apiData(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ZelefinError.server("The server did not accept the photo.")
+        }
+        if AccessGateway.isChallenge(response: http, data: data) {
+            throw ZelefinError.accessGateway
+        }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw Self.profileImageFailure(statusCode: http.statusCode, data: data)
+        }
+    }
+
+    private static func profileImageFailure(statusCode: Int, data: Data) -> ZelefinError {
+        let detail = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let detail, !detail.isEmpty, !detail.hasPrefix("<") {
+            return .server("The server did not accept the photo. \(detail)")
+        }
+        return .server("The server did not accept the photo. (\(statusCode))")
     }
 
     private func apply(_ saved: SavedSession, client existing: JellyfinClient? = nil, serverVersion: String? = nil) {
+        if session?.accountID != saved.accountID {
+            PluginSettings.clearSeerrSession()
+        }
         let jellyfin = existing ?? JellyfinNetworking.client(
             url: saved.serverURL,
             accessToken: saved.accessToken,
@@ -178,7 +323,8 @@ final class SessionStore {
         )
         session = saved
         client = jellyfin
-        library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion)
+        library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
+        serverName = saved.serverName ?? saved.serverURL.host
         introSkipperAvailable = false
         itemDetailMemory = [:]
         restoreSnapshot(for: saved)
@@ -196,8 +342,9 @@ final class SessionStore {
         library?.updateServerVersion(info.version)
         guard var saved = session else { return }
         saved.serverVersion = info.version
+        saved.serverName = info.serverName
         session = saved
-        try? vault.save(saved)
+        persist(saved)
     }
 
     func detectIntroSkipper() async {

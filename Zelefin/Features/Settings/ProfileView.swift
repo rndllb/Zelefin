@@ -1,0 +1,459 @@
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+#if os(iOS)
+import PhotosUI
+#endif
+
+struct ProfileView: View {
+    @Environment(SessionStore.self) private var session
+    var onAddUser: () -> Void = {}
+    @State private var currentPassword = ""
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
+    @State private var status: String?
+    @State private var statusIsError = false
+    @State private var isSavingPassword = false
+    @State private var isUpdatingPhoto = false
+    @State private var localAvatar: UIImage?
+    #if os(iOS)
+    @State private var pickerItem: PhotosPickerItem?
+    #endif
+
+    var body: some View {
+        Form {
+            Section {
+                identityHero
+                    .listRowInsets(EdgeInsets(top: 20, leading: 16, bottom: 16, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
+            Section {
+                SecureField("Current password", text: $currentPassword)
+                    .textContentType(.password)
+                SecureField("New password", text: $newPassword)
+                    .textContentType(.newPassword)
+                SecureField("Confirm new password", text: $confirmPassword)
+                    .textContentType(.newPassword)
+                Button {
+                    Task { await savePassword() }
+                } label: {
+                    HStack {
+                        Spacer(minLength: 0)
+                        if isSavingPassword {
+                            ProgressView()
+                        } else {
+                            Text("Update Password")
+                                .fontWeight(.semibold)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .disabled(!canUpdatePassword || isSavingPassword)
+            } header: {
+                Text("Password")
+            } footer: {
+                Text("Saved on \(serverLabel).")
+            }
+
+            Section {
+                if let current = session.session {
+                    accountRow(current, isCurrent: true)
+                }
+                ForEach(session.otherAccounts) { account in
+                    Button {
+                        Task { await session.switchTo(account) }
+                    } label: {
+                        accountRow(account, isCurrent: false)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button(action: onAddUser) {
+                    Label("Add User", systemImage: "person.badge.plus")
+                        .fontWeight(.semibold)
+                }
+            } header: {
+                Text("Users")
+            } footer: {
+                Text("Add another person on \(serverLabel). Saved users stay on this device.")
+            }
+        }
+        .zelefinSettingsChrome(title: "Profile")
+        #if os(iOS)
+        .onChange(of: pickerItem) { _, item in
+            guard let item else { return }
+            Task { await uploadPhoto(item) }
+        }
+        #endif
+    }
+
+    private var displayName: String {
+        let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "Account" : name
+    }
+
+    private var serverLabel: String {
+        let name = session.session?.displayServer ?? session.serverName ?? ""
+        return name.isEmpty ? "this server" : name
+    }
+
+    private var canUpdatePassword: Bool {
+        !currentPassword.isEmpty && !newPassword.isEmpty && newPassword == confirmPassword
+    }
+
+    private var identityHero: some View {
+        VStack(spacing: 14) {
+            ZStack(alignment: .bottomTrailing) {
+                ZStack {
+                    UserAvatarView(url: session.avatarURL, localImage: localAvatar, diameter: 118)
+                        .padding(5)
+                        .zelefinLiquidGlassCircle(interactive: false)
+                    if isUpdatingPhoto {
+                        Circle()
+                            .fill(.black.opacity(0.48))
+                            .frame(width: 128, height: 128)
+                        ProgressView()
+                            .tint(.white)
+                    }
+                }
+                .frame(width: 128, height: 128)
+                .accessibilityHidden(true)
+
+                #if os(iOS)
+                PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.black)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(.white))
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                }
+                .disabled(isUpdatingPhoto)
+                .offset(x: -2, y: -2)
+                .accessibilityLabel("Change Profile Picture")
+                #endif
+            }
+
+            VStack(spacing: 5) {
+                Text(displayName)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                Text(serverLabel)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(displayName), \(serverLabel)")
+
+            if session.session?.userImageTag != nil || localAvatar != nil {
+                Button("Remove Photo", role: .destructive) {
+                    Task { await removePhoto() }
+                }
+                .font(.subheadline.weight(.semibold))
+                .disabled(isUpdatingPhoto)
+            }
+
+            if let status {
+                Text(status)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(statusIsError ? Color.red.opacity(0.95) : Color.white.opacity(0.72))
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func accountRow(_ account: SavedSession, isCurrent: Bool) -> some View {
+        HStack(spacing: 12) {
+            UserAvatarView(
+                url: session.avatarURL(for: account),
+                localImage: isCurrent ? localAvatar : nil,
+                diameter: 40
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.userName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text(isCurrent ? "Signed in" : accountSubtitle(account))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+            Spacer(minLength: 8)
+            if isCurrent {
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isCurrent ? "\(account.userName), signed in" : "Switch to \(account.userName)")
+        .accessibilityAddTraits(isCurrent ? [.isStaticText] : [.isButton])
+    }
+
+    private func accountSubtitle(_ account: SavedSession) -> String {
+        let currentHost = session.session?.serverURL.host?.lowercased()
+        let accountHost = account.serverURL.host?.lowercased()
+        if currentHost != nil, currentHost == accountHost {
+            return "On this device"
+        }
+        return account.displayServer
+    }
+
+    #if os(iOS)
+    private func uploadPhoto(_ item: PhotosPickerItem) async {
+        isUpdatingPhoto = true
+        status = nil
+        defer {
+            isUpdatingPhoto = false
+            pickerItem = nil
+        }
+        do {
+            let image = try await PickedProfileImage.load(item)
+            guard let jpeg = ProfileImageEncoder.jpegData(from: image) else {
+                throw ZelefinError.server("Zelefin could not read that photo.")
+            }
+            localAvatar = image
+            try await session.updateProfileImage(jpeg)
+            statusIsError = false
+            status = "Profile picture updated."
+        } catch {
+            localAvatar = nil
+            statusIsError = true
+            status = error.localizedDescription
+        }
+    }
+    #endif
+
+    private func removePhoto() async {
+        isUpdatingPhoto = true
+        status = nil
+        defer { isUpdatingPhoto = false }
+        do {
+            try await session.removeProfileImage()
+            localAvatar = nil
+            statusIsError = false
+            status = "Profile picture removed."
+        } catch {
+            statusIsError = true
+            status = error.localizedDescription
+        }
+    }
+
+    private func savePassword() async {
+        guard newPassword == confirmPassword else {
+            statusIsError = true
+            status = "The new passwords do not match."
+            return
+        }
+        isSavingPassword = true
+        status = nil
+        defer { isSavingPassword = false }
+        do {
+            try await session.changePassword(current: currentPassword, new: newPassword)
+            currentPassword = ""
+            newPassword = ""
+            confirmPassword = ""
+            statusIsError = false
+            status = "Password updated."
+        } catch {
+            statusIsError = true
+            status = error.localizedDescription
+        }
+    }
+}
+
+struct AddAccountView: View {
+    @Environment(SessionStore.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @State private var username = ""
+    @State private var password = ""
+    @State private var isConnecting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: "server.rack")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(serverLabel)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text("This server")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                .padding(.vertical, 4)
+                .listRowBackground(Color.white.opacity(0.06))
+            } footer: {
+                Text("New users are added on the server you’re already using.")
+            }
+
+            Section {
+                TextField("Username", text: $username)
+                    .textContentType(.username)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
+                SecureField("Password", text: $password)
+                    .textContentType(.password)
+            } header: {
+                Text("Sign In")
+            }
+
+            Section {
+                Button {
+                    Task { await add() }
+                } label: {
+                    HStack {
+                        Spacer(minLength: 0)
+                        if isConnecting {
+                            ProgressView()
+                        } else {
+                            Text("Add User")
+                                .fontWeight(.semibold)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .disabled(!canSubmit || isConnecting)
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .zelefinSettingsChrome(title: "Add User")
+    }
+
+    private var serverLabel: String {
+        session.session?.displayServer ?? session.serverName ?? "Jellyfin"
+    }
+
+    private var canSubmit: Bool {
+        !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
+    }
+
+    private func add() async {
+        isConnecting = true
+        errorMessage = nil
+        defer { isConnecting = false }
+        do {
+            try await session.addUserOnCurrentServer(username: username, password: password)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct UserAvatarView: View {
+    let url: URL?
+    var localImage: UIImage? = nil
+    var diameter: CGFloat = 45
+    @State private var remoteImage: UIImage?
+
+    private var displayed: UIImage? { localImage ?? remoteImage }
+
+    var body: some View {
+        Group {
+            if let displayed {
+                Image(uiImage: displayed)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "person.fill")
+                    .font(.system(size: diameter * 0.44, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .background(Color.white.opacity(0.08))
+        .clipShape(Circle())
+        .task(id: url?.absoluteString) {
+            await load()
+        }
+    }
+
+    private func load() async {
+        guard localImage == nil else { return }
+        remoteImage = nil
+        guard let url else { return }
+        do {
+            let (data, response) = try await JellyfinNetworking.data(from: url, ignoreCache: true)
+            guard !Task.isCancelled else { return }
+            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+                  let loaded = UIImage(data: data)
+            else { return }
+            remoteImage = loaded
+        } catch {
+            return
+        }
+    }
+}
+
+#if os(iOS)
+enum PickedProfileImage {
+    static func load(_ item: PhotosPickerItem) async throws -> UIImage {
+        if let picked = try await item.loadTransferable(type: ProfilePickerImage.self) {
+            return picked.image
+        }
+        if let data = try await item.loadTransferable(type: Data.self),
+           let image = UIImage(data: data) {
+            return image
+        }
+        throw ZelefinError.server("Zelefin could not read that photo.")
+    }
+}
+
+private struct ProfilePickerImage: Transferable {
+    let image: UIImage
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: .heic, importing: decode)
+        DataRepresentation(importedContentType: .jpeg, importing: decode)
+        DataRepresentation(importedContentType: .png, importing: decode)
+        DataRepresentation(importedContentType: .webP, importing: decode)
+        DataRepresentation(importedContentType: .image, importing: decode)
+    }
+
+    private static func decode(_ data: Data) throws -> ProfilePickerImage {
+        guard let image = UIImage(data: data) else {
+            throw ZelefinError.server("Zelefin could not read that photo.")
+        }
+        return ProfilePickerImage(image: image)
+    }
+}
+#endif
+
+enum ProfileImageEncoder {
+    static func jpegData(from image: UIImage, maxPixel: CGFloat = 720, quality: CGFloat = 0.86) -> Data? {
+        let longest = max(image.size.width, image.size.height)
+        let scale = longest > maxPixel ? maxPixel / longest : 1
+        let size = CGSize(width: max(1, image.size.width * scale), height: max(1, image.size.height * scale))
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let rendered = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return rendered.jpegData(compressionQuality: quality)
+    }
+}

@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 /// Fullscreen chrome that follows AVPlayerViewController: xmark, AirPlay, PiP, ellipsis,
-/// skip ±10, play/pause, elapsed / scrubber / remaining, auto-hide while playing.
+/// skip, play/pause, elapsed / scrubber / remaining, auto-hide while playing.
 struct AVKitPlaybackChrome: View {
     var model: PlayerModel
     let title: String
@@ -28,7 +28,7 @@ struct AVKitPlaybackChrome: View {
                     topBar
                     Spacer()
                     centerTransport
-                    Spacer()
+                    Spacer(minLength: 12)
                     AVKitTimelineChrome(
                         model: model,
                         isScrubbing: $isScrubbing,
@@ -41,7 +41,7 @@ struct AVKitPlaybackChrome: View {
                 }
                 .padding(.horizontal, horizontalPadding)
                 .padding(.top, 8)
-                .padding(.bottom, 12)
+                .padding(.bottom, 2)
                 .transition(.opacity)
             }
 
@@ -49,7 +49,7 @@ struct AVKitPlaybackChrome: View {
                 skipIntro(title)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, horizontalPadding)
-                    .padding(.bottom, controlsVisible ? 88 : 28)
+                    .padding(.bottom, controlsVisible ? 64 : 10)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
@@ -142,8 +142,13 @@ struct AVKitPlaybackChrome: View {
 
     private var centerTransport: some View {
         HStack(spacing: skipSpacing) {
-            iconButton("gobackward.10", label: "Skip back 10 seconds", size: skipSymbolSize, hit: skipHitSize) {
-                skip(by: -AVKitPlaybackSpeed.skipInterval)
+            iconButton(
+                PlaybackSkipInterval.resolved(Int(PlaybackPreferences.skipBackward)).backwardSymbol,
+                label: "Skip back \(Int(PlaybackPreferences.skipBackward)) seconds",
+                size: skipSymbolSize,
+                hit: skipHitSize
+            ) {
+                skip(by: -PlaybackPreferences.skipBackward)
             }
             Button {
                 model.togglePlayPause()
@@ -158,8 +163,13 @@ struct AVKitPlaybackChrome: View {
             .buttonStyle(.plain)
             .avkitGlassCircle()
             .accessibilityLabel(model.isPaused ? "Play" : "Pause")
-            iconButton("goforward.10", label: "Skip forward 10 seconds", size: skipSymbolSize, hit: skipHitSize) {
-                skip(by: AVKitPlaybackSpeed.skipInterval)
+            iconButton(
+                PlaybackSkipInterval.resolved(Int(PlaybackPreferences.skipForward)).forwardSymbol,
+                label: "Skip forward \(Int(PlaybackPreferences.skipForward)) seconds",
+                size: skipSymbolSize,
+                hit: skipHitSize
+            ) {
+                skip(by: PlaybackPreferences.skipForward)
             }
         }
     }
@@ -402,7 +412,6 @@ private struct AVKitTimelineChrome: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .avkitGlassBar()
-        .padding(.bottom, 8)
     }
 }
 

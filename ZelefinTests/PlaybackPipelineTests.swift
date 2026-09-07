@@ -2,12 +2,20 @@ import XCTest
 @testable import Zelefin
 
 final class PlaybackPipelineTests: XCTestCase {
-    func testMP4DirectPlayUsesDirectDecode() {
+    func testMP4DirectPlayUsesAppleNativeWhenNativePlayerIsOn() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.mp4?static=true")
         guard let url else {
             return XCTFail("URL")
         }
-        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .directDecode)
+        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .appleNative)
+        XCTAssertFalse(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mp4",
+                videoCodec: "h264"
+            )
+        )
     }
 
     func testHLSRemuxUsesAppleNative() {
@@ -17,48 +25,245 @@ final class PlaybackPipelineTests: XCTestCase {
         }
         XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .remux), .appleNative)
         XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .transcode), .appleNative)
+        XCTAssertFalse(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(url: url, method: .remux)
+        )
     }
 
-    func testMKVDirectPlayUsesDirectDecode() {
+    func testHLSRemuxUsesDirectDecodeWhenNativePlayerIsOff() {
+        let url = URL(string: "https://jellyfin.example.com/Videos/1/master.m3u8?DeviceId=abc")
+        guard let url else {
+            return XCTFail("URL")
+        }
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .remux, usesNativePlayer: false),
+            .directDecode
+        )
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .transcode, usesNativePlayer: false),
+            .directDecode
+        )
+        XCTAssertFalse(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .remux,
+                usesNativePlayer: false
+            )
+        )
+    }
+
+    func testFMP4HLSIsForcedWhenNativePlayerIsOff() {
+        XCTAssertTrue(PlaybackPreferences.usesFMP4HLS(nativePlayer: false, preferFMP4: false))
+        XCTAssertTrue(PlaybackPreferences.usesFMP4HLS(nativePlayer: false, preferFMP4: true))
+        XCTAssertTrue(PlaybackPreferences.usesFMP4HLS(nativePlayer: true, preferFMP4: true))
+        XCTAssertFalse(PlaybackPreferences.usesFMP4HLS(nativePlayer: true, preferFMP4: false))
+    }
+
+    func testMKVDirectPlayRemuxesForNativePlayer() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.mkv?static=true")
         guard let url else {
             return XCTFail("URL")
         }
-        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .directDecode)
+        XCTAssertTrue(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mkv"
+            )
+        )
+        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .appleNative)
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, usesNativePlayer: false),
+            .directDecode
+        )
+        XCTAssertFalse(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mkv",
+                usesNativePlayer: false
+            )
+        )
     }
 
-    func testMPEG4InMP4UsesDirectDecode() {
+    func testMPEG4InMP4RemuxesForNativePlayer() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.mp4?static=true")
         guard let url else {
             return XCTFail("URL")
         }
-        XCTAssertEqual(
-            PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, container: "mp4", videoCodec: "mpeg4"),
-            .directDecode
+        XCTAssertTrue(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mp4",
+                videoCodec: "mpeg4"
+            )
         )
-        XCTAssertEqual(
-            PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, container: "mp4", videoCodec: "mpeg2video"),
-            .directDecode
+        XCTAssertTrue(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mp4",
+                videoCodec: "mpeg2video"
+            )
         )
     }
 
-    func testH264InMP4UsesDirectDecode() {
+    func testH264InMP4OpensNatively() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.mp4?static=true")
         guard let url else {
             return XCTFail("URL")
         }
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, container: "mp4", videoCodec: "h264"),
-            .directDecode
+            .appleNative
+        )
+        XCTAssertFalse(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mp4",
+                videoCodec: "h264"
+            )
         )
     }
 
-    func testMPEGTSDirectPlayUsesDirectDecode() {
+    func testMPEGTSDirectPlayRemuxesForNativePlayer() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/stream.ts?static=true")
         guard let url else {
             return XCTFail("URL")
         }
-        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .directDecode)
+        XCTAssertTrue(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "ts"
+            )
+        )
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, usesNativePlayer: false),
+            .directDecode
+        )
+    }
+}
+
+final class PlaybackSettingsPolicyTests: XCTestCase {
+    func testAutoQualityUsesTheDeviceCeiling() {
+        XCTAssertEqual(PlaybackQuality.auto.bitsPerSecond, AVDeviceProfileFactory.maxBitrate)
+        XCTAssertEqual(PlaybackQuality.mbps8.bitsPerSecond, 8_000_000)
+        XCTAssertEqual(PlaybackQuality.resolved(8_000_000), .mbps8)
+        XCTAssertEqual(PlaybackQuality.resolved(99), .auto)
+    }
+
+    func testSkipIntervalFallsBackToTen() {
+        XCTAssertEqual(PlaybackSkipInterval.resolved(15), .fifteen)
+        XCTAssertEqual(PlaybackSkipInterval.resolved(7), .ten)
+    }
+
+    func testPlaybackSpeedSnapsToAKnownOption() {
+        XCTAssertEqual(AVKitPlaybackSpeed.resolved(nil), 1)
+        XCTAssertEqual(AVKitPlaybackSpeed.resolved(1.25), 1.25)
+        XCTAssertEqual(AVKitPlaybackSpeed.resolved(1.3), 1.25)
+    }
+
+    func testAutoSkipRespectsKindToggles() {
+        XCTAssertTrue(PlaybackPreferences.shouldAutoSkip(.intro, intro: true, credits: false))
+        XCTAssertFalse(PlaybackPreferences.shouldAutoSkip(.outro, intro: true, credits: false))
+        XCTAssertTrue(PlaybackPreferences.shouldAutoSkip(.outro, intro: false, credits: true))
+        XCTAssertFalse(PlaybackPreferences.shouldAutoSkip(.intro, intro: false, credits: true))
+    }
+
+    func testQualityIsWrittenIntoTheDeviceProfile() {
+        let profile = AVDeviceProfileFactory.make(preferFMP4InHLS: true, maxBitrate: 8_000_000)
+        XCTAssertEqual(profile.maxStreamingBitrate, 8_000_000)
+        XCTAssertEqual(profile.maxStaticBitrate, 8_000_000)
+    }
+
+    func testNextEpisodeFollowsSeasonOrder() {
+        let current = episode(id: "s1e2", season: 1, number: 2)
+        let episodes = [
+            episode(id: "s1e1", season: 1, number: 1),
+            current,
+            episode(id: "s1e3", season: 1, number: 3),
+            episode(id: "s2e1", season: 2, number: 1),
+        ]
+        XCTAssertEqual(PlaybackEpisodeAdvance.next(after: current, in: episodes)?.id, "s1e3")
+        XCTAssertEqual(
+            PlaybackEpisodeAdvance.next(after: episode(id: "s1e3", season: 1, number: 3), in: episodes)?.id,
+            "s2e1"
+        )
+        XCTAssertNil(PlaybackEpisodeAdvance.next(after: episode(id: "s2e1", season: 2, number: 1), in: episodes))
+    }
+
+    func testMoviesHaveNoNextEpisode() {
+        let movie = MediaItem(
+            id: "m1",
+            name: "Dune",
+            kind: .movie,
+            overview: nil,
+            year: 2024,
+            runtime: 100,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+        XCTAssertNil(PlaybackEpisodeAdvance.next(after: movie, in: [movie]))
+    }
+
+    private func episode(id: String, season: Int, number: Int) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: id,
+            kind: .episode,
+            overview: nil,
+            year: 2024,
+            runtime: 3600,
+            officialRating: nil,
+            genres: [],
+            seriesName: "Silo",
+            seasonIndex: season,
+            episodeIndex: number,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "silo",
+            imageItemID: nil,
+            queueKind: .nextUp,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
     }
 }
 
@@ -69,9 +274,33 @@ final class DirectPlayEngineTests: XCTestCase {
         XCTAssertFalse(DirectPlayLoadPolicy.shouldReloadAsURL(isAudioOnlyBackend: true, expectsVideo: false))
     }
 
+    func testHLSOpensAsAnHTTPURLInsteadOfByteRangeIO() {
+        XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .remux, isHLS: true))
+        XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .transcode, isHLS: true))
+        XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: true))
+        XCTAssertFalse(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: false))
+    }
+
     func testMKVDirectPlayUsesSampleBufferDecode() {
         XCTAssertTrue(DirectPlayLoadOptions.usesSampleBufferDecode(for: .directDecode))
         XCTAssertFalse(DirectPlayLoadOptions.usesSampleBufferDecode(for: .appleNative))
+    }
+
+    func testForegroundRestoreRunsAfterBackgroundNotControlCenter() {
+        XCTAssertTrue(PlaybackForegroundRecovery.shouldRestore(wasBackgrounded: true, pictureInPictureActive: false))
+        XCTAssertFalse(PlaybackForegroundRecovery.shouldRestore(wasBackgrounded: false, pictureInPictureActive: false))
+        XCTAssertFalse(PlaybackForegroundRecovery.shouldRestore(wasBackgrounded: true, pictureInPictureActive: true))
+    }
+
+    func testPictureInPictureWaitsForAWindowedLayer() {
+        XCTAssertTrue(PlaybackPictureInPicturePolicy.canCreateController(isSupported: true, layerIsInWindow: true))
+        XCTAssertFalse(PlaybackPictureInPicturePolicy.canCreateController(isSupported: true, layerIsInWindow: false))
+        XCTAssertFalse(PlaybackPictureInPicturePolicy.canCreateController(isSupported: false, layerIsInWindow: true))
+    }
+
+    func testPlaybackKeepsRunningWhenPictureInPictureStarts() {
+        XCTAssertFalse(PlaybackPictureInPicturePolicy.shouldStopOnViewDismiss(pictureInPictureActive: true))
+        XCTAssertTrue(PlaybackPictureInPicturePolicy.shouldStopOnViewDismiss(pictureInPictureActive: false))
     }
 
     func testDirectPlayResumeSeekStaysOnNativePath() {
@@ -238,6 +467,17 @@ final class DeviceProfileTests: XCTestCase {
         XCTAssertTrue(AVDeviceProfileFactory.audioDirectPlayCodecs.contains("eac3"))
         XCTAssertTrue(AVDeviceProfileFactory.audioDirectPlayCodecs.contains("dts"))
         XCTAssertTrue(AVDeviceProfileFactory.audioDirectPlayCodecs.contains("truehd"))
+    }
+
+    func testHLSTranscodeContainerFollowsFMP4Preference() {
+        let fmp4 = AVDeviceProfileFactory.make(preferFMP4InHLS: true)
+            .transcodingProfiles?
+            .first { $0.type == .video }
+        let mpegTS = AVDeviceProfileFactory.make(preferFMP4InHLS: false)
+            .transcodingProfiles?
+            .first { $0.type == .video }
+        XCTAssertEqual(fmp4?.container, "mp4")
+        XCTAssertEqual(mpegTS?.container, "ts")
     }
 }
 

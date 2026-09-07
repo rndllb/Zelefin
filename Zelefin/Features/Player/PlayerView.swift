@@ -3,12 +3,20 @@ import SwiftUI
 import UIKit
 
 struct PlayerView: View {
-    let plan: PlaybackPlan
+    let item: MediaItem
     @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
+    @State private var activeItem: MediaItem
     @State private var model: PlayerModel?
     @State private var didFallBackToRemux = false
     @State private var fallbackError: String?
+    @State private var playerWasBackgrounded = false
+
+    init(item: MediaItem) {
+        self.item = item
+        _activeItem = State(initialValue: item)
+    }
 
     var body: some View {
         ZStack {
@@ -17,6 +25,9 @@ struct PlayerView: View {
                 playerSurface(model)
             } else {
                 ProgressView().tint(.white)
+            }
+            if model == nil {
+                loadingClose
             }
             if let message = fallbackError {
                 errorOverlay(message)
@@ -27,10 +38,10 @@ struct PlayerView: View {
         .persistentSystemOverlays(.hidden)
         #endif
         .task {
-            await startPlayback(plan)
+            await prepareAndStart()
         }
         .onDisappear {
-            Task { await model?.stop() }
+            model?.markPlaybackViewDismissed()
         }
         #if os(tvOS)
         .onPlayPauseCommand {
@@ -38,12 +49,78 @@ struct PlayerView: View {
         }
         #endif
         .onChange(of: model?.isFinished) { _, finished in
-            if finished == true { dismiss() }
+            guard finished == true else { return }
+            Task { await advanceOrDismiss() }
         }
         .onChange(of: model?.errorMessage) { _, message in
             guard let message, !didFallBackToRemux else { return }
-            guard PlaybackPipelineResolver.pipeline(for: plan) == .directDecode else { return }
+            guard let plan = model?.plan, plan.method == .directPlay else { return }
             Task { await fallBackToRemux(from: message) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhase(phase)
+        }
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase) {
+        switch phase {
+        case .background:
+            playerWasBackgrounded = true
+        case .active:
+            let pipActive = model?.isPictureInPictureActive ?? false
+            guard PlaybackForegroundRecovery.shouldRestore(
+                wasBackgrounded: playerWasBackgrounded,
+                pictureInPictureActive: pipActive
+            ) else { return }
+            playerWasBackgrounded = false
+            Task { await model?.restoreAfterForeground() }
+        default:
+            break
+        }
+    }
+
+    private var loadingClose: some View {
+        VStack {
+            HStack {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+
+    private func prepareAndStart() async {
+        guard let library = session.library else {
+            fallbackError = "Sign in to play this title."
+            return
+        }
+        do {
+            var plan = try await library.playbackPlan(for: activeItem)
+            if PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: plan.streamURL,
+                method: plan.method,
+                container: plan.container,
+                videoCodec: plan.videoCodec,
+                usesNativePlayer: PlaybackPreferences.useNativeVideoPlayer
+            ) {
+                plan = try await library.playbackPlan(for: activeItem, allowDirectPlay: false)
+            }
+            try Task.checkCancellation()
+            await startPlayback(plan)
+        } catch is CancellationError {
+            return
+        } catch {
+            fallbackError = error.localizedDescription
         }
     }
 
@@ -57,15 +134,43 @@ struct PlayerView: View {
         let created = PlayerModel(plan: plan, reporter: reporter)
         if let skipSegments {
             created.skipSegments = skipSegments
-        } else if let client = session.client {
-            let skipper = IntroSkipperClient(client: client)
-            if await skipper.isInstalled() {
-                created.skipSegments = await skipper.segments(for: plan.item.id)
-            }
         }
         model = created
         await Task.yield()
-        await created.start()
+        do {
+            if skipSegments == nil, let client = session.client {
+                let skipper = IntroSkipperClient(client: client)
+                if await skipper.isInstalled() {
+                    try Task.checkCancellation()
+                    created.skipSegments = await skipper.segments(for: plan.item.id)
+                }
+            }
+            try Task.checkCancellation()
+            await created.start()
+        } catch is CancellationError {
+            await created.stop()
+        } catch {
+            fallbackError = error.localizedDescription
+        }
+    }
+
+    private func advanceOrDismiss() async {
+        guard PlaybackPreferences.autoPlayNextEpisode else {
+            dismiss()
+            return
+        }
+        guard let library = session.library,
+              let next = await library.nextEpisode(after: activeItem)
+        else {
+            dismiss()
+            return
+        }
+        await model?.stop()
+        model = nil
+        didFallBackToRemux = false
+        fallbackError = nil
+        activeItem = next
+        await prepareAndStart()
     }
 
     private func fallBackToRemux(from message: String) async {
@@ -80,8 +185,12 @@ struct PlayerView: View {
             return
         }
         do {
-            let remux = try await library.playbackPlan(for: plan.item, allowDirectPlay: false)
+            try Task.checkCancellation()
+            let remux = try await library.playbackPlan(for: activeItem, allowDirectPlay: false)
+            try Task.checkCancellation()
             await startPlayback(remux, skipSegments: skip)
+        } catch is CancellationError {
+            return
         } catch {
             fallbackError = error.localizedDescription
         }
@@ -94,9 +203,12 @@ struct PlayerView: View {
                 Color.black
                     .ignoresSafeArea()
                     .overlay {
-                        DirectPlayVideoLayer(engine: engine) {
-                            model.noteSurfaceReady()
-                        }
+                        DirectPlayVideoLayer(
+                            engine: engine,
+                            surfaceGeneration: model.surfaceGeneration,
+                            onBound: { model.noteSurfaceReady() },
+                            onLayerAttached: { model.syncPictureInPicture() }
+                        )
                     }
                     .ignoresSafeArea()
                 DirectPlaySubtitleOverlay(
@@ -121,8 +233,10 @@ struct PlayerView: View {
         } else if let player = model.player {
             NativePlayerContainer(
                 player: player,
+                surfaceGeneration: model.surfaceGeneration,
                 skipTitle: model.skipPrompt?.title,
-                onSkip: { model.skipCurrentSegment() }
+                onSkip: { model.skipCurrentSegment() },
+                onPictureInPictureActive: { model.setNativePictureInPictureActive($0) }
             )
             .ignoresSafeArea()
         } else {
@@ -191,53 +305,87 @@ private final class DirectPlaySurfaceView: UIView {
 /// reused surface showing a detached layer: black video over working audio.
 private struct DirectPlayVideoLayer: UIViewRepresentable {
     let engine: DirectPlayEngine
+    var surfaceGeneration: Int
     var onBound: () -> Void
+    var onLayerAttached: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onBound: onBound)
+        Coordinator(onBound: onBound, onLayerAttached: onLayerAttached)
     }
 
     func makeUIView(context: Context) -> DirectPlaySurfaceView {
         let view = DirectPlaySurfaceView()
-        context.coordinator.bind(engine, to: view, onBound: onBound)
+        context.coordinator.bind(
+            engine,
+            to: view,
+            generation: surfaceGeneration,
+            onBound: onBound,
+            onLayerAttached: onLayerAttached
+        )
         return view
     }
 
     func updateUIView(_ uiView: DirectPlaySurfaceView, context: Context) {
-        context.coordinator.bind(engine, to: uiView, onBound: onBound)
+        context.coordinator.bind(
+            engine,
+            to: uiView,
+            generation: surfaceGeneration,
+            onBound: onBound,
+            onLayerAttached: onLayerAttached
+        )
     }
 
     @MainActor
     final class Coordinator {
         var onBound: () -> Void
+        var onLayerAttached: () -> Void
+        private var lastGeneration: Int?
 
-        init(onBound: @escaping () -> Void) {
+        init(onBound: @escaping () -> Void, onLayerAttached: @escaping () -> Void) {
             self.onBound = onBound
+            self.onLayerAttached = onLayerAttached
         }
 
-        func bind(_ engine: DirectPlayEngine, to view: DirectPlaySurfaceView, onBound: @escaping () -> Void) {
+        func bind(
+            _ engine: DirectPlayEngine,
+            to view: DirectPlaySurfaceView,
+            generation: Int,
+            onBound: @escaping () -> Void,
+            onLayerAttached: @escaping () -> Void
+        ) {
             self.onBound = onBound
+            self.onLayerAttached = onLayerAttached
+            if lastGeneration != generation {
+                if lastGeneration != nil {
+                    engine.unbind(view: view.playerView)
+                }
+                lastGeneration = generation
+            }
             engine.bind(view: view.playerView)
             view.onReady = { [weak self] in
                 self?.onBound()
             }
             view.notifyIfReady()
+            onLayerAttached()
         }
     }
 }
 
 struct NativePlayerContainer: UIViewControllerRepresentable {
     let player: AVPlayer
+    var surfaceGeneration: Int
     var skipTitle: String?
     var onSkip: () -> Void
+    var onPictureInPictureActive: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onSkip: onSkip)
+        Coordinator(onSkip: onSkip, onPictureInPictureActive: onPictureInPictureActive)
     }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
+        controller.delegate = context.coordinator
         #if os(iOS)
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
@@ -250,19 +398,54 @@ struct NativePlayerContainer: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+        if context.coordinator.surfaceGeneration != surfaceGeneration {
+            controller.player = nil
+            context.coordinator.surfaceGeneration = surfaceGeneration
+        }
         controller.player = player
+        controller.delegate = context.coordinator
         context.coordinator.onSkip = onSkip
+        context.coordinator.onPictureInPictureActive = onPictureInPictureActive
         context.coordinator.install(on: controller)
         context.coordinator.update(title: skipTitle)
     }
 
     @MainActor
-    final class Coordinator {
+    final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
         var onSkip: () -> Void
+        var onPictureInPictureActive: (Bool) -> Void
+        var surfaceGeneration = 0
         private var button: UIButton?
 
-        init(onSkip: @escaping () -> Void) {
+        init(onSkip: @escaping () -> Void, onPictureInPictureActive: @escaping (Bool) -> Void) {
             self.onSkip = onSkip
+            self.onPictureInPictureActive = onPictureInPictureActive
+            super.init()
+        }
+
+        func playerViewControllerShouldAutomaticallyDismissAtPictureInPictureStart(
+            _ playerViewController: AVPlayerViewController
+        ) -> Bool {
+            false
+        }
+
+        func playerViewControllerDidStartPictureInPicture(
+            _ playerViewController: AVPlayerViewController
+        ) {
+            onPictureInPictureActive(true)
+        }
+
+        func playerViewControllerDidStopPictureInPicture(
+            _ playerViewController: AVPlayerViewController
+        ) {
+            onPictureInPictureActive(false)
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+        ) {
+            completionHandler(true)
         }
 
         func install(on controller: AVPlayerViewController) {

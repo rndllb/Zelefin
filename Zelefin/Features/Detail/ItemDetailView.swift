@@ -23,7 +23,7 @@ struct ItemDetailView: View {
     @State private var isLoading = true
     @State private var hasLoadedDetail = false
     @State private var isOverviewExpanded = false
-    @State private var playbackPlan: PlaybackPlan?
+    @State private var playingItem: MediaItem?
     #if os(iOS)
     @State private var playingWebTrailer: TitleTrailer?
     #endif
@@ -111,8 +111,10 @@ struct ItemDetailView: View {
         .tint(.white)
         #endif
         .task { await load() }
-        .fullScreenCover(item: $playbackPlan) { plan in
-            PlayerView(plan: plan)
+        .fullScreenCover(item: $playingItem, onDismiss: {
+            Task { await refreshPlaybackProgress() }
+        }) { item in
+            PlayerView(item: item)
         }
         #if os(iOS)
         .fullScreenCover(item: $playingWebTrailer) { trailer in
@@ -150,7 +152,7 @@ struct ItemDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
-            playProgressButton(for: item)
+            playProgressButton(for: MediaItem.heroPlaybackItem(title: item, episodes: episodes))
 
             if let overview = item.overview, !overview.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -201,7 +203,7 @@ struct ItemDetailView: View {
 
     private func playProgressButton(for item: MediaItem) -> some View {
         Button {
-            Task { await play(item) }
+            play(item)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "play.fill")
@@ -407,7 +409,7 @@ struct ItemDetailView: View {
                 LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
                     ForEach(episodeStrip) { card in
                         Button {
-                            Task { await play(card.episode) }
+                            play(card.episode)
                         } label: {
                             EpisodeShowcaseCard(
                                 item: card.episode,
@@ -571,7 +573,7 @@ struct ItemDetailView: View {
 
     private func playTrailer(_ trailer: TitleTrailer) {
         if let local = trailer.jellyfinItem {
-            Task { await play(local) }
+            play(local)
             return
         }
         #if os(iOS)
@@ -592,11 +594,7 @@ struct ItemDetailView: View {
             apply(snapshot)
             applyFocusedEpisode()
             isLoading = false
-            hasLoadedDetail = true
-            return
-        }
-
-        if item != nil {
+        } else if item != nil {
             isLoading = false
         }
         await refreshFromServer()
@@ -684,6 +682,17 @@ struct ItemDetailView: View {
         isLoading = false
     }
 
+    private func refreshPlaybackProgress() async {
+        guard let library = session.library else { return }
+        guard let (loaded, _) = try? await library.item(id: itemID) else { return }
+        item = loaded
+        if loaded.kind == .series {
+            let fetched = (try? await library.episodes(seriesID: loaded.id)) ?? []
+            episodes = MediaItem.orderedShowEpisodes(fetched, seasons: seasons)
+        }
+        persistSnapshot()
+    }
+
     private func applyFocusedEpisode() {
         guard let focusEpisodeID, episodes.contains(where: { $0.id == focusEpisodeID }) else { return }
         if let seasonID = EpisodeCarousel.seasonID(for: focusEpisodeID, in: episodeStrip) {
@@ -759,13 +768,8 @@ struct ItemDetailView: View {
         persistSnapshot()
     }
 
-    private func play(_ item: MediaItem) async {
-        guard let library = session.library else { return }
-        do {
-            playbackPlan = try await library.playbackPlan(for: item)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    private func play(_ item: MediaItem) {
+        playingItem = item
     }
 }
 

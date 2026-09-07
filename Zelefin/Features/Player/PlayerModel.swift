@@ -23,6 +23,13 @@ final class PlayerModel {
     private(set) var subtitleCues: [DirectPlaySubtitleCue] = []
     private(set) var pictureSize: CGSize = .zero
     private(set) var canUsePictureInPicture = false
+    var isPictureInPictureActive: Bool {
+        #if os(iOS) || os(tvOS)
+        pictureInPicture.isActive || nativePictureInPictureActive
+        #else
+        false
+        #endif
+    }
     private(set) var fillsScreen = false
     private(set) var showsPlaybackStats = false
     private(set) var playbackStats = PlaybackStatsSnapshot(sections: [])
@@ -47,6 +54,12 @@ final class PlayerModel {
     private var engineIsBuffering = false
     private var engineIsSeeking = false
     private var isSurfaceBound = false
+    private var didStart = false
+    private var isRestoringForeground = false
+    private var nativePictureInPictureActive = false
+    private var stopWhenPictureInPictureEnds = false
+    /// Bumped after background return so SwiftUI detaches and reattaches the layer.
+    private(set) var surfaceGeneration = 0
     #if os(iOS) || os(tvOS)
     private let pictureInPicture = DirectPlayPictureInPicture()
     #endif
@@ -60,6 +73,7 @@ final class PlayerModel {
         self.duration = plan.item.runtime ?? 0
         self.audioOptions = plan.audioTracks.map(PlaybackTrackOption.init)
         self.subtitleOptions = plan.subtitleTracks.map(PlaybackTrackOption.init)
+        self.playbackRate = PlaybackPreferences.defaultRate
 
         switch pipeline {
         case .appleNative:
@@ -88,14 +102,20 @@ final class PlayerModel {
             case .appleNative:
                 configureAudioSession()
                 player?.play()
+                setPlaybackRate(PlaybackPreferences.defaultRate)
                 observeNativeTime()
                 observeNativeEnd()
             case .directDecode:
+                try Task.checkCancellation()
                 await waitUntilSurfaceReady()
+                try Task.checkCancellation()
                 try await startDirectPlay()
+                setPlaybackRate(PlaybackPreferences.defaultRate)
             }
             await reporter?.started(at: currentSeconds)
+            didStart = true
         } catch is CancellationError {
+            await stop()
             return
         } catch {
             errorMessage = error.localizedDescription
@@ -120,7 +140,71 @@ final class PlayerModel {
         pendingDirectPlaySeek = nil
         player?.pause()
         engine?.stop()
+        didStart = false
+        nativePictureInPictureActive = false
+        stopWhenPictureInPictureEnds = false
         await reporter?.stopped(at: seconds)
+    }
+
+    func markPlaybackViewDismissed() {
+        if PlaybackPictureInPicturePolicy.shouldStopOnViewDismiss(
+            pictureInPictureActive: isPictureInPictureActive
+        ) {
+            Task { await stop() }
+            return
+        }
+        stopWhenPictureInPictureEnds = true
+    }
+
+    func setNativePictureInPictureActive(_ active: Bool) {
+        nativePictureInPictureActive = active
+        handlePictureInPictureActiveChange(active)
+    }
+
+    func syncPictureInPicture() {
+        #if os(iOS) || os(tvOS)
+        pictureInPicture.syncController()
+        canUsePictureInPicture = pictureInPicture.canStart
+        #endif
+    }
+
+    /// Aether drops video packets while backgrounded and does not reattach a
+    /// failed `AVSampleBufferDisplayLayer`. Rebuild at the playhead, then force
+    /// SwiftUI to bind a fresh surface.
+    func restoreAfterForeground() async {
+        guard didStart, !isRestoringForeground else { return }
+        #if os(iOS) || os(tvOS)
+        if isPictureInPictureActive { return }
+        #endif
+        isRestoringForeground = true
+        defer { isRestoringForeground = false }
+
+        if let engine {
+            let resume = !isPaused
+            do {
+                try await Task.sleep(nanoseconds: PlaybackForegroundRecovery.settleNanoseconds)
+                try Task.checkCancellation()
+                guard self.engine === engine else { return }
+                try await engine.reloadAtCurrentPosition()
+                surfaceGeneration += 1
+                syncPictureInPicture()
+                if resume {
+                    engine.play()
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
+
+        if player != nil {
+            surfaceGeneration += 1
+            if !isPaused {
+                player?.play()
+            }
+        }
     }
 
     func togglePlayPause() {
@@ -139,6 +223,15 @@ final class PlayerModel {
     func skipCurrentSegment() {
         guard let skipPrompt else { return }
         seek(to: skipPrompt.seekTime)
+    }
+
+    private func applySkipPrompt(at seconds: TimeInterval) {
+        let prompt = SkipSegment.prompt(in: skipSegments, at: seconds)
+        if skipPrompt != prompt {
+            skipPrompt = prompt
+        }
+        guard let prompt, PlaybackPreferences.shouldAutoSkip(prompt.kind) else { return }
+        skipCurrentSegment()
     }
 
     func skip(by interval: TimeInterval) {
@@ -263,6 +356,7 @@ final class PlayerModel {
     private func waitUntilSurfaceReady() async {
         let deadline = Date().addingTimeInterval(DirectPlaySurfaceGate.waitBudget)
         while !isSurfaceBound, Date() < deadline {
+            if Task.isCancelled { return }
             try? await Task.sleep(nanoseconds: DirectPlaySurfaceGate.pollNanoseconds)
         }
     }
@@ -277,29 +371,39 @@ final class PlayerModel {
         for (name, value) in plan.extraHTTPHeaders {
             headers[name] = value
         }
-        let knownSize = plan.byteSize
-        let reader = try await Task.detached {
-            guard let reader = JellyfinByteRangeReader(
-                url: url,
-                headers: headers,
-                knownSize: knownSize
-            ) else {
-                throw ZelefinError.byteRangeUnsupported
-            }
-            return reader
-        }.value
         let options = DirectPlayLoadOptions.make(for: plan)
-        // Custom IO has no filename. A forced libavformat name that does not match the
-        // bytes makes the probe miss the video stream; Aether then plays audio only.
-        try await created.load(source: .custom(reader, formatHint: nil), options: options)
-        if DirectPlayLoadPolicy.shouldReloadAsURL(
-            isAudioOnlyBackend: created.playbackBackend == .audio,
-            expectsVideo: true
+        try Task.checkCancellation()
+        if DirectPlayLoadPolicy.shouldOpenAsHTTPURL(
+            method: plan.method,
+            isHLS: PlaybackPipelineResolver.isHLS(url)
         ) {
             try await created.load(source: .url(url), options: options)
+        } else {
+            let knownSize = plan.byteSize
+            let reader = try await Task.detached {
+                guard let reader = JellyfinByteRangeReader(
+                    url: url,
+                    headers: headers,
+                    knownSize: knownSize
+                ) else {
+                    throw ZelefinError.byteRangeUnsupported
+                }
+                return reader
+            }.value
+            try Task.checkCancellation()
+            // Custom IO has no filename. A forced libavformat name that does not match the
+            // bytes makes the probe miss the video stream; Aether then plays audio only.
+            try await created.load(source: .custom(reader, formatHint: nil), options: options)
+            if DirectPlayLoadPolicy.shouldReloadAsURL(
+                isAudioOnlyBackend: created.playbackBackend == .audio,
+                expectsVideo: true
+            ) {
+                try await created.load(source: .url(url), options: options)
+            }
         }
         hasFirstFrame = created.hasFirstFrameReadyForDisplay
         updatePictureSize(from: created)
+        syncPictureInPicture()
     }
 
     private func observeEngine(_ engine: DirectPlayEngine) {
@@ -312,6 +416,7 @@ final class PlayerModel {
                     if let engine = self.engine {
                         self.updatePictureSize(from: engine)
                     }
+                    self.syncPictureInPicture()
                 }
             }
             .store(in: &cancellables)
@@ -457,10 +562,7 @@ final class PlayerModel {
             .sink { [weak self] seconds in
                 Task { @MainActor in
                     guard let self, seconds.isFinite else { return }
-                    let prompt = SkipSegment.prompt(in: self.skipSegments, at: seconds)
-                    if self.skipPrompt != prompt {
-                        self.skipPrompt = prompt
-                    }
+                    self.applySkipPrompt(at: seconds)
                     guard DirectPlayProgressPolicy.shouldReport(playheadTrusted: self.playheadIsTrusted) else {
                         self.publishVisibleSubtitleCues(at: self.currentTime)
                         if self.showsPlaybackStats {
@@ -496,7 +598,7 @@ final class PlayerModel {
             Task { @MainActor in
                 let seconds = time.seconds
                 guard seconds.isFinite else { return }
-                self.skipPrompt = SkipSegment.prompt(in: self.skipSegments, at: seconds)
+                self.applySkipPrompt(at: seconds)
                 self.currentTime = seconds
                 await self.reporter?.progress(at: seconds, isPaused: self.player?.rate == 0)
             }
@@ -749,11 +851,26 @@ final class PlayerModel {
 
     private func attachPictureInPicture(_ source: DirectPlayPiPSource?) {
         #if os(iOS) || os(tvOS)
-        pictureInPicture.attach(source: source)
-        canUsePictureInPicture = source != nil && pictureInPicture.isSupported
+        pictureInPicture.onPossibleChange = { [weak self] possible in
+            self?.canUsePictureInPicture = possible
+        }
+        pictureInPicture.onActiveChange = { [weak self] active in
+            self?.handlePictureInPictureActiveChange(active)
+        }
+        pictureInPicture.attach(source: source, engine: engine)
+        canUsePictureInPicture = pictureInPicture.canStart
         #else
         canUsePictureInPicture = false
         #endif
+    }
+
+    private func handlePictureInPictureActiveChange(_ active: Bool) {
+        if active {
+            return
+        }
+        guard stopWhenPictureInPictureEnds else { return }
+        stopWhenPictureInPictureEnds = false
+        Task { await stop() }
     }
 
     private static func makeNativePlayer(url: URL) -> AVPlayer {

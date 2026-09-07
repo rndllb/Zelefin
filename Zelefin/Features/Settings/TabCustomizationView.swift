@@ -32,13 +32,7 @@ struct TabCustomizationView: View {
             }
         }
         .environment(\.editMode, .constant(.active))
-        .scrollContentBackground(.hidden)
-        .background(Color.black)
-        .navigationTitle("Tabs")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .zelefinSettingsChrome(title: "Tabs")
     }
 
     private func visibilityBinding(for tab: AppTab) -> Binding<Bool> {

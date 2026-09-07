@@ -133,7 +133,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         let remaining: String
         if let runtime {
             let leftover = max(0, runtime - playbackPosition)
-            remaining = " · \(Self.minutesLabel(leftover))"
+            remaining = " · \(Self.minutesLabel(leftover, rounding: .down))"
         } else {
             remaining = ""
         }
@@ -165,15 +165,27 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     /// Hours and minutes shown on the detail play control: time left while in progress, otherwise runtime.
     var playActionDurationLabel: String? {
-        if playbackPosition > 5, let remainingPlayback, remainingPlayback >= 45 {
-            return Self.minutesLabel(remainingPlayback)
+        if playbackPosition > 5, let remainingPlayback, remainingPlayback > 0 {
+            return Self.minutesLabel(remainingPlayback, rounding: .down)
         }
         guard let runtime, runtime > 0 else { return nil }
         return Self.minutesLabel(runtime)
     }
 
+    /// The title the hero Play control should start: an in-progress episode, else the next unwatched one.
+    static func heroPlaybackItem(title: MediaItem, episodes: [MediaItem]) -> MediaItem {
+        guard title.kind == .series else { return title }
+        if let resumable = episodes.first(where: { !$0.isWatched && $0.playbackPosition > 5 }) {
+            return resumable
+        }
+        if let upcoming = episodes.first(where: { !$0.isWatched }) {
+            return upcoming
+        }
+        return episodes.first ?? title
+    }
+
     var continueWatchingCaption: String? {
-        let remaining = remainingPlayback.map(Self.minutesLabel)
+        let remaining = remainingPlayback.map { Self.minutesLabel($0, rounding: .down) }
         if kind == .episode, let seasonIndex, let episodeIndex {
             if let remaining {
                 return "S\(seasonIndex), E\(episodeIndex) · \(remaining)"
@@ -299,7 +311,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             parts.append("S\(seasonIndex), E\(episodeIndex)")
         }
         if let remainingPlayback, remainingPlayback > 0 {
-            parts.append("\(Self.minutesLabel(remainingPlayback).uppercased()) LEFT")
+            parts.append("\(Self.minutesLabel(remainingPlayback, rounding: .down).uppercased()) LEFT")
         }
         return parts.joined(separator: "  ·  ")
     }
@@ -389,8 +401,11 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         return parts.joined(separator: " · ")
     }
 
-    private static func minutesLabel(_ interval: TimeInterval) -> String {
-        let totalMinutes = max(0, Int((interval / 60).rounded()))
+    private static func minutesLabel(
+        _ interval: TimeInterval,
+        rounding: FloatingPointRoundingRule = .toNearestOrAwayFromZero
+    ) -> String {
+        let totalMinutes = max(0, Int((interval / 60).rounded(rounding)))
         if totalMinutes < 60 {
             return "\(max(1, totalMinutes))m"
         }

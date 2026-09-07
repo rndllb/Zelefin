@@ -54,10 +54,13 @@ struct ArtworkURLBuilder: Sendable {
         return nil
     }
 
-    func userAvatar(userID: String, tag: String?, maxHeight: Int = 180) -> URL? {
+    func userAvatar(userID: String, tag: String?, maxHeight: Int = 180, revision: Int = 0) -> URL? {
         var query: [String] = ["quality=90", "maxHeight=\(maxHeight)"]
         if let tag {
             query.append("tag=\(tag)")
+        }
+        if revision > 0 {
+            query.append("v=\(revision)")
         }
         if let token = client.accessToken {
             query.append("api_key=\(token)")

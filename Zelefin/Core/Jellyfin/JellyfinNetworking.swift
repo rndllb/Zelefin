@@ -48,13 +48,36 @@ enum JellyfinNetworking {
         )
     }
 
-    static func data(from url: URL) async throws -> (Data, URLResponse) {
-        try await data(for: URLRequest(url: url))
+    static func data(from url: URL, ignoreCache: Bool = false) async throws -> (Data, URLResponse) {
+        var request = URLRequest(url: url)
+        if ignoreCache {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
+        return try await data(for: request)
     }
 
     static func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         var request = request
         AccessGateway.apply(&request)
         return try await imageSession.data(for: request)
+    }
+
+    static func apiData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        var request = request
+        AccessGateway.apply(&request)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        return try await apiSession.data(for: request)
+    }
+
+    private static let apiSession: URLSession = {
+        URLSession(configuration: sessionConfiguration(cacheImages: false))
+    }()
+}
+
+/// Jellyfin's image controller always wraps the request body in `FromBase64Transform`.
+/// Raw JPEG bytes are rejected; the dashboard sends base64 with an image Content-Type.
+enum JellyfinImagePayload {
+    static func requestBody(imageJPEG jpeg: Data) -> Data {
+        jpeg.base64EncodedData()
     }
 }

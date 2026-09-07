@@ -11,6 +11,9 @@ struct CatalogBrowseView: View {
 
     @State private var items: [MediaItem] = []
     @State private var isLoading = true
+    #if os(iOS)
+    @State private var headerVisible = true
+    #endif
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -54,16 +57,25 @@ struct CatalogBrowseView: View {
                         }
                     }
                     .padding(16)
+                    .padding(.top, RootPageChrome.showsTitle ? RootPageChrome.headerRowHeight : 0)
                     .padding(.bottom, 32)
                 }
+                .zelefinScrollEdgeBlur()
+                #if os(iOS)
+                .zelefinHeaderScrollVisibility($headerVisible)
+                #endif
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            FloatingPageHeader()
+        .overlay(alignment: .top) {
+            FloatingPageHeader(
+                title: title,
+                isVisible: RootPageChrome.showsTitle ? headerVisible : true,
+                liftsIntoPadTabBar: true
+            )
         }
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         #else

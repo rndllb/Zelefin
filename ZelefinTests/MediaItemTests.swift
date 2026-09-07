@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import Zelefin
 
@@ -129,6 +130,185 @@ final class MediaItemProgressTests: XCTestCase {
         )
 
         XCTAssertEqual(item.playActionDurationLabel, "2h 20m")
+    }
+
+    func testPlayActionDurationLabelKeepsRemainingWhenUnderAMinute() {
+        let item = MediaItem(
+            id: "1",
+            name: "Batman Begins",
+            kind: .movie,
+            overview: nil,
+            year: 2005,
+            runtime: 8400,
+            officialRating: "PG-13",
+            genres: ["Action"],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 8360,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .surround
+        )
+
+        XCTAssertEqual(item.playActionDurationLabel, "1m")
+    }
+
+    func testPlayActionDurationLabelFloorsRemainingMinutes() {
+        let item = MediaItem(
+            id: "1",
+            name: "Batman Begins",
+            kind: .movie,
+            overview: nil,
+            year: 2005,
+            runtime: 8400,
+            officialRating: "PG-13",
+            genres: ["Action"],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 7764,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .surround
+        )
+
+        // 10.6 minutes left should not round up to 11m.
+        XCTAssertEqual(item.playActionDurationLabel, "10m")
+    }
+
+    func testHeroPlaybackItemUsesInProgressEpisode() {
+        let show = MediaItem(
+            id: "show",
+            name: "Silo",
+            kind: .series,
+            overview: nil,
+            year: 2023,
+            runtime: 79_200,
+            officialRating: "TV-MA",
+            genres: ["Drama"],
+            seriesName: "Silo",
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: 8,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .surround
+        )
+        let watched = MediaItem(
+            id: "e1",
+            name: "Freedom Day",
+            kind: .episode,
+            overview: nil,
+            year: 2023,
+            runtime: 2400,
+            officialRating: nil,
+            genres: ["Drama"],
+            seriesName: "Silo",
+            seasonIndex: 1,
+            episodeIndex: 1,
+            playbackPosition: 2400,
+            unplayedCount: nil,
+            isPlayed: true,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "show",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .surround
+        )
+        let current = MediaItem(
+            id: "e2",
+            name: "Holston's Pick",
+            kind: .episode,
+            overview: nil,
+            year: 2023,
+            runtime: 2400,
+            officialRating: nil,
+            genres: ["Drama"],
+            seriesName: "Silo",
+            seasonIndex: 1,
+            episodeIndex: 2,
+            playbackPosition: 600,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "show",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .surround
+        )
+
+        let target = MediaItem.heroPlaybackItem(title: show, episodes: [watched, current])
+        XCTAssertEqual(target.id, "e2")
+        XCTAssertEqual(target.playActionDurationLabel, "30m")
+        XCTAssertEqual(show.playActionDurationLabel, "22h")
     }
 
     func testEpisodeLabel() {
@@ -1132,6 +1312,55 @@ final class SearchChromeMetricsTests: XCTestCase {
                 isSidebarVisible: true
             ),
             59
+        )
+    }
+}
+
+final class RootPageChromeTests: XCTestCase {
+    func testPhoneShowsTabTitles() {
+        XCTAssertTrue(RootPageChrome.showsTitle(idiom: .phone))
+    }
+
+    func testPadHidesTabTitles() {
+        XCTAssertFalse(RootPageChrome.showsTitle(idiom: .pad))
+    }
+
+    func testHeaderStaysVisibleNearTheTop() {
+        XCTAssertTrue(
+            RootPageChrome.headerVisible(offset: 8, previousOffset: 0, wasVisible: true)
+        )
+    }
+
+    func testHeaderHidesWhenScrollingDown() {
+        XCTAssertFalse(
+            RootPageChrome.headerVisible(offset: 48, previousOffset: 28, wasVisible: true)
+        )
+    }
+
+    func testHeaderReturnsWhenScrollingUp() {
+        XCTAssertTrue(
+            RootPageChrome.headerVisible(offset: 36, previousOffset: 60, wasVisible: false)
+        )
+    }
+
+    func testPadTabBarLiftsProfileIntoTheTabRow() {
+        XCTAssertEqual(
+            RootPageChrome.padTabBarLift(usesPadTopChrome: true, isSidebarVisible: false),
+            -RootPageChrome.padTopTabBarClearance
+        )
+    }
+
+    func testPadSidebarDoesNotLiftProfile() {
+        XCTAssertEqual(
+            RootPageChrome.padTabBarLift(usesPadTopChrome: true, isSidebarVisible: true),
+            0
+        )
+    }
+
+    func testPhoneDoesNotLiftProfile() {
+        XCTAssertEqual(
+            RootPageChrome.padTabBarLift(usesPadTopChrome: false, isSidebarVisible: false),
+            0
         )
     }
 }

@@ -4,6 +4,7 @@ struct HomeView: View {
     @Environment(SessionStore.self) private var session
     #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
+    @State private var headerVisible = true
     #endif
 
     var body: some View {
@@ -48,15 +49,17 @@ struct HomeView: View {
                         }
                         .refreshable { await session.refreshHome() }
                         .scrollClipDisabled()
+                        .zelefinScrollEdgeBlur()
+                        #if os(iOS)
+                        .zelefinHeaderScrollVisibility($headerVisible)
+                        #endif
                     }
                 }
 
                 #if os(iOS)
-                if tabBarPlacement != .sidebar {
-                    FloatingPageHeader()
-                        .padding(.top, ScreenInsets.top)
-                        .transition(.opacity)
-                }
+                FloatingPageHeader(title: "Home", isVisible: RootPageChrome.showsTitle ? headerVisible : true)
+                    .padding(.top, ScreenInsets.top)
+                    .transition(.opacity)
                 #endif
             }
         }
@@ -80,7 +83,7 @@ struct MediaRow: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let section: HomeSection
-    @State private var playbackPlan: PlaybackPlan?
+    @State private var playingItem: MediaItem?
     @State private var playbackError: String?
 
     var body: some View {
@@ -106,8 +109,8 @@ struct MediaRow: View {
                 .padding(.horizontal, 16)
             }
         }
-        .fullScreenCover(item: $playbackPlan) { plan in
-            PlayerView(plan: plan)
+        .fullScreenCover(item: $playingItem) { item in
+            PlayerView(item: item)
         }
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
@@ -161,7 +164,7 @@ struct MediaRow: View {
             Group {
                 if playsOnTap(item) {
                     Button {
-                        Task { await play(item) }
+                        play(item)
                     } label: {
                         cardView
                     }
@@ -179,7 +182,7 @@ struct MediaRow: View {
                 PlaybackQueueOverflowButton(
                     item: item,
                     context: context,
-                    onPlay: { Task { await play(item) } }
+                    onPlay: { play(item) }
                 )
                 .padding(.trailing, 2)
                 .padding(.bottom, 2)
@@ -191,7 +194,7 @@ struct MediaRow: View {
                 PlaybackQueueMenuContent(
                     item: item,
                     context: context,
-                    onPlay: { Task { await play(item) } },
+                    onPlay: { play(item) },
                     onMarkWatched: { Task { await markWatched(item) } },
                     onRemoveFromRecentlyWatched: context == .recentlyWatched
                         ? { Task { await hideFromRecentlyWatched(item) } }
@@ -237,13 +240,8 @@ struct MediaRow: View {
         HomeLayoutPreferences.isPlaybackQueueSection(section.id) && item.kind == .episode
     }
 
-    private func play(_ item: MediaItem) async {
-        guard let library = session.library else { return }
-        do {
-            playbackPlan = try await library.playbackPlan(for: item)
-        } catch {
-            playbackError = error.localizedDescription
-        }
+    private func play(_ item: MediaItem) {
+        playingItem = item
     }
 
     #if os(tvOS)
@@ -314,7 +312,7 @@ struct ContinueWatchingListView: View {
     var mode: Mode = .upNext
     var menuContext: PlaybackQueueMenuContext = .continueWatching
     @State private var rows: [MediaItem]
-    @State private var playbackPlan: PlaybackPlan?
+    @State private var playingItem: MediaItem?
     @State private var playbackError: String?
 
     enum Mode {
@@ -343,7 +341,7 @@ struct ContinueWatchingListView: View {
                         Group {
                             if mode == .upNext, item.kind == .episode {
                                 Button {
-                                    Task { await play(item) }
+                                    play(item)
                                 } label: {
                                     ContinueWatchingRow(item: item, mode: mode, showsOverflow: false)
                                 }
@@ -360,7 +358,7 @@ struct ContinueWatchingListView: View {
                         PlaybackQueueOverflowButton(
                             item: item,
                             context: menuContext,
-                            onPlay: { Task { await play(item) } },
+                            onPlay: { play(item) },
                             onDidChange: { rows.removeAll { $0.id == item.id } },
                             labelOpacity: 0.45,
                             usesCardChrome: false
@@ -386,8 +384,8 @@ struct ContinueWatchingListView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
-        .fullScreenCover(item: $playbackPlan) { plan in
-            PlayerView(plan: plan)
+        .fullScreenCover(item: $playingItem) { item in
+            PlayerView(item: item)
         }
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
@@ -399,13 +397,8 @@ struct ContinueWatchingListView: View {
         }
     }
 
-    private func play(_ item: MediaItem) async {
-        guard let library = session.library else { return }
-        do {
-            playbackPlan = try await library.playbackPlan(for: item)
-        } catch {
-            playbackError = error.localizedDescription
-        }
+    private func play(_ item: MediaItem) {
+        playingItem = item
     }
 }
 

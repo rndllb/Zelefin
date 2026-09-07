@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-struct SavedSession: Codable, Equatable, Sendable {
+struct SavedSession: Codable, Equatable, Sendable, Identifiable {
     var serverURL: URL
     var accessToken: String
     var userID: String
@@ -9,9 +9,66 @@ struct SavedSession: Codable, Equatable, Sendable {
     var deviceID: String
     var userImageTag: String?
     var serverVersion: String?
+    var serverName: String?
+
+    var id: String { accountID }
+
+    var accountID: String {
+        let host = serverURL.host?.lowercased() ?? serverURL.absoluteString.lowercased()
+        return "\(host)|\(userID)"
+    }
+
+    var displayServer: String {
+        let name = serverName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !name.isEmpty { return name }
+        return serverURL.host ?? serverURL.absoluteString
+    }
 }
 
-/// Persists the signed-in session. Keychain is preferred; UserDefaults is used when
+struct SavedAccountBox: Codable, Equatable, Sendable {
+    var accounts: [SavedSession]
+    var currentID: String
+
+    var current: SavedSession? {
+        accounts.first { $0.accountID == currentID } ?? accounts.first
+    }
+
+    mutating func upsert(_ session: SavedSession, select: Bool = true) {
+        if let index = accounts.firstIndex(where: { $0.accountID == session.accountID }) {
+            accounts[index] = session
+        } else {
+            accounts.append(session)
+        }
+        if select {
+            currentID = session.accountID
+        }
+    }
+
+    mutating func select(_ id: String) -> SavedSession? {
+        guard let session = accounts.first(where: { $0.accountID == id }) else { return nil }
+        currentID = id
+        return session
+    }
+
+    mutating func remove(id: String) -> SavedSession? {
+        accounts.removeAll { $0.accountID == id }
+        if currentID == id {
+            currentID = accounts.first?.accountID ?? ""
+        }
+        return current
+    }
+
+    static func decode(from data: Data) throws -> SavedAccountBox {
+        let decoder = JSONDecoder()
+        if let box = try? decoder.decode(SavedAccountBox.self, from: data), !box.accounts.isEmpty {
+            return box
+        }
+        let session = try decoder.decode(SavedSession.self, from: data)
+        return SavedAccountBox(accounts: [session], currentID: session.accountID)
+    }
+}
+
+/// Persists signed-in accounts. Keychain is preferred; UserDefaults is used when
 /// the process has no keychain entitlement (common in unsigned Simulator runs, status -34018).
 struct SessionVault: Sendable {
     private let defaultsKey = "zelefin.saved-session"
@@ -19,21 +76,36 @@ struct SessionVault: Sendable {
     private let account = "current"
 
     func load() throws -> SavedSession? {
-        if let session = try loadFromKeychain() {
-            return session
-        }
-        return loadFromDefaults()
+        try loadBox()?.current
     }
 
-    func save(_ session: SavedSession) throws {
-        let data = try JSONEncoder().encode(session)
-        deleteQuietly()
+    func loadBox() throws -> SavedAccountBox? {
+        if let data = try loadDataFromKeychain() {
+            return try SavedAccountBox.decode(from: data)
+        }
+        if let data = UserDefaults.standard.data(forKey: defaultsKey) {
+            return try SavedAccountBox.decode(from: data)
+        }
+        return nil
+    }
 
+    func save(_ session: SavedSession, select: Bool = true) throws {
+        var box = (try? loadBox()) ?? SavedAccountBox(accounts: [], currentID: "")
+        box.upsert(session, select: select)
+        try persist(box)
+    }
+
+    func persist(_ box: SavedAccountBox) throws {
+        if box.accounts.isEmpty {
+            delete()
+            return
+        }
+        let data = try JSONEncoder().encode(box)
+        deleteQuietly()
         if addToKeychain(data) {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
             return
         }
-
         UserDefaults.standard.set(data, forKey: defaultsKey)
     }
 
@@ -42,7 +114,7 @@ struct SessionVault: Sendable {
         UserDefaults.standard.removeObject(forKey: defaultsKey)
     }
 
-    private func loadFromKeychain() throws -> SavedSession? {
+    private func loadDataFromKeychain() throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -53,15 +125,8 @@ struct SessionVault: Sendable {
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else {
-            return nil
-        }
-        return try JSONDecoder().decode(SavedSession.self, from: data)
-    }
-
-    private func loadFromDefaults() -> SavedSession? {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return nil }
-        return try? JSONDecoder().decode(SavedSession.self, from: data)
+        guard status == errSecSuccess else { return nil }
+        return item as? Data
     }
 
     private func addToKeychain(_ data: Data) -> Bool {

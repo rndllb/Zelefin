@@ -10,6 +10,7 @@ struct SearchView: View {
     @State private var searchChromeHeight: CGFloat = 68
     #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
+    @State private var headerVisible = true
     #endif
 
     private var usesPadTopChrome: Bool {
@@ -53,6 +54,7 @@ struct SearchView: View {
                 isSearchPresented: isSearchSessionActive,
                 scope: scope,
                 reservedHeaderHeight: reservedHeaderHeight,
+                headerVisible: $headerVisible,
                 onDismissKeyboard: {
                     guard searchFieldFocused else { return }
                     dismissSearchKeyboard()
@@ -64,12 +66,19 @@ struct SearchView: View {
                 scope: $scope,
                 searchFieldFocused: $searchFieldFocused,
                 isSearchSessionActive: isSearchSessionActive,
-                showsProfile: !isSidebarVisible,
+                showsProfile: RootPageChrome.showsTitle && !isSidebarVisible,
+                headerVisible: headerVisible,
                 fieldHeight: $searchChromeHeight,
                 onCancel: endSearch
             )
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(.top, searchChromeTopInset)
+
+            if !RootPageChrome.showsTitle {
+                FloatingPageHeader()
+                    .padding(.top, ScreenInsets.top)
+                    .transition(.opacity)
+            }
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -96,6 +105,9 @@ struct SearchView: View {
 
     private func endSearch() {
         term = ""
+        #if os(iOS)
+        headerVisible = true
+        #endif
         dismissSearchKeyboard()
     }
 
@@ -114,6 +126,7 @@ private struct SearchTabChrome: View {
     @FocusState.Binding var searchFieldFocused: Bool
     var isSearchSessionActive: Bool
     var showsProfile: Bool
+    var headerVisible: Bool
     @Binding var fieldHeight: CGFloat
     var onCancel: () -> Void
 
@@ -121,8 +134,34 @@ private struct SearchTabChrome: View {
         UIDevice.current.userInterfaceIdiom == .pad || searchFieldFocused
     }
 
+    private var showsTitleRow: Bool {
+        RootPageChrome.showsTitle && !isSearchSessionActive
+    }
+
+    private var showsFieldProfile: Bool {
+        guard showsProfile else { return false }
+        if !RootPageChrome.showsTitle { return true }
+        return isSearchSessionActive
+    }
+
     var body: some View {
         VStack(spacing: 10) {
+            if showsTitleRow, headerVisible {
+                HStack(spacing: 12) {
+                    Text("Search")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    if showsProfile {
+                        ProfileMenu(diameter: 45)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -173,7 +212,7 @@ private struct SearchTabChrome: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
 
-                if showsProfile {
+                if showsFieldProfile {
                     ProfileMenu(diameter: 45)
                         .transition(.opacity.combined(with: .scale(scale: 0.86)))
                 }
@@ -193,6 +232,7 @@ private struct SearchTabChrome: View {
             fieldHeight = height
         }
         .animation(.smooth(duration: 0.25), value: isSearchSessionActive)
+        .animation(.smooth(duration: 0.22), value: headerVisible)
         .animation(.easeInOut(duration: 0.22), value: searchFieldFocused)
         .animation(ZelefinMotion.sidebarChrome, value: showsProfile)
     }
@@ -237,7 +277,7 @@ private struct SearchScopeBar: View {
 
 enum SearchChromeMetrics {
     /// Space the iPad floating top tab bar occupies below the status bar.
-    static let topTabBarClearance: CGFloat = 62
+    static var topTabBarClearance: CGFloat { RootPageChrome.padTopTabBarClearance }
 
     static func topInset(
         statusBarHeight: CGFloat,
@@ -335,6 +375,7 @@ private struct SearchPage: View {
     var isSearchPresented: Bool
     var scope: SearchScope
     var reservedHeaderHeight: CGFloat
+    var headerVisible: Binding<Bool>? = nil
     var onDismissKeyboard: (() -> Void)? = nil
 
     @State private var results: [MediaItem] = []
@@ -346,7 +387,7 @@ private struct SearchPage: View {
     @State private var discoverHome = SeerrDiscoverHome()
     @State private var isLoadingDiscover = false
     @State private var discoverError: String?
-    @State private var playbackPlan: PlaybackPlan?
+    @State private var playingItem: MediaItem?
     @State private var playbackError: String?
     @State private var scrollDistance: CGFloat = 0
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -401,12 +442,25 @@ private struct SearchPage: View {
         }
         #if os(iOS)
         .scrollDismissesKeyboard(.immediately)
+        .zelefinScrollEdgeBlur()
         .onScrollGeometryChange(for: CGFloat.self, of: { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top
-        }) { _, distance in
+        }) { oldDistance, distance in
             let next = max(0, distance)
             if abs(next - scrollDistance) > 0.5 {
                 scrollDistance = next
+            }
+            if let headerVisible {
+                let visible = RootPageChrome.headerVisible(
+                    offset: next,
+                    previousOffset: max(0, oldDistance),
+                    wasVisible: headerVisible.wrappedValue
+                )
+                if visible != headerVisible.wrappedValue {
+                    withAnimation(.smooth(duration: 0.22)) {
+                        headerVisible.wrappedValue = visible
+                    }
+                }
             }
             if next > 6 {
                 DispatchQueue.main.async {
@@ -444,8 +498,8 @@ private struct SearchPage: View {
                 }
             }
         }
-        .fullScreenCover(item: $playbackPlan) { plan in
-            PlayerView(plan: plan)
+        .fullScreenCover(item: $playingItem) { item in
+            PlayerView(item: item)
         }
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
@@ -589,7 +643,7 @@ private struct SearchPage: View {
 
             Menu {
                 Button("Play", systemImage: "play.fill") {
-                    Task { await play(item) }
+                    play(item)
                 }
                 NavigationLink("View Details") {
                     ItemDetailView(item: item)
@@ -667,14 +721,9 @@ private struct SearchPage: View {
         recents = SearchHistoryStore.load()
     }
 
-    private func play(_ item: MediaItem) async {
+    private func play(_ item: MediaItem) {
         recordRecent(item)
-        guard let library = session.library else { return }
-        do {
-            playbackPlan = try await library.playbackPlan(for: item)
-        } catch {
-            playbackError = error.localizedDescription
-        }
+        playingItem = item
     }
 }
 

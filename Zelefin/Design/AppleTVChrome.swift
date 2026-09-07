@@ -822,7 +822,7 @@ struct FeaturedHero: View {
     @Environment(SessionStore.self) private var session
     @State private var selection: String?
     @State private var slideStartedAt = Date()
-    @State private var playbackPlan: PlaybackPlan?
+    @State private var playingItem: MediaItem?
     @State private var playbackError: String?
 
     private static let dwell: TimeInterval = 6
@@ -860,8 +860,8 @@ struct FeaturedHero: View {
         .onChange(of: currentSlide?.id) { _, _ in
             slideStartedAt = Date()
         }
-        .fullScreenCover(item: $playbackPlan) { plan in
-            PlayerView(plan: plan)
+        .fullScreenCover(item: $playingItem) { item in
+            PlayerView(item: item)
         }
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
@@ -961,7 +961,7 @@ struct FeaturedHero: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        Task { await play(item) }
+                        play(item)
                     } label: {
                         Label("Play", systemImage: "play.fill")
                             .font(.headline.weight(.semibold))
@@ -1015,22 +1015,17 @@ struct FeaturedHero: View {
         moveSelection(by: 1)
     }
 
-    private func play(_ item: MediaItem) async {
-        guard let library = session.library else { return }
-        do {
-            playbackPlan = try await library.playbackPlan(for: item)
-        } catch {
-            playbackError = error.localizedDescription
-        }
+    private func play(_ item: MediaItem) {
+        playingItem = item
     }
 }
 
 extension View {
     /// Circular Liquid Glass bezel so content (the avatar) sits inside the ring, not over it.
     @ViewBuilder
-    func zelefinLiquidGlassCircle() -> some View {
+    func zelefinLiquidGlassCircle(interactive: Bool = true) -> some View {
         if #available(iOS 26, tvOS 26, *) {
-            self.glassEffect(.regular.interactive(), in: Circle())
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: Circle())
         } else {
             self
                 .background(.ultraThinMaterial, in: Circle())
@@ -1069,7 +1064,89 @@ extension View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif
     }
+
+    @ViewBuilder
+    func zelefinScrollEdgeBlur() -> some View {
+        #if os(iOS)
+        if #available(iOS 26, *) {
+            self.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    func zelefinHeaderScrollVisibility(_ isVisible: Binding<Bool>) -> some View {
+        #if os(iOS)
+        modifier(HeaderScrollVisibilityModifier(isVisible: isVisible))
+        #else
+        self
+        #endif
+    }
 }
+
+enum RootPageChrome {
+    static let hideAfter: CGFloat = 20
+    static let headerRowHeight: CGFloat = 59
+    /// Space the iPad floating top tab bar occupies below the status bar.
+    static let padTopTabBarClearance: CGFloat = 62
+
+    static func showsTitle(idiom: UIUserInterfaceIdiom) -> Bool {
+        #if os(iOS)
+        idiom == .phone
+        #else
+        false
+        #endif
+    }
+
+    @MainActor
+    static var showsTitle: Bool {
+        #if os(iOS)
+        showsTitle(idiom: UIDevice.current.userInterfaceIdiom)
+        #else
+        false
+        #endif
+    }
+
+    static func headerVisible(offset: CGFloat, previousOffset: CGFloat, wasVisible: Bool) -> Bool {
+        if offset <= hideAfter { return true }
+        let delta = offset - previousOffset
+        if delta > 2 { return false }
+        if delta < -2 { return true }
+        return wasVisible
+    }
+
+    /// Lift a safe-area overlay into the iPad top tab bar row, matching Home.
+    static func padTabBarLift(usesPadTopChrome: Bool, isSidebarVisible: Bool) -> CGFloat {
+        guard usesPadTopChrome, !isSidebarVisible else { return 0 }
+        return -padTopTabBarClearance
+    }
+}
+
+#if os(iOS)
+private struct HeaderScrollVisibilityModifier: ViewModifier {
+    @Binding var isVisible: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: CGFloat.self, of: { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            }) { oldValue, newValue in
+                let next = RootPageChrome.headerVisible(
+                    offset: max(0, newValue),
+                    previousOffset: max(0, oldValue),
+                    wasVisible: isVisible
+                )
+                guard next != isVisible else { return }
+                withAnimation(.smooth(duration: 0.22)) {
+                    isVisible = next
+                }
+            }
+    }
+}
+#endif
 
 #if os(iOS)
 private struct PageHeaderProfileButton: View {
@@ -1243,11 +1320,20 @@ struct FillingPosterCell<Content: View>: View {
     }
 }
 
-/// Trailing profile control for root tabs. Apple TV does not show a page title here.
+/// Trailing profile control for root tabs. iPhone also shows the tab title on this row.
 struct FloatingPageHeader: View {
+    var title: String = ""
+    var isVisible: Bool = true
+    /// Home draws from the screen top. Other tabs sit in the content safe area and
+    /// need this lift so the profile lands in the iPad top tab bar row.
+    var liftsIntoPadTabBar: Bool = false
     #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     #endif
+
+    private var showsTitle: Bool {
+        RootPageChrome.showsTitle && !title.isEmpty
+    }
 
     private var showsProfile: Bool {
         #if os(iOS)
@@ -1257,24 +1343,44 @@ struct FloatingPageHeader: View {
         #endif
     }
 
-    var body: some View {
-        profileRow
-            #if os(iOS)
-            .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
-            #endif
+    private var padTabBarLift: CGFloat {
+        #if os(iOS)
+        RootPageChrome.padTabBarLift(
+            usesPadTopChrome: liftsIntoPadTabBar && UIDevice.current.userInterfaceIdiom == .pad,
+            isSidebarVisible: tabBarPlacement == .sidebar
+        )
+        #else
+        0
+        #endif
     }
 
-    @ViewBuilder
-    private var profileRow: some View {
-        if showsProfile {
+    var body: some View {
+        if showsTitle || showsProfile {
             HStack(spacing: 12) {
+                if showsTitle {
+                    Text(title)
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 Spacer(minLength: 0)
-                ProfileMenu(diameter: 45)
+                if showsProfile {
+                    ProfileMenu(diameter: 45)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 10)
+            .opacity(isVisible ? 1 : 0)
+            .offset(y: isVisible ? padTabBarLift : padTabBarLift - 18)
+            .allowsHitTesting(isVisible)
+            .accessibilityHidden(!isVisible)
             .transition(.opacity.combined(with: .scale(scale: 0.86)))
+            #if os(iOS)
+            .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
+            #endif
         }
     }
 }

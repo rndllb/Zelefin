@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(SessionStore.self) private var session
+    @State private var profileSheet: ProfileSheet?
 
     var body: some View {
         Group {
@@ -15,6 +16,19 @@ struct RootView: View {
                 MainTabView()
             } else {
                 ConnectView()
+            }
+        }
+        .sheet(item: $profileSheet) { destination in
+            ProfileSheetContainer(destination: destination)
+                .environment(session)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinProfileSheet)) { notification in
+            guard session.isSignedIn else { return }
+            profileSheet = notification.object as? ProfileSheet
+        }
+        .onChange(of: session.isSignedIn) { _, signedIn in
+            if !signedIn {
+                profileSheet = nil
             }
         }
         .preferredColorScheme(.dark)

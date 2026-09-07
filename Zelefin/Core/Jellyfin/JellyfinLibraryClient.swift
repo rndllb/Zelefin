@@ -484,6 +484,18 @@ final class JellyfinLibraryClient: Sendable {
         return MediaItem.orderedEpisodes((result.items ?? []).compactMap(ItemMapper.mediaItem(from:)))
     }
 
+    func nextEpisode(after item: MediaItem) async -> MediaItem? {
+        guard item.kind == .episode, let seriesID = item.seriesID else { return nil }
+        do {
+            async let fetchedSeasons = seasons(seriesID: seriesID)
+            async let fetchedEpisodes = episodes(seriesID: seriesID)
+            let ordered = MediaItem.orderedShowEpisodes(try await fetchedEpisodes, seasons: try await fetchedSeasons)
+            return PlaybackEpisodeAdvance.next(after: item, in: ordered)
+        } catch {
+            return nil
+        }
+    }
+
     func search(term: String) async throws -> [MediaItem] {
         let result = try await client.send(
             Paths.getItems(
@@ -523,6 +535,7 @@ final class JellyfinLibraryClient: Sendable {
         subtitleIndex: Int?,
         enableDirectPlay: Bool
     ) async throws -> PlaybackPlan {
+        let bitrate = PlaybackPreferences.maxStreamingBitrate
         let profile = AVDeviceProfileFactory.make()
         let body = PlaybackInfoDto(
             audioStreamIndex: audioIndex,
@@ -531,7 +544,7 @@ final class JellyfinLibraryClient: Sendable {
             enableDirectStream: true,
             enableTranscoding: true,
             isAutoOpenLiveStream: true,
-            maxStreamingBitrate: AVDeviceProfileFactory.maxBitrate,
+            maxStreamingBitrate: bitrate,
             startTimeTicks: TickClock.intTicks(from: item.playbackPosition),
             subtitleStreamIndex: subtitleIndex,
             userID: userID
@@ -541,7 +554,7 @@ final class JellyfinLibraryClient: Sendable {
             ? nil
             : .init(
                 userID: userID,
-                maxStreamingBitrate: AVDeviceProfileFactory.maxBitrate,
+                maxStreamingBitrate: bitrate,
                 startTimeTicks: TickClock.intTicks(from: item.playbackPosition),
                 audioStreamIndex: audioIndex,
                 subtitleStreamIndex: subtitleIndex,

@@ -8,6 +8,9 @@ struct LibraryView: View {
     @State private var libraries: [MediaLibrary] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    #if os(iOS)
+    @State private var headerVisible = true
+    #endif
 
     var body: some View {
         Group {
@@ -36,14 +39,21 @@ struct LibraryView: View {
                 }
                 #if os(iOS)
                 .scrollContentBackground(.hidden)
+                .zelefinScrollEdgeBlur()
+                .contentMargins(.top, RootPageChrome.showsTitle ? RootPageChrome.headerRowHeight : 0, for: .scrollContent)
+                .zelefinHeaderScrollVisibility($headerVisible)
                 #endif
             }
         }
         .background(Color.black.ignoresSafeArea())
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            FloatingPageHeader()
+        .overlay(alignment: .top) {
+            FloatingPageHeader(
+                title: "Library",
+                isVisible: RootPageChrome.showsTitle ? headerVisible : true,
+                liftsIntoPadTabBar: true
+            )
         }
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         #else

@@ -26,6 +26,8 @@
 		2F0C24304F71488EAABFE598 /* AppleTVChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA634249D6C166F245B90A45 /* AppleTVChrome.swift */; };
 		323A0B8BCBB2EC06BF99EA7C /* AppTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D701163F71B1CB95716F54 /* AppTab.swift */; };
 		3313E963D44272ED07173A02 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34790E1449A8CBE8D327D1E4 /* SettingsView.swift */; };
+		35B1D2E08B3C4A7D90E1F6B2 /* PlaybackSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34B8E1C07A2D4F6B91C3E5A0 /* PlaybackSettingsView.swift */; };
+		37D5B0E23F6C4A9B81E2D4F8 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36C4A9D12E5B4F8A90D1C3E7 /* ProfileView.swift */; };
 		34D27A52A5A555F55CBD3515 /* SearchHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FD723FEAF5DE24252DABD24 /* SearchHistoryStore.swift */; };
 		35BFA5527F1B486A4A0747FA /* HomeLayoutPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8CF0158CA4E96DCC858822 /* HomeLayoutPreferences.swift */; };
 		38F108752DB25265F5ED6563 /* PluginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35520B035EA3BB6DD34F49EE /* PluginTests.swift */; };
@@ -117,6 +119,8 @@
 		2E51F94A5E4B3C0258DAD1BD /* PlaybackQueueMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackQueueMenu.swift; sourceTree = "<group>"; };
 		337D353434F2FA6B761C88F9 /* Zelefin.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Zelefin.entitlements; sourceTree = "<group>"; };
 		34790E1449A8CBE8D327D1E4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		34B8E1C07A2D4F6B91C3E5A0 /* PlaybackSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSettingsView.swift; sourceTree = "<group>"; };
+		36C4A9D12E5B4F8A90D1C3E7 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		354AF3BEFBAC89F7E6EE1765 /* DirectPlaySubtitleOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectPlaySubtitleOverlay.swift; sourceTree = "<group>"; };
 		35520B035EA3BB6DD34F49EE /* PluginTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginTests.swift; sourceTree = "<group>"; };
 		367E0E143CAAF64A02812E01 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
@@ -255,6 +259,8 @@
 			isa = PBXGroup;
 			children = (
 				5BF1D880FC511E84A138A487 /* AccessGatewaySection.swift */,
+				34B8E1C07A2D4F6B91C3E5A0 /* PlaybackSettingsView.swift */,
+				36C4A9D12E5B4F8A90D1C3E7 /* ProfileView.swift */,
 				34790E1449A8CBE8D327D1E4 /* SettingsView.swift */,
 				3A4FE59017DB61C5773E8D6A /* TabCustomizationView.swift */,
 			);
@@ -588,6 +594,8 @@
 				B976FE6BCCD46C9C6F12A30F /* PlaybackHTTPHeaders.swift in Sources */,
 				97503FF179D34A21C7BB0E92 /* PlaybackPipeline.swift in Sources */,
 				A3D734001C35051D4079F333 /* PlaybackQueueMenu.swift in Sources */,
+				35B1D2E08B3C4A7D90E1F6B2 /* PlaybackSettingsView.swift in Sources */,
+				37D5B0E23F6C4A9B81E2D4F8 /* ProfileView.swift in Sources */,
 				F24A28D346A06D72689CC4ED /* PlaybackReporter.swift in Sources */,
 				C9DF62189A922B6BFB377D88 /* PlaybackStats.swift in Sources */,
 				5736122BD6FE252B19C76614 /* PlaybackStatsOverlay.swift in Sources */,

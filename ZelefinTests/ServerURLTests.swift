@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import Zelefin
 
@@ -156,5 +157,25 @@ final class AccessGatewayTests: XCTestCase {
             headerFields: ["Content-Type": "application/json"]
         )!
         XCTAssertFalse(AccessGateway.isChallenge(response: response, data: Data("{\"ServerName\":\"JF\"}".utf8)))
+    }
+}
+
+final class ProfileImageTests: XCTestCase {
+    func testJellyfinUploadBodyIsBase64NotRawJPEG() {
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10])
+        let body = JellyfinImagePayload.requestBody(imageJPEG: jpeg)
+        XCTAssertNotEqual(body, jpeg)
+        XCTAssertEqual(Data(base64Encoded: body), jpeg)
+    }
+
+    func testEncoderProducesJPEGBytes() {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        let jpeg = ProfileImageEncoder.jpegData(from: image)
+        XCTAssertNotNil(jpeg)
+        XCTAssertEqual(jpeg?.prefix(2), Data([0xFF, 0xD8]))
+        XCTAssertEqual(Data(base64Encoded: JellyfinImagePayload.requestBody(imageJPEG: jpeg!)), jpeg)
     }
 }
