@@ -13,6 +13,8 @@ struct PlayerView: View {
     @State private var didFallBackToRemux = false
     @State private var fallbackError: String?
     @State private var playerWasBackgrounded = false
+    @State private var subtitleSearchItem: MediaItem?
+    @State private var resumeOverride: TimeInterval?
 
     init(item: MediaItem) {
         self.item = item
@@ -64,6 +66,7 @@ struct PlayerView: View {
         .onReceive(NotificationCenter.default.publisher(for: .zelefinRemoteNextTrack)) { _ in
             Task { await advanceOrDismiss() }
         }
+        .openSubtitlesSearch(item: $subtitleSearchItem)
     }
 
     private func handleScenePhase(_ phase: ScenePhase) {
@@ -114,7 +117,15 @@ struct PlayerView: View {
             return
         }
         do {
-            var plan = try await library.playbackPlan(for: activeItem)
+            let launch = session.launchOptions(for: activeItem.id)
+            var plan = try await library.playbackPlan(
+                for: activeItem,
+                audioIndex: launch.audioIndex,
+                subtitleIndex: launch.subtitleStreamIndex,
+                maxBitrate: launch.resolvedQuality.bitsPerSecond,
+                startTime: resumeOverride ?? activeItem.playbackPosition
+            )
+            resumeOverride = nil
             if PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
                 url: plan.streamURL,
                 method: plan.method,
@@ -122,7 +133,14 @@ struct PlayerView: View {
                 videoCodec: plan.videoCodec,
                 usesNativePlayer: PlaybackPreferences.useNativeVideoPlayer
             ) {
-                plan = try await library.playbackPlan(for: activeItem, allowDirectPlay: false)
+                plan = try await library.playbackPlan(
+                    for: activeItem,
+                    audioIndex: launch.audioIndex,
+                    subtitleIndex: launch.subtitleStreamIndex,
+                    allowDirectPlay: false,
+                    maxBitrate: launch.resolvedQuality.bitsPerSecond,
+                    startTime: plan.startTime
+                )
             }
             try Task.checkCancellation()
             await startPlayback(plan)
@@ -198,13 +216,35 @@ struct PlayerView: View {
         }
         do {
             try Task.checkCancellation()
-            let remux = try await library.playbackPlan(for: activeItem, allowDirectPlay: false)
+            let remux = try await library.playbackPlan(
+                for: activeItem,
+                allowDirectPlay: false,
+                maxBitrate: session.launchOptions(for: activeItem.id).resolvedQuality.bitsPerSecond,
+                startTime: resumeOverride ?? activeItem.playbackPosition
+            )
             try Task.checkCancellation()
             await startPlayback(remux, skipSegments: skip)
         } catch is CancellationError {
             return
         } catch {
             fallbackError = error.localizedDescription
+        }
+    }
+
+    private func changeQuality(_ quality: PlaybackQuality) async {
+        let current = session.launchOptions(for: activeItem.id).resolvedQuality
+        session.updateLaunchOptions(for: activeItem.id) { $0.quality = quality }
+        guard quality != current else { return }
+        guard model?.plan.streamURL.isFileURL != true else { return }
+        let skip = model?.skipSegments ?? []
+        resumeOverride = model?.currentTime
+        await model?.stop()
+        model = nil
+        didFallBackToRemux = false
+        fallbackError = nil
+        await prepareAndStart()
+        if let created = model, created.skipSegments.isEmpty {
+            created.skipSegments = skip
         }
     }
 
@@ -234,7 +274,29 @@ struct PlayerView: View {
                 AVKitPlaybackChrome(
                     model: model,
                     title: model.plan.item.name,
-                    onClose: { dismiss() }
+                    quality: session.launchOptions(for: activeItem.id).resolvedQuality,
+                    canAddSubtitles: RemoteSubtitleOffer.shouldShowAddSubtitles(
+                        pluginAvailable: session.openSubtitlesAvailable,
+                        supportsRemote: activeItem.supportsRemoteSubtitles
+                    ),
+                    onClose: { dismiss() },
+                    onQualityChange: { quality in
+                        Task { await changeQuality(quality) }
+                    },
+                    onAddSubtitles: {
+                        subtitleSearchItem = activeItem
+                    },
+                    onAudioChange: { id in
+                        model.selectAudio(id: id)
+                        session.updateLaunchOptions(for: activeItem.id) { $0.audioIndex = id }
+                    },
+                    onSubtitleChange: { id in
+                        model.selectSubtitle(id: id)
+                        session.updateLaunchOptions(for: activeItem.id) { options in
+                            options.subtitlesDisabled = id == nil
+                            options.subtitleIndex = id
+                        }
+                    }
                 )
                 if !model.hasFirstFrame || model.isBuffering {
                     ProgressView()

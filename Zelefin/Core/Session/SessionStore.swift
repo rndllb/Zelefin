@@ -25,11 +25,13 @@ final class SessionStore {
     private(set) var homeError: String?
     private(set) var isLoadingHome = false
     private(set) var introSkipperAvailable = false
+    private(set) var openSubtitlesAvailable = false
     private(set) var isAdministrator = false
     private(set) var tmdbCatalog = JellyfinTmdbCatalog()
     private(set) var currentSSID: String?
     private(set) var activeRoute: HomeNetworkRoute = .remote
     private var pathMonitor: NWPathMonitor?
+    private var playbackLaunchOptions: [String: PlaybackLaunchOptions] = [:]
 
     private var homeTask: Task<Void, Never>?
 
@@ -62,6 +64,16 @@ final class SessionStore {
                 items: items
             )
         )
+    }
+
+    func launchOptions(for itemID: String) -> PlaybackLaunchOptions {
+        playbackLaunchOptions[itemID] ?? PlaybackLaunchOptions()
+    }
+
+    func updateLaunchOptions(for itemID: String, _ mutate: (inout PlaybackLaunchOptions) -> Void) {
+        var options = launchOptions(for: itemID)
+        mutate(&options)
+        playbackLaunchOptions[itemID] = options
     }
 
     /// Wait until Home has finished, then warm each library tab from smallest catalog to
@@ -368,9 +380,11 @@ final class SessionStore {
         homeError = nil
         isLoadingHome = false
         introSkipperAvailable = false
+        openSubtitlesAvailable = false
         isAdministrator = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
+        playbackLaunchOptions = [:]
         currentSSID = nil
         activeRoute = .remote
         pathMonitor?.cancel()
@@ -439,13 +453,15 @@ final class SessionStore {
         library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
         serverName = saved.serverName ?? saved.serverURL.host
         introSkipperAvailable = false
+        openSubtitlesAvailable = false
         isAdministrator = false
         itemDetailMemory = [:]
+        playbackLaunchOptions = [:]
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
         Task { await refreshAdministratorStatus() }
         Task { await loadHome(force: true) }
-        Task { await detectIntroSkipper() }
+        Task { await detectPlugins() }
         Task { await refreshHomeNetworkSSID() }
         RemoteControlHub.shared.connect(client: jellyfin, session: saved)
         if serverVersion == nil {
@@ -524,12 +540,19 @@ final class SessionStore {
         persist(saved)
     }
 
-    func detectIntroSkipper() async {
+    func detectPlugins() async {
         guard let client else {
             introSkipperAvailable = false
+            openSubtitlesAvailable = false
             return
         }
-        introSkipperAvailable = await IntroSkipperClient(client: client).isInstalled()
+        let names = await JellyfinPluginCatalog.activeNames(client: client)
+        introSkipperAvailable = IntroSkipperPlugin.isInstalled(names: names)
+        openSubtitlesAvailable = OpenSubtitlesPlugin.isInstalled(names: names)
+    }
+
+    func detectIntroSkipper() async {
+        await detectPlugins()
     }
 
     func refreshAdministratorStatus() async {

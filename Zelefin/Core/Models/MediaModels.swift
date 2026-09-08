@@ -201,6 +201,11 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     var artworkItemID: String { imageItemID ?? id }
 
+    /// OpenSubtitles (and Jellyfin remote search) only cover movies and episodes.
+    var supportsRemoteSubtitles: Bool {
+        kind == .movie || kind == .episode
+    }
+
     /// Series id to open instead of a standalone episode or season page.
     var seriesDetailItemID: String? {
         guard kind == .episode || kind == .season else { return nil }
@@ -813,6 +818,16 @@ struct PlaybackPlan: Hashable, Sendable {
     let extraHTTPHeaders: [String: String]
     let audioTracks: [MediaTrack]
     let subtitleTracks: [MediaTrack]
+    var externalSubtitles: [ExternalSubtitleSidecar] = []
+}
+
+struct ExternalSubtitleSidecar: Hashable, Sendable {
+    let url: URL
+    let name: String
+    let language: String?
+    let formatHint: String
+    let isForced: Bool
+    let isHearingImpaired: Bool
 }
 
 struct TitleTrailer: Identifiable, Hashable, Sendable, Codable {

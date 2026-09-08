@@ -9,16 +9,7 @@ struct IntroSkipperClient: Sendable {
     }
 
     func isInstalled() async -> Bool {
-        guard let plugins = try? await client.send(Paths.getPlugins).value else { return false }
-        let activeNames = plugins.compactMap { plugin -> String? in
-            switch plugin.status {
-            case .disabled, .deleted, .malfunctioned:
-                return nil
-            default:
-                return plugin.name
-            }
-        }
-        return IntroSkipperPlugin.isInstalled(names: activeNames)
+        IntroSkipperPlugin.isInstalled(names: await JellyfinPluginCatalog.activeNames(client: client))
     }
 
     func segments(for itemID: String) async -> [SkipSegment] {

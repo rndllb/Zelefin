@@ -7,12 +7,20 @@ import UIKit
 struct AVKitPlaybackChrome: View {
     var model: PlayerModel
     let title: String
+    var quality: PlaybackQuality
+    var canAddSubtitles: Bool
     var onClose: () -> Void
+    var onQualityChange: (PlaybackQuality) -> Void
+    var onAddSubtitles: () -> Void
+    var onAudioChange: (Int) -> Void
+    var onSubtitleChange: (Int?) -> Void
 
     @State private var controlsVisible = true
     @State private var isScrubbing = false
     @State private var scrubTime: TimeInterval = 0
     @State private var hideGeneration = 0
+    @State private var settingsOpen = false
+    @State private var settingsPage: AVKitPlaybackSettingsPage = .root
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
@@ -51,6 +59,29 @@ struct AVKitPlaybackChrome: View {
                     .padding(.trailing, horizontalPadding)
                     .padding(.bottom, controlsVisible ? 64 : 10)
             }
+
+            if settingsOpen {
+                settingsScrim
+                AVKitPlaybackSettingsPanel(
+                    model: model,
+                    page: $settingsPage,
+                    quality: quality,
+                    canAddSubtitles: canAddSubtitles,
+                    onClose: closeSettings,
+                    onQualityChange: { value in
+                        onQualityChange(value)
+                    },
+                    onAddSubtitles: {
+                        closeSettings()
+                        onAddSubtitles()
+                    },
+                    onAudioChange: onAudioChange,
+                    onSubtitleChange: onSubtitleChange
+                )
+                .padding(.trailing, horizontalPadding)
+                .padding(.top, 58)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
         }
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
         .task(id: hideTaskID) {
@@ -64,7 +95,7 @@ struct AVKitPlaybackChrome: View {
     }
 
     private var hideTaskID: String {
-        "\(hideGeneration)-\(controlsVisible)-\(model.isPaused)-\(isScrubbing)"
+        "\(hideGeneration)-\(controlsVisible)-\(model.isPaused)-\(isScrubbing)-\(settingsOpen)"
     }
 
     private var horizontalPadding: CGFloat {
@@ -123,7 +154,7 @@ struct AVKitPlaybackChrome: View {
                     model.toggleFillScreen()
                     revealControls()
                 }
-                AVKitPlaybackSettingsMenu(model: model)
+                AVKitPlaybackSettingsMenuButton(isOpen: settingsOpen, action: toggleSettings)
             }
         }
         .foregroundStyle(.white)
@@ -215,6 +246,13 @@ struct AVKitPlaybackChrome: View {
         .accessibilityLabel(label)
     }
 
+    private var settingsScrim: some View {
+        Color.black.opacity(0.28)
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onTapGesture(perform: closeSettings)
+    }
+
     private func skip(by interval: TimeInterval) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         model.skip(by: interval)
@@ -222,11 +260,35 @@ struct AVKitPlaybackChrome: View {
     }
 
     private func toggleControls() {
+        if settingsOpen {
+            closeSettings()
+            return
+        }
         if controlsVisible {
             controlsVisible = false
         } else {
             revealControls()
         }
+    }
+
+    private func toggleSettings() {
+        if settingsOpen {
+            closeSettings()
+        } else {
+            openSettings()
+        }
+    }
+
+    private func openSettings() {
+        settingsPage = .root
+        settingsOpen = true
+        revealControls()
+    }
+
+    private func closeSettings() {
+        settingsOpen = false
+        settingsPage = .root
+        revealControls()
     }
 
     private func revealControls() {
@@ -235,112 +297,329 @@ struct AVKitPlaybackChrome: View {
     }
 
     private func hideControlsIfPlaying() async {
-        guard controlsVisible, !model.isPaused, !isScrubbing else { return }
+        guard PlaybackChromeIdlePolicy.shouldHide(
+            controlsVisible: controlsVisible,
+            isPaused: model.isPaused,
+            isScrubbing: isScrubbing,
+            settingsOpen: settingsOpen
+        ) else { return }
         do {
             try await Task.sleep(for: .seconds(5))
         } catch {
             return
         }
-        guard !Task.isCancelled, !model.isPaused, !isScrubbing else { return }
+        guard !Task.isCancelled else { return }
+        guard PlaybackChromeIdlePolicy.shouldHide(
+            controlsVisible: controlsVisible,
+            isPaused: model.isPaused,
+            isScrubbing: isScrubbing,
+            settingsOpen: settingsOpen
+        ) else { return }
         controlsVisible = false
     }
 }
 
-/// Isolated from the clock so the settings menu isn't rebuilt (and scrolled back) every tick.
-private struct AVKitPlaybackSettingsMenu: View {
-    var model: PlayerModel
+/// Isolated from the clock so the settings panel isn't rebuilt (and scrolled back) every tick.
+private enum AVKitPlaybackSettingsPage: Equatable {
+    case root
+    case quality
+    case speed
+    case audio
+    case subtitles
+}
+
+private struct AVKitPlaybackSettingsMenuButton: View {
+    var isOpen: Bool
+    var action: () -> Void
 
     var body: some View {
-        Menu {
-            Section("Playback Speed") {
-                ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
-                    Button {
-                        model.setPlaybackRate(rate)
-                    } label: {
-                        if abs(model.playbackRate - rate) < 0.01 {
-                            Label(speedTitle(rate), systemImage: "checkmark")
-                        } else {
-                            Text(speedTitle(rate))
-                        }
-                    }
-                }
-            }
-            if !model.audioOptions.isEmpty {
-                Section("Audio") {
-                    ForEach(model.audioOptions) { track in
-                        Button {
-                            model.selectAudio(id: track.id)
-                        } label: {
-                            if model.selectedAudioID == track.id {
-                                Label(track.title, systemImage: "checkmark")
-                            } else {
-                                Text(track.title)
-                            }
-                        }
-                    }
-                }
-            }
-            Section("Subtitles") {
-                Button {
-                    model.selectSubtitle(id: nil)
-                } label: {
-                    if model.selectedSubtitleID == nil {
-                        Label("Off", systemImage: "checkmark")
-                    } else {
-                        Text("Off")
-                    }
-                }
-                ForEach(model.subtitleOptions) { track in
-                    Button {
-                        model.selectSubtitle(id: track.id)
-                    } label: {
-                        if model.selectedSubtitleID == track.id {
-                            Label(track.title, systemImage: "checkmark")
-                        } else {
-                            Text(track.title)
-                        }
-                    }
-                }
-            }
-            Section("Picture") {
-                Button {
-                    model.toggleFillScreen()
-                } label: {
-                    if model.fillsScreen {
-                        Label("Fill screen", systemImage: "checkmark")
-                    } else {
-                        Text("Fill screen")
-                    }
-                }
-            }
-            Section("Stats") {
-                Button {
-                    model.togglePlaybackStats()
-                } label: {
-                    if model.showsPlaybackStats {
-                        Label("Stats", systemImage: "checkmark")
-                    } else {
-                        Text("Stats")
-                    }
-                }
-            }
-        } label: {
+        Button(action: action) {
             Image(systemName: "ellipsis")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
+        .buttonStyle(.plain)
         .avkitGlassCircle()
         .accessibilityLabel("More")
+        .accessibilityAddTraits(isOpen ? .isSelected : [])
+    }
+}
+
+private struct AVKitPlaybackSettingsPanel: View {
+    var model: PlayerModel
+    @Binding var page: AVKitPlaybackSettingsPage
+    var quality: PlaybackQuality
+    var canAddSubtitles: Bool
+    var onClose: () -> Void
+    var onQualityChange: (PlaybackQuality) -> Void
+    var onAddSubtitles: () -> Void
+    var onAudioChange: ((Int) -> Void)? = nil
+    var onSubtitleChange: ((Int?) -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider().overlay(Color.white.opacity(0.12))
+            ScrollView {
+                VStack(spacing: 0) {
+                    switch page {
+                    case .root: rootRows
+                    case .quality: qualityRows
+                    case .speed: speedRows
+                    case .audio: audioRows
+                    case .subtitles: subtitleRows
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .frame(width: 320)
+        .frame(maxHeight: 420)
+        .foregroundStyle(.white)
+        .avkitSettingsCard()
+        .accessibilityLabel("Playback settings")
     }
 
-    private func speedTitle(_ rate: Float) -> String {
-        if abs(rate - 1) < 0.01 { return "1x" }
-        if rate == rate.rounded() {
-            return "\(Int(rate))x"
+    private var header: some View {
+        HStack(spacing: 8) {
+            if page != .root {
+                Button(action: { page = .root }) {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+            }
+            Text(title)
+                .font(.headline)
+            Spacer(minLength: 8)
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
         }
-        return String(format: "%gx", rate)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private var title: String {
+        switch page {
+        case .root: "More"
+        case .quality: "Quality"
+        case .speed: "Playback Speed"
+        case .audio: "Select Audio"
+        case .subtitles: "Select Subtitles"
+        }
+    }
+
+    @ViewBuilder
+    private var rootRows: some View {
+        settingsRow(
+            title: "Quality",
+            value: quality.title,
+            systemImage: "slider.horizontal.3"
+        ) {
+            page = .quality
+        }
+        settingsRow(
+            title: "Playback Speed",
+            value: AVKitPlaybackSpeed.title(model.playbackRate),
+            systemImage: "gauge.with.needle"
+        ) {
+            page = .speed
+        }
+        settingsRow(
+            title: "Select Audio",
+            value: selectedAudioTitle,
+            systemImage: "waveform"
+        ) {
+            page = .audio
+        }
+        settingsRow(
+            title: "Select Subtitles",
+            value: selectedSubtitleTitle,
+            systemImage: "captions.bubble"
+        ) {
+            page = .subtitles
+        }
+        if canAddSubtitles {
+            Button(action: onAddSubtitles) {
+                rowLabel(title: "Add Subtitles", value: nil, systemImage: "plus.bubble", showsChevron: false)
+            }
+            .buttonStyle(.plain)
+        }
+        Button {
+            model.toggleFillScreen()
+        } label: {
+            rowLabel(
+                title: "Fill screen",
+                value: model.fillsScreen ? "On" : "Off",
+                systemImage: "arrow.up.left.and.arrow.down.right",
+                showsChevron: false,
+                selected: model.fillsScreen
+            )
+        }
+        .buttonStyle(.plain)
+        Button {
+            model.togglePlaybackStats()
+        } label: {
+            rowLabel(
+                title: "Stats",
+                value: model.showsPlaybackStats ? "On" : "Off",
+                systemImage: "info.circle",
+                showsChevron: false,
+                selected: model.showsPlaybackStats
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var qualityRows: some View {
+        ForEach(PlaybackQuality.allCases) { option in
+            choiceRow(option.title, selected: option == quality) {
+                onQualityChange(option)
+            }
+        }
+    }
+
+    private var speedRows: some View {
+        ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
+            choiceRow(AVKitPlaybackSpeed.title(rate), selected: abs(model.playbackRate - rate) < 0.01) {
+                model.setPlaybackRate(rate)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var audioRows: some View {
+        if model.audioOptions.isEmpty {
+            Text("No audio tracks")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+        } else {
+            ForEach(model.audioOptions) { track in
+                choiceRow(track.title, selected: model.selectedAudioID == track.id) {
+                    if let onAudioChange {
+                        onAudioChange(track.id)
+                    } else {
+                        model.selectAudio(id: track.id)
+                    }
+                }
+            }
+        }
+    }
+
+    private var subtitleRows: some View {
+        Group {
+            choiceRow("Off", selected: model.selectedSubtitleID == nil) {
+                if let onSubtitleChange {
+                    onSubtitleChange(nil)
+                } else {
+                    model.selectSubtitle(id: nil)
+                }
+            }
+            ForEach(model.subtitleOptions) { track in
+                choiceRow(track.title, selected: model.selectedSubtitleID == track.id) {
+                    if let onSubtitleChange {
+                        onSubtitleChange(track.id)
+                    } else {
+                        model.selectSubtitle(id: track.id)
+                    }
+                }
+            }
+            if canAddSubtitles {
+                Button(action: onAddSubtitles) {
+                    rowLabel(title: "Add Subtitles", value: nil, systemImage: "plus.bubble", showsChevron: false)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var selectedAudioTitle: String {
+        model.audioOptions.first(where: { $0.id == model.selectedAudioID })?.title ?? "Default"
+    }
+
+    private var selectedSubtitleTitle: String {
+        guard let id = model.selectedSubtitleID else { return "Off" }
+        return model.subtitleOptions.first(where: { $0.id == id })?.title ?? "On"
+    }
+
+    private func settingsRow(
+        title: String,
+        value: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            rowLabel(title: title, value: value, systemImage: systemImage, showsChevron: true)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func choiceRow(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(.body)
+                Spacer(minLength: 8)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func rowLabel(
+        title: String,
+        value: String?,
+        systemImage: String,
+        showsChevron: Bool,
+        selected: Bool = false
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .frame(width: 22)
+            Text(title)
+                .font(.body)
+            Spacer(minLength: 8)
+            if let value {
+                Text(value)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+            }
+            if selected {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+            }
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 }
 
@@ -471,7 +750,6 @@ struct AirPlayRouteButton: UIViewRepresentable {
 }
 
 private extension View {
-    /// Clear glass over video, matching AVPlayerViewController on iOS 26.
     @ViewBuilder
     func avkitGlassCircle() -> some View {
         if #available(iOS 26, *) {
@@ -512,5 +790,19 @@ private extension View {
                 Capsule(style: .continuous)
                     .strokeBorder(.white.opacity(0.22), lineWidth: 0.8)
             }
+    }
+
+    @ViewBuilder
+    func avkitSettingsCard() -> some View {
+        if #available(iOS 26, *) {
+            self.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        } else {
+            self
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(.white.opacity(0.22), lineWidth: 0.8)
+                }
+        }
     }
 }

@@ -69,6 +69,7 @@ struct PlaybackQueueMenuContent: View {
     var onPlay: () -> Void
     var onDownload: () -> Void
     var onMarkWatched: () -> Void
+    var onAddSubtitles: (() -> Void)? = nil
     var onRemoveFromRecentlyWatched: (() -> Void)? = nil
 
     @Environment(DownloadStore.self) private var downloads
@@ -83,6 +84,16 @@ struct PlaybackQueueMenuContent: View {
                 onDownload()
             }
             .disabled(downloadState == .unavailable)
+        }
+        if item.kind == .movie {
+            TitlePlaybackMenus(item: item, onAddSubtitles: onAddSubtitles)
+        } else if RemoteSubtitleOffer.shouldShowAddSubtitles(
+            pluginAvailable: session.openSubtitlesAvailable,
+            supportsRemote: item.supportsRemoteSubtitles
+        ), let onAddSubtitles {
+            Button("Add Subtitles", systemImage: "captions.bubble") {
+                onAddSubtitles()
+            }
         }
         if actions.contains(.play) {
             Button(PlaybackQueueMenuLayout.playTitle(for: item.kind), systemImage: "play.fill") {
@@ -115,6 +126,131 @@ struct PlaybackQueueMenuContent: View {
     }
 }
 
+struct TitlePlaybackMenus: View {
+    let item: MediaItem
+    var audioTracks: [MediaTrack]? = nil
+    var subtitleTracks: [MediaTrack]? = nil
+    var streamRevision: Int = 0
+    var onAddSubtitles: (() -> Void)? = nil
+
+    @Environment(SessionStore.self) private var session
+    @State private var loadedAudio: [MediaTrack] = []
+    @State private var loadedSubtitles: [MediaTrack] = []
+    @State private var didLoadTracks = false
+    @State private var localRevision = 0
+
+    var body: some View {
+        let options = session.launchOptions(for: item.id)
+        let quality = options.resolvedQuality
+        Group {
+            Menu("Quality") {
+                ForEach(PlaybackQuality.allCases) { option in
+                    Button {
+                        session.updateLaunchOptions(for: item.id) { $0.quality = option }
+                    } label: {
+                        if option == quality {
+                            Label(option.title, systemImage: "checkmark")
+                        } else {
+                            Text(option.title)
+                        }
+                    }
+                }
+            }
+            Menu("Select Audio") {
+                if audio.isEmpty {
+                    Text(didLoadTracks ? "No audio tracks" : "Loading…")
+                } else {
+                    ForEach(audio) { track in
+                        Button {
+                            session.updateLaunchOptions(for: item.id) { $0.audioIndex = track.id }
+                        } label: {
+                            if options.audioIndex == track.id || (options.audioIndex == nil && track.isSelected) {
+                                Label(track.title, systemImage: "checkmark")
+                            } else {
+                                Text(track.title)
+                            }
+                        }
+                    }
+                }
+            }
+            Menu("Select Subtitles") {
+                Button {
+                    session.updateLaunchOptions(for: item.id) { current in
+                        current.subtitlesDisabled = true
+                        current.subtitleIndex = nil
+                    }
+                } label: {
+                    if options.subtitlesDisabled {
+                        Label("Off", systemImage: "checkmark")
+                    } else {
+                        Text("Off")
+                    }
+                }
+                if subtitles.isEmpty {
+                    Text(didLoadTracks ? "No subtitles" : "Loading…")
+                } else {
+                    ForEach(subtitles) { track in
+                        Button {
+                            session.updateLaunchOptions(for: item.id) { current in
+                                current.subtitlesDisabled = false
+                                current.subtitleIndex = track.id
+                            }
+                        } label: {
+                            if !options.subtitlesDisabled,
+                               options.subtitleIndex == track.id || (options.subtitleIndex == nil && track.isSelected) {
+                                Label(track.title, systemImage: "checkmark")
+                            } else {
+                                Text(track.title)
+                            }
+                        }
+                    }
+                }
+            }
+            if RemoteSubtitleOffer.shouldShowAddSubtitles(
+                pluginAvailable: session.openSubtitlesAvailable,
+                supportsRemote: item.supportsRemoteSubtitles
+            ), let onAddSubtitles {
+                Button("Add Subtitles", systemImage: "captions.bubble") {
+                    onAddSubtitles()
+                }
+            }
+        }
+        .task(id: "\(item.id)-\(streamRevision)-\(localRevision)") {
+            await reloadTracks()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinSubtitlesSaved)) { notification in
+            guard let savedID = notification.userInfo?[SubtitleCatalogRefresh.itemIDKey] as? String,
+                  savedID == item.id
+            else { return }
+            localRevision += 1
+        }
+    }
+
+    private func reloadTracks() async {
+        guard audioTracks == nil || subtitleTracks == nil else {
+            didLoadTracks = true
+            return
+        }
+        didLoadTracks = false
+        let fetched = await session.library?.streamTracks(for: item.id) ?? (audio: [], subtitles: [])
+        if audioTracks == nil {
+            loadedAudio = fetched.audio
+        }
+        if subtitleTracks == nil {
+            loadedSubtitles = fetched.subtitles
+        }
+        didLoadTracks = true
+    }
+
+    private var audio: [MediaTrack] {
+        audioTracks ?? loadedAudio
+    }
+
+    private var subtitles: [MediaTrack] {
+        subtitleTracks ?? loadedSubtitles
+    }
+}
+
 /// Overflow control on Continue Watching / Next Up / Recently Watched cards and list rows.
 struct PlaybackQueueOverflowButton: View {
     let item: MediaItem
@@ -130,6 +266,7 @@ struct PlaybackQueueOverflowButton: View {
     @Environment(DownloadStore.self) private var downloads
     @State private var errorMessage: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
+    @State private var subtitleSearchItem: MediaItem?
 
     var body: some View {
         Menu {
@@ -139,6 +276,9 @@ struct PlaybackQueueOverflowButton: View {
                 onPlay: onPlay,
                 onDownload: { Task { await requestDownloadAction() } },
                 onMarkWatched: { Task { await toggleWatched() } },
+                onAddSubtitles: {
+                    subtitleSearchItem = item
+                },
                 onRemoveFromRecentlyWatched: context == .recentlyWatched
                     ? { Task { await removeFromRecentlyWatched() } }
                     : nil
@@ -175,6 +315,7 @@ struct PlaybackQueueOverflowButton: View {
             downloads.removeDownloaded(item: item, account: session.session)
             onDidChange?()
         }
+        .openSubtitlesSearch(item: $subtitleSearchItem)
     }
 
     private func requestDownloadAction() async {

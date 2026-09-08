@@ -356,6 +356,7 @@ private struct SearchPage: View {
     @State private var discoverError: String?
     @State private var playingItem: MediaItem?
     @State private var playbackError: String?
+    @State private var subtitleSearchItem: MediaItem?
     @State private var scrollDistance: CGFloat = 0
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -466,6 +467,7 @@ private struct SearchPage: View {
         .fullScreenCover(item: $playingItem) { item in
             PlayerView(item: item)
         }
+        .openSubtitlesSearch(item: $subtitleSearchItem)
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
@@ -612,6 +614,19 @@ private struct SearchPage: View {
                 }
                 NavigationLink("View Details") {
                     ItemDetailView(item: item)
+                }
+                if item.kind == .movie {
+                    TitlePlaybackMenus(
+                        item: item,
+                        onAddSubtitles: { subtitleSearchItem = item }
+                    )
+                } else if RemoteSubtitleOffer.shouldShowAddSubtitles(
+                    pluginAvailable: session.openSubtitlesAvailable,
+                    supportsRemote: item.supportsRemoteSubtitles
+                ) {
+                    Button("Add Subtitles", systemImage: "captions.bubble") {
+                        subtitleSearchItem = item
+                    }
                 }
                 if isRecent {
                     Button("Remove", systemImage: "trash", role: .destructive) {

@@ -536,7 +536,7 @@ final class PlayerModel {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tracks in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, !tracks.isEmpty else { return }
                     let options = tracks.map(PlaybackTrackOption.init)
                     if self.subtitleOptions != options {
                         self.subtitleOptions = options

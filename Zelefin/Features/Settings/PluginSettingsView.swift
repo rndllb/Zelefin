@@ -33,6 +33,19 @@ struct PluginSettingsView: View {
             }
 
             Section {
+                HStack {
+                    Text("Open Subtitles")
+                    Spacer()
+                    Text(session.openSubtitlesAvailable ? "Installed" : "Not on this server")
+                        .foregroundStyle(session.openSubtitlesAvailable ? .green : .secondary)
+                }
+            } header: {
+                Text("Open Subtitles")
+            } footer: {
+                Text("When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server.")
+            }
+
+            Section {
                 if isSeerrSignedIn {
                     LabeledContent("Server") {
                         Text(seerrURL)

@@ -845,6 +845,56 @@ extension View {
     }
 }
 
+private struct FeaturedHeroPagePan: UIGestureRecognizerRepresentable {
+    var isEnabled: Bool
+    var onPage: (Int) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator(isEnabled: isEnabled, onPage: onPage)
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.isEnabled = isEnabled
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.isEnabled = isEnabled
+        context.coordinator.onPage = onPage
+        recognizer.isEnabled = isEnabled
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        guard recognizer.state == .ended else { return }
+        let translation = recognizer.translation(in: recognizer.view)
+        if let delta = FeaturedHeroPaging.selectionDelta(
+            translation: CGSize(width: translation.x, height: translation.y)
+        ) {
+            context.coordinator.onPage(delta)
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var isEnabled: Bool
+        var onPage: (Int) -> Void
+
+        init(isEnabled: Bool, onPage: @escaping (Int) -> Void) {
+            self.isEnabled = isEnabled
+            self.onPage = onPage
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard isEnabled, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return FeaturedHeroPaging.shouldClaimPan(
+                velocity: CGSize(width: velocity.x, height: velocity.y)
+            )
+        }
+    }
+}
+
 struct FeaturedHero: View {
     let items: [MediaItem]
     let size: CGSize
@@ -856,6 +906,7 @@ struct FeaturedHero: View {
     @State private var playingItem: MediaItem?
     @State private var playbackError: String?
     @State private var pauseDwell = false
+    @State private var detailItem: MediaItem?
 
     private static let dwell: TimeInterval = 6
     private static let dotSize: CGFloat = 7
@@ -879,8 +930,6 @@ struct FeaturedHero: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .contentShape(Rectangle())
-        .simultaneousGesture(turnPageGesture)
         .onAppear {
             if selection == nil {
                 selection = slides.first?.id
@@ -892,6 +941,9 @@ struct FeaturedHero: View {
         }
         .onChange(of: currentSlide?.id) { _, _ in
             slideStartedAt = Date()
+        }
+        .navigationDestination(item: $detailItem) { item in
+            ItemDetailView(item: item)
         }
         .fullScreenCover(item: $playingItem) { item in
             PlayerView(item: item)
@@ -944,18 +996,6 @@ struct FeaturedHero: View {
         return "Slide \(index + 1) of \(slides.count)"
     }
 
-    private var turnPageGesture: some Gesture {
-        DragGesture(minimumDistance: 50)
-            .onEnded { value in
-                guard slides.count > 1 else { return }
-                if value.translation.width < -50 {
-                    moveSelection(by: 1)
-                } else if value.translation.width > 50 {
-                    moveSelection(by: -1)
-                }
-            }
-    }
-
     private func slide(_ item: MediaItem) -> some View {
         ZStack(alignment: .bottom) {
             ZStack {
@@ -978,6 +1018,22 @@ struct FeaturedHero: View {
                 )
             }
             .zelefinHeroBackgroundExtension()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                detailItem = item
+            }
+            .gesture(
+                FeaturedHeroPagePan(isEnabled: slides.count > 1) { delta in
+                    moveSelection(by: delta)
+                }
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(item.name)
+            .accessibilityHint("Opens details")
+            .accessibilityAction(.default) {
+                detailItem = item
+            }
 
             VStack(spacing: 16) {
                 VStack(spacing: 5) {
@@ -995,6 +1051,7 @@ struct FeaturedHero: View {
                         }
                     }
                 }
+                .allowsHitTesting(false)
 
                 HStack(spacing: 12) {
                     Button {

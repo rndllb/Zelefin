@@ -117,6 +117,9 @@ struct SettingsView: View {
         if session.introSkipperAvailable {
             parts.append("Intro Skipper")
         }
+        if session.openSubtitlesAvailable {
+            parts.append("Open Subtitles")
+        }
         if PluginSettings.isSeerrConfigured {
             parts.append("Seerr")
         }

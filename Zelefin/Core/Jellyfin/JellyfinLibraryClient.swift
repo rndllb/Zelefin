@@ -689,13 +689,26 @@ final class JellyfinLibraryClient: Sendable {
         for item: MediaItem,
         audioIndex: Int? = nil,
         subtitleIndex: Int? = nil,
-        allowDirectPlay: Bool = true
+        allowDirectPlay: Bool = true,
+        maxBitrate: Int? = nil,
+        startTime: TimeInterval? = nil
     ) async throws -> PlaybackPlan {
         try await fetchPlaybackPlan(
             for: item,
             audioIndex: audioIndex,
             subtitleIndex: subtitleIndex,
-            enableDirectPlay: allowDirectPlay
+            enableDirectPlay: allowDirectPlay,
+            maxBitrate: maxBitrate,
+            startTime: startTime
+        )
+    }
+
+    func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
+        let dto = try? await client.send(Paths.getItem(itemID: itemID, userID: userID)).value
+        let streams = dto?.mediaStreams ?? dto?.mediaSources?.first?.mediaStreams
+        return (
+            ItemMapper.tracks(from: streams, kind: .audio),
+            ItemMapper.tracks(from: streams, kind: .subtitle)
         )
     }
 
@@ -703,10 +716,16 @@ final class JellyfinLibraryClient: Sendable {
         for item: MediaItem,
         audioIndex: Int?,
         subtitleIndex: Int?,
-        enableDirectPlay: Bool
+        enableDirectPlay: Bool,
+        maxBitrate: Int?,
+        startTime: TimeInterval?
     ) async throws -> PlaybackPlan {
-        let bitrate = PlaybackPreferences.maxStreamingBitrate
-        let profile = AVDeviceProfileFactory.make()
+        let bitrate = maxBitrate ?? PlaybackPreferences.maxStreamingBitrate
+        let resume = startTime ?? item.playbackPosition
+        let profile = AVDeviceProfileFactory.make(
+            preferFMP4InHLS: PlaybackPreferences.effectivePreferFMP4InHLS,
+            maxBitrate: bitrate
+        )
         let body = PlaybackInfoDto(
             audioStreamIndex: audioIndex,
             deviceProfile: profile,
@@ -715,7 +734,7 @@ final class JellyfinLibraryClient: Sendable {
             enableTranscoding: true,
             isAutoOpenLiveStream: true,
             maxStreamingBitrate: bitrate,
-            startTimeTicks: TickClock.intTicks(from: item.playbackPosition),
+            startTimeTicks: TickClock.intTicks(from: resume),
             subtitleStreamIndex: subtitleIndex,
             userID: userID
         )
@@ -725,7 +744,7 @@ final class JellyfinLibraryClient: Sendable {
             : .init(
                 userID: userID,
                 maxStreamingBitrate: bitrate,
-                startTimeTicks: TickClock.intTicks(from: item.playbackPosition),
+                startTimeTicks: TickClock.intTicks(from: resume),
                 audioStreamIndex: audioIndex,
                 subtitleStreamIndex: subtitleIndex,
                 isAutoOpenLiveStream: true,
@@ -759,11 +778,12 @@ final class JellyfinLibraryClient: Sendable {
             videoCodec: ItemMapper.videoCodec(from: streams),
             videoRange: ItemMapper.videoRange(from: streams),
             audioFormat: ItemMapper.audioFormat(from: streams),
-            startTime: item.playbackPosition,
+            startTime: resume,
             byteSize: source.size.map(Int64.init),
             extraHTTPHeaders: source.requiredHTTPHeaders ?? [:],
             audioTracks: ItemMapper.tracks(from: streams, kind: .audio),
-            subtitleTracks: ItemMapper.tracks(from: streams, kind: .subtitle)
+            subtitleTracks: ItemMapper.tracks(from: streams, kind: .subtitle),
+            externalSubtitles: self.streams.externalSubtitles(itemID: item.id, source: source)
         )
     }
 

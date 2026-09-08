@@ -40,8 +40,12 @@ enum PlaybackPreferences {
         PlaybackSkipInterval.resolved(storedInt(skipForwardKey, default: 10)).time
     }
 
+    static var selectedQuality: PlaybackQuality {
+        PlaybackQuality.resolved(storedInt(maxBitrateKey, default: 0))
+    }
+
     static var maxStreamingBitrate: Int {
-        PlaybackQuality.resolved(storedInt(maxBitrateKey, default: 0)).bitsPerSecond
+        selectedQuality.bitsPerSecond
     }
 
     static var defaultRate: Float {
@@ -146,6 +150,33 @@ enum PlaybackQuality: Int, CaseIterable, Identifiable, Hashable {
 
     static func resolved(_ stored: Int) -> PlaybackQuality {
         Self(rawValue: stored) ?? .auto
+    }
+}
+
+struct PlaybackLaunchOptions: Hashable, Sendable {
+    var quality: PlaybackQuality?
+    var audioIndex: Int?
+    var subtitleIndex: Int?
+    var subtitlesDisabled: Bool = false
+
+    var resolvedQuality: PlaybackQuality {
+        quality ?? PlaybackPreferences.selectedQuality
+    }
+
+    var subtitleStreamIndex: Int? {
+        if subtitlesDisabled { return -1 }
+        return subtitleIndex
+    }
+}
+
+enum PlaybackChromeIdlePolicy {
+    static func shouldHide(
+        controlsVisible: Bool,
+        isPaused: Bool,
+        isScrubbing: Bool,
+        settingsOpen: Bool
+    ) -> Bool {
+        controlsVisible && !isPaused && !isScrubbing && !settingsOpen
     }
 }
 

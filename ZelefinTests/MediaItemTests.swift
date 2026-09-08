@@ -912,6 +912,18 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(featured.map(\.id), ["m1", "s1", "m2", "s2", "m3", "s3", "m4", "s4"])
     }
 
+    func testHeroSwipeTurnsThePageWithoutOpeningDetails() {
+        XCTAssertEqual(FeaturedHeroPaging.selectionDelta(translation: CGSize(width: -80, height: 6)), 1)
+        XCTAssertEqual(FeaturedHeroPaging.selectionDelta(translation: CGSize(width: 80, height: -4)), -1)
+        XCTAssertNil(FeaturedHeroPaging.selectionDelta(translation: CGSize(width: -20, height: 4)))
+        XCTAssertNil(FeaturedHeroPaging.selectionDelta(translation: CGSize(width: -80, height: 90)))
+        XCTAssertFalse(FeaturedHeroPaging.opensDetail(translation: CGSize(width: -80, height: 6)))
+        XCTAssertTrue(FeaturedHeroPaging.opensDetail(translation: CGSize(width: 2, height: -3)))
+        XCTAssertFalse(FeaturedHeroPaging.opensDetail(translation: CGSize(width: 0, height: 40)))
+        XCTAssertTrue(FeaturedHeroPaging.shouldClaimPan(velocity: CGSize(width: -240, height: 20)))
+        XCTAssertFalse(FeaturedHeroPaging.shouldClaimPan(velocity: CGSize(width: 12, height: 180)))
+    }
+
     func testAssemblePutsBrowseAndWatchedAtTheBottom() {
         let libraries = [
             HomeSection(id: "library-movies", title: "Recently Added Movies", style: .portrait, items: [Self.item(id: "m1", queueKind: .resume)])

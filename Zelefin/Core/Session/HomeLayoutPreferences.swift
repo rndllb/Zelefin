@@ -167,3 +167,23 @@ enum HomeLayoutPreferences {
         return result
     }
 }
+
+enum FeaturedHeroPaging {
+    static let turnDistance: CGFloat = 48
+    static let tapSlop: CGFloat = 16
+
+    static func selectionDelta(translation: CGSize) -> Int? {
+        guard abs(translation.width) >= turnDistance,
+              abs(translation.width) > abs(translation.height)
+        else { return nil }
+        return translation.width < 0 ? 1 : -1
+    }
+
+    static func opensDetail(translation: CGSize) -> Bool {
+        hypot(translation.width, translation.height) < tapSlop
+    }
+
+    static func shouldClaimPan(velocity: CGSize) -> Bool {
+        abs(velocity.width) > abs(velocity.height)
+    }
+}

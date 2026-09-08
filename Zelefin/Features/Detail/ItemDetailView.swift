@@ -27,6 +27,8 @@ struct ItemDetailView: View {
     @State private var errorMessage: String?
     @State private var downloadRemovalPrompt: DownloadRemovalPrompt?
     @State private var downloadRemovalItem: MediaItem?
+    @State private var subtitleSearchItem: MediaItem?
+    @State private var mediaStreamRevision = 0
 
     init(itemID: String, preview: MediaItem? = nil, focusEpisodeID: String? = nil) {
         self.itemID = itemID
@@ -105,7 +107,25 @@ struct ItemDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if let item {
-                    DetailDownloadSharePill(item: item, episodes: episodes)
+                    HStack(spacing: 8) {
+                        if item.kind == .movie {
+                            Menu {
+                                TitlePlaybackMenus(
+                                    item: item,
+                                    streamRevision: mediaStreamRevision,
+                                    onAddSubtitles: { subtitleSearchItem = item }
+                                )
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.body.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("More")
+                        }
+                        DetailDownloadSharePill(item: item, episodes: episodes)
+                    }
                 }
             }
             .catalogToolbarHidesSystemBackground()
@@ -136,6 +156,13 @@ struct ItemDetailView: View {
                 downloads.removeDownloaded(item: downloadRemovalItem, account: session.session)
             }
             downloadRemovalItem = nil
+        }
+        .openSubtitlesSearch(item: $subtitleSearchItem)
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinSubtitlesSaved)) { notification in
+            guard let savedID = notification.userInfo?[SubtitleCatalogRefresh.itemIDKey] as? String else {
+                return
+            }
+            Task { await refreshAfterSubtitleSave(savedItemID: savedID) }
         }
     }
 
@@ -729,6 +756,27 @@ struct ItemDetailView: View {
             let fetched = (try? await library.episodes(seriesID: loaded.id)) ?? []
             episodes = MediaItem.orderedShowEpisodes(fetched, seasons: seasons)
         }
+        persistSnapshot()
+    }
+
+    private func refreshAfterSubtitleSave(savedItemID: String) async {
+        guard SubtitleCatalogRefresh.shouldRefreshDetail(
+            detailItemID: itemID,
+            episodeIDs: episodes.map(\.id),
+            savedItemID: savedItemID
+        ) else { return }
+        guard let library = session.library else { return }
+
+        if savedItemID == itemID {
+            if let (loaded, _) = try? await library.item(id: itemID) {
+                item = loaded
+            }
+        } else if let index = episodes.firstIndex(where: { $0.id == savedItemID }) {
+            if let (loaded, _) = try? await library.item(id: savedItemID) {
+                episodes[index] = loaded
+            }
+        }
+        mediaStreamRevision += 1
         persistSnapshot()
     }
 

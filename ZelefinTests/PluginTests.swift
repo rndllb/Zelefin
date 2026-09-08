@@ -1,4 +1,5 @@
 import XCTest
+import JellyfinAPI
 @testable import Zelefin
 
 final class SkipSegmentTests: XCTestCase {
@@ -39,6 +40,136 @@ final class SkipSegmentTests: XCTestCase {
         XCTAssertTrue(IntroSkipperPlugin.isInstalled(names: ["Intro Skipper"]))
         XCTAssertTrue(IntroSkipperPlugin.isInstalled(names: ["introskipper"]))
         XCTAssertFalse(IntroSkipperPlugin.isInstalled(names: ["Playback Reporting", "Open Subtitles"]))
+    }
+}
+
+final class OpenSubtitlesPluginTests: XCTestCase {
+    func testDetectsOpenSubtitlesPluginNames() {
+        XCTAssertTrue(OpenSubtitlesPlugin.isInstalled(names: ["Open Subtitles"]))
+        XCTAssertTrue(OpenSubtitlesPlugin.isInstalled(names: ["OpenSubtitles"]))
+        XCTAssertTrue(OpenSubtitlesPlugin.isInstalled(names: ["jellyfin-plugin-opensubtitles"]))
+        XCTAssertFalse(OpenSubtitlesPlugin.isInstalled(names: ["Intro Skipper", "Playback Reporting"]))
+    }
+
+    func testMatchDropsMissingIDs() {
+        XCTAssertNil(RemoteSubtitleMatch(RemoteSubtitleInfo(id: nil, name: "Release")))
+        XCTAssertNil(RemoteSubtitleMatch(RemoteSubtitleInfo(id: "  ", name: "Release")))
+    }
+
+    func testMatchFormatsTitleAndFlags() {
+        let match = RemoteSubtitleMatch(
+            RemoteSubtitleInfo(
+                downloadCount: 1240,
+                format: "srt",
+                id: "abc_srt-en-9",
+                isForced: true,
+                isHashMatch: true,
+                isHearingImpaired: true,
+                name: "Movie.2024.1080p",
+                providerName: "Open Subtitles"
+            )
+        )
+        XCTAssertEqual(match?.id, "abc_srt-en-9")
+        XCTAssertEqual(match?.title, "Movie.2024.1080p")
+        XCTAssertTrue(match?.isHashMatch == true)
+        XCTAssertTrue(match?.detail.contains("Open Subtitles") == true)
+        XCTAssertTrue(match?.detail.contains("SRT") == true)
+        XCTAssertTrue(match?.detail.contains("Hash match") == true)
+        XCTAssertTrue(match?.detail.contains("SDH") == true)
+        XCTAssertTrue(match?.detail.contains("Forced") == true)
+        XCTAssertTrue(match?.detail.contains("downloads") == true)
+    }
+
+    func testLanguageListIncludesEnglish() {
+        XCTAssertTrue(SubtitleSearchLanguage.choices.contains(where: { $0.code == "en" }))
+        XCTAssertEqual(SubtitleSearchLanguage.preferred.code.isEmpty, false)
+    }
+
+    func testRemoteSubtitlesOnlyOnMoviesAndEpisodes() {
+        XCTAssertTrue(item(kind: .movie).supportsRemoteSubtitles)
+        XCTAssertTrue(item(kind: .episode).supportsRemoteSubtitles)
+        XCTAssertFalse(item(kind: .series).supportsRemoteSubtitles)
+        XCTAssertFalse(item(kind: .season).supportsRemoteSubtitles)
+    }
+
+    func testAddSubtitlesWhenPluginExists() {
+        XCTAssertTrue(
+            RemoteSubtitleOffer.shouldShowAddSubtitles(
+                pluginAvailable: true,
+                supportsRemote: true
+            )
+        )
+        XCTAssertFalse(
+            RemoteSubtitleOffer.shouldShowAddSubtitles(
+                pluginAvailable: false,
+                supportsRemote: true
+            )
+        )
+        XCTAssertFalse(
+            RemoteSubtitleOffer.shouldShowAddSubtitles(
+                pluginAvailable: true,
+                supportsRemote: false
+            )
+        )
+    }
+
+    func testDetailRefreshesMovieOrMatchingEpisode() {
+        XCTAssertTrue(
+            SubtitleCatalogRefresh.shouldRefreshDetail(
+                detailItemID: "movie-1",
+                episodeIDs: [],
+                savedItemID: "movie-1"
+            )
+        )
+        XCTAssertTrue(
+            SubtitleCatalogRefresh.shouldRefreshDetail(
+                detailItemID: "show-1",
+                episodeIDs: ["ep-1", "ep-2"],
+                savedItemID: "ep-2"
+            )
+        )
+        XCTAssertFalse(
+            SubtitleCatalogRefresh.shouldRefreshDetail(
+                detailItemID: "movie-1",
+                episodeIDs: [],
+                savedItemID: "movie-2"
+            )
+        )
+    }
+
+    private func item(kind: MediaKind) -> MediaItem {
+        MediaItem(
+            id: "1",
+            name: "Title",
+            kind: kind,
+            overview: nil,
+            year: 2024,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .nextUp,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
     }
 }
 

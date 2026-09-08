@@ -1,4 +1,5 @@
 import XCTest
+import JellyfinAPI
 @testable import Zelefin
 
 final class PlaybackPipelineTests: XCTestCase {
@@ -177,6 +178,53 @@ final class PlaybackSettingsPolicyTests: XCTestCase {
         let profile = AVDeviceProfileFactory.make(preferFMP4InHLS: true, maxBitrate: 8_000_000)
         XCTAssertEqual(profile.maxStreamingBitrate, 8_000_000)
         XCTAssertEqual(profile.maxStaticBitrate, 8_000_000)
+    }
+
+    func testChromeStaysVisibleWhileSettingsAreOpen() {
+        XCTAssertTrue(
+            PlaybackChromeIdlePolicy.shouldHide(
+                controlsVisible: true,
+                isPaused: false,
+                isScrubbing: false,
+                settingsOpen: false
+            )
+        )
+        XCTAssertFalse(
+            PlaybackChromeIdlePolicy.shouldHide(
+                controlsVisible: true,
+                isPaused: false,
+                isScrubbing: false,
+                settingsOpen: true
+            )
+        )
+        XCTAssertFalse(
+            PlaybackChromeIdlePolicy.shouldHide(
+                controlsVisible: true,
+                isPaused: true,
+                isScrubbing: false,
+                settingsOpen: false
+            )
+        )
+        XCTAssertFalse(
+            PlaybackChromeIdlePolicy.shouldHide(
+                controlsVisible: true,
+                isPaused: false,
+                isScrubbing: true,
+                settingsOpen: false
+            )
+        )
+    }
+
+    func testLaunchOptionsDisableSubtitlesWithMinusOne() {
+        var options = PlaybackLaunchOptions(subtitlesDisabled: true)
+        XCTAssertEqual(options.subtitleStreamIndex, -1)
+        options.subtitlesDisabled = false
+        options.subtitleIndex = 3
+        XCTAssertEqual(options.subtitleStreamIndex, 3)
+        XCTAssertEqual(options.resolvedQuality, PlaybackPreferences.selectedQuality)
+        options.quality = .mbps8
+        XCTAssertEqual(options.resolvedQuality, .mbps8)
+        XCTAssertEqual(options.resolvedQuality.bitsPerSecond, 8_000_000)
     }
 
     func testNextEpisodeFollowsSeasonOrder() {
@@ -628,5 +676,27 @@ final class DirectPlayPictureLayoutTests: XCTestCase {
 
     private func cue(id: Int, start: TimeInterval, end: TimeInterval) -> DirectPlaySubtitleCue {
         DirectPlaySubtitleCue(id: id, startTime: start, endTime: end, body: .text("\(id)"))
+    }
+}
+
+final class ExternalSubtitleSidecarTests: XCTestCase {
+    func testSubtitleExtensionMapsCodecs() {
+        XCTAssertEqual(StreamURLBuilder.subtitleExtension(codec: "vtt"), "vtt")
+        XCTAssertEqual(StreamURLBuilder.subtitleExtension(codec: "WebVTT"), "vtt")
+        XCTAssertEqual(StreamURLBuilder.subtitleExtension(codec: "ass"), "ass")
+        XCTAssertEqual(StreamURLBuilder.subtitleExtension(codec: "ssa"), "ssa")
+        XCTAssertEqual(StreamURLBuilder.subtitleExtension(codec: "srt"), "srt")
+        XCTAssertEqual(StreamURLBuilder.subtitleExtension(codec: nil), "srt")
+    }
+
+    func testSidecarStreamsAreExternal() {
+        let sidecar = MediaStream(index: 3, isExternal: true, type: .subtitle)
+        let remote = MediaStream(index: 4, isExternalURL: true, type: .subtitle)
+        let embedded = MediaStream(index: 2, isExternal: false, type: .subtitle)
+        let video = MediaStream(index: 0, isExternal: true, type: .video)
+        XCTAssertTrue(StreamURLBuilder.isExternalSubtitle(sidecar))
+        XCTAssertTrue(StreamURLBuilder.isExternalSubtitle(remote))
+        XCTAssertFalse(StreamURLBuilder.isExternalSubtitle(embedded))
+        XCTAssertFalse(StreamURLBuilder.isExternalSubtitle(video))
     }
 }
