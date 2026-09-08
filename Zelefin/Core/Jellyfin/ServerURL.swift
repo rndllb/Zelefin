@@ -34,6 +34,21 @@ enum ServerURL {
         return url
     }
 
+    /// LAN addresses default to HTTP; public hosts still default to HTTPS.
+    static func normalizeLanAddress(_ raw: String) throws -> URL {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ZelefinError.invalidServerURL }
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return try normalize(trimmed)
+        }
+        let hostPart = trimmed.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? trimmed
+        let host = hostPart.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? hostPart
+        if isInternalHost(host) {
+            return try normalize("http://\(trimmed)")
+        }
+        return try normalize(trimmed)
+    }
+
     static func resolve(base: URL, path: String, token: String? = nil) -> URL? {
         let resolved: URL?
         if let absolute = URL(string: path), absolute.scheme != nil, absolute.host != nil {
@@ -151,5 +166,26 @@ enum ServerURL {
         case 192: return parts[1] == 168
         default: return false
         }
+    }
+
+    /// Jellyfin session socket. Remote control only works while this connection stays up.
+    static func sessionSocket(base: URL, token: String, deviceID: String) -> URL? {
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
+        switch components.scheme?.lowercased() {
+        case "https": components.scheme = "wss"
+        case "http": components.scheme = "ws"
+        default: return nil
+        }
+        var path = components.path
+        while path.count > 1, path.hasSuffix("/") {
+            path.removeLast()
+        }
+        if path == "/" { path = "" }
+        components.path = path + "/socket"
+        var items = (components.queryItems ?? []).filter { $0.name != "api_key" && $0.name != "deviceId" }
+        items.append(URLQueryItem(name: "api_key", value: token))
+        items.append(URLQueryItem(name: "deviceId", value: deviceID))
+        components.queryItems = items
+        return components.url
     }
 }

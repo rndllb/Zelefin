@@ -30,6 +30,10 @@ struct RootView: View {
             guard session.isSignedIn else { return }
             profileSheet = notification.object as? ProfileSheet
         }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinRemotePlayItem)) { notification in
+            guard session.isSignedIn, let itemID = notification.object as? String else { return }
+            deepLinks.presentedItemID = itemID
+        }
         .onChange(of: session.isSignedIn) { _, signedIn in
             if !signedIn {
                 profileSheet = nil

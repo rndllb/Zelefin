@@ -65,6 +65,12 @@ struct PlayerView: View {
         .onChange(of: scenePhase) { _, phase in
             handleScenePhase(phase)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinRemoteStopPlayback)) { _ in
+            dismiss()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinRemoteNextTrack)) { _ in
+            Task { await advanceOrDismiss() }
+        }
     }
 
     private func handleScenePhase(_ phase: ScenePhase) {

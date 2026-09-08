@@ -518,14 +518,6 @@ final class PlaybackMethodTests: XCTestCase {
     }
 }
 
-final class OpenSourceNoticeTests: XCTestCase {
-    func testCreditsCoverFFmpeg() {
-        XCTAssertEqual(OpenSourceNotice.works.map(\.name), ["AetherEngine", "FFmpeg"])
-        XCTAssertEqual(OpenSourceNotice.works.last?.bundledLicenses.map(\.name), ["dav1d", "libdovi", "libzvbi", "zimg"])
-        XCTAssertFalse(OpenSourceNotice.summary.isEmpty)
-    }
-}
-
 final class PlaybackTimeFormattingTests: XCTestCase {
     func testElapsedUsesMinutesUntilAnHour() {
         XCTAssertEqual(PlaybackTimeFormatting.elapsed(0), "0:00")

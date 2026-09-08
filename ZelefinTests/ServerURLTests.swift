@@ -178,4 +178,39 @@ final class ProfileImageTests: XCTestCase {
         XCTAssertEqual(jpeg?.prefix(2), Data([0xFF, 0xD8]))
         XCTAssertEqual(Data(base64Encoded: JellyfinImagePayload.requestBody(imageJPEG: jpeg!)), jpeg)
     }
+
+    func testSessionSocketUsesWebSocketSchemeAndAuthQuery() {
+        let https = URL(string: "https://media.example.com/jellyfin/")!
+        let socket = ServerURL.sessionSocket(base: https, token: "tok", deviceID: "dev-1")
+        XCTAssertEqual(socket?.scheme, "wss")
+        XCTAssertEqual(socket?.path, "/jellyfin/socket")
+        XCTAssertEqual(socket?.value(for: "api_key"), "tok")
+        XCTAssertEqual(socket?.value(for: "deviceId"), "dev-1")
+
+        let lan = URL(string: "http://192.168.1.12:8096")!
+        XCTAssertEqual(
+            ServerURL.sessionSocket(base: lan, token: "tok", deviceID: "dev-1")?.scheme,
+            "ws"
+        )
+    }
+
+    func testLanAddressDefaultsToHTTP() throws {
+        XCTAssertEqual(
+            try ServerURL.normalizeLanAddress("192.168.1.100:8096").absoluteString,
+            "http://192.168.1.100:8096"
+        )
+        XCTAssertEqual(
+            try ServerURL.normalizeLanAddress("jellyfin.example.com").absoluteString,
+            "https://jellyfin.example.com"
+        )
+    }
+}
+
+private extension URL {
+    func value(for name: String) -> String? {
+        URLComponents(url: self, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == name })?
+            .value
+    }
 }

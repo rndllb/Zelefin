@@ -1,5 +1,6 @@
 import Foundation
 import JellyfinAPI
+import Network
 import Observation
 
 @MainActor
@@ -25,6 +26,9 @@ final class SessionStore {
     private(set) var isLoadingHome = false
     private(set) var introSkipperAvailable = false
     private(set) var tmdbCatalog = JellyfinTmdbCatalog()
+    private(set) var currentSSID: String?
+    private(set) var activeRoute: HomeNetworkRoute = .remote
+    private var pathMonitor: NWPathMonitor?
 
     private var homeTask: Task<Void, Never>?
 
@@ -103,6 +107,15 @@ final class SessionStore {
     }
 
     var isSignedIn: Bool { session != nil && library != nil }
+
+    var homeNetworkProfile: HomeNetworkProfile {
+        guard let id = session?.accountID else { return HomeNetworkProfile() }
+        return HomeNetworkStore.profile(for: id)
+    }
+
+    var activeServerURL: URL? {
+        client?.configuration.url ?? session?.serverURL
+    }
 
     var otherAccounts: [SavedSession] {
         accounts.filter { $0.accountID != session?.accountID }
@@ -318,6 +331,7 @@ final class SessionStore {
     private func clearLocalSession() {
         prefetchTask?.cancel()
         prefetchTask = nil
+        RemoteControlHub.shared.disconnect()
         session = nil
         client = nil
         library = nil
@@ -329,6 +343,10 @@ final class SessionStore {
         introSkipperAvailable = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
+        currentSSID = nil
+        activeRoute = .remote
+        pathMonitor?.cancel()
+        pathMonitor = nil
         PluginSettings.clearSeerrSession()
     }
 
@@ -372,15 +390,23 @@ final class SessionStore {
     }
 
     private func apply(_ saved: SavedSession, client existing: JellyfinClient? = nil, serverVersion: String? = nil) {
-        if session?.accountID != saved.accountID {
+        if PluginSettings.shouldClearSession(switchingFrom: session?.accountID, to: saved.accountID) {
             PluginSettings.clearSeerrSession()
         }
-        let jellyfin = existing ?? JellyfinNetworking.client(
-            url: saved.serverURL,
-            accessToken: saved.accessToken,
-            deviceID: saved.deviceID
-        )
         session = saved
+        startHomeNetworkMonitor()
+        let endpoint = homeNetworkEndpoint(for: saved)
+        activeRoute = endpoint.route
+        let jellyfin: JellyfinClient
+        if let existing, HomeNetworkResolver.isSameEndpoint(existing.configuration.url, endpoint.url) {
+            jellyfin = existing
+        } else {
+            jellyfin = JellyfinNetworking.client(
+                url: endpoint.url,
+                accessToken: saved.accessToken,
+                deviceID: saved.deviceID
+            )
+        }
         client = jellyfin
         library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
         serverName = saved.serverName ?? saved.serverURL.host
@@ -390,9 +416,71 @@ final class SessionStore {
         Task { await refreshAccount() }
         Task { await loadHome(force: true) }
         Task { await detectIntroSkipper() }
+        Task { await refreshHomeNetworkSSID() }
+        RemoteControlHub.shared.connect(client: jellyfin, session: saved)
         if serverVersion == nil {
-            Task { await refreshServerCapabilities(at: saved.serverURL) }
+            Task { await refreshServerCapabilities(at: endpoint.url) }
         }
+    }
+
+    func saveHomeNetwork(_ profile: HomeNetworkProfile) {
+        guard let id = session?.accountID else { return }
+        HomeNetworkStore.save(profile, for: id)
+        applyHomeNetworkEndpoint()
+    }
+
+    func requestHomeNetworkAccess() async {
+        await WiFiSSID.requestAccess()
+        await refreshHomeNetworkSSID()
+    }
+
+    private func startHomeNetworkMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] _ in
+            Task { @MainActor in
+                await self?.refreshHomeNetworkSSID()
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "app.zelefin.home-network"))
+        pathMonitor = monitor
+    }
+
+    private func refreshHomeNetworkSSID() async {
+        currentSSID = await WiFiSSID.current()
+        applyHomeNetworkEndpoint()
+    }
+
+    private func applyHomeNetworkEndpoint() {
+        guard let saved = session else { return }
+        let endpoint = homeNetworkEndpoint(for: saved)
+        activeRoute = endpoint.route
+        if let client, HomeNetworkResolver.isSameEndpoint(client.configuration.url, endpoint.url) {
+            return
+        }
+        let jellyfin = JellyfinNetworking.client(
+            url: endpoint.url,
+            accessToken: saved.accessToken,
+            deviceID: saved.deviceID
+        )
+        client = jellyfin
+        library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: saved.serverVersion)
+        RemoteControlHub.shared.connect(client: jellyfin, session: saved)
+    }
+
+    private func homeNetworkEndpoint(for saved: SavedSession) -> (url: URL, route: HomeNetworkRoute) {
+        let profile = HomeNetworkStore.profile(for: saved.accountID)
+        let route = HomeNetworkResolver.route(
+            autoSwitch: profile.autoSwitch,
+            hasLocalURL: profile.localURL != nil,
+            homeSSIDs: profile.homeSSIDs,
+            currentSSID: currentSSID,
+            ssidReadable: HomeNetworkCapabilities.canMatchSSID
+        )
+        return (
+            HomeNetworkResolver.activeURL(remote: saved.serverURL, local: profile.localURL, route: route),
+            route
+        )
     }
 
     private func refreshServerCapabilities(at url: URL) async {

@@ -6,5 +6,7 @@
 	<array>
 		<string>$(AppIdentifierPrefix)app.zelefin.client</string>
 	</array>
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
 </dict>
 </plist>

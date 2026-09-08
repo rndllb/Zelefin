@@ -1415,6 +1415,8 @@ final class AppTabTests: XCTestCase {
         XCTAssertEqual(AppTab.collections.title, "Collections")
         XCTAssertEqual(AppTab.collections.customizationID, "app.zelefin.tab.collections")
         XCTAssertEqual(AppTab.library.customizationID, "app.zelefin.tab.library")
+        XCTAssertEqual(AppTab.hiddenByDefault, [.collections])
+        XCTAssertFalse(AppTab.hiddenByDefault.contains(.movies))
     }
 }
 

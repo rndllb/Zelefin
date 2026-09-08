@@ -38,5 +38,7 @@
 	</dict>
 	<key>UIRequiresFullScreen</key>
 	<false/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home.</string>
 </dict>
 </plist>

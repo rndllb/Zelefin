@@ -39,7 +39,7 @@ struct CatalogBrowseView: View {
     private var emptySymbol: String {
         switch libraryKind {
         case .shows: "tv"
-        case .collections: "square.stack.fill"
+        case .collections: "square.grid.2x2.fill"
         default: "film"
         }
     }

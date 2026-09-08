@@ -63,6 +63,12 @@ enum PluginSettings {
     static func clearSeerrSession() {
         seerrSession = nil
     }
+
+    /// Keep Seerr across relaunch. Drop it only when a different Jellyfin user is applied.
+    static func shouldClearSession(switchingFrom currentAccountID: String?, to nextAccountID: String) -> Bool {
+        guard let currentAccountID else { return false }
+        return currentAccountID != nextAccountID
+    }
 }
 
 private extension String {

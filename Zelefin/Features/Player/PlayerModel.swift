@@ -114,6 +114,7 @@ final class PlayerModel {
             }
             await reporter?.started(at: currentSeconds)
             didStart = true
+            RemoteControlHub.shared.attach(self)
         } catch is CancellationError {
             await stop()
             return
@@ -143,6 +144,7 @@ final class PlayerModel {
         didStart = false
         nativePictureInPictureActive = false
         stopWhenPictureInPictureEnds = false
+        RemoteControlHub.shared.detach(self)
         await reporter?.stopped(at: seconds)
     }
 
@@ -218,6 +220,63 @@ final class PlayerModel {
         } else {
             player.pause()
         }
+    }
+
+    func applyRemote(_ action: RemotePlaybackAction) {
+        switch action {
+        case .playPause:
+            togglePlayPause()
+        case .pause:
+            pausePlayback()
+        case .play:
+            resumePlayback()
+        case .seek(let time):
+            seek(to: time)
+        case .skip(let interval):
+            skip(by: interval)
+        case .previous:
+            skip(by: -30)
+        case .mute:
+            setMuted(true)
+        case .unmute:
+            setMuted(false)
+        case .volumeUp:
+            adjustVolume(by: 0.1)
+        case .volumeDown:
+            adjustVolume(by: -0.1)
+        case .stop, .next:
+            break
+        }
+        Task { await reporter?.progress(at: currentSeconds, isPaused: isPaused) }
+    }
+
+    private func pausePlayback() {
+        if let engine {
+            if !isPaused { engine.togglePlayPause() }
+            return
+        }
+        player?.pause()
+        isPaused = true
+    }
+
+    private func resumePlayback() {
+        if let engine {
+            if isPaused { engine.togglePlayPause() }
+            return
+        }
+        player?.play()
+        setPlaybackRate(playbackRate)
+        isPaused = false
+    }
+
+    private func setMuted(_ muted: Bool) {
+        player?.isMuted = muted
+    }
+
+    private func adjustVolume(by delta: Float) {
+        guard let player else { return }
+        player.volume = min(1, max(0, player.volume + delta))
+        if delta > 0 { player.isMuted = false }
     }
 
     func skipCurrentSegment() {

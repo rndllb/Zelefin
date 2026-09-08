@@ -1,15 +1,12 @@
 import SwiftUI
 
 struct PlaybackSettingsView: View {
-    @Environment(SessionStore.self) private var session
-    @AppStorage(PlaybackPreferences.useNativeVideoPlayerKey) private var useNativeVideoPlayer = true
+    @AppStorage(PlaybackPreferences.useNativeVideoPlayerKey) private var useNativeVideoPlayer = false
     @AppStorage(PlaybackPreferences.preferFMP4InHLSKey) private var preferFMP4InHLS = true
     @AppStorage(PlaybackPreferences.skipBackwardKey) private var skipBackward = 10
     @AppStorage(PlaybackPreferences.skipForwardKey) private var skipForward = 10
     @AppStorage(PlaybackPreferences.maxBitrateKey) private var maxBitrate = 0
     @AppStorage(PlaybackPreferences.autoPlayNextEpisodeKey) private var autoPlayNextEpisode = true
-    @AppStorage(PlaybackPreferences.autoSkipIntroKey) private var autoSkipIntro = false
-    @AppStorage(PlaybackPreferences.autoSkipCreditsKey) private var autoSkipCredits = false
     @AppStorage(PlaybackPreferences.defaultRateKey) private var defaultRate = 1.0
 
     var body: some View {
@@ -43,12 +40,10 @@ struct PlaybackSettingsView: View {
 
             Section {
                 Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
-                Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
-                Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
             } header: {
                 Text("Episodes")
             } footer: {
-                Text("Skip Intro and Skip Outro need the Intro Skipper plugin on Jellyfin. Auto play starts the next episode when this one ends.")
+                Text("Starts the next episode when this one ends.")
             }
 
             Section {
@@ -65,28 +60,12 @@ struct PlaybackSettingsView: View {
             } footer: {
                 Text(playerFooter)
             }
-
-            Section {
-                HStack {
-                    Text("Skip Intro / Outro")
-                    Spacer()
-                    Text(session.introSkipperAvailable ? "Installed" : "Not on this server")
-                        .foregroundStyle(session.introSkipperAvailable ? .green : .secondary)
-                }
-            } header: {
-                Text("Intro Skipper")
-            } footer: {
-                Text("Skip buttons appear during playback when the plugin is installed.")
-            }
         }
         .zelefinSettingsChrome(title: "Playback and Controls")
         .onChange(of: useNativeVideoPlayer) {
             if !useNativeVideoPlayer {
                 preferFMP4InHLS = true
             }
-        }
-        .task {
-            await session.detectIntroSkipper()
         }
     }
 

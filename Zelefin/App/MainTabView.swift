@@ -4,8 +4,9 @@ import UIKit
 struct MainTabView: View {
     @Environment(SessionStore.self) private var session
     #if os(iOS)
-    @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = TabViewCustomization()
+    @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
+    @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
     #endif
 
     var body: some View {
@@ -48,9 +49,18 @@ struct MainTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .onAppear { applyHiddenTabDefaultsIfNeeded() }
         #endif
         .background(.clear)
     }
+
+    #if os(iOS)
+    private func applyHiddenTabDefaultsIfNeeded() {
+        guard !hiddenDefaultsApplied else { return }
+        AppTab.applyHiddenDefaults(to: &tabCustomization)
+        hiddenDefaultsApplied = true
+    }
+    #endif
 
     private var visibleTabs: [AppTab] {
         #if os(iOS)
@@ -85,6 +95,7 @@ struct MainTabView: View {
 
 enum ProfileSheet: String, Identifiable {
     case profile
+    case sessions
     case settings
     case addUser
 
@@ -163,6 +174,7 @@ struct ProfileMenu: View {
                     accessibilityLabel: showsName ? displayName : "Profile",
                     otherAccounts: session.otherAccounts,
                     onProfile: { ProfilePresentation.show(.profile) },
+                    onSessions: { ProfilePresentation.show(.sessions) },
                     onAddUser: { ProfilePresentation.show(.addUser) },
                     onSettings: { ProfilePresentation.show(.settings) },
                     onSignOut: { Task { await session.signOut() } },
@@ -182,6 +194,9 @@ struct ProfileMenu: View {
         Menu {
             Button("Profile", systemImage: "person.crop.circle") {
                 ProfilePresentation.show(.profile)
+            }
+            Button("Sessions", systemImage: "play.tv") {
+                ProfilePresentation.show(.sessions)
             }
             if !session.otherAccounts.isEmpty {
                 Menu("Switch User", systemImage: "person.2") {
@@ -209,7 +224,7 @@ struct ProfileMenu: View {
         .menuIndicator(.hidden)
         .buttonStyle(.plain)
         .accessibilityLabel(showsName ? displayName : "Profile")
-        .accessibilityHint("Shows profile, settings, and account options")
+        .accessibilityHint("Shows profile, sessions, settings, and account options")
     }
     #endif
 
@@ -245,6 +260,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
     var accessibilityLabel: String
     var otherAccounts: [SavedSession]
     var onProfile: () -> Void
+    var onSessions: () -> Void
     var onAddUser: () -> Void
     var onSettings: () -> Void
     var onSignOut: () -> Void
@@ -260,7 +276,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
         button.preferredMenuElementOrder = .fixed
         button.backgroundColor = .clear
         button.accessibilityLabel = accessibilityLabel
-        button.accessibilityHint = "Shows profile, settings, and account options"
+        button.accessibilityHint = "Shows profile, sessions, settings, and account options"
         context.coordinator.installMenu(on: button)
         return button
     }
@@ -287,6 +303,9 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
             var rows: [UIMenuElement] = [
                 Self.action("Profile", "person.crop.circle") { [parent] in
                     parent.onProfile()
+                },
+                Self.action("Sessions", "play.tv") { [parent] in
+                    parent.onSessions()
                 }
             ]
             if !parent.otherAccounts.isEmpty {
@@ -375,6 +394,9 @@ struct ProfileSheetContainer: View {
                     ProfilePresentation.replace(with: .addUser)
                 })
                 .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+            case .sessions:
+                SessionsView()
+                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .settings:
                 SettingsView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }

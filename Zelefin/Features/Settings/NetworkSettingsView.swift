@@ -1,0 +1,167 @@
+import SwiftUI
+
+struct NetworkSettingsView: View {
+    @Environment(SessionStore.self) private var session
+    @State private var localURLText = ""
+    @State private var manualSSID = ""
+
+    var body: some View {
+        Form {
+            Section {
+                labeledURL("Remote URL", session.session?.serverURL)
+                labeledURL("Active URL", session.activeServerURL)
+            } header: {
+                Text("Current Server")
+            }
+
+            Section {
+                Toggle(isOn: autoSwitchBinding) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Auto-switch when at home")
+                        Text(autoSwitchDescription)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Local Network")
+            }
+
+            Section {
+                TextField("http://192.168.1.100:8096", text: $localURLText)
+                    .textContentType(.URL)
+                    .foregroundStyle(.white)
+                    #if os(iOS)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
+            } header: {
+                Text("Local URL")
+            } footer: {
+                Text("Enter your local server address (e.g., http://192.168.1.100:8096)")
+            }
+
+            #if os(iOS)
+            homeWiFiSection
+            #endif
+
+            Section {
+                LabeledContent("Current WiFi") {
+                    Text(session.currentSSID ?? unavailableWiFi)
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Using") {
+                    Text(session.activeRoute.title)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+
+            AccessGatewaySection()
+        }
+        .zelefinSettingsChrome(title: "Network")
+        .task {
+            localURLText = session.homeNetworkProfile.localURLString
+            await session.requestHomeNetworkAccess()
+        }
+        .onChange(of: localURLText) { _, value in
+            updateProfile { $0.localURLString = value }
+        }
+    }
+
+    #if os(iOS)
+    @ViewBuilder
+    private var homeWiFiSection: some View {
+        Section {
+            if profile.homeSSIDs.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No networks configured")
+                    Text("Add your home WiFi network to enable auto-switching.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(profile.homeSSIDs, id: \.self) { ssid in
+                    Text(ssid)
+                }
+                .onDelete { offsets in
+                    updateProfile { profile in
+                        profile.homeSSIDs.remove(atOffsets: offsets)
+                    }
+                }
+            }
+
+            if let current = session.currentSSID, !HomeNetworkResolver.isHome(current, in: profile.homeSSIDs) {
+                Button {
+                    addSSID(current)
+                } label: {
+                    Text("Add \"\(current)\"")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            } else if session.currentSSID == nil {
+                TextField("Network name", text: $manualSSID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Add Network") {
+                    addSSID(manualSSID)
+                    manualSSID = ""
+                }
+                .disabled(manualSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        } header: {
+            Text("Home WiFi Networks")
+        }
+    }
+    #endif
+
+    private var profile: HomeNetworkProfile { session.homeNetworkProfile }
+
+    private var autoSwitchDescription: String {
+        #if os(tvOS)
+        "Use the local URL while this Apple TV is at home."
+        #else
+        "Automatically switch to local URL when connected to home WiFi."
+        #endif
+    }
+
+    private var unavailableWiFi: String {
+        #if os(tvOS)
+        "Not available on tvOS"
+        #else
+        "Unavailable"
+        #endif
+    }
+
+    private var autoSwitchBinding: Binding<Bool> {
+        Binding(
+            get: { profile.autoSwitch },
+            set: { value in
+                updateProfile { $0.autoSwitch = value }
+            }
+        )
+    }
+
+    private func labeledURL(_ title: String, _ url: URL?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+            Text(url?.absoluteString ?? "—")
+                .foregroundStyle(.secondary)
+                #if os(iOS)
+                .textSelection(.enabled)
+                #endif
+        }
+    }
+
+    private func addSSID(_ name: String) {
+        updateProfile { profile in
+            profile.homeSSIDs = HomeNetworkResolver.adding(name, to: profile.homeSSIDs)
+        }
+    }
+
+    private func updateProfile(_ mutate: (inout HomeNetworkProfile) -> Void) {
+        var next = profile
+        mutate(&next)
+        session.saveHomeNetwork(next)
+    }
+}

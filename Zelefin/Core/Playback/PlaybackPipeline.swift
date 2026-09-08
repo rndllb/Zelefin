@@ -13,7 +13,7 @@ enum PlaybackPreferences {
     static let defaultRateKey = "zelefin.playback.default-rate"
 
     static var useNativeVideoPlayer: Bool {
-        bool(for: useNativeVideoPlayerKey, default: true)
+        bool(for: useNativeVideoPlayerKey, default: false)
     }
 
     static var preferFMP4InHLS: Bool {

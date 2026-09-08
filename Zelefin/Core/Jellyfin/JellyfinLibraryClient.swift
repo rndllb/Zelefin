@@ -57,6 +57,10 @@ final class JellyfinLibraryClient: Sendable {
         artwork.logo(for: item, maxHeight: maxHeight)
     }
 
+    func userAvatarURL(userID: String, tag: String?) -> URL? {
+        artwork.userAvatar(userID: userID, tag: tag)
+    }
+
     /// Every remote image this item can show in the app. Prefetch uses this so thumbs,
     /// backdrops, and logos warm without waiting to be scrolled into view.
     func cacheableArtworkURLs(for item: MediaItem) -> [URL] {
@@ -1202,6 +1206,35 @@ final class JellyfinLibraryClient: Sendable {
         }
 
         return ids
+    }
+
+    /// Sessions Jellyfin still considers active, including idle clients.
+    func playbackSessions(activeWithinSeconds: Int = 960) async throws -> [PlaybackSession] {
+        let result = try await client.send(
+            Paths.getSessions(parameters: .init(activeWithinSeconds: activeWithinSeconds))
+        ).value
+        return PlaybackSession.sorted(result.compactMap(PlaybackSession.init(dto:)))
+    }
+
+    func sendPlaystate(
+        sessionID: String,
+        command: PlaystateCommand,
+        seekPosition: TimeInterval? = nil
+    ) async throws {
+        _ = try await client.send(
+            Paths.sendPlaystateCommand(
+                sessionID: sessionID,
+                command: command.rawValue,
+                seekPositionTicks: seekPosition.map(TickClock.intTicks(from:)),
+                controllingUserID: userID
+            )
+        )
+    }
+
+    func sendSessionCommand(sessionID: String, command: GeneralCommandType) async throws {
+        _ = try await client.send(
+            Paths.sendGeneralCommand(sessionID: sessionID, command: command.rawValue)
+        )
     }
 }
 

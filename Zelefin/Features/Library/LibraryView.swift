@@ -35,7 +35,7 @@ struct LibraryView: View {
                         NavigationLink {
                             CatalogBrowseView(title: "Collections", libraryKind: .collections)
                         } label: {
-                            Label("Collections", systemImage: "square.stack.fill")
+                            Label("Collections", systemImage: "square.grid.2x2.fill")
                         }
                         .zelefinLibraryListRow()
                         NavigationLink {
@@ -102,7 +102,7 @@ struct LibraryView: View {
         case .movies: "film"
         case .shows: "tv"
         case .liveTV: "dot.radiowaves.left.and.right"
-        case .collections: "square.stack.fill"
+        case .collections: "square.grid.2x2.fill"
         default: "rectangle.stack"
         }
     }

@@ -430,3 +430,14 @@ final class SeerrDiscoverTests: XCTestCase {
         XCTAssertEqual(home.trending[0].availability, .pending)
     }
 }
+
+final class SeerrSessionPersistenceTests: XCTestCase {
+    func testRelaunchDoesNotClearSeerr() {
+        XCTAssertFalse(PluginSettings.shouldClearSession(switchingFrom: nil, to: "ada"))
+        XCTAssertFalse(PluginSettings.shouldClearSession(switchingFrom: "ada", to: "ada"))
+    }
+
+    func testSwitchingJellyfinUserClearsSeerr() {
+        XCTAssertTrue(PluginSettings.shouldClearSession(switchingFrom: "ada", to: "bob"))
+    }
+}

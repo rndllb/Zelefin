@@ -2,7 +2,7 @@ import SwiftUI
 
 #if os(iOS)
 struct TabCustomizationView: View {
-    @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = TabViewCustomization()
+    @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
 
     var body: some View {
@@ -27,7 +27,7 @@ struct TabCustomizationView: View {
             Section {
                 Button("Reset Tabs") {
                     tabOrderRaw = AppTab.defaultOrderRaw
-                    tabCustomization = TabViewCustomization()
+                    tabCustomization = AppTab.defaultCustomization()
                 }
             }
         }

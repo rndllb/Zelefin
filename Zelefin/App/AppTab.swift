@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import SwiftUI
+#endif
 
 enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case home
@@ -9,7 +12,9 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     static let orderStorageKey = "zelefin.tab-order"
     static let customizationStorageKey = "zelefin.tab-customization"
+    static let hiddenDefaultsAppliedKey = "zelefin.tab-hidden-defaults-v1"
     static let defaultOrderRaw = "home,movies,shows,collections,library"
+    static let hiddenByDefault: Set<AppTab> = [.collections]
 
     var id: String { rawValue }
 
@@ -28,7 +33,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .home: "house.fill"
         case .movies: "film"
         case .shows: "tv"
-        case .collections: "square.stack.fill"
+        case .collections: "square.grid.2x2.fill"
         case .library: "rectangle.stack.fill"
         }
     }
@@ -59,3 +64,19 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         }.joined(separator: ",")
     }
 }
+
+#if os(iOS)
+extension AppTab {
+    static func defaultCustomization() -> TabViewCustomization {
+        var customization = TabViewCustomization()
+        applyHiddenDefaults(to: &customization)
+        return customization
+    }
+
+    static func applyHiddenDefaults(to customization: inout TabViewCustomization) {
+        for tab in hiddenByDefault where tab.canHide {
+            customization[sidebarVisibility: tab.customizationID] = .hidden
+        }
+    }
+}
+#endif
