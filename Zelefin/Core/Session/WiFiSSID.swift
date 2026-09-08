@@ -1,27 +1,18 @@
 import Foundation
 
-#if os(iOS)
 import CoreLocation
 import NetworkExtension
-#endif
 
 enum WiFiSSID {
     static func current() async -> String? {
-        #if os(iOS)
         await HotspotSSID.fetch()
-        #else
-        nil
-        #endif
     }
 
     static func requestAccess() async {
-        #if os(iOS)
         await LocationSSIDAccess.shared.request()
-        #endif
     }
 }
 
-#if os(iOS)
 @MainActor
 final class LocationSSIDAccess: NSObject, CLLocationManagerDelegate {
     static let shared = LocationSSIDAccess()
@@ -63,4 +54,3 @@ enum HotspotSSID {
         }
     }
 }
-#endif

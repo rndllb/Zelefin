@@ -17,6 +17,7 @@ struct PlaybackSettingsView: View {
                         Text(quality.title).tag(quality.rawValue)
                     }
                 }
+                .tint(Color.accentColor)
             } footer: {
                 Text("Auto keeps Direct Play when the file fits this device. Lower rates ask Jellyfin to transcode.")
             }
@@ -27,11 +28,13 @@ struct PlaybackSettingsView: View {
                         Text(interval.title).tag(interval.rawValue)
                     }
                 }
+                .tint(Color.accentColor)
                 Picker("Skip Forward", selection: $skipForward) {
                     ForEach(PlaybackSkipInterval.allCases) { interval in
                         Text(interval.title).tag(interval.rawValue)
                     }
                 }
+                .tint(Color.accentColor)
             } header: {
                 Text("Controls")
             } footer: {
@@ -40,6 +43,7 @@ struct PlaybackSettingsView: View {
 
             Section {
                 Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
+                    .tint(Color.accentColor)
             } header: {
                 Text("Episodes")
             } footer: {
@@ -52,8 +56,11 @@ struct PlaybackSettingsView: View {
                         Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
                     }
                 }
+                .tint(Color.accentColor)
                 Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
+                    .tint(Color.accentColor)
                 Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
+                    .tint(Color.accentColor)
                     .disabled(!useNativeVideoPlayer)
             } header: {
                 Text("Player")

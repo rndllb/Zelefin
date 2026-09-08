@@ -151,6 +151,53 @@ final class CatalogSnapshotStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
+    func testArtworkKindClassifiesJellyfinImagePaths() {
+        XCTAssertEqual(
+            ArtworkImageKind.classify(path: "/Items/1/Images/Primary"),
+            .poster
+        )
+        XCTAssertEqual(
+            ArtworkImageKind.classify(path: "/Items/1/Images/Thumb"),
+            .poster
+        )
+        XCTAssertEqual(
+            ArtworkImageKind.classify(path: "/Items/1/Images/Backdrop"),
+            .backdrop
+        )
+        XCTAssertEqual(
+            ArtworkImageKind.classify(path: "/Items/1/Images/Logo"),
+            .logo
+        )
+        XCTAssertEqual(
+            ArtworkImageKind.classify(path: "/Users/abc/Images/Primary"),
+            .other
+        )
+    }
+
+    func testArtworkUsageGroupsTaggedFilesAndSkipsMissingMarkers() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ArtworkUsage-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 40).write(to: directory.appendingPathComponent("poster-aa"))
+        try Data(repeating: 1, count: 25).write(to: directory.appendingPathComponent("backdrop-bb"))
+        try Data(repeating: 1, count: 10).write(to: directory.appendingPathComponent("logo-cc"))
+        try Data(repeating: 1, count: 7).write(to: directory.appendingPathComponent("legacyhash"))
+        try Data().write(to: directory.appendingPathComponent("poster-aa.missing"))
+
+        let usage = CacheInventory.artworkUsage(at: directory)
+        XCTAssertEqual(usage.posters.bytes, 40)
+        XCTAssertEqual(usage.backdrops.bytes, 25)
+        XCTAssertEqual(usage.logos.bytes, 10)
+        XCTAssertEqual(usage.other.bytes, 7)
+        XCTAssertEqual(usage.total.fileCount, 4)
+
+        CacheInventory.removeArtwork(.poster, from: directory)
+        let after = CacheInventory.artworkUsage(at: directory)
+        XCTAssertEqual(after.posters.bytes, 0)
+        XCTAssertEqual(after.backdrops.bytes, 25)
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     func testPrefetchKeepsDeclaredOrderWhenCountsTie() {
         XCTAssertEqual(
             PosterPrefetcher.orderedKinds(counts: [

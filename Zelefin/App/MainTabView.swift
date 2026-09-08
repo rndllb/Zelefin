@@ -3,11 +3,9 @@ import UIKit
 
 struct MainTabView: View {
     @Environment(SessionStore.self) private var session
-    #if os(iOS)
     @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
-    #endif
 
     var body: some View {
         tabView
@@ -22,10 +20,8 @@ struct MainTabView: View {
                 }
                 .zelefinSidebarLayout()
             }
-                #if os(iOS)
                 .customizationID(tab.customizationID)
                 .customizationBehavior(tab.canHide ? .automatic : .reorderable, for: .sidebar, .tabBar)
-                #endif
             }
 
             Tab("Search", systemImage: "magnifyingglass", role: .search) {
@@ -34,11 +30,8 @@ struct MainTabView: View {
                 }
                 .zelefinSidebarLayout()
             }
-            #if os(iOS)
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
-            #endif
         }
-        #if os(iOS)
         .tabViewStyle(.sidebarAdaptable)
         .tabViewCustomization($tabCustomization)
         .tabViewSidebarBottomBar {
@@ -50,20 +43,16 @@ struct MainTabView: View {
         }
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .onAppear { applyHiddenTabDefaultsIfNeeded() }
-        #endif
         .background(.clear)
     }
 
-    #if os(iOS)
     private func applyHiddenTabDefaultsIfNeeded() {
         guard !hiddenDefaultsApplied else { return }
         AppTab.applyHiddenDefaults(to: &tabCustomization)
         hiddenDefaultsApplied = true
     }
-    #endif
 
     private var visibleTabs: [AppTab] {
-        #if os(iOS)
         let ordered = AppTab.ordered(from: tabOrderRaw)
         if UIDevice.current.userInterfaceIdiom == .pad {
             return ordered
@@ -71,9 +60,6 @@ struct MainTabView: View {
         return ordered.filter { tab in
             !tab.canHide || tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
         }
-        #else
-        AppTab.allCases.map { $0 }
-        #endif
     }
 
     @ViewBuilder
@@ -169,7 +155,6 @@ struct ProfileMenu: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .overlay {
-                #if os(iOS)
                 ProfileSystemMenuButton(
                     accessibilityLabel: showsName ? displayName : "Profile",
                     otherAccounts: session.otherAccounts,
@@ -182,51 +167,9 @@ struct ProfileMenu: View {
                         Task { await session.switchTo(account) }
                     }
                 )
-                #else
-                tvOSProfileMenu
-                #endif
             }
             .frame(minWidth: 44, minHeight: 44)
     }
-
-    #if os(tvOS)
-    private var tvOSProfileMenu: some View {
-        Menu {
-            Button("Profile", systemImage: "person.crop.circle") {
-                ProfilePresentation.show(.profile)
-            }
-            Button("Sessions", systemImage: "play.tv") {
-                ProfilePresentation.show(.sessions)
-            }
-            if !session.otherAccounts.isEmpty {
-                Menu("Switch User", systemImage: "person.2") {
-                    ForEach(session.otherAccounts) { account in
-                        Button(account.userName) {
-                            Task { await session.switchTo(account) }
-                        }
-                    }
-                }
-            }
-            Button("Add User", systemImage: "person.badge.plus") {
-                ProfilePresentation.show(.addUser)
-            }
-            Button("Settings", systemImage: "gearshape") {
-                ProfilePresentation.show(.settings)
-            }
-            Divider()
-            Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                Task { await session.signOut() }
-            }
-        } label: {
-            Color.clear
-                .contentShape(Rectangle())
-        }
-        .menuIndicator(.hidden)
-        .buttonStyle(.plain)
-        .accessibilityLabel(showsName ? displayName : "Profile")
-        .accessibilityHint("Shows profile, sessions, settings, and account options")
-    }
-    #endif
 
     @ViewBuilder
     private var labelContent: some View {
@@ -252,7 +195,6 @@ struct ProfileMenu: View {
     }
 }
 
-#if os(iOS)
 /// SwiftUI `Menu` over Liquid Glass / toolbar avatars merges every row into one
 /// control. A UIKit `UIMenu` is the same popover as the `…` buttons, with real
 /// per-row actions.
@@ -380,7 +322,6 @@ private final class ProfileMenuHitButton: UIButton {
         CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
     }
 }
-#endif
 
 struct ProfileSheetContainer: View {
     let destination: ProfileSheet
@@ -390,10 +331,8 @@ struct ProfileSheetContainer: View {
         NavigationStack {
             switch destination {
             case .profile:
-                ProfileView(onAddUser: {
-                    ProfilePresentation.replace(with: .addUser)
-                })
-                .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                ProfileView()
+                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .sessions:
                 SessionsView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
@@ -409,16 +348,11 @@ struct ProfileSheetContainer: View {
 }
 
 private extension View {
-    @ViewBuilder
     func profileSheetToolbar(_ title: String, action: @escaping () -> Void) -> some View {
-        #if os(iOS)
-        self.toolbar {
-            ToolbarItem(placement: title == "Cancel" ? .cancellationAction : .confirmationAction) {
+        toolbar {
+            ToolbarItem(placement: title == "Cancel" || title == "Close" ? .cancellationAction : .confirmationAction) {
                 Button(title, action: action)
             }
         }
-        #else
-        self
-        #endif
     }
 }

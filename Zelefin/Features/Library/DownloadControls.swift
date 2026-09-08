@@ -35,19 +35,11 @@ struct DownloadCoverBadge: View {
     }
 
     private var markSize: CGFloat {
-        #if os(tvOS)
-        28
-        #else
         22
-        #endif
     }
 
     private var markPadding: CGFloat {
-        #if os(tvOS)
-        10
-        #else
         8
-        #endif
     }
 }
 
@@ -235,9 +227,7 @@ struct DetailDownloadSharePill: View {
             serverURL: serverURL,
             serverName: session.serverName ?? session.session?.serverName
         )
-        #if os(iOS)
         TitleSharePresenter.present(payload)
-        #endif
     }
 
     private func run() async {

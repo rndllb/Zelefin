@@ -3,7 +3,6 @@ options:
   bundleIdPrefix: app.zelefin
   deploymentTarget:
     iOS: "18.0"
-    tvOS: "18.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
   groupSortPosition: top
@@ -32,7 +31,7 @@ targets:
   Zelefin:
     type: application
     platform: iOS
-    supportedDestinations: [iOS, tvOS]
+    supportedDestinations: [iOS]
     sources:
       - path: Zelefin
         excludes:
@@ -47,7 +46,7 @@ targets:
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home."
         INFOPLIST_KEY_UIBackgroundModes: audio
         ENABLE_PREVIEWS: YES
-        TARGETED_DEVICE_FAMILY: "1,2,3"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Zelefin/Zelefin.entitlements

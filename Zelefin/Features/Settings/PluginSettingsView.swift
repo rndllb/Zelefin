@@ -23,7 +23,9 @@ struct PluginSettingsView: View {
                         .foregroundStyle(session.introSkipperAvailable ? .green : .secondary)
                 }
                 Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
+                    .tint(Color.accentColor)
                 Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
+                    .tint(Color.accentColor)
             } header: {
                 Text("Intro Skipper")
             } footer: {
@@ -47,18 +49,13 @@ struct PluginSettingsView: View {
                 } else {
                     TextField("https://seerr.example.com", text: $seerrURL)
                         .textContentType(.URL)
-                        .foregroundStyle(.white)
-                        #if os(iOS)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        #endif
                     TextField("Username or email", text: $seerrUsername)
                         .textContentType(.username)
-                        #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        #endif
                     SecureField("Password", text: $seerrPassword)
                         .textContentType(.password)
                     Button {

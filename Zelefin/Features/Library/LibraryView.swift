@@ -2,15 +2,11 @@ import SwiftUI
 
 struct LibraryView: View {
     @Environment(SessionStore.self) private var session
-    #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
-    #endif
     @State private var libraries: [MediaLibrary] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    #if os(iOS)
     @State private var headerVisible = true
-    #endif
 
     var body: some View {
         Group {
@@ -60,16 +56,13 @@ struct LibraryView: View {
                     }
                 }
                 .listStyle(.plain)
-                #if os(iOS)
                 .scrollContentBackground(.hidden)
                 .zelefinScrollEdgeBlur()
                 .contentMargins(.top, RootPageChrome.showsTitle ? RootPageChrome.headerRowHeight : 0, for: .scrollContent)
                 .zelefinHeaderScrollVisibility($headerVisible)
-                #endif
             }
         }
         .background(Color.black.ignoresSafeArea())
-        #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
             FloatingPageHeader(
@@ -79,9 +72,6 @@ struct LibraryView: View {
             )
         }
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
-        #else
-        .navigationTitle("Library")
-        #endif
         .task {
             if !session.libraries.isEmpty {
                 libraries = HomeLayoutPreferences.libraryTabLibraries(session.libraries)
@@ -207,19 +197,15 @@ struct LibraryGenresView: View {
                     }
                 }
                 .listStyle(.plain)
-                #if os(iOS)
                 .scrollContentBackground(.hidden)
-                #endif
             }
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle("Genres")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
         .task { await load() }
     }
 
@@ -287,10 +273,8 @@ struct LibraryItemsView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(library.name)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
         .catalogFilterSortToolbar(
             filterCount: query.activeFilterCount,
             sortTitle: query.sort.title,

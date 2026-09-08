@@ -114,6 +114,12 @@
 		F6DFD4C279DCAC02BE9BD43A /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4E2B90C9DECA3639523A79 /* MainTabView.swift */; };
 		FAEA902B02CC3EE0FCB3A9FC /* AccessGateway.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7940008AB391DA5EF5BF3770 /* AccessGateway.swift */; };
 		FE36F7202864E73A476E7E49 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367E0E143CAAF64A02812E01 /* LibraryView.swift */; };
+		B1C4F010A11E4001C0100002 /* CacheInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C4F010A11E4001C0100001 /* CacheInventory.swift */; };
+		B1C4F010A11E4001C0100004 /* CachePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C4F010A11E4001C0100003 /* CachePreferences.swift */; };
+		B1C4F010A11E4001C0100006 /* JellyfinUserAdminClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C4F010A11E4001C0100005 /* JellyfinUserAdminClient.swift */; };
+		B1C4F010A11E4001C0100008 /* UserManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C4F010A11E4001C0100007 /* UserManagementView.swift */; };
+		B1C4F010A11E4001C010000A /* CacheSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C4F010A11E4001C0100009 /* CacheSettingsView.swift */; };
+		B1C4F010A11E4001C010000C /* UserAdminTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C4F010A11E4001C010000B /* UserAdminTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -170,7 +176,7 @@
 		6793B2714E2FA4DBFD1DA6D0 /* ArtworkURLBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkURLBuilder.swift; sourceTree = "<group>"; };
 		68E3620DFE3228BDC6BBAC59 /* HomeSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSnapshotStore.swift; sourceTree = "<group>"; };
 		6A049A2A3C763D6DBCCD33AF /* JellyfinTmdbCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinTmdbCatalog.swift; sourceTree = "<group>"; };
-		701A570AFFC8E6919725D4E9 /* ZelefinTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ZelefinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		701A570AFFC8E6919725D4E9 /* ZelefinTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZelefinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		70570648810229F4C3D58AD9 /* ServerURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerURLTests.swift; sourceTree = "<group>"; };
 		718BE9CE0F1DAEE939B194EB /* JellyfinItemCollections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinItemCollections.swift; sourceTree = "<group>"; };
 		72D701163F71B1CB95716F54 /* AppTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTab.swift; sourceTree = "<group>"; };
@@ -236,6 +242,12 @@
 		F5C8D11A0C0B8C7F7BF47E5C /* DownloadTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadTransfer.swift; sourceTree = "<group>"; };
 		FA790EDE34C897EBDDCBF6A8 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		FA94D8320FAEB7BA7DB72AC0 /* ServerReachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerReachability.swift; sourceTree = "<group>"; };
+		B1C4F010A11E4001C0100001 /* CacheInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheInventory.swift; sourceTree = "<group>"; };
+		B1C4F010A11E4001C0100003 /* CachePreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachePreferences.swift; sourceTree = "<group>"; };
+		B1C4F010A11E4001C0100005 /* JellyfinUserAdminClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinUserAdminClient.swift; sourceTree = "<group>"; };
+		B1C4F010A11E4001C0100007 /* UserManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserManagementView.swift; sourceTree = "<group>"; };
+		B1C4F010A11E4001C0100009 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
+		B1C4F010A11E4001C010000B /* UserAdminTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAdminTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -299,6 +311,8 @@
 		39AD6DC3C5465AAA16A39BE1 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				B1C4F010A11E4001C0100009 /* CacheSettingsView.swift */,
+				B1C4F010A11E4001C0100007 /* UserManagementView.swift */,
 				5BF1D880FC511E84A138A487 /* AccessGatewaySection.swift */,
 				1ED05B4032CD2584D621FC60 /* PlaybackSettingsView.swift */,
 				B1C4F006A11E4001C0060001 /* PluginSettingsView.swift */,
@@ -324,6 +338,7 @@
 		52B4D05728B8AC7DFBC60D08 /* ZelefinTests */ = {
 			isa = PBXGroup;
 			children = (
+				B1C4F010A11E4001C010000B /* UserAdminTests.swift */,
 				1D5715C9C8329E2D253C199A /* CacheTests.swift */,
 				B1C4F001A11E4001C0010005 /* CatalogBrowseQueryTests.swift */,
 				9A077A0AE130EDEAD8D9D02A /* DownloadStoreTests.swift */,
@@ -352,6 +367,7 @@
 				B1C4F001A11E4001C0010001 /* CatalogBrowseQuery.swift */,
 				A4A9F260D3001AF2186355ED /* ItemMapper.swift */,
 				718BE9CE0F1DAEE939B194EB /* JellyfinItemCollections.swift */,
+				B1C4F010A11E4001C0100005 /* JellyfinUserAdminClient.swift */,
 				3D7753376297B77BE467E0F6 /* JellyfinLibraryClient.swift */,
 				F43F0D65A6D583984F8331A9 /* JellyfinNetworking.swift */,
 				44DDFC92F1C681332F066FCD /* JellyfinServerCapabilities.swift */,
@@ -514,6 +530,8 @@
 		EAE6369FF414AF120C05446C /* Session */ = {
 			isa = PBXGroup;
 			children = (
+				B1C4F010A11E4001C0100001 /* CacheInventory.swift */,
+				B1C4F010A11E4001C0100003 /* CachePreferences.swift */,
 				47D8AB5759D7649C01476168 /* ArtworkCache.swift */,
 				3E02F2F27D62E7BEC36C8902 /* CatalogSnapshotStore.swift */,
 				B1C4F003A11E4001C0030005 /* DeepLinkStore.swift */,
@@ -660,7 +678,12 @@
 				59278DC5A4B724C1B9712DAD /* AccessGatewaySection.swift in Sources */,
 				323A0B8BCBB2EC06BF99EA7C /* AppTab.swift in Sources */,
 				2F0C24304F71488EAABFE598 /* AppleTVChrome.swift in Sources */,
-				5B5D9F463FB3E09EE5E9A695 /* ArtworkCache.swift in Sources */,
+								B1C4F010A11E4001C0100002 /* CacheInventory.swift in Sources */,
+				B1C4F010A11E4001C0100004 /* CachePreferences.swift in Sources */,
+				B1C4F010A11E4001C0100006 /* JellyfinUserAdminClient.swift in Sources */,
+				B1C4F010A11E4001C0100008 /* UserManagementView.swift in Sources */,
+				B1C4F010A11E4001C010000A /* CacheSettingsView.swift in Sources */,
+5B5D9F463FB3E09EE5E9A695 /* ArtworkCache.swift in Sources */,
 				DB541D3D8049970601FC31CE /* ArtworkURLBuilder.swift in Sources */,
 				2B35899C2515671294D3F0F0 /* CatalogBrowseView.swift in Sources */,
 				B1C4F001A11E4001C0010002 /* CatalogBrowseQuery.swift in Sources */,
@@ -748,7 +771,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5C260C643C1EB87FC04E8EB5 /* CacheTests.swift in Sources */,
+								B1C4F010A11E4001C010000C /* UserAdminTests.swift in Sources */,
+5C260C643C1EB87FC04E8EB5 /* CacheTests.swift in Sources */,
 				B1C4F001A11E4001C0010006 /* CatalogBrowseQueryTests.swift in Sources */,
 				4E9B7CD92136DF4B59B95F92 /* DownloadStoreTests.swift in Sources */,
 				87AC8BBF623640763A06A4D7 /* EpisodeCarouselTests.swift in Sources */,
@@ -800,11 +824,11 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.zelefin.client;
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
-				TARGETED_DEVICE_FAMILY = "1,2,3";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -907,7 +931,6 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
-				TVOS_DEPLOYMENT_TARGET = 18.0;
 			};
 			name = Release;
 		};
@@ -933,11 +956,11 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.zelefin.client;
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
-				TARGETED_DEVICE_FAMILY = "1,2,3";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -1011,7 +1034,6 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
-				TVOS_DEPLOYMENT_TARGET = 18.0;
 			};
 			name = Debug;
 		};

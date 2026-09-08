@@ -2,10 +2,8 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(SessionStore.self) private var session
-    #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @State private var headerVisible = true
-    #endif
 
     var body: some View {
         GeometryReader { geo in
@@ -50,32 +48,19 @@ struct HomeView: View {
                         .refreshable { await session.refreshHome() }
                         .scrollClipDisabled()
                         .zelefinScrollEdgeBlur()
-                        #if os(iOS)
                         .zelefinHeaderScrollVisibility($headerVisible)
-                        #endif
                     }
                 }
 
-                #if os(iOS)
                 FloatingPageHeader(title: "Home", isVisible: RootPageChrome.showsTitle ? headerVisible : true)
                     .padding(.top, ScreenInsets.top)
                     .transition(.opacity)
-                #endif
             }
         }
         .background(Color.black.ignoresSafeArea())
-        #if os(iOS)
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
-        #else
-        .navigationTitle("Home")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                ProfileMenu()
-            }
-        }
-        #endif
     }
 }
 
@@ -197,22 +182,6 @@ struct MediaRow: View {
                 .padding(.bottom, 2)
             }
         }
-        #if os(tvOS)
-        .contextMenu {
-            if let context {
-                PlaybackQueueMenuContent(
-                    item: item,
-                    context: context,
-                    onPlay: { play(item) },
-                    onDownload: { Task { await requestDownload(item) } },
-                    onMarkWatched: { Task { await toggleWatched(item) } },
-                    onRemoveFromRecentlyWatched: context == .recentlyWatched
-                        ? { Task { await hideFromRecentlyWatched(item) } }
-                        : nil
-                )
-            }
-        }
-        #endif
     }
 
     @ViewBuilder
@@ -254,50 +223,6 @@ struct MediaRow: View {
         playingItem = item
     }
 
-    #if os(tvOS)
-    private func toggleWatched(_ item: MediaItem) async {
-        do {
-            if item.isWatched {
-                try await session.markUnwatched(item)
-            } else {
-                try await session.markWatched(item)
-            }
-        } catch {
-            playbackError = error.localizedDescription
-        }
-    }
-
-    private func requestDownload(_ item: MediaItem) async {
-        switch downloads.control(for: item, account: session.session) {
-        case .unavailable:
-            return
-        case .downloading:
-            downloads.cancelTransfer(for: item, account: session.session)
-        case .downloaded:
-            removalItem = item
-            removalPrompt = .make(item: item)
-        case .idle:
-            await startDownload(item)
-        }
-    }
-
-    private func startDownload(_ item: MediaItem) async {
-        do {
-            try await downloads.toggle(item: item, library: session.library, account: session.session)
-        } catch {
-            guard !DownloadFailure.isCancellation(error) else { return }
-            playbackError = error.localizedDescription
-        }
-    }
-
-    private func hideFromRecentlyWatched(_ item: MediaItem) async {
-        do {
-            try await session.hideFromRecentlyWatched(item)
-        } catch {
-            playbackError = error.localizedDescription
-        }
-    }
-    #endif
 }
 
 struct SectionGridView: View {
@@ -332,13 +257,11 @@ struct SectionGridView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(section.title)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
     }
 }
 
@@ -414,13 +337,11 @@ struct ContinueWatchingListView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(title)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
         .fullScreenCover(item: $playingItem) { item in
             PlayerView(item: item)
         }
@@ -526,9 +447,7 @@ struct CatalogCardGridView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(section.title)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
     }
 }
 
@@ -596,13 +515,11 @@ struct CatalogGridView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(title)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
         .catalogFilterSortToolbar(
             filterCount: browseQuery.activeFilterCount,
             sortTitle: browseQuery.sort.title,

@@ -72,9 +72,7 @@ struct DownloadedItemsView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle("Downloaded")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
         .downloadRemovalConfirmation($removalPrompt) {
             if let pendingRemoval {
                 downloads.remove(row: pendingRemoval, account: session.session)

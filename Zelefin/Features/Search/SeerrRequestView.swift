@@ -71,18 +71,14 @@ struct SeerrRequestView: View {
                 }
             }
         }
-        #if os(iOS)
         .scrollContentBackground(.hidden)
-        #endif
         .background(Color.black)
         .preferredColorScheme(.dark)
         .navigationTitle("Request")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }

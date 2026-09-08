@@ -1,7 +1,5 @@
 import Foundation
-#if os(iOS)
 import UIKit
-#endif
 
 struct TitleShare: Hashable, Identifiable, Sendable {
     let itemID: String
@@ -176,7 +174,6 @@ struct TitleShare: Hashable, Identifiable, Sendable {
     }
 }
 
-#if os(iOS)
 enum TitleSharePresenter {
     @MainActor
     static func present(_ share: TitleShare) {
@@ -203,4 +200,3 @@ enum TitleSharePresenter {
         return controller
     }
 }
-#endif

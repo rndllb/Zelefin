@@ -23,6 +23,7 @@ struct NetworkSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .tint(Color.accentColor)
             } header: {
                 Text("Local Network")
             }
@@ -30,21 +31,16 @@ struct NetworkSettingsView: View {
             Section {
                 TextField("http://192.168.1.100:8096", text: $localURLText)
                     .textContentType(.URL)
-                    .foregroundStyle(.white)
-                    #if os(iOS)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    #endif
             } header: {
                 Text("Local URL")
             } footer: {
                 Text("Enter your local server address (e.g., http://192.168.1.100:8096)")
             }
 
-            #if os(iOS)
             homeWiFiSection
-            #endif
 
             Section {
                 LabeledContent("Current WiFi") {
@@ -69,7 +65,6 @@ struct NetworkSettingsView: View {
         }
     }
 
-    #if os(iOS)
     @ViewBuilder
     private var homeWiFiSection: some View {
         Section {
@@ -113,24 +108,15 @@ struct NetworkSettingsView: View {
             Text("Home WiFi Networks")
         }
     }
-    #endif
 
     private var profile: HomeNetworkProfile { session.homeNetworkProfile }
 
     private var autoSwitchDescription: String {
-        #if os(tvOS)
-        "Use the local URL while this Apple TV is at home."
-        #else
         "Automatically switch to local URL when connected to home WiFi."
-        #endif
     }
 
     private var unavailableWiFi: String {
-        #if os(tvOS)
-        "Not available on tvOS"
-        #else
         "Unavailable"
-        #endif
     }
 
     private var autoSwitchBinding: Binding<Bool> {
@@ -147,9 +133,7 @@ struct NetworkSettingsView: View {
             Text(title)
             Text(url?.absoluteString ?? "—")
                 .foregroundStyle(.secondary)
-                #if os(iOS)
                 .textSelection(.enabled)
-                #endif
         }
     }
 

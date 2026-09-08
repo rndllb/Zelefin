@@ -24,11 +24,7 @@ enum HomeNetworkRoute: String, Equatable, Sendable {
 
 enum HomeNetworkCapabilities {
     static var canMatchSSID: Bool {
-        #if os(iOS)
         true
-        #else
-        false
-        #endif
     }
 }
 

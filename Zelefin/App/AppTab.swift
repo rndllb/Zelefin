@@ -1,7 +1,5 @@
 import Foundation
-#if os(iOS)
 import SwiftUI
-#endif
 
 enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case home
@@ -65,7 +63,6 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 }
 
-#if os(iOS)
 extension AppTab {
     static func defaultCustomization() -> TabViewCustomization {
         var customization = TabViewCustomization()
@@ -79,4 +76,3 @@ extension AppTab {
         }
     }
 }
-#endif

@@ -2,9 +2,7 @@ import SwiftUI
 
 struct CatalogBrowseView: View {
     @Environment(SessionStore.self) private var session
-    #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
-    #endif
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: String
     let libraryKind: LibraryKind
@@ -16,9 +14,7 @@ struct CatalogBrowseView: View {
     @State private var showFilters = false
     @State private var showSort = false
     @State private var indexProgress: CatalogIndexProgress?
-    #if os(iOS)
     @State private var headerVisible = true
-    #endif
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -46,9 +42,7 @@ struct CatalogBrowseView: View {
 
     private var gridTopPadding: CGFloat {
         if RootPageChrome.showsTitle { return RootPageChrome.headerRowHeight }
-        #if os(iOS)
         if tabBarPlacement == .sidebar { return RootPageChrome.headerRowHeight }
-        #endif
         return 0
     }
 
@@ -89,14 +83,11 @@ struct CatalogBrowseView: View {
                     .padding(.top, gridTopPadding)
                 }
                 .zelefinScrollEdgeBlur()
-                #if os(iOS)
                 .zelefinHeaderScrollVisibility($headerVisible)
-                #endif
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
-        #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
             FloatingPageHeader(
@@ -113,15 +104,6 @@ struct CatalogBrowseView: View {
             }
         }
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
-        #else
-        .navigationTitle(title)
-        .catalogFilterSortToolbar(
-            filterCount: query.activeFilterCount,
-            sortTitle: query.sort.title,
-            showFilters: $showFilters,
-            showSort: $showSort
-        )
-        #endif
         .catalogFilterSheets(
             query: $query,
             options: options,

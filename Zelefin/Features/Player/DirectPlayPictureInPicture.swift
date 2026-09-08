@@ -1,4 +1,3 @@
-#if os(iOS) || os(tvOS)
 import AVKit
 import CoreMedia
 
@@ -15,11 +14,7 @@ final class DirectPlayPictureInPicture: NSObject, @preconcurrency AVPictureInPic
     var onActiveChange: ((Bool) -> Void)?
 
     var isSupported: Bool {
-        #if os(tvOS)
-        false
-        #else
         AVPictureInPictureController.isPictureInPictureSupported()
-        #endif
     }
 
     var isActive: Bool {
@@ -58,9 +53,7 @@ final class DirectPlayPictureInPicture: NSObject, @preconcurrency AVPictureInPic
         )
         let created = AVPictureInPictureController(contentSource: contentSource)
         created.delegate = self
-        #if os(iOS)
         created.canStartPictureInPictureAutomaticallyFromInline = true
-        #endif
         observePossible(created)
         attachedLayer = source.layer
         controller = created
@@ -185,4 +178,3 @@ final class DirectPlayPictureInPicture: NSObject, @preconcurrency AVPictureInPic
         }
     }
 }
-#endif

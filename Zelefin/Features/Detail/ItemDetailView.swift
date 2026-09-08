@@ -1,7 +1,5 @@
 import SwiftUI
-#if os(iOS)
 import SafariServices
-#endif
 
 struct ItemDetailView: View {
     @Environment(SessionStore.self) private var session
@@ -25,9 +23,7 @@ struct ItemDetailView: View {
     @State private var hasLoadedDetail = false
     @State private var isOverviewExpanded = false
     @State private var playingItem: MediaItem?
-    #if os(iOS)
     @State private var playingWebTrailer: TitleTrailer?
-    #endif
     @State private var errorMessage: String?
     @State private var downloadRemovalPrompt: DownloadRemovalPrompt?
     @State private var downloadRemovalItem: MediaItem?
@@ -100,7 +96,6 @@ struct ItemDetailView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        #if os(iOS)
         .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
@@ -116,21 +111,18 @@ struct ItemDetailView: View {
             .catalogToolbarHidesSystemBackground()
         }
         .tint(.white)
-        #endif
         .task { await load() }
         .fullScreenCover(item: $playingItem, onDismiss: {
             Task { await refreshPlaybackProgress() }
         }) { item in
             PlayerView(item: item)
         }
-        #if os(iOS)
         .fullScreenCover(item: $playingWebTrailer) { trailer in
             if let url = trailer.externalWatchURL {
                 TrailerSafariView(url: url)
                     .ignoresSafeArea()
             }
         }
-        #endif
         .alert("Playback", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -227,10 +219,10 @@ struct ItemDetailView: View {
         Button {
             play(item, allowRelatedDownload: allowRelatedDownload)
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: PlayButtonLayout.spacing) {
                 Image(systemName: "play.fill")
-                    .font(.body.weight(.bold))
-                    .frame(width: 10)
+                    .font(PlayButtonLayout.iconFont)
+                    .frame(width: PlayButtonLayout.iconWidth)
 
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -239,22 +231,39 @@ struct ItemDetailView: View {
                         .fill(Color.black.opacity(0.82))
                         .scaleEffect(x: item.progress, y: 1, anchor: .leading)
                 }
-                .frame(width: 55, height: 7)
+                .frame(width: PlayButtonLayout.progressWidth, height: PlayButtonLayout.progressHeight)
 
-                Text(item.playActionDurationLabel ?? "Play")
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .fixedSize()
+                playButtonLabel(for: item)
             }
             .foregroundStyle(.black)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, PlayButtonLayout.horizontalPadding)
             .frame(width: 175, height: 45)
             .background(Color.white, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(item.playbackPosition > 5 ? "Resume" : "Play")
         .accessibilityValue(item.playActionDurationLabel ?? "")
+    }
+
+    @ViewBuilder
+    private func playButtonLabel(for item: MediaItem) -> some View {
+        Text(item.playActionDurationLabel ?? "Play")
+            .font(PlayButtonLayout.labelFont)
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    private enum PlayButtonLayout {
+        static let spacing: CGFloat = 8
+        static let iconFont: Font = .body.weight(.bold)
+        static let iconWidth: CGFloat = 10
+        static let progressWidth: CGFloat = 55
+        static let progressHeight: CGFloat = 7
+        static let labelFont: Font = .subheadline.weight(.semibold)
+        static let horizontalPadding: CGFloat = 12
+        static let minWidth: CGFloat = 175
+        static let height: CGFloat = 45
     }
 
     private func technicalSpecsRow(for item: MediaItem) -> some View {
@@ -453,17 +462,6 @@ struct ItemDetailView: View {
                             .padding(.trailing, 2)
                             .padding(.bottom, 2)
                         }
-                        #if os(tvOS)
-                        .contextMenu {
-                            PlaybackQueueMenuContent(
-                                item: card.episode,
-                                context: .episode,
-                                onPlay: { play(card.episode) },
-                                onDownload: { Task { await toggleEpisodeDownload(card.episode) } },
-                                onMarkWatched: { Task { await toggleEpisodeWatched(card.episode) } }
-                            )
-                        }
-                        #endif
                         .frame(
                             width: PosterMetrics.episodeCardSize.width * sidebarLayout.scale,
                             height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale
@@ -623,13 +621,7 @@ struct ItemDetailView: View {
             play(local)
             return
         }
-        #if os(iOS)
         playingWebTrailer = trailer
-        #else
-        if let url = trailer.externalWatchURL {
-            openURL(url)
-        }
-        #endif
     }
 
     private func load() async {
@@ -827,43 +819,6 @@ struct ItemDetailView: View {
         playingItem = item
     }
 
-    #if os(tvOS)
-    private func toggleEpisodeDownload(_ episode: MediaItem) async {
-        switch downloads.control(for: episode, account: session.session) {
-        case .unavailable:
-            return
-        case .downloading:
-            downloads.cancelTransfer(for: episode, account: session.session)
-        case .downloaded:
-            downloadRemovalItem = episode
-            downloadRemovalPrompt = .make(item: episode)
-        case .idle:
-            do {
-                try await downloads.toggle(
-                    item: episode,
-                    library: session.library,
-                    account: session.session
-                )
-            } catch {
-                guard !DownloadFailure.isCancellation(error) else { return }
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func toggleEpisodeWatched(_ episode: MediaItem) async {
-        do {
-            if episode.isWatched {
-                try await session.markUnwatched(episode)
-            } else {
-                try await session.markWatched(episode)
-            }
-            await refreshPlaybackProgress()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-    #endif
 }
 
 extension PlaybackPlan: Identifiable {
@@ -895,14 +850,12 @@ private struct TrailerListView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle("Trailers")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
     }
 }
 
@@ -946,17 +899,14 @@ private struct CastCrewListView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle("Cast & Crew")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
     }
 }
 
-#if os(iOS)
 private struct TrailerSafariView: UIViewControllerRepresentable {
     let url: URL
 
@@ -972,4 +922,3 @@ private struct TrailerSafariView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
-#endif

@@ -24,11 +24,7 @@ final class PlayerModel {
     private(set) var pictureSize: CGSize = .zero
     private(set) var canUsePictureInPicture = false
     var isPictureInPictureActive: Bool {
-        #if os(iOS) || os(tvOS)
         pictureInPicture.isActive || nativePictureInPictureActive
-        #else
-        false
-        #endif
     }
     private(set) var fillsScreen = false
     private(set) var showsPlaybackStats = false
@@ -60,9 +56,7 @@ final class PlayerModel {
     private var stopWhenPictureInPictureEnds = false
     /// Bumped after background return so SwiftUI detaches and reattaches the layer.
     private(set) var surfaceGeneration = 0
-    #if os(iOS) || os(tvOS)
     private let pictureInPicture = DirectPlayPictureInPicture()
-    #endif
 
     init(plan: PlaybackPlan, reporter: PlaybackReporter?) {
         self.plan = plan
@@ -164,10 +158,8 @@ final class PlayerModel {
     }
 
     func syncPictureInPicture() {
-        #if os(iOS) || os(tvOS)
         pictureInPicture.syncController()
         canUsePictureInPicture = pictureInPicture.canStart
-        #endif
     }
 
     /// Aether drops video packets while backgrounded and does not reattach a
@@ -175,9 +167,7 @@ final class PlayerModel {
     /// SwiftUI to bind a fresh surface.
     func restoreAfterForeground() async {
         guard didStart, !isRestoringForeground else { return }
-        #if os(iOS) || os(tvOS)
         if isPictureInPictureActive { return }
-        #endif
         isRestoringForeground = true
         defer { isRestoringForeground = false }
 
@@ -390,9 +380,7 @@ final class PlayerModel {
     }
 
     func togglePictureInPicture() {
-        #if os(iOS) || os(tvOS)
         pictureInPicture.toggle()
-        #endif
     }
 
     func toggleFillScreen() {
@@ -919,7 +907,6 @@ final class PlayerModel {
     }
 
     private func attachPictureInPicture(_ source: DirectPlayPiPSource?) {
-        #if os(iOS) || os(tvOS)
         pictureInPicture.onPossibleChange = { [weak self] possible in
             self?.canUsePictureInPicture = possible
         }
@@ -928,9 +915,6 @@ final class PlayerModel {
         }
         pictureInPicture.attach(source: source, engine: engine)
         canUsePictureInPicture = pictureInPicture.canStart
-        #else
-        canUsePictureInPicture = false
-        #endif
     }
 
     private func handlePictureInPictureActiveChange(_ active: Bool) {
@@ -967,13 +951,9 @@ final class PlayerModel {
     }
 
     private func configureAudioSession() {
-        #if os(tvOS)
-        return
-        #else
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .moviePlayback)
         try? session.setActive(true)
-        #endif
     }
 }
 

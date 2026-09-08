@@ -15,7 +15,6 @@ struct SessionsView: View {
         Group {
             if isLoading && sessions.isEmpty {
                 ProgressView()
-                    .tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if sessions.isEmpty {
                 ContentUnavailableView(
@@ -55,9 +54,7 @@ struct SessionsView: View {
                         }
                     }
                 }
-                #if os(iOS)
                 .listStyle(.insetGrouped)
-                #endif
                 .refreshable { await load(showProgress: false) }
             }
         }
@@ -253,9 +250,7 @@ struct SessionDetailView: View {
                         }
                     }
                 }
-                #if os(iOS)
                 .listStyle(.insetGrouped)
-                #endif
             } else if errorMessage != nil {
                 ContentUnavailableView(
                     "Session Unavailable",

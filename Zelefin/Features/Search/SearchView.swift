@@ -1,24 +1,16 @@
 import SwiftUI
-#if os(iOS)
 import UIKit
-#endif
 
 struct SearchView: View {
     @State private var term = ""
     @State private var scope: SearchScope = .library
     @FocusState private var searchFieldFocused: Bool
     @State private var searchChromeHeight: CGFloat = 68
-    #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @State private var headerVisible = true
-    #endif
 
     private var usesPadTopChrome: Bool {
-        #if os(iOS)
         UIDevice.current.userInterfaceIdiom == .pad
-        #else
-        false
-        #endif
     }
 
     private var isSearchSessionActive: Bool {
@@ -27,11 +19,7 @@ struct SearchView: View {
     }
 
     private var isSidebarVisible: Bool {
-        #if os(iOS)
         tabBarPlacement == .sidebar
-        #else
-        false
-        #endif
     }
 
     private var searchChromeTopInset: CGFloat {
@@ -47,7 +35,6 @@ struct SearchView: View {
     }
 
     var body: some View {
-        #if os(iOS)
         ZStack(alignment: .top) {
             SearchPage(
                 term: $term,
@@ -91,35 +78,20 @@ struct SearchView: View {
                 dismissSearchKeyboard()
             }
         }
-        #else
-        VStack(spacing: 12) {
-            SearchScopeBar(scope: $scope)
-                .padding(.horizontal, 16)
-            SearchPage(term: $term, isSearchPresented: !term.isEmpty, scope: scope, reservedHeaderHeight: 0)
-        }
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle("Search")
-            .searchable(text: $term, prompt: scope.searchPrompt)
-        #endif
     }
 
     private func endSearch() {
         term = ""
-        #if os(iOS)
         headerVisible = true
-        #endif
         dismissSearchKeyboard()
     }
 
     private func dismissSearchKeyboard() {
         searchFieldFocused = false
-        #if os(iOS)
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        #endif
     }
 }
 
-#if os(iOS)
 private struct SearchTabChrome: View {
     @Binding var term: String
     @Binding var scope: SearchScope
@@ -237,7 +209,6 @@ private struct SearchTabChrome: View {
         .animation(ZelefinMotion.sidebarChrome, value: showsProfile)
     }
 }
-#endif
 
 private struct SearchScopeBar: View {
     @Binding var scope: SearchScope
@@ -326,7 +297,6 @@ enum SearchGenreGrid {
     /// Window orientation, not content width — opening the sidebar must not flip 7 columns to 5.
     @MainActor
     static func isWindowPortrait() -> Bool? {
-        #if os(iOS)
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
         switch scene?.interfaceOrientation {
@@ -337,9 +307,6 @@ enum SearchGenreGrid {
         default:
             return nil
         }
-        #else
-        return nil
-        #endif
     }
 }
 
@@ -440,7 +407,6 @@ private struct SearchPage: View {
                 .padding(.bottom, 32)
             }
         }
-        #if os(iOS)
         .scrollDismissesKeyboard(.immediately)
         .zelefinScrollEdgeBlur()
         .onScrollGeometryChange(for: CGFloat.self, of: { geometry in
@@ -471,7 +437,6 @@ private struct SearchPage: View {
         .simultaneousGesture(
             TapGesture().onEnded { onDismissKeyboard?() }
         )
-        #endif
         .task {
             await loadGenres()
         }

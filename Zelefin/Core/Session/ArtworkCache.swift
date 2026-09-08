@@ -76,7 +76,9 @@ final class ArtworkCache: @unchecked Sendable {
             return image
         }
 
-        if persist, hasMissingMarker(for: url) { return nil }
+        if persist, hasMissingMarker(for: url), !CachePreferences.autoRefreshMissingImages {
+            return nil
+        }
 
         let diskReady = persist && hasCachedData(for: url)
         return await withTaskGroup(of: (Bool, UIImage?).self) { group in
@@ -126,7 +128,23 @@ final class ArtworkCache: @unchecked Sendable {
     }
 
     func isSettled(for url: URL) -> Bool {
-        hasCachedData(for: url) || hasMissingMarker(for: url)
+        if hasCachedData(for: url) { return true }
+        if CachePreferences.autoRefreshMissingImages { return false }
+        return hasMissingMarker(for: url)
+    }
+
+    func usage() -> ArtworkCacheUsage {
+        CacheInventory.artworkUsage(at: directory, fileManager: fileManager)
+    }
+
+    func remove(_ kind: ArtworkImageKind) {
+        CacheInventory.removeArtwork(kind, from: directory, fileManager: fileManager)
+        memory.removeAllObjects()
+    }
+
+    func removeAll() {
+        CacheInventory.removeArtwork(nil, from: directory, fileManager: fileManager)
+        memory.removeAllObjects()
     }
 
     func settledCount(in urls: [URL]) -> Int {
@@ -186,16 +204,37 @@ final class ArtworkCache: @unchecked Sendable {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    private func diskURL(for url: URL) -> URL {
+    private func preferredDiskURL(for url: URL) -> URL {
+        let kind = ArtworkImageKind.classify(url)
+        return directory.appendingPathComponent(
+            "\(kind.rawValue)-\(Self.diskKey(for: url))",
+            isDirectory: false
+        )
+    }
+
+    private func legacyDiskURL(for url: URL) -> URL {
         directory.appendingPathComponent(Self.diskKey(for: url), isDirectory: false)
     }
 
+    private func existingDiskURL(for url: URL) -> URL? {
+        let preferred = preferredDiskURL(for: url)
+        if fileManager.fileExists(atPath: preferred.path) { return preferred }
+        let legacy = legacyDiskURL(for: url)
+        if fileManager.fileExists(atPath: legacy.path) { return legacy }
+        return nil
+    }
+
+    private func diskURL(for url: URL) -> URL {
+        existingDiskURL(for: url) ?? preferredDiskURL(for: url)
+    }
+
     private func missingURL(for url: URL) -> URL {
-        diskURL(for: url).appendingPathExtension("missing")
+        preferredDiskURL(for: url).appendingPathExtension("missing")
     }
 
     private func hasMissingMarker(for url: URL) -> Bool {
         fileManager.fileExists(atPath: missingURL(for: url).path)
+            || fileManager.fileExists(atPath: legacyDiskURL(for: url).appendingPathExtension("missing").path)
     }
 
     private func readDisk(for url: URL, qos: DispatchQoS.QoSClass = .utility) async -> UIImage? {
@@ -213,11 +252,15 @@ final class ArtworkCache: @unchecked Sendable {
     }
 
     private func writeDisk(_ data: Data, for url: URL) {
-        let file = diskURL(for: url)
+        let file = preferredDiskURL(for: url)
+        let legacy = legacyDiskURL(for: url)
         let missing = missingURL(for: url)
+        let legacyMissing = legacy.appendingPathExtension("missing")
         io.async(flags: .barrier) {
             try? data.write(to: file, options: .atomic)
             try? self.fileManager.removeItem(at: missing)
+            try? self.fileManager.removeItem(at: legacy)
+            try? self.fileManager.removeItem(at: legacyMissing)
         }
     }
 

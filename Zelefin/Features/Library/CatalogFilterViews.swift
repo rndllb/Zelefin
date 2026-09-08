@@ -161,7 +161,8 @@ private struct CatalogChromeHitButton: UIViewRepresentable {
             nonisolated(unsafe) let handler: (UIAction) -> Void = { _ in
                 work.run()
             }
-            button.addAction(UIAction(handler: handler), for: .touchUpInside)
+            let action = UIAction(handler: handler)
+            button.addAction(action, for: .touchUpInside)
         }
     }
 }
@@ -228,7 +229,7 @@ extension View {
 extension ToolbarContent {
     @ToolbarContentBuilder
     func catalogToolbarHidesSystemBackground() -> some ToolbarContent {
-        if #available(iOS 26, tvOS 26, *) {
+        if #available(iOS 26, *) {
             sharedBackgroundVisibility(.hidden)
         } else {
             self
@@ -260,10 +261,8 @@ struct CatalogFilterSheet: View {
             .scrollContentBackground(.hidden)
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Filters")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Clear") { query.clearFilters() }
@@ -401,10 +400,8 @@ struct CatalogChoiceList: View {
         .scrollContentBackground(.hidden)
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(title)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
-        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Clear") { selected = [] }
@@ -454,10 +451,8 @@ struct CatalogSortSheet: View {
             .scrollContentBackground(.hidden)
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Sort")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

@@ -1,13 +1,10 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
-#if os(iOS)
 import PhotosUI
-#endif
 
 struct ProfileView: View {
     @Environment(SessionStore.self) private var session
-    var onAddUser: () -> Void = {}
     @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirmPassword = ""
@@ -16,9 +13,7 @@ struct ProfileView: View {
     @State private var isSavingPassword = false
     @State private var isUpdatingPhoto = false
     @State private var localAvatar: UIImage?
-    #if os(iOS)
     @State private var pickerItem: PhotosPickerItem?
-    #endif
 
     var body: some View {
         Form {
@@ -69,9 +64,10 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Button(action: onAddUser) {
+                NavigationLink {
+                    AddAccountView()
+                } label: {
                     Label("Add User", systemImage: "person.badge.plus")
-                        .fontWeight(.semibold)
                 }
             } header: {
                 Text("Users")
@@ -80,12 +76,10 @@ struct ProfileView: View {
             }
         }
         .zelefinSettingsChrome(title: "Profile")
-        #if os(iOS)
         .onChange(of: pickerItem) { _, item in
             guard let item else { return }
             Task { await uploadPhoto(item) }
         }
-        #endif
     }
 
     private var displayName: String {
@@ -120,7 +114,6 @@ struct ProfileView: View {
                 .frame(width: 128, height: 128)
                 .accessibilityHidden(true)
 
-                #if os(iOS)
                 PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
                     Image(systemName: "camera.fill")
                         .font(.system(size: 12, weight: .bold))
@@ -132,17 +125,15 @@ struct ProfileView: View {
                 .disabled(isUpdatingPhoto)
                 .offset(x: -2, y: -2)
                 .accessibilityLabel("Change Profile Picture")
-                #endif
             }
 
             VStack(spacing: 5) {
                 Text(displayName)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
                 Text(serverLabel)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .accessibilityElement(children: .combine)
@@ -159,7 +150,7 @@ struct ProfileView: View {
             if let status {
                 Text(status)
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(statusIsError ? Color.red.opacity(0.95) : Color.white.opacity(0.72))
+                    .foregroundStyle(statusIsError ? Color.red : .secondary)
                     .multilineTextAlignment(.center)
                     .padding(.top, 2)
             }
@@ -177,16 +168,15 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.userName)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
                 Text(isCurrent ? "Signed in" : accountSubtitle(account))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             if isCurrent {
                 Image(systemName: "checkmark")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(Color.accentColor)
             }
         }
         .padding(.vertical, 4)
@@ -205,7 +195,6 @@ struct ProfileView: View {
         return account.displayServer
     }
 
-    #if os(iOS)
     private func uploadPhoto(_ item: PhotosPickerItem) async {
         isUpdatingPhoto = true
         status = nil
@@ -228,7 +217,6 @@ struct ProfileView: View {
             status = error.localizedDescription
         }
     }
-    #endif
 
     private func removePhoto() async {
         isUpdatingPhoto = true
@@ -282,23 +270,21 @@ struct AddAccountView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "server.rack")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(Color.accentColor)
                         .frame(width: 28)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(serverLabel)
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(.white)
                         Text("This server")
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "checkmark")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(Color.accentColor)
                 }
                 .padding(.vertical, 4)
-                .listRowBackground(Color.white.opacity(0.06))
             } footer: {
                 Text("New users are added on the server you’re already using.")
             }
@@ -306,10 +292,8 @@ struct AddAccountView: View {
             Section {
                 TextField("Username", text: $username)
                     .textContentType(.username)
-                    #if os(iOS)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    #endif
                 SecureField("Password", text: $password)
                     .textContentType(.password)
             } header: {
@@ -405,7 +389,6 @@ struct UserAvatarView: View {
     }
 }
 
-#if os(iOS)
 enum PickedProfileImage {
     static func load(_ item: PhotosPickerItem) async throws -> UIImage {
         if let picked = try await item.loadTransferable(type: ProfilePickerImage.self) {
@@ -437,7 +420,6 @@ private struct ProfilePickerImage: Transferable {
         return ProfilePickerImage(image: image)
     }
 }
-#endif
 
 enum ProfileImageEncoder {
     static func jpegData(from image: UIImage, maxPixel: CGFloat = 720, quality: CGFloat = 0.86) -> Data? {

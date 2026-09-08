@@ -171,11 +171,9 @@ struct SeerrDiscoverGridView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(query.title)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        #endif
         .task { await load(page: 1, replace: true) }
         .sheet(item: $requestTitle) { title in
             NavigationStack {

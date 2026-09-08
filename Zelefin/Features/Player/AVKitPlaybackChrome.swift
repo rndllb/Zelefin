@@ -61,12 +61,6 @@ struct AVKitPlaybackChrome: View {
                 revealControls()
             }
         }
-        #if os(tvOS)
-        .onPlayPauseCommand {
-            model.togglePlayPause()
-            revealControls()
-        }
-        #endif
     }
 
     private var hideTaskID: String {
@@ -74,11 +68,7 @@ struct AVKitPlaybackChrome: View {
     }
 
     private var horizontalPadding: CGFloat {
-        #if os(tvOS)
-        48
-        #else
         horizontalSizeClass == .regular ? 28 : 16
-        #endif
     }
 
     @ViewBuilder
@@ -175,43 +165,23 @@ struct AVKitPlaybackChrome: View {
     }
 
     private var skipSpacing: CGFloat {
-        #if os(tvOS)
-        72
-        #else
         horizontalSizeClass == .regular ? 64 : 44
-        #endif
     }
 
     private var skipSymbolSize: CGFloat {
-        #if os(tvOS)
-        32
-        #else
         26
-        #endif
     }
 
     private var skipHitSize: CGFloat {
-        #if os(tvOS)
-        72
-        #else
         56
-        #endif
     }
 
     private var playSymbolSize: CGFloat {
-        #if os(tvOS)
-        40
-        #else
         28
-        #endif
     }
 
     private var playHitSize: CGFloat {
-        #if os(tvOS)
-        88
-        #else
         72
-        #endif
     }
 
     private func skipIntro(_ title: String) -> some View {
@@ -246,9 +216,7 @@ struct AVKitPlaybackChrome: View {
     }
 
     private func skip(by interval: TimeInterval) {
-        #if os(iOS)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        #endif
         model.skip(by: interval)
         revealControls()
     }
@@ -449,7 +417,6 @@ private struct AVKitScrubber: View {
             }
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            #if os(iOS)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .updating($isDragging) { _, state, _ in
@@ -468,7 +435,6 @@ private struct AVKitScrubber: View {
                         onEditingChanged(false, time)
                     }
             )
-            #endif
             .animation(.easeInOut(duration: 0.12), value: isDragging)
             .accessibilityLabel("Timeline")
             .accessibilityValue(PlaybackTimeFormatting.elapsed(shown))
@@ -508,7 +474,7 @@ private extension View {
     /// Clear glass over video, matching AVPlayerViewController on iOS 26.
     @ViewBuilder
     func avkitGlassCircle() -> some View {
-        if #available(iOS 26, tvOS 26, *) {
+        if #available(iOS 26, *) {
             self.glassEffect(.clear.interactive(), in: Circle())
         } else {
             self
@@ -522,7 +488,7 @@ private extension View {
 
     @ViewBuilder
     func avkitGlassCapsule() -> some View {
-        if #available(iOS 26, tvOS 26, *) {
+        if #available(iOS 26, *) {
             self.glassEffect(.clear.interactive(), in: Capsule(style: .continuous))
         } else {
             avkitMaterialCapsule()
@@ -532,7 +498,7 @@ private extension View {
     /// Timeline is dragged, not pressed — skip the interactive press bounce.
     @ViewBuilder
     func avkitGlassBar() -> some View {
-        if #available(iOS 26, tvOS 26, *) {
+        if #available(iOS 26, *) {
             self.glassEffect(.clear, in: Capsule(style: .continuous))
         } else {
             avkitMaterialCapsule()

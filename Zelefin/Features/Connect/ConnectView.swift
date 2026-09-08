@@ -14,6 +14,7 @@ struct ConnectView: View {
     @State private var testMessage: String?
     @State private var testDidSucceed = false
     @State private var showsPasswordHelp = false
+    @State private var showsAccessGateway = false
     @State private var quickConnectCode: String?
     @State private var isStartingQuickConnect = false
     @State private var quickConnectTask: Task<Void, Never>?
@@ -137,12 +138,10 @@ struct ConnectView: View {
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .tint(.white)
-                #if os(iOS)
                 .keyboardType(.URL)
                 .textContentType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                #endif
                 .accessibilityLabel("Server URL")
             }
 
@@ -153,52 +152,16 @@ struct ConnectView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoginPalette.fieldValue)
                     .tint(LoginPalette.accent)
-                    #if os(iOS)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    #endif
             }
 
             cardDivider
 
             passwordRow
 
-            DisclosureGroup("Advanced: access gateway") {
-                labeledField(label: "CLIENT ID", systemImage: "key.fill") {
-                    TextField("Client ID or token ID", text: $gatewayClientID)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(LoginPalette.fieldValue)
-                        .tint(LoginPalette.accent)
-                        #if os(iOS)
-                        .textContentType(.username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        #endif
-                }
-
-                cardDivider
-
-                labeledField(label: "CLIENT SECRET", systemImage: "lock.square.fill") {
-                    SecureField("Client secret or access token", text: $gatewayClientSecret)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(LoginPalette.fieldValue)
-                        .tint(LoginPalette.accent)
-                        #if os(iOS)
-                        .textContentType(.password)
-                        #endif
-                }
-
-                Text("Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin.")
-                    .font(.caption)
-                    .foregroundStyle(LoginPalette.captionText)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-            }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(LoginPalette.captionText)
-            .tint(LoginPalette.accent)
-            .padding(.top, 8)
+            accessGatewaySection
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -216,6 +179,46 @@ struct ConnectView: View {
         .onChange(of: gatewayClientSecret) { _, value in
             AccessGateway.clientSecret = value
         }
+    }
+
+    @ViewBuilder
+    private var accessGatewaySection: some View {
+        DisclosureGroup("Advanced: access gateway") {
+            accessGatewayFields
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(LoginPalette.captionText)
+        .tint(LoginPalette.accent)
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private var accessGatewayFields: some View {
+        labeledField(label: "CLIENT ID", systemImage: "key.fill") {
+            TextField("Client ID or token ID", text: $gatewayClientID)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.fieldValue)
+                .tint(LoginPalette.accent)
+                .textContentType(.username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        }
+
+        cardDivider
+
+        labeledField(label: "CLIENT SECRET", systemImage: "lock.square.fill") {
+            SecureField("Client secret or access token", text: $gatewayClientSecret)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.fieldValue)
+                .tint(LoginPalette.accent)
+                .textContentType(.password)
+        }
+
+        Text("Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin.")
+            .font(.caption)
+            .foregroundStyle(LoginPalette.captionText)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
     }
 
     private var passwordRow: some View {
@@ -248,9 +251,7 @@ struct ConnectView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoginPalette.fieldValue)
                     .tint(LoginPalette.accent)
-                    #if os(iOS)
                     .textContentType(.password)
-                    #endif
 
                 Spacer(minLength: 0)
             }

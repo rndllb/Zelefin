@@ -25,6 +25,7 @@ final class SessionStore {
     private(set) var homeError: String?
     private(set) var isLoadingHome = false
     private(set) var introSkipperAvailable = false
+    private(set) var isAdministrator = false
     private(set) var tmdbCatalog = JellyfinTmdbCatalog()
     private(set) var currentSSID: String?
     private(set) var activeRoute: HomeNetworkRoute = .remote
@@ -269,19 +270,45 @@ final class SessionStore {
     }
 
     func updateProfileImage(_ jpeg: Data) async throws {
+        guard let userID = session?.userID else { throw ZelefinError.missingUser }
+        try await updateProfileImage(userID: userID, jpeg: jpeg)
+    }
+
+    func updateProfileImage(userID: String, jpeg: Data) async throws {
         guard !jpeg.isEmpty else {
             throw ZelefinError.server("Zelefin could not read that photo.")
         }
-        try await postProfileImage(jpeg)
-        avatarRevision += 1
-        await refreshAccount()
+        try ensureCanChangePhoto(of: userID)
+        try await postProfileImage(jpeg, userID: userID)
+        if userID == session?.userID {
+            avatarRevision += 1
+            await refreshAccount()
+        }
     }
 
     func removeProfileImage() async throws {
-        guard let client, let session else { throw ZelefinError.missingUser }
-        _ = try await client.send(Paths.deleteUserImage(userID: session.userID))
-        avatarRevision += 1
-        await refreshAccount()
+        guard let userID = session?.userID else { throw ZelefinError.missingUser }
+        try await removeProfileImage(userID: userID)
+    }
+
+    func removeProfileImage(userID: String) async throws {
+        try ensureCanChangePhoto(of: userID)
+        guard let client else { throw ZelefinError.missingUser }
+        _ = try await client.send(Paths.deleteUserImage(userID: userID))
+        if userID == session?.userID {
+            avatarRevision += 1
+            await refreshAccount()
+        }
+    }
+
+    private func ensureCanChangePhoto(of userID: String) throws {
+        guard UserImageAdminPolicy.canChangePhoto(
+            actorIsAdmin: isAdministrator,
+            actorUserID: session?.userID,
+            targetUserID: userID
+        ) else {
+            throw ZelefinError.server("Sign in with an administrator to change another user's photo.")
+        }
     }
 
     func refreshHome() async {
@@ -341,6 +368,7 @@ final class SessionStore {
         homeError = nil
         isLoadingHome = false
         introSkipperAvailable = false
+        isAdministrator = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
         currentSSID = nil
@@ -350,12 +378,12 @@ final class SessionStore {
         PluginSettings.clearSeerrSession()
     }
 
-    private func postProfileImage(_ jpeg: Data) async throws {
+    private func postProfileImage(_ jpeg: Data, userID: String) async throws {
         guard let session, let client else { throw ZelefinError.missingUser }
         guard var url = ServerURL.resolve(base: client.configuration.url, path: "/UserImage") else {
             throw ZelefinError.invalidServerURL
         }
-        url = ServerURL.appending([("userId", session.userID)], to: url)
+        url = ServerURL.appending([("userId", userID)], to: url)
         let body = JellyfinImagePayload.requestBody(imageJPEG: jpeg)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -411,9 +439,11 @@ final class SessionStore {
         library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
         serverName = saved.serverName ?? saved.serverURL.host
         introSkipperAvailable = false
+        isAdministrator = false
         itemDetailMemory = [:]
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
+        Task { await refreshAdministratorStatus() }
         Task { await loadHome(force: true) }
         Task { await detectIntroSkipper() }
         Task { await refreshHomeNetworkSSID() }
@@ -500,6 +530,59 @@ final class SessionStore {
             return
         }
         introSkipperAvailable = await IntroSkipperClient(client: client).isInstalled()
+    }
+
+    func refreshAdministratorStatus() async {
+        guard let client else {
+            isAdministrator = false
+            return
+        }
+        do {
+            let user = try await client.send(Paths.getCurrentUser).value
+            isAdministrator = user.policy?.isAdministrator == true
+        } catch {
+            isAdministrator = false
+        }
+    }
+
+    func userAdminClient() throws -> JellyfinUserAdminClient {
+        guard isAdministrator, let client else {
+            throw ZelefinError.server("Sign in with an administrator to manage users.")
+        }
+        return JellyfinUserAdminClient(client: client)
+    }
+
+    func applyRenamedCurrentUser(_ name: String) {
+        guard var saved = session else { return }
+        saved.userName = name
+        session = saved
+        persist(saved)
+    }
+
+    func purgeArtworkCache(_ kind: ArtworkImageKind?) {
+        if let kind {
+            ArtworkCache.shared.remove(kind)
+        } else {
+            ArtworkCache.shared.removeAll()
+        }
+    }
+
+    func purgeMetadataCache(_ folder: MetadataCacheFolder?) {
+        CacheInventory.removeMetadata(folder)
+        if folder == nil || folder == .itemDetail {
+            itemDetailMemory = [:]
+        }
+        if folder == nil || folder == .home {
+            homeLayout = HomeLayout(featured: [], sections: [])
+            libraries = []
+        }
+    }
+
+    func refreshMissingMetadata() async {
+        await refreshHome()
+        if let session {
+            startPosterPrefetch(for: session)
+        }
     }
 
     private func refreshTmdbCatalog() async {

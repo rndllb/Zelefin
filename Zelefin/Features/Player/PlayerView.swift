@@ -34,21 +34,14 @@ struct PlayerView: View {
                 errorOverlay(message)
             }
         }
-        #if os(iOS)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        #endif
         .task {
             await prepareAndStart()
         }
         .onDisappear {
             model?.markPlaybackViewDismissed()
         }
-        #if os(tvOS)
-        .onPlayPauseCommand {
-            model?.togglePlayPause()
-        }
-        #endif
         .onChange(of: model?.isFinished) { _, finished in
             guard finished == true else { return }
             Task { await advanceOrDismiss() }
@@ -405,13 +398,9 @@ struct NativePlayerContainer: UIViewControllerRepresentable {
         let controller = AVPlayerViewController()
         controller.player = player
         controller.delegate = context.coordinator
-        #if os(iOS)
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.updatesNowPlayingInfoCenter = true
-        #else
-        controller.appliesPreferredDisplayCriteriaAutomatically = true
-        #endif
         context.coordinator.install(on: controller)
         return controller
     }
@@ -476,21 +465,12 @@ struct NativePlayerContainer: UIViewControllerRepresentable {
             config.cornerStyle = .capsule
             config.baseBackgroundColor = UIColor.white.withAlphaComponent(0.92)
             config.baseForegroundColor = .black
-            #if os(tvOS)
-            config.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 28, bottom: 16, trailing: 28)
-            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-                var outgoing = incoming
-                outgoing.font = .systemFont(ofSize: 28, weight: .semibold)
-                return outgoing
-            }
-            #else
             config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 18, bottom: 10, trailing: 18)
             config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
                 var outgoing = incoming
                 outgoing.font = .systemFont(ofSize: 15, weight: .semibold)
                 return outgoing
             }
-            #endif
             let skipButton = UIButton(type: .system)
             skipButton.configuration = config
             skipButton.translatesAutoresizingMaskIntoConstraints = false

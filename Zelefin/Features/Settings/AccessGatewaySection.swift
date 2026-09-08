@@ -8,11 +8,8 @@ struct AccessGatewaySection: View {
         Section {
             TextField("Client ID or token ID", text: $clientID)
                 .textContentType(.username)
-                .foregroundStyle(.white)
-                #if os(iOS)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                #endif
             SecureField("Client secret or access token", text: $clientSecret)
                 .textContentType(.password)
         } header: {

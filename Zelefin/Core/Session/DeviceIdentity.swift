@@ -5,11 +5,7 @@ enum DeviceIdentity {
     static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
 
     static var deviceName: String {
-        #if os(tvOS)
-        "Apple TV"
-        #else
         "iPhone"
-        #endif
     }
 
     static func deviceID() -> String {

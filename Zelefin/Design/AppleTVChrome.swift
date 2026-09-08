@@ -9,54 +9,30 @@ extension CGSize {
 
 enum PosterMetrics {
     static var landscapeSize: CGSize {
-        #if os(tvOS)
-        CGSize(width: 440, height: 248)
-        #else
         CGSize(width: 280, height: 158)
-        #endif
     }
 
     /// Episode still width; text stacks tightly under the image.
     static var episodeCardWidth: CGFloat {
-        #if os(tvOS)
-        400
-        #else
         252
-        #endif
     }
 
     static var episodeCardSize: CGSize {
         let width = episodeCardWidth
-        #if os(tvOS)
-        let textHeight: CGFloat = 148
-        #else
         let textHeight: CGFloat = 132
-        #endif
         return CGSize(width: width, height: (width * 9 / 16) + textHeight)
     }
 
     static var portraitSize: CGSize {
-        #if os(tvOS)
-        CGSize(width: 200, height: 300)
-        #else
         CGSize(width: 124, height: 186)
-        #endif
     }
 
     static var cornerRadius: CGFloat {
-        #if os(tvOS)
-        14
-        #else
         10
-        #endif
     }
 
     static var rowSpacing: CGFloat {
-        #if os(tvOS)
-        22
-        #else
         10
-        #endif
     }
 
     static var heroHeight: CGFloat {
@@ -64,11 +40,7 @@ enum PosterMetrics {
     }
 
     static func heroHeight(for size: CGSize) -> CGFloat {
-        #if os(tvOS)
-        max(760, size.height * 0.72)
-        #else
         max(680, size.height * 0.82)
-        #endif
     }
 }
 
@@ -559,19 +531,11 @@ struct EpisodeShowcaseCard: View {
     }
 
     private var markSize: CGFloat {
-        #if os(tvOS)
-        28
-        #else
         22
-        #endif
     }
 
     private var markPadding: CGFloat {
-        #if os(tvOS)
-        10
-        #else
         8
-        #endif
     }
 
     private var accessibilityCaption: String {
@@ -873,7 +837,7 @@ extension View {
     /// Mirrors the hero under the sidebar frost — Apple's split-view / Liquid Glass treatment.
     @ViewBuilder
     func zelefinHeroBackgroundExtension() -> some View {
-        if #available(iOS 26, tvOS 26, *) {
+        if #available(iOS 26, *) {
             backgroundExtensionEffect()
         } else {
             self
@@ -1093,7 +1057,7 @@ extension View {
     /// Circular Liquid Glass bezel so content (the avatar) sits inside the ring, not over it.
     @ViewBuilder
     func zelefinLiquidGlassCircle(interactive: Bool = true) -> some View {
-        if #available(iOS 26, tvOS 26, *) {
+        if #available(iOS 26, *) {
             self.glassEffect(interactive ? .regular.interactive() : .regular, in: Circle())
         } else {
             self
@@ -1108,7 +1072,7 @@ extension View {
 
     @ViewBuilder
     func zelefinLiquidGlassCapsule(interactive: Bool = true) -> some View {
-        if #available(iOS 26, tvOS 26, *) {
+        if #available(iOS 26, *) {
             self.glassEffect(interactive ? .regular.interactive() : .regular, in: Capsule(style: .continuous))
         } else {
             self
@@ -1123,7 +1087,6 @@ extension View {
     func zelefinPageChrome(_ title: String) -> some View {
         self
             .navigationTitle(title)
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -1131,41 +1094,28 @@ extension View {
                 }
             }
             .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
     }
 
     @ViewBuilder
     func zelefinScrollEdgeBlur() -> some View {
-        #if os(iOS)
         if #available(iOS 26, *) {
             self.scrollEdgeEffectStyle(.soft, for: .top)
         } else {
             self
         }
-        #else
-        self
-        #endif
     }
 
     @ViewBuilder
     func zelefinScrollEdgeHidden() -> some View {
-        #if os(iOS)
         if #available(iOS 26, *) {
             self.scrollEdgeEffectHidden(true, for: .top)
         } else {
             self
         }
-        #else
-        self
-        #endif
     }
 
     func zelefinHeaderScrollVisibility(_ isVisible: Binding<Bool>) -> some View {
-        #if os(iOS)
         modifier(HeaderScrollVisibilityModifier(isVisible: isVisible))
-        #else
-        self
-        #endif
     }
 
     func zelefinLibraryListRow() -> some View {
@@ -1218,20 +1168,12 @@ enum RootPageChrome {
     static let padTopTabBarClearance: CGFloat = 62
 
     static func showsTitle(idiom: UIUserInterfaceIdiom) -> Bool {
-        #if os(iOS)
         idiom == .phone
-        #else
-        false
-        #endif
     }
 
     @MainActor
     static var showsTitle: Bool {
-        #if os(iOS)
         showsTitle(idiom: UIDevice.current.userInterfaceIdiom)
-        #else
-        false
-        #endif
     }
 
     static func headerVisible(offset: CGFloat, previousOffset: CGFloat, wasVisible: Bool) -> Bool {
@@ -1249,7 +1191,6 @@ enum RootPageChrome {
     }
 }
 
-#if os(iOS)
 private struct HeaderScrollVisibilityModifier: ViewModifier {
     @Binding var isVisible: Bool
 
@@ -1270,9 +1211,7 @@ private struct HeaderScrollVisibilityModifier: ViewModifier {
             }
     }
 }
-#endif
 
-#if os(iOS)
 private struct PageHeaderProfileButton: View {
     @Environment(\.tabBarPlacement) private var tabBarPlacement
 
@@ -1282,12 +1221,10 @@ private struct PageHeaderProfileButton: View {
         }
     }
 }
-#endif
 
 enum ScreenInsets {
     @MainActor
     static var top: CGFloat {
-        #if os(iOS)
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             if let window = windowScene.windows.first(where: \.isKeyWindow) ?? windowScene.windows.first {
@@ -1295,9 +1232,6 @@ enum ScreenInsets {
             }
         }
         return 59
-        #else
-        0
-        #endif
     }
 }
 
@@ -1349,7 +1283,14 @@ enum PosterGridLayout {
     }
 
     static func columns(for layout: ZelefinSidebarLayout) -> [GridItem] {
-        let width = layout.expandedWidth > 1 ? layout.expandedWidth : max(layout.contentWidth, 390)
+        let width: CGFloat
+        if layout.expandedWidth > 1 {
+            width = layout.expandedWidth
+        } else if layout.contentWidth > 1 {
+            width = layout.contentWidth
+        } else {
+            width = 390
+        }
         let count = columnCount(expandedWidth: width)
         return Array(repeating: GridItem(.flexible(), spacing: PosterMetrics.rowSpacing), count: count)
     }
@@ -1368,15 +1309,10 @@ extension EnvironmentValues {
 
 extension View {
     func zelefinSidebarLayout() -> some View {
-        #if os(iOS)
         modifier(SidebarLayoutModifier())
-        #else
-        self
-        #endif
     }
 }
 
-#if os(iOS)
 private struct SidebarLayoutModifier: ViewModifier {
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @State private var contentWidth: CGFloat = 0
@@ -1426,7 +1362,6 @@ private struct SidebarLayoutModifier: ViewModifier {
         }
     }
 }
-#endif
 
 struct FillingPosterCell<Content: View>: View {
     var aspectRatio: CGFloat = 2 / 3
@@ -1452,9 +1387,7 @@ struct FloatingPageHeader<Accessory: View>: View {
     /// need this lift so the profile lands in the iPad top tab bar row.
     var liftsIntoPadTabBar: Bool = false
     var accessory: Accessory
-    #if os(iOS)
     @Environment(\.tabBarPlacement) private var tabBarPlacement
-    #endif
 
     init(
         title: String = "",
@@ -1473,22 +1406,14 @@ struct FloatingPageHeader<Accessory: View>: View {
     }
 
     private var showsProfile: Bool {
-        #if os(iOS)
         tabBarPlacement != .sidebar
-        #else
-        true
-        #endif
     }
 
     private var padTabBarLift: CGFloat {
-        #if os(iOS)
         RootPageChrome.padTabBarLift(
             usesPadTopChrome: liftsIntoPadTabBar && UIDevice.current.userInterfaceIdiom == .pad,
             isSidebarVisible: tabBarPlacement == .sidebar
         )
-        #else
-        0
-        #endif
     }
 
     var body: some View {
@@ -1516,9 +1441,7 @@ struct FloatingPageHeader<Accessory: View>: View {
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
             .transition(.opacity.combined(with: .scale(scale: 0.86)))
-            #if os(iOS)
             .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
-            #endif
         }
     }
 }

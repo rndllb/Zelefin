@@ -18,9 +18,7 @@ struct PlaybackStatsOverlay: View {
                                     .frame(width: 88, alignment: .leading)
                                 Text(row.value)
                                     .foregroundStyle(.white)
-                                    #if os(iOS)
                                     .textSelection(.enabled)
-                                    #endif
                             }
                             .font(.caption.monospaced())
                         }
