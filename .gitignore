@@ -4,11 +4,10 @@ xcuserdata/
 DerivedData/
 .build/
 .swiftpm/
+build/
 *.moved-aside
 *.hmap
 *.ipa
 *.dSYM.zip
 *.dSYM
-.impeccable/mocks/
-.impeccable/quality-bar/
-.impeccable/review/
+.impeccable/
