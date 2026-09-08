@@ -21,7 +21,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Continue Watching and Next Up, or one combined Continue Watching row (Interface settings)
 - Recently added rows per library, collections, and genres
 - Pull to refresh, cache-first loads
-- Long-press: play, download, mark watched or unwatched, go to the show or movie
+- Long-press: play, download, mark watched or unwatched, go to the show or movie, add subtitles when Open Subtitles is installed
 
 ### Browse
 
@@ -39,6 +39,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Season episode carousel
 - Related titles
 - Download and share from the same pill
+- Add Subtitles on movies and episodes when the Open Subtitles plugin is on the server
 - Share a `zelefin://` link plus the Jellyfin web URL so another install or a browser can open the title
 
 ### Playback
@@ -47,14 +48,22 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Zelefin Direct Play for MKV and similar containers
 - Optional native video player (AVPlayer only; MKV remuxes on the server)
 - Prefer fMP4 or MPEG-TS when using the native player
-- Audio and subtitle track selection, including on-device subtitle cues for Direct Play
-- Skip intro and credits when the Intro Skipper plugin is on the server (manual buttons, optional auto-skip)
+- Audio and subtitle track selection, including sidecar files and on-device cues for Direct Play
+- Skip intro and credits when Intro Skipper is installed (manual buttons, optional auto-skip)
 - Auto play next episode
 - Skip intervals, default playback speed, and max bitrate / quality
 - Picture in Picture and AirPlay
 - Playback stats overlay
 - Progress reported back to Jellyfin
 - Background audio
+
+### Plugins
+
+Settings → Plugins shows what this Jellyfin server actually has installed. Zelefin does not install plugins; it uses the ones already on the server.
+
+- **Intro Skipper** — Skip Intro and Skip Credits during playback. Optional auto-skip for intros and credits.
+- **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
+- **Seerr / Jellyseerr** — Sign in here with your Jellyfin username and password, then discover and request titles from Search. Not a Jellyfin plugin; a separate request app that talks to Radarr and Sonarr.
 
 ### Search and requests
 
