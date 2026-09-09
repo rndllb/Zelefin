@@ -7,6 +7,7 @@ enum PlaybackPreferences {
     static let skipBackwardKey = "zelefin.playback.skip-backward-seconds"
     static let skipForwardKey = "zelefin.playback.skip-forward-seconds"
     static let maxBitrateKey = "zelefin.playback.max-bitrate"
+    static let adaptiveBitrateKey = "zelefin.playback.adaptive-bitrate"
     static let autoPlayNextEpisodeKey = "zelefin.playback.autoplay-next-episode"
     static let autoSkipIntroKey = "zelefin.playback.auto-skip-intro"
     static let autoSkipCreditsKey = "zelefin.playback.auto-skip-credits"
@@ -42,6 +43,10 @@ enum PlaybackPreferences {
 
     static var selectedQuality: PlaybackQuality {
         PlaybackQuality.resolved(storedInt(maxBitrateKey, default: 0))
+    }
+
+    static var adaptiveBitrateEnabled: Bool {
+        bool(for: adaptiveBitrateKey, default: true)
     }
 
     static var maxStreamingBitrate: Int {
@@ -285,12 +290,58 @@ enum PlaybackPipelineResolver {
     ]
 }
 
-/// Direct Play MKV often has Cues at EOF. A long automatic resume seek at load can
-/// time out and black the screen. User skip / scrub is still offered so the chrome
-/// matches AVPlayer; resume-at-load stays on the native path only.
+/// Direct Play MKV often has Cues at EOF. A long `engine.seek` right after open can
+/// time out and black the screen. Resume instead goes through Aether `load(startPosition:)`.
+/// User skip / scrub still uses `engine.seek` once the session is running.
 enum DirectPlaySeekPolicy {
     static func allowsAutomaticResumeSeek(_ pipeline: PlaybackPipeline) -> Bool {
         pipeline == .appleNative
+    }
+}
+
+/// Where playback should begin. Direct Play files start at t=0 on the byte stream,
+/// so the client must open at the saved playhead. Remux / transcode HLS already
+/// includes `StartTimeTicks` on the server URL — seeking again would skip twice.
+enum PlaybackResumePolicy {
+    static let threshold: TimeInterval = 5
+
+    static func clientStartPosition(method: PlaybackMethod, startTime: TimeInterval) -> TimeInterval? {
+        guard startTime > threshold, method == .directPlay else { return nil }
+        return startTime
+    }
+
+    static func reportStartPosition(playhead: TimeInterval, plannedStart: TimeInterval) -> TimeInterval {
+        plannedStart > threshold ? max(playhead, plannedStart) : playhead
+    }
+
+    /// Direct Play opened at t=0 even though resume was requested. Seek after the first
+    /// frame once the file index exists — not immediately at load, which times out on MKV.
+    static func needsDeferredSeek(
+        method: PlaybackMethod,
+        playhead: TimeInterval,
+        plannedStart: TimeInterval
+    ) -> Bool {
+        method == .directPlay && plannedStart > threshold && playhead <= threshold
+    }
+}
+
+enum StreamResumeURL {
+    /// Remux / transcode HLS only resumes if `StartTimeTicks` is on the playlist URL.
+    /// Jellyfin 12 keeps that value on the POST body and sometimes omits it from `TranscodingUrl`.
+    static func ensuringStartTimeTicks(
+        _ url: URL,
+        method: PlaybackMethod,
+        startTime: TimeInterval
+    ) -> URL {
+        guard method != .directPlay, startTime > PlaybackResumePolicy.threshold else { return url }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = components.queryItems ?? []
+        if items.contains(where: { $0.name.compare("StartTimeTicks", options: .caseInsensitive) == .orderedSame }) {
+            return url
+        }
+        items.append(URLQueryItem(name: "StartTimeTicks", value: "\(TickClock.intTicks(from: startTime))"))
+        components.queryItems = items
+        return components.url ?? url
     }
 }
 

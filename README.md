@@ -37,7 +37,10 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 - Play / resume with progress
 - Season episode carousel
-- Related titles
+- Related titles, cast, and collections
+- About row: title and synopsis card, Tomatometer when Jellyfin has a critic score, and an age-guidance card from the official rating
+- MORE on the About card opens the full description; MORE on the hero opens the info sheet
+- Information, Languages, and File lists on the title page (studio, runtime, audio, subtitles, container, bitrate)
 - Download and share from the same pill
 - Add Subtitles on movies and episodes when the Open Subtitles plugin is on the server
 - Share a `zelefin://` link plus the Jellyfin web URL so another install or a browser can open the title
@@ -51,7 +54,12 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Audio and subtitle track selection, including sidecar files and on-device cues for Direct Play
 - Skip intro and credits when Intro Skipper is installed (manual buttons, optional auto-skip)
 - Auto play next episode
-- Skip intervals, default playback speed, and max bitrate / quality
+- Skip intervals and default playback speed
+- Adaptive bitrate on by default: measures Wi-Fi or cellular to the Jellyfin server, Direct Plays when the file fits, transcodes when it does not
+- During playback, steps down after a stall and back up when the buffer stays healthy (one quality step at a time; a short hitch while the stream restarts)
+- Settings → Playback: Maximum Quality ceiling, and Test with Demo File to measure this connection
+- Manual quality in the player still wins for that title
+- Movies and episodes resume from the saved playhead (including transcoded streams)
 - Picture in Picture and AirPlay
 - Playback stats overlay
 - Progress reported back to Jellyfin

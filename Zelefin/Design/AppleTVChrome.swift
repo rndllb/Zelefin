@@ -27,6 +27,22 @@ enum PosterMetrics {
         CGSize(width: 124, height: 186)
     }
 
+    static var aboutCardHeight: CGFloat {
+        164
+    }
+
+    static var aboutSynopsisCardSize: CGSize {
+        CGSize(width: 304, height: aboutCardHeight)
+    }
+
+    static var aboutRatingCardSize: CGSize {
+        CGSize(width: 152, height: aboutCardHeight)
+    }
+
+    static var aboutCardCornerRadius: CGFloat {
+        16
+    }
+
     static var cornerRadius: CGFloat {
         10
     }

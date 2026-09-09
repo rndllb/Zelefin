@@ -9,6 +9,7 @@ enum ZelefinError: LocalizedError, Sendable {
     case playbackEngineUnavailable
     case emptyPlaybackSources
     case downloadFailed
+    case bitrateTestFailed
     case offlineFileUnreadable
     case accessGateway
     case quickConnectDisabled
@@ -35,6 +36,8 @@ enum ZelefinError: LocalizedError, Sendable {
             "The server did not return a playable stream."
         case .downloadFailed:
             "Zelefin could not download this title. Check the connection and try again."
+        case .bitrateTestFailed:
+            "Zelefin could not download the demo file from this server. Check the connection and try again."
         case .offlineFileUnreadable:
             "Zelefin could not open the downloaded file."
         case .accessGateway:

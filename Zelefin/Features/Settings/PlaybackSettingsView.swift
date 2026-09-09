@@ -1,25 +1,78 @@
 import SwiftUI
 
 struct PlaybackSettingsView: View {
+    @Environment(SessionStore.self) private var session
     @AppStorage(PlaybackPreferences.useNativeVideoPlayerKey) private var useNativeVideoPlayer = false
     @AppStorage(PlaybackPreferences.preferFMP4InHLSKey) private var preferFMP4InHLS = true
     @AppStorage(PlaybackPreferences.skipBackwardKey) private var skipBackward = 10
     @AppStorage(PlaybackPreferences.skipForwardKey) private var skipForward = 10
     @AppStorage(PlaybackPreferences.maxBitrateKey) private var maxBitrate = 0
+    @AppStorage(PlaybackPreferences.adaptiveBitrateKey) private var adaptiveBitrate = true
     @AppStorage(PlaybackPreferences.autoPlayNextEpisodeKey) private var autoPlayNextEpisode = true
     @AppStorage(PlaybackPreferences.defaultRateKey) private var defaultRate = 1.0
+
+    @State private var isTesting = false
+    @State private var testError: String?
+    @State private var testResult: BitrateProbeResult?
 
     var body: some View {
         Form {
             Section {
-                Picker("Default Quality", selection: $maxBitrate) {
+                Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
+                    .tint(Color.accentColor)
+                Picker(adaptiveBitrate ? "Maximum Quality" : "Default Quality", selection: $maxBitrate) {
                     ForEach(PlaybackQuality.allCases) { quality in
                         Text(quality.title).tag(quality.rawValue)
                     }
                 }
                 .tint(Color.accentColor)
+            } header: {
+                Text("Quality")
             } footer: {
-                Text("Auto keeps Direct Play when the file fits this device. Lower rates ask Jellyfin to transcode.")
+                Text(qualityFooter)
+            }
+
+            Section {
+                LabeledContent("Connection") {
+                    Text(session.adaptiveBitrate.path.transport.title)
+                        .foregroundStyle(.secondary)
+                }
+                if let testResult {
+                    LabeledContent("Measured") {
+                        Text(PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
+                            .foregroundStyle(.secondary)
+                    }
+                    LabeledContent("Recommended") {
+                        Text(recommendedTitle(for: testResult))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(recommendationDetail(for: testResult))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let testError {
+                    Text(testError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+                Button {
+                    Task { await runDemoTest() }
+                } label: {
+                    if isTesting {
+                        HStack {
+                            Text("Testing…")
+                            Spacer()
+                            ProgressView()
+                        }
+                    } else {
+                        Text("Test with Demo File")
+                    }
+                }
+                .disabled(isTesting || session.library == nil)
+            } header: {
+                Text("Connection Test")
+            } footer: {
+                Text("Downloads a demo file from your Jellyfin server to measure this Wi-Fi or cellular connection. Adaptive bitrate uses that result, plus the title’s own bitrate, when you press Play.")
             }
 
             Section {
@@ -76,6 +129,14 @@ struct PlaybackSettingsView: View {
         }
     }
 
+    private var qualityFooter: String {
+        if adaptiveBitrate {
+            "Zelefin measures your connection and only transcodes when the file is too large for it. During playback it steps down after a stall and back up when the buffer stays healthy. Maximum Quality is the ceiling."
+        } else {
+            "Auto keeps Direct Play when the file fits this device. Lower rates ask Jellyfin to transcode."
+        }
+    }
+
     private var preferFMP4Binding: Binding<Bool> {
         Binding(
             get: {
@@ -97,5 +158,45 @@ struct PlaybackSettingsView: View {
         } else {
             "Zelefin Direct Play opens every stream, including remuxed HLS. Fragmented MP4 packaging stays on."
         }
+    }
+
+    private func recommendedTitle(for result: BitrateProbeResult) -> String {
+        quality(for: result, sourceBitrate: nil).title
+    }
+
+    private func recommendationDetail(for result: BitrateProbeResult) -> String {
+        let hd = quality(for: result, sourceBitrate: 8_000_000)
+        let uhd = quality(for: result, sourceBitrate: 40_000_000)
+        return "A typical 1080p file would use \(hd.title). A typical 4K file would use \(uhd.title)."
+    }
+
+    private func quality(for result: BitrateProbeResult, sourceBitrate: Int?) -> PlaybackQuality {
+        let budget = AdaptiveBitratePolicy.budgetBitsPerSecond(
+            measured: result.bitsPerSecond,
+            path: session.adaptiveBitrate.path
+        )
+        return AdaptiveBitratePolicy.quality(
+            enabled: true,
+            selected: PlaybackQuality.resolved(maxBitrate),
+            override: nil,
+            budgetBitsPerSecond: budget,
+            sourceBitsPerSecond: sourceBitrate
+        )
+    }
+
+    private func runDemoTest() async {
+        guard let library = session.library else {
+            testError = "Sign in to test this connection."
+            return
+        }
+        isTesting = true
+        testError = nil
+        do {
+            testResult = try await session.adaptiveBitrate.runDemoTest(library: library)
+        } catch {
+            testResult = nil
+            testError = error.localizedDescription
+        }
+        isTesting = false
     }
 }

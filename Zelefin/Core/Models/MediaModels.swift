@@ -125,6 +125,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var videoResolution: VideoResolution = .unknown
     var hasClosedCaptions: Bool = false
     var hasAudioDescription: Bool = false
+    var sourceBitrate: Int? = nil
 
     var progress: Double {
         guard let runtime, runtime > 0 else { return 0 }
@@ -412,7 +413,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         return parts.joined(separator: " · ")
     }
 
-    private static func minutesLabel(
+    static func minutesLabel(
         _ interval: TimeInterval,
         rounding: FloatingPointRoundingRule = .toNearestOrAwayFromZero
     ) -> String {
@@ -463,7 +464,8 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             criticRating: criticRating,
             videoResolution: videoResolution,
             hasClosedCaptions: hasClosedCaptions,
-            hasAudioDescription: hasAudioDescription
+            hasAudioDescription: hasAudioDescription,
+            sourceBitrate: sourceBitrate
         )
     }
 }

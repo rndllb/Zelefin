@@ -51,6 +51,7 @@ final class PlayerModel {
     private var engineIsSeeking = false
     private var isSurfaceBound = false
     private var didStart = false
+    private var didAttemptDeferredResume = false
     private var isRestoringForeground = false
     private var nativePictureInPictureActive = false
     private var stopWhenPictureInPictureEnds = false
@@ -71,11 +72,7 @@ final class PlayerModel {
 
         switch pipeline {
         case .appleNative:
-            let created = Self.makeNativePlayer(url: plan.streamURL)
-            player = created
-            if plan.startTime > 5 {
-                created.seek(to: CMTime(seconds: plan.startTime, preferredTimescale: 600))
-            }
+            player = Self.makeNativePlayer(url: plan.streamURL)
         case .directDecode:
             do {
                 let created = try DirectPlayEngine()
@@ -95,10 +92,12 @@ final class PlayerModel {
             switch pipeline {
             case .appleNative:
                 configureAudioSession()
+                await seekNativeToResumeIfNeeded()
                 player?.play()
                 setPlaybackRate(PlaybackPreferences.defaultRate)
                 observeNativeTime()
                 observeNativeEnd()
+                hasFirstFrame = true
             case .directDecode:
                 try Task.checkCancellation()
                 await waitUntilSurfaceReady()
@@ -106,7 +105,12 @@ final class PlayerModel {
                 try await startDirectPlay()
                 setPlaybackRate(PlaybackPreferences.defaultRate)
             }
-            await reporter?.started(at: currentSeconds)
+            await reporter?.started(
+                at: PlaybackResumePolicy.reportStartPosition(
+                    playhead: currentSeconds,
+                    plannedStart: plan.startTime
+                )
+            )
             didStart = true
             RemoteControlHub.shared.attach(self)
         } catch is CancellationError {
@@ -357,6 +361,25 @@ final class PlayerModel {
         }
     }
 
+    var isSeeking: Bool { engineIsSeeking }
+
+    var isRebuffering: Bool {
+        hasFirstFrame && !isPaused && !engineIsSeeking && isBuffering
+    }
+
+    var bufferedAheadSeconds: TimeInterval {
+        if let engine {
+            return PlaybackStats.bufferedAhead(ranges: engine.residentRanges, playhead: currentTime)
+        }
+        if let player, let item = player.currentItem {
+            let ranges = item.loadedTimeRanges.compactMap { $0.timeRangeValue }.map {
+                ClosedRange(uncheckedBounds: ($0.start.seconds, $0.end.seconds))
+            }
+            return PlaybackStats.bufferedAhead(ranges: ranges, playhead: currentTime)
+        }
+        return 0
+    }
+
     func selectAudio(id: Int) {
         selectedAudioID = id
         engine?.selectAudioTrack(index: id)
@@ -408,6 +431,43 @@ final class PlayerModel {
         }
     }
 
+    private func seekNativeToResumeIfNeeded() async {
+        guard let player,
+              let resume = PlaybackResumePolicy.clientStartPosition(
+                method: plan.method,
+                startTime: plan.startTime
+              )
+        else { return }
+        let time = CMTime(seconds: resume, preferredTimescale: 600)
+        _ = await player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        currentTime = resume
+        lastTrustedTime = resume
+    }
+
+    private var resumeStartPosition: TimeInterval? {
+        PlaybackResumePolicy.clientStartPosition(method: plan.method, startTime: plan.startTime)
+    }
+
+    private func noteResumePlayhead() {
+        guard let resume = resumeStartPosition else { return }
+        currentTime = resume
+        lastTrustedTime = resume
+    }
+
+    private func finishDeferredResumeIfNeeded() {
+        guard !didAttemptDeferredResume else { return }
+        let playhead = engine?.clock.currentTime ?? currentTime
+        let trustedPlayhead = playhead.isFinite ? playhead : currentTime
+        guard PlaybackResumePolicy.needsDeferredSeek(
+            method: plan.method,
+            playhead: trustedPlayhead,
+            plannedStart: plan.startTime
+        ) else { return }
+        didAttemptDeferredResume = true
+        let target = plan.startTime
+        Task { await seek(to: target) }
+    }
+
     private func startDirectPlay() async throws {
         guard let created = engine else {
             throw ZelefinError.playbackEngineUnavailable
@@ -428,13 +488,18 @@ final class PlayerModel {
             fileOptions.httpHeaders = [:]
             try await created.load(
                 source: .custom(reader, formatHint: StreamContainer.formatHint(from: url)),
+                startPosition: resumeStartPosition,
                 options: fileOptions
             )
         } else if DirectPlayLoadPolicy.shouldOpenAsHTTPURL(
             method: plan.method,
             isHLS: PlaybackPipelineResolver.isHLS(url)
         ) {
-            try await created.load(source: .url(url), options: options)
+            try await created.load(
+                source: .url(url),
+                startPosition: resumeStartPosition,
+                options: options
+            )
         } else {
             let knownSize = plan.byteSize
             let reader = try await Task.detached {
@@ -450,17 +515,27 @@ final class PlayerModel {
             try Task.checkCancellation()
             // Custom IO has no filename. A forced libavformat name that does not match the
             // bytes makes the probe miss the video stream; Aether then plays audio only.
-            try await created.load(source: .custom(reader, formatHint: nil), options: options)
+            try await created.load(
+                source: .custom(reader, formatHint: nil),
+                startPosition: resumeStartPosition,
+                options: options
+            )
             if DirectPlayLoadPolicy.shouldReloadAsURL(
                 isAudioOnlyBackend: created.playbackBackend == .audio,
                 expectsVideo: true
             ) {
-                try await created.load(source: .url(url), options: options)
+                try await created.load(
+                    source: .url(url),
+                    startPosition: resumeStartPosition,
+                    options: options
+                )
             }
         }
+        noteResumePlayhead()
         hasFirstFrame = created.hasFirstFrameReadyForDisplay
         updatePictureSize(from: created)
         syncPictureInPicture()
+        finishDeferredResumeIfNeeded()
     }
 
     private func observeEngine(_ engine: DirectPlayEngine) {
@@ -474,6 +549,7 @@ final class PlayerModel {
                         self.updatePictureSize(from: engine)
                     }
                     self.syncPictureInPicture()
+                    self.finishDeferredResumeIfNeeded()
                 }
             }
             .store(in: &cancellables)
@@ -657,7 +733,15 @@ final class PlayerModel {
                 guard seconds.isFinite else { return }
                 self.applySkipPrompt(at: seconds)
                 self.currentTime = seconds
-                await self.reporter?.progress(at: seconds, isPaused: self.player?.rate == 0)
+                if let player = self.player {
+                    self.isPaused = player.rate == 0
+                    let waiting = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                        && player.reasonForWaitingToPlay == .toMinimizeStalls
+                    if self.isBuffering != waiting {
+                        self.isBuffering = waiting
+                    }
+                }
+                await self.reporter?.progress(at: seconds, isPaused: self.isPaused)
             }
         }
     }

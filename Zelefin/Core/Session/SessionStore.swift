@@ -30,6 +30,7 @@ final class SessionStore {
     private(set) var tmdbCatalog = JellyfinTmdbCatalog()
     private(set) var currentSSID: String?
     private(set) var activeRoute: HomeNetworkRoute = .remote
+    let adaptiveBitrate = AdaptiveBitrateStore()
     private var pathMonitor: NWPathMonitor?
     private var playbackLaunchOptions: [String: PlaybackLaunchOptions] = [:]
 

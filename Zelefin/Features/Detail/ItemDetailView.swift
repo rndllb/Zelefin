@@ -21,7 +21,9 @@ struct ItemDetailView: View {
     @State private var isJumpingSeason = false
     @State private var isLoading = true
     @State private var hasLoadedDetail = false
-    @State private var isOverviewExpanded = false
+    @State private var showsMoreInfo = false
+    @State private var showsAboutPage = false
+    @State private var moreInfo = TitleMoreInfo()
     @State private var playingItem: MediaItem?
     @State private var playingWebTrailer: TitleTrailer?
     @State private var errorMessage: String?
@@ -86,6 +88,28 @@ struct ItemDetailView: View {
                                 collectionSection(membership)
                                     .padding(.bottom, 20)
                             }
+
+                            if !TitleAboutCards.cards(for: item).isEmpty {
+                                TitleAboutRow(item: item) {
+                                    showsAboutPage = true
+                                }
+                                .padding(.bottom, 20)
+                            }
+
+                            if !moreInfo.information.isEmpty {
+                                TitleFactsSection(title: "Information", rows: moreInfo.information)
+                                    .padding(.bottom, 20)
+                            }
+
+                            if !moreInfo.languages.isEmpty {
+                                TitleFactsSection(title: "Languages", rows: moreInfo.languages)
+                                    .padding(.bottom, 20)
+                            }
+
+                            if !moreInfo.file.isEmpty {
+                                TitleFactsSection(title: "File", rows: moreInfo.file)
+                                    .padding(.bottom, 20)
+                            }
                         }
                         .padding(.bottom, 40)
                     }
@@ -143,6 +167,22 @@ struct ItemDetailView: View {
                     .ignoresSafeArea()
             }
         }
+        .sheet(isPresented: $showsMoreInfo) {
+            if let item {
+                TitleMoreInfoView(item: item, info: moreInfo) {
+                    showsMoreInfo = false
+                }
+                .presentationBackground(TitleMoreInfoView.sheetBackground)
+            }
+        }
+        .sheet(isPresented: $showsAboutPage) {
+            if let item {
+                TitleAboutPage(item: item) {
+                    showsAboutPage = false
+                }
+                .presentationBackground(TitleMoreInfoView.sheetBackground)
+            }
+        }
         .alert("Playback", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -189,11 +229,16 @@ struct ItemDetailView: View {
             if let overview = item.overview, !overview.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     overviewBlock(overview)
-                    technicalSpecsRow(for: item)
+                    TitleSpecsRow(item: item)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                technicalSpecsRow(for: item)
+                VStack(alignment: .leading, spacing: 8) {
+                    TitleSpecsRow(item: item)
+                    if moreInfo.hasDetails {
+                        moreInfoButton
+                    }
+                }
             }
         }
         .padding(.horizontal, 32)
@@ -293,108 +338,13 @@ struct ItemDetailView: View {
         static let height: CGFloat = 45
     }
 
-    private func technicalSpecsRow(for item: MediaItem) -> some View {
-        ViewThatFits(in: .horizontal) {
-            specsContent(for: item, spacing: 5)
-            specsContent(for: item, spacing: 3)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Title details")
-    }
-
-    @ViewBuilder
-    private func specsContent(for item: MediaItem, spacing: CGFloat) -> some View {
-        HStack(spacing: spacing) {
-            if let year = item.year, let runtime = item.runtimeLabel {
-                specText("\(year) · \(runtime)")
-            } else if let year = item.year {
-                specText("\(year)")
-            } else if let runtime = item.runtimeLabel {
-                specText(runtime)
-            }
-            if let score = item.criticRating, score > 0 {
-                HStack(spacing: 3) {
-                    Image(score >= 60 ? "TomatometerFresh" : "TomatometerSplat")
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        .frame(width: 14, height: 14)
-                    Text("\(Int(score.rounded()))%")
-                }
-                .fixedSize()
-                .accessibilityLabel("Rotten Tomatoes \(Int(score.rounded())) percent")
-            }
-            if let age = item.ageGateLabel {
-                HStack(spacing: 3) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Color(red: 0.20, green: 0.78, blue: 0.35))
-                    Text(age)
-                }
-                .fixedSize()
-                .accessibilityLabel(age)
-            }
-            if let rating = item.officialRating, !rating.isEmpty {
-                specBadge(rating)
-            }
-            if let resolution = item.videoResolution.displayName {
-                specBadge(resolution)
-            }
-            if item.videoRange == .dolbyVision {
-                Image("DolbyVisionLogo")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 11)
-                    .accessibilityLabel("Dolby Vision")
-            } else if item.videoRange != .sdr {
-                specBadge(item.videoRange.displayName)
-            }
-            if item.audioFormat == .atmos {
-                Image("DolbyAtmosLogo")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 11)
-                    .accessibilityLabel("Dolby Atmos")
-            }
-            if item.hasClosedCaptions {
-                specBadge("CC")
-            }
-            if item.hasAudioDescription {
-                specBadge("AD")
-            }
-        }
-        .font(.subheadline)
-        .foregroundStyle(.white.opacity(0.88))
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func specText(_ value: String) -> some View {
-        Text(value)
-            .fixedSize()
-            .layoutPriority(1)
-    }
-
-    private func specBadge(_ value: String) -> some View {
-        Text(value)
-            .font(.caption)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .overlay {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .strokeBorder(.white.opacity(0.85), lineWidth: 1)
-            }
-            .accessibilityLabel(value)
-    }
-
     private func overviewBlock(_ overview: String) -> some View {
         ZStack(alignment: .bottomTrailing) {
             Text(overview)
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.88))
                 .multilineTextAlignment(.leading)
-                .lineLimit(isOverviewExpanded ? nil : 2)
+                .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, showsOverviewMore(overview) ? 56 : 0)
 
@@ -407,27 +357,29 @@ struct ItemDetailView: View {
                     )
                     .frame(width: 28, height: 22)
 
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isOverviewExpanded = true
-                        }
-                    } label: {
-                        Text("MORE")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(.ultraThinMaterial, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("More")
+                    moreInfoButton
                 }
             }
         }
     }
 
+    private var moreInfoButton: some View {
+        Button {
+            showsMoreInfo = true
+        } label: {
+            Text("MORE")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("More information")
+    }
+
     private func showsOverviewMore(_ overview: String) -> Bool {
-        !isOverviewExpanded && overview.count > 90
+        overview.count > 90 || moreInfo.hasDetails
     }
 
     private var selectedSeasonTitle: String {
@@ -655,7 +607,6 @@ struct ItemDetailView: View {
         guard session.library != nil else { return }
         if hasLoadedDetail { return }
 
-        isOverviewExpanded = false
         if let snapshot = session.cachedItemDetail(itemID: itemID) {
             apply(snapshot)
             applyFocusedEpisode()
@@ -704,6 +655,7 @@ struct ItemDetailView: View {
         do {
             let (loaded, dto) = try await library.item(id: itemID)
             item = loaded
+            moreInfo = TitleMoreInfoMapper.info(from: dto, item: loaded)
             isLoading = false
 
             async let fetchedTrailers = library.trailers(for: dto)
@@ -724,6 +676,7 @@ struct ItemDetailView: View {
                 applyFocusedEpisode()
                 syncCarouselPosition(forceSeasonStart: scrolledEpisodeID == nil)
                 persistSnapshot()
+                await fillSeriesMedia(library: library, title: loaded)
             } else {
                 seasons = []
                 episodes = []
@@ -746,6 +699,14 @@ struct ItemDetailView: View {
             }
         }
         isLoading = false
+    }
+
+    private func fillSeriesMedia(library: JellyfinLibraryClient, title: MediaItem) async {
+        guard moreInfo.needsEpisodeMedia else { return }
+        let hero = MediaItem.heroPlaybackItem(title: title, episodes: episodes)
+        guard hero.kind == .episode, hero.id != title.id else { return }
+        guard let (_, dto) = try? await library.item(id: hero.id) else { return }
+        moreInfo = moreInfo.mergingMedia(from: dto)
     }
 
     private func refreshPlaybackProgress() async {

@@ -15,6 +15,8 @@ struct PlayerView: View {
     @State private var playerWasBackgrounded = false
     @State private var subtitleSearchItem: MediaItem?
     @State private var resumeOverride: TimeInterval?
+    @State private var appliedBitrate: Int?
+    @State private var liveBitrateOverride: Int?
 
     init(item: MediaItem) {
         self.item = item
@@ -41,6 +43,9 @@ struct PlayerView: View {
         .task {
             await prepareAndStart()
         }
+        .task(id: liveAdaptiveMonitorID) {
+            await monitorLiveAdaptive()
+        }
         .onDisappear {
             model?.markPlaybackViewDismissed()
         }
@@ -59,6 +64,11 @@ struct PlayerView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhase(phase)
+        }
+        .onChange(of: session.adaptiveBitrate.path.transport) { previous, _ in
+            guard previous != .other else { return }
+            liveBitrateOverride = nil
+            Task { await retuneAdaptiveBitrate() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinRemoteStopPlayback)) { _ in
             dismiss()
@@ -109,6 +119,8 @@ struct PlayerView: View {
     private func prepareAndStart() async {
         if let local = downloads.playbackPlan(for: activeItem, account: session.session) {
             guard !Task.isCancelled else { return }
+            appliedBitrate = nil
+            liveBitrateOverride = nil
             await startPlayback(local)
             return
         }
@@ -118,11 +130,13 @@ struct PlayerView: View {
         }
         do {
             let launch = session.launchOptions(for: activeItem.id)
+            let maxBitrate = await streamingBitrate(for: launch)
+            appliedBitrate = maxBitrate
             var plan = try await library.playbackPlan(
                 for: activeItem,
                 audioIndex: launch.audioIndex,
                 subtitleIndex: launch.subtitleStreamIndex,
-                maxBitrate: launch.resolvedQuality.bitsPerSecond,
+                maxBitrate: maxBitrate,
                 startTime: resumeOverride ?? activeItem.playbackPosition
             )
             resumeOverride = nil
@@ -138,7 +152,7 @@ struct PlayerView: View {
                     audioIndex: launch.audioIndex,
                     subtitleIndex: launch.subtitleStreamIndex,
                     allowDirectPlay: false,
-                    maxBitrate: launch.resolvedQuality.bitsPerSecond,
+                    maxBitrate: maxBitrate,
                     startTime: plan.startTime
                 )
             }
@@ -148,6 +162,108 @@ struct PlayerView: View {
             return
         } catch {
             fallbackError = error.localizedDescription
+        }
+    }
+
+    private func streamingBitrate(for launch: PlaybackLaunchOptions) async -> Int {
+        if let liveBitrateOverride {
+            return liveBitrateOverride
+        }
+        await session.adaptiveBitrate.refreshIfNeeded(library: session.library)
+        return session.adaptiveBitrate.resolvedBitsPerSecond(
+            sourceBitrate: activeItem.sourceBitrate,
+            launch: launch
+        )
+    }
+
+    private var liveAdaptiveMonitorID: String {
+        guard let model else { return "idle" }
+        return "\(model.plan.playSessionID ?? "")|\(model.plan.streamURL.absoluteString)"
+    }
+
+    private func monitorLiveAdaptive() async {
+        guard model != nil else { return }
+        var tracker = LiveAdaptiveTracker(startedAt: Date())
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return
+            }
+            guard PlaybackPreferences.adaptiveBitrateEnabled else { continue }
+            guard let model else { return }
+            guard model.plan.streamURL.isFileURL != true else { return }
+            let launch = session.launchOptions(for: activeItem.id)
+            if let override = launch.quality, override != .auto { return }
+            let current = PlaybackQuality.atOrBelow(appliedBitrate ?? launch.resolvedQuality.bitsPerSecond)
+            let sample = LiveAdaptiveSample(
+                hasFirstFrame: model.hasFirstFrame,
+                isPaused: model.isPaused,
+                isSeeking: model.isSeeking,
+                isRebuffering: model.isRebuffering,
+                bufferedAhead: model.bufferedAheadSeconds,
+                current: current,
+                ceiling: PlaybackPreferences.selectedQuality,
+                sourceBitsPerSecond: activeItem.sourceBitrate
+            )
+            switch tracker.action(now: Date(), sample: sample) {
+            case .none:
+                break
+            case .stepDown:
+                if let next = PlaybackQuality.stepDown(
+                    from: current,
+                    sourceBitsPerSecond: activeItem.sourceBitrate
+                ) {
+                    await applyLiveAdaptive(next)
+                    return
+                }
+            case .stepUp:
+                if let next = PlaybackQuality.stepUp(
+                    from: current,
+                    sourceBitsPerSecond: activeItem.sourceBitrate,
+                    ceiling: PlaybackPreferences.selectedQuality
+                ) {
+                    await applyLiveAdaptive(next)
+                    return
+                }
+            }
+        }
+    }
+
+    private func applyLiveAdaptive(_ quality: PlaybackQuality) async {
+        guard model?.plan.streamURL.isFileURL != true else { return }
+        liveBitrateOverride = quality.bitsPerSecond
+        appliedBitrate = quality.bitsPerSecond
+        let skip = model?.skipSegments ?? []
+        resumeOverride = model?.currentTime
+        await model?.stop()
+        model = nil
+        didFallBackToRemux = false
+        fallbackError = nil
+        await prepareAndStart()
+        if let created = model, created.skipSegments.isEmpty {
+            created.skipSegments = skip
+        }
+    }
+
+    private func retuneAdaptiveBitrate() async {
+        guard PlaybackPreferences.adaptiveBitrateEnabled else { return }
+        guard model != nil else { return }
+        guard model?.plan.streamURL.isFileURL != true else { return }
+        let launch = session.launchOptions(for: activeItem.id)
+        if let override = launch.quality, override != .auto { return }
+        let next = await streamingBitrate(for: launch)
+        let previous = appliedBitrate ?? launch.resolvedQuality.bitsPerSecond
+        guard PlaybackQuality.atOrBelow(next) != PlaybackQuality.atOrBelow(previous) else { return }
+        let skip = model?.skipSegments ?? []
+        resumeOverride = model?.currentTime
+        await model?.stop()
+        model = nil
+        didFallBackToRemux = false
+        fallbackError = nil
+        await prepareAndStart()
+        if let created = model, created.skipSegments.isEmpty {
+            created.skipSegments = skip
         }
     }
 
@@ -200,6 +316,8 @@ struct PlayerView: View {
         didFallBackToRemux = false
         fallbackError = nil
         activeItem = next
+        liveBitrateOverride = nil
+        appliedBitrate = nil
         await prepareAndStart()
     }
 
@@ -216,10 +334,11 @@ struct PlayerView: View {
         }
         do {
             try Task.checkCancellation()
+            let launch = session.launchOptions(for: activeItem.id)
             let remux = try await library.playbackPlan(
                 for: activeItem,
                 allowDirectPlay: false,
-                maxBitrate: session.launchOptions(for: activeItem.id).resolvedQuality.bitsPerSecond,
+                maxBitrate: await streamingBitrate(for: launch),
                 startTime: resumeOverride ?? activeItem.playbackPosition
             )
             try Task.checkCancellation()
@@ -234,6 +353,7 @@ struct PlayerView: View {
     private func changeQuality(_ quality: PlaybackQuality) async {
         let current = session.launchOptions(for: activeItem.id).resolvedQuality
         session.updateLaunchOptions(for: activeItem.id) { $0.quality = quality }
+        liveBitrateOverride = nil
         guard quality != current else { return }
         guard model?.plan.streamURL.isFileURL != true else { return }
         let skip = model?.skipSegments ?? []

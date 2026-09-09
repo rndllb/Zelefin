@@ -125,7 +125,8 @@ enum ItemMapper {
             playCount: dto.userData?.playCount ?? 0,
             videoResolution: videoResolution(from: dto.mediaStreams),
             hasClosedCaptions: hasClosedCaptions(from: dto.mediaStreams),
-            hasAudioDescription: hasAudioDescription(from: dto.mediaStreams)
+            hasAudioDescription: hasAudioDescription(from: dto.mediaStreams),
+            sourceBitrate: sourceBitrate(from: dto)
         )
     }
 
@@ -154,6 +155,16 @@ enum ItemMapper {
                 isDefault: stream.isDefault ?? false
             )
         }
+    }
+
+    static func sourceBitrate(from dto: BaseItemDto) -> Int? {
+        if let rate = dto.mediaSources?.first?.bitrate, rate > 0 {
+            return rate
+        }
+        if let rate = dto.mediaStreams?.first(where: { $0.type == .video })?.bitRate, rate > 0 {
+            return rate
+        }
+        return nil
     }
 
     static func videoRange(from streams: [MediaStream]?) -> VideoRange {

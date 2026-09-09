@@ -356,6 +356,59 @@ final class DirectPlayEngineTests: XCTestCase {
         XCTAssertTrue(DirectPlaySeekPolicy.allowsAutomaticResumeSeek(.appleNative))
     }
 
+    func testDirectPlayOpensAtSavedPlayhead() {
+        XCTAssertEqual(
+            PlaybackResumePolicy.clientStartPosition(method: .directPlay, startTime: 600),
+            600
+        )
+        XCTAssertNil(PlaybackResumePolicy.clientStartPosition(method: .directPlay, startTime: 4))
+        XCTAssertNil(PlaybackResumePolicy.clientStartPosition(method: .remux, startTime: 600))
+        XCTAssertNil(PlaybackResumePolicy.clientStartPosition(method: .transcode, startTime: 600))
+    }
+
+    func testDeferredSeekOnlyWhenDirectPlayStuckAtHead() {
+        XCTAssertTrue(
+            PlaybackResumePolicy.needsDeferredSeek(method: .directPlay, playhead: 0, plannedStart: 600)
+        )
+        XCTAssertFalse(
+            PlaybackResumePolicy.needsDeferredSeek(method: .directPlay, playhead: 600, plannedStart: 600)
+        )
+        XCTAssertFalse(
+            PlaybackResumePolicy.needsDeferredSeek(method: .remux, playhead: 0, plannedStart: 600)
+        )
+    }
+
+    func testRemuxURLGetsStartTimeTicksWhenJellyfinOmitsThem() {
+        let url = URL(string: "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a")!
+        let patched = StreamResumeURL.ensuringStartTimeTicks(url, method: .transcode, startTime: 600)
+        XCTAssertTrue(patched.absoluteString.contains("StartTimeTicks=6000000000"))
+
+        let already = URL(string: "https://jellyfin.local/Videos/1/master.m3u8?StartTimeTicks=1")!
+        XCTAssertEqual(
+            StreamResumeURL.ensuringStartTimeTicks(already, method: .transcode, startTime: 600),
+            already
+        )
+        XCTAssertEqual(
+            StreamResumeURL.ensuringStartTimeTicks(url, method: .directPlay, startTime: 600),
+            url
+        )
+    }
+
+    func testPlaybackStartReportKeepsSavedPlayhead() {
+        XCTAssertEqual(
+            PlaybackResumePolicy.reportStartPosition(playhead: 0, plannedStart: 600),
+            600
+        )
+        XCTAssertEqual(
+            PlaybackResumePolicy.reportStartPosition(playhead: 612, plannedStart: 600),
+            612
+        )
+        XCTAssertEqual(
+            PlaybackResumePolicy.reportStartPosition(playhead: 0, plannedStart: 2),
+            0
+        )
+    }
+
     func testDirectPlaySeeksKeepOnlyTheLatestTarget() {
         var pending: TimeInterval?
         XCTAssertTrue(DirectPlaySeekCoalesce.enqueue(pending: &pending, latest: 10, isDraining: false))

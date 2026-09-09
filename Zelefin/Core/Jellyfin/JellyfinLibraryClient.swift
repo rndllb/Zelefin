@@ -685,6 +685,37 @@ final class JellyfinLibraryClient: Sendable {
         return url
     }
 
+    func measureStreamingBitrate(
+        size: Int,
+        timeout: TimeInterval,
+        transport: NetworkTransport
+    ) async -> BitrateProbeResult? {
+        let work = Task {
+            try await downloadBitrateTest(size: size, transport: transport)
+        }
+        let watchdog = Task {
+            try await Task.sleep(for: .seconds(timeout))
+            work.cancel()
+        }
+        defer { watchdog.cancel() }
+        return try? await work.value
+    }
+
+    private func downloadBitrateTest(size: Int, transport: NetworkTransport) async throws -> BitrateProbeResult {
+        let start = Date()
+        let data = try await client.send(Paths.getBitrateTestBytes(size: size)).value
+        try Task.checkCancellation()
+        let elapsed = max(Date().timeIntervalSince(start), 0.05)
+        let bitsPerSecond = Int((Double(data.count) * 8.0) / elapsed)
+        return BitrateProbeResult(
+            bitsPerSecond: max(0, bitsPerSecond),
+            bytes: data.count,
+            elapsed: elapsed,
+            transport: transport,
+            measuredAt: Date()
+        )
+    }
+
     func playbackPlan(
         for item: MediaItem,
         audioIndex: Int? = nil,
@@ -721,7 +752,7 @@ final class JellyfinLibraryClient: Sendable {
         startTime: TimeInterval?
     ) async throws -> PlaybackPlan {
         let bitrate = maxBitrate ?? PlaybackPreferences.maxStreamingBitrate
-        let resume = startTime ?? item.playbackPosition
+        let resume = await resolvedResumePosition(requested: startTime, item: item)
         let profile = AVDeviceProfileFactory.make(
             preferFMP4InHLS: PlaybackPreferences.effectivePreferFMP4InHLS,
             maxBitrate: bitrate
@@ -764,8 +795,12 @@ final class JellyfinLibraryClient: Sendable {
             throw ZelefinError.emptyPlaybackSources
         }
 
-        let url = try streams.url(itemID: item.id, source: source)
         let method = ItemMapper.playbackMethod(from: source)
+        let url = StreamResumeURL.ensuringStartTimeTicks(
+            try streams.url(itemID: item.id, source: source),
+            method: method,
+            startTime: resume
+        )
         let streams = source.mediaStreams ?? []
 
         return PlaybackPlan(
@@ -785,6 +820,13 @@ final class JellyfinLibraryClient: Sendable {
             subtitleTracks: ItemMapper.tracks(from: streams, kind: .subtitle),
             externalSubtitles: self.streams.externalSubtitles(itemID: item.id, source: source)
         )
+    }
+
+    private func resolvedResumePosition(requested: TimeInterval?, item: MediaItem) async -> TimeInterval {
+        let local = requested ?? item.playbackPosition
+        if local > PlaybackResumePolicy.threshold { return local }
+        guard let fresh = try? await self.item(id: item.id).0.playbackPosition else { return local }
+        return max(local, fresh)
     }
 
     private func resumeItems() async throws -> [MediaItem] {
