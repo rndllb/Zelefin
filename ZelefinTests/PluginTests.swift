@@ -95,20 +95,79 @@ final class OpenSubtitlesPluginTests: XCTestCase {
     func testAddSubtitlesWhenPluginExists() {
         XCTAssertTrue(
             RemoteSubtitleOffer.shouldShowAddSubtitles(
+                canManageSubtitles: true,
                 pluginAvailable: true,
                 supportsRemote: true
             )
         )
         XCTAssertFalse(
             RemoteSubtitleOffer.shouldShowAddSubtitles(
+                canManageSubtitles: false,
+                pluginAvailable: true,
+                supportsRemote: true
+            )
+        )
+        XCTAssertFalse(
+            RemoteSubtitleOffer.shouldShowAddSubtitles(
+                canManageSubtitles: true,
                 pluginAvailable: false,
                 supportsRemote: true
             )
         )
         XCTAssertFalse(
             RemoteSubtitleOffer.shouldShowAddSubtitles(
+                canManageSubtitles: true,
                 pluginAvailable: true,
                 supportsRemote: false
+            )
+        )
+    }
+
+    func testEditSubtitlesPermissionMatchesJellyfinPolicy() {
+        XCTAssertTrue(RemoteSubtitleOffer.canManageSubtitles(isAdministrator: true, enableSubtitleManagement: false))
+        XCTAssertTrue(RemoteSubtitleOffer.canManageSubtitles(isAdministrator: false, enableSubtitleManagement: true))
+        XCTAssertFalse(RemoteSubtitleOffer.canManageSubtitles(isAdministrator: false, enableSubtitleManagement: false))
+    }
+
+    func testOpenSubtitlesVisibleWhenPluginCatalogIsHidden() {
+        XCTAssertTrue(
+            RemoteSubtitleOffer.pluginAvailable(
+                listed: true,
+                catalogNames: ["Open Subtitles"],
+                canManageSubtitles: true,
+                canListPlugins: true
+            )
+        )
+        XCTAssertFalse(
+            RemoteSubtitleOffer.pluginAvailable(
+                listed: false,
+                catalogNames: ["Intro Skipper"],
+                canManageSubtitles: true,
+                canListPlugins: true
+            )
+        )
+        XCTAssertFalse(
+            RemoteSubtitleOffer.pluginAvailable(
+                listed: false,
+                catalogNames: [],
+                canManageSubtitles: true,
+                canListPlugins: true
+            )
+        )
+        XCTAssertTrue(
+            RemoteSubtitleOffer.pluginAvailable(
+                listed: false,
+                catalogNames: [],
+                canManageSubtitles: true,
+                canListPlugins: false
+            )
+        )
+        XCTAssertFalse(
+            RemoteSubtitleOffer.pluginAvailable(
+                listed: false,
+                catalogNames: [],
+                canManageSubtitles: false,
+                canListPlugins: false
             )
         )
     }
@@ -258,6 +317,7 @@ final class SeerrTitleTests: XCTestCase {
     func testReadsTmdbProviderIDCaseInsensitively() {
         XCTAssertEqual(JellyfinTmdbCatalog.tmdbID(from: ["Tmdb": "27205"]), 27205)
         XCTAssertEqual(JellyfinTmdbCatalog.tmdbID(from: ["tmdb": "1396"]), 1396)
+        XCTAssertEqual(JellyfinTmdbCatalog.tmdbID(from: ["TheMovieDb": "550"]), 550)
         XCTAssertNil(JellyfinTmdbCatalog.tmdbID(from: ["Imdb": "tt1375666"]))
     }
 

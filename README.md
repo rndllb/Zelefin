@@ -9,6 +9,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 ### Sign in
 
 - Jellyfin server URL, username, and password
+- Try Review Demo on the sign-in screen: a sample library for App Review (Home, Movies, Shows, title pages, and Play) with no Jellyfin server. Hide the button with `ReviewDemo.isEnabled`, or delete `Zelefin/ReviewDemo` after approval.
 - Quick Connect from another signed-in device
 - Test connection before login
 - Access Gateway tokens for Cloudflare Zero Trust or Pangolin, sent on every request including artwork and playback
@@ -20,8 +21,10 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Featured hero of latest movies and shows
 - Continue Watching and Next Up, or one combined Continue Watching row (Interface settings)
 - Recently added rows per library, collections, and genres
+- Quality marks on posters when the file is 4K, HD, HDR / Dolby Vision, or Atmos (movies and episodes; series posters stay unmarked when there is no file)
 - Pull to refresh, cache-first loads
-- Long-press: play, download, mark watched or unwatched, go to the show or movie, add subtitles when Open Subtitles is installed
+- Long-press: play, download, mark watched or unwatched, go to the show or movie, add subtitles when this account can edit them
+- Remove from Continue Watching or Next Up when Jellyfin Enhanced is installed, without clearing progress
 
 ### Browse
 
@@ -39,10 +42,11 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Season episode carousel
 - Related titles, cast, and collections
 - About row: title and synopsis card, Tomatometer when Jellyfin has a critic score, and an age-guidance card from the official rating
+- TMDB reviews, household write/edit reviews, and awards when Jellyfin Enhanced is installed (awards need Show Awards on the plugin; TMDB reviews need a TMDB key)
 - MORE on the About card opens the full description; MORE on the hero opens the info sheet
 - Information, Languages, and File lists on the title page (studio, runtime, audio, subtitles, container, bitrate)
 - Download and share from the same pill
-- Add Subtitles on movies and episodes when the Open Subtitles plugin is on the server
+- Add Subtitles on movies and episodes when this account can edit subtitles (administrator or Edit Subtitles) and Open Subtitles is on the server
 - Share a `zelefin://` link plus the Jellyfin web URL so another install or a browser can open the title
 
 ### Playback
@@ -70,7 +74,8 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 Settings → Plugins shows what this Jellyfin server actually has installed. Zelefin does not install plugins; it uses the ones already on the server.
 
 - **Intro Skipper** — Skip Intro and Skip Credits during playback. Optional auto-skip for intros and credits.
-- **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
+- **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Requires an administrator or a user with Edit Subtitles. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
+- **Jellyfin Enhanced** — Remove from Continue Watching or Next Up without changing watched state. TMDB reviews, household reviews, and awards on the title page. Detection uses the plugin list, or `/JellyfinEnhanced/version` when `/Plugins` is admin-only.
 - **Seerr / Jellyseerr** — Sign in here with your Jellyfin username and password, then discover and request titles from Search. Not a Jellyfin plugin; a separate request app that talks to Radarr and Sonarr.
 
 ### Search and requests
@@ -95,7 +100,8 @@ Settings → Plugins shows what this Jellyfin server actually has installed. Zel
 
 ### Users
 
-- Administrators can manage server users from Settings: photo, rename, password set/reset, administrator flag, disable account, remote bitrate cap, parental max rating, block unrated types, and per-library access
+- Administrators can manage server users from Settings: photo, rename, password set/reset, administrator flag, Edit Subtitles, disable account, remote bitrate cap, parental max rating, block unrated types, and per-library access
+- Edit Subtitles (`EnableSubtitleManagement`) lets a non-admin search and download subtitles the same way an administrator can
 
 ### Network
 
@@ -123,7 +129,7 @@ xcodegen generate
 open Zelefin.xcodeproj
 ```
 
-Select an iPhone or iPad destination and run. Sign in with your Jellyfin server URL, username, and password. Local HTTP servers are allowed.
+Select an iPhone or iPad destination and run. Sign in with your Jellyfin server URL, username, and password, or tap Try Review Demo to browse a sample library. Local HTTP servers are allowed.
 
 Requires iOS 18. This build is iPhone and iPad only.
 

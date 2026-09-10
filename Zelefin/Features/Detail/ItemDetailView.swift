@@ -96,6 +96,8 @@ struct ItemDetailView: View {
                                 .padding(.bottom, 20)
                             }
 
+                            TitleEnhancedExtras(item: item)
+
                             if !moreInfo.information.isEmpty {
                                 TitleFactsSection(title: "Information", rows: moreInfo.information)
                                     .padding(.bottom, 20)

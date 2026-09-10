@@ -734,7 +734,7 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
     func testContinueWatchingMenuOrder() {
         XCTAssertEqual(
             PlaybackQueueMenuLayout.actions(context: .continueWatching, kind: .episode),
-            [.download, .play, .goToShow, .markWatched]
+            [.download, .play, .goToShow, .markWatched, .removeFromHomeQueue]
         )
         XCTAssertEqual(PlaybackQueueMenuLayout.playTitle(for: .episode), "Play Episode")
         XCTAssertEqual(PlaybackQueueMenuLayout.goToTitle(for: .episode), "Go to Show")
@@ -751,7 +751,7 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
         XCTAssertEqual(PlaybackQueueMenuLayout.goToSymbol(for: .series), "tv")
     }
 
-    func testFeaturedMenuMatchesContinueWatching() {
+    func testFeaturedMenuOmitsHomeHide() {
         XCTAssertEqual(
             PlaybackQueueMenuLayout.actions(context: .featured, kind: .movie),
             [.download, .play, .goToShow, .markWatched]

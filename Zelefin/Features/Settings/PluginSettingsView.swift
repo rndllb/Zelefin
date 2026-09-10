@@ -46,6 +46,19 @@ struct PluginSettingsView: View {
             }
 
             Section {
+                HStack {
+                    Text("Jellyfin Enhanced")
+                    Spacer()
+                    Text(session.jellyfinEnhancedAvailable ? "Installed" : "Not on this server")
+                        .foregroundStyle(session.jellyfinEnhancedAvailable ? .green : .secondary)
+                }
+            } header: {
+                Text("Jellyfin Enhanced")
+            } footer: {
+                Text("When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and write reviews or see awards on the title page.")
+            }
+
+            Section {
                 if isSeerrSignedIn {
                     LabeledContent("Server") {
                         Text(seerrURL)

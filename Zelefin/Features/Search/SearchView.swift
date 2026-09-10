@@ -620,10 +620,7 @@ private struct SearchPage: View {
                         item: item,
                         onAddSubtitles: { subtitleSearchItem = item }
                     )
-                } else if RemoteSubtitleOffer.shouldShowAddSubtitles(
-                    pluginAvailable: session.openSubtitlesAvailable,
-                    supportsRemote: item.supportsRemoteSubtitles
-                ) {
+                } else if session.shouldShowAddSubtitles(for: item) {
                     Button("Add Subtitles", systemImage: "captions.bubble") {
                         subtitleSearchItem = item
                     }

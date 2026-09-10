@@ -52,6 +52,11 @@ struct ConnectView: View {
                         quickConnectButton
                             .padding(.top, 14)
                     }
+
+                    if ReviewDemo.isEnabled {
+                        reviewDemoButton
+                            .padding(.top, 14)
+                    }
                 }
                 .padding(.horizontal, 26)
                 .padding(.bottom, 44)
@@ -377,6 +382,22 @@ struct ConnectView: View {
         .disabled(trimmedAddress.isEmpty || isBusy)
         .opacity((trimmedAddress.isEmpty || isBusy && !isUsingQuickConnect) ? 0.42 : 1)
         .accessibilityLabel("Quick Connect")
+    }
+
+    private var reviewDemoButton: some View {
+        Button {
+            session.connectReviewDemo()
+        } label: {
+            Text("TRY REVIEW DEMO")
+                .font(.caption.weight(.bold))
+                .tracking(0.9)
+                .modifier(LoginSecondaryButtonStyle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+        .opacity(isBusy ? 0.42 : 1)
+        .accessibilityLabel("Try Review Demo")
+        .accessibilityHint("Opens a sample library for App Review. No Jellyfin server required.")
     }
 
     private var quickConnectPanel: some View {

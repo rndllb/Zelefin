@@ -17,6 +17,7 @@ final class UserPolicyDraftTests: XCTestCase {
         var draft = UserPolicyDraft(policy: source)
         draft.isAdministrator = true
         draft.isDisabled = true
+        draft.enableSubtitleManagement = true
         draft.remoteClientBitrateLimit = RemoteBitrateLimit.mbps8.rawValue
         draft.maxParentalRating = 4
         draft.blockUnratedItems = [.movie, .series]
@@ -28,11 +29,21 @@ final class UserPolicyDraftTests: XCTestCase {
         XCTAssertEqual(next.passwordResetProviderID, "reset")
         XCTAssertEqual(next.isAdministrator, true)
         XCTAssertEqual(next.isDisabled, true)
+        XCTAssertEqual(next.enableSubtitleManagement, true)
         XCTAssertEqual(next.remoteClientBitrateLimit, 8_000_000)
         XCTAssertEqual(next.maxParentalRating, 4)
         XCTAssertEqual(next.blockUnratedItems, [.movie, .series])
         XCTAssertEqual(next.enableAllFolders, false)
         XCTAssertEqual(next.enabledFolders, ["lib-a", "lib-b"])
+    }
+
+    func testDraftReadsEditSubtitlesFromPolicy() {
+        let source = UserPolicy(
+            authenticationProviderID: "auth",
+            enableSubtitleManagement: true,
+            passwordResetProviderID: "reset"
+        )
+        XCTAssertTrue(UserPolicyDraft(policy: source).enableSubtitleManagement)
     }
 
     func testAllLibrariesClearsFolderAllowList() {

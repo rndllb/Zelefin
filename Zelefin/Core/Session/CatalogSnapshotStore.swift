@@ -3,7 +3,7 @@ import Foundation
 /// On-disk copy of a library catalog (Movies, Shows, or Collections) so opening the tab paints
 /// the full grid instantly on a cold launch instead of waiting on a large `/Items` page.
 struct CatalogSnapshot: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int
     var userID: String

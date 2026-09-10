@@ -13,6 +13,7 @@ enum PlaybackQueueMenuAction: Equatable, Sendable {
     case play
     case goToShow
     case markWatched
+    case removeFromHomeQueue
     case removeFromRecentlyWatched
 }
 
@@ -25,7 +26,9 @@ enum PlaybackQueueMenuLayout {
         switch context {
         case .episode:
             return [.download, .play, .markWatched]
-        case .continueWatching, .nextUp, .featured:
+        case .continueWatching, .nextUp:
+            return [.download, .play, .goToShow, .markWatched, .removeFromHomeQueue]
+        case .featured:
             return [.download, .play, .goToShow, .markWatched]
         case .recentlyWatched:
             return [.download, .play, .goToShow, .markWatched, .removeFromRecentlyWatched]
@@ -70,6 +73,7 @@ struct PlaybackQueueMenuContent: View {
     var onDownload: () -> Void
     var onMarkWatched: () -> Void
     var onAddSubtitles: (() -> Void)? = nil
+    var onRemoveFromHomeQueue: (() -> Void)? = nil
     var onRemoveFromRecentlyWatched: (() -> Void)? = nil
 
     @Environment(DownloadStore.self) private var downloads
@@ -87,10 +91,7 @@ struct PlaybackQueueMenuContent: View {
         }
         if item.kind == .movie {
             TitlePlaybackMenus(item: item, onAddSubtitles: onAddSubtitles)
-        } else if RemoteSubtitleOffer.shouldShowAddSubtitles(
-            pluginAvailable: session.openSubtitlesAvailable,
-            supportsRemote: item.supportsRemoteSubtitles
-        ), let onAddSubtitles {
+        } else if session.shouldShowAddSubtitles(for: item), let onAddSubtitles {
             Button("Add Subtitles", systemImage: "captions.bubble") {
                 onAddSubtitles()
             }
@@ -116,6 +117,19 @@ struct PlaybackQueueMenuContent: View {
                 systemImage: PlaybackQueueMenuLayout.watchedSymbol(isWatched: item.isWatched)
             ) {
                 onMarkWatched()
+            }
+        }
+        if actions.contains(.removeFromHomeQueue),
+           session.jellyfinEnhancedAvailable,
+           let onRemoveFromHomeQueue
+        {
+            Button(
+                JellyfinEnhancedHomeHide.menuTitle(
+                    for: JellyfinEnhancedHomeHide.surface(queueKind: item.queueKind)
+                ),
+                systemImage: "eye.slash"
+            ) {
+                onRemoveFromHomeQueue()
             }
         }
         if actions.contains(.removeFromRecentlyWatched), let onRemoveFromRecentlyWatched {
@@ -206,10 +220,7 @@ struct TitlePlaybackMenus: View {
                     }
                 }
             }
-            if RemoteSubtitleOffer.shouldShowAddSubtitles(
-                pluginAvailable: session.openSubtitlesAvailable,
-                supportsRemote: item.supportsRemoteSubtitles
-            ), let onAddSubtitles {
+            if session.shouldShowAddSubtitles(for: item), let onAddSubtitles {
                 Button("Add Subtitles", systemImage: "captions.bubble") {
                     onAddSubtitles()
                 }
@@ -279,6 +290,9 @@ struct PlaybackQueueOverflowButton: View {
                 onAddSubtitles: {
                     subtitleSearchItem = item
                 },
+                onRemoveFromHomeQueue: (context == .continueWatching || context == .nextUp)
+                    ? { Task { await removeFromHomeQueue() } }
+                    : nil,
                 onRemoveFromRecentlyWatched: context == .recentlyWatched
                     ? { Task { await removeFromRecentlyWatched() } }
                     : nil
@@ -352,6 +366,15 @@ struct PlaybackQueueOverflowButton: View {
             } else {
                 try await session.markWatched(item)
             }
+            onDidChange?()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func removeFromHomeQueue() async {
+        do {
+            try await session.hideFromHomeQueue(item)
             onDidChange?()
         } catch {
             errorMessage = error.localizedDescription

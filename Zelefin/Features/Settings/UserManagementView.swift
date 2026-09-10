@@ -114,6 +114,7 @@ struct UserAccountEditorView: View {
             initialValue: policy.map(UserPolicyDraft.init) ?? UserPolicyDraft(
                 isAdministrator: false,
                 isDisabled: false,
+                enableSubtitleManagement: false,
                 remoteClientBitrateLimit: 0,
                 maxParentalRating: nil,
                 blockUnratedItems: [],
@@ -259,12 +260,14 @@ struct UserAccountEditorView: View {
         Section {
             Toggle("Administrator", isOn: administratorBinding)
                 .tint(Color.accentColor)
+            Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
+                .tint(Color.accentColor)
             Toggle("Disable Account", isOn: disabledBinding)
                 .tint(Color.accentColor)
         } header: {
             Text("Permissions")
         } footer: {
-            Text("Administrators can manage users, sessions, and server settings.")
+            Text("Administrators can manage users, sessions, and server settings. Edit Subtitles lets this user search and download subtitles onto the server, same as an administrator.")
         }
     }
 
@@ -372,6 +375,16 @@ struct UserAccountEditorView: View {
                     return
                 }
                 draft.isAdministrator = newValue
+                Task { await savePolicy() }
+            }
+        )
+    }
+
+    private var subtitleManagementBinding: Binding<Bool> {
+        Binding(
+            get: { draft.enableSubtitleManagement },
+            set: { newValue in
+                draft.enableSubtitleManagement = newValue
                 Task { await savePolicy() }
             }
         )
@@ -485,7 +498,7 @@ struct UserAccountEditorView: View {
             try await admin.updatePolicy(userID: account.id, policy: draft.applying(to: policy))
             account.dto.policy = draft.applying(to: policy)
             if isCurrentUser {
-                await session.refreshAdministratorStatus()
+                await session.refreshSessionCapabilities()
             }
         }
         await onChanged()

@@ -3,7 +3,7 @@ import Get
 import JellyfinAPI
 import os
 
-final class JellyfinLibraryClient: Sendable {
+class JellyfinLibraryClient: @unchecked Sendable {
     private let client: JellyfinClient
     private let userID: String
     private let artwork: ArtworkURLBuilder

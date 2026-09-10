@@ -16,13 +16,22 @@ struct JellyfinTmdbCatalog: Equatable, Sendable {
     /// Returns the TMDB identifier stored in Jellyfin provider IDs.
     static func tmdbID(from providerIDs: [String: String]?) -> Int? {
         guard let providerIDs else { return nil }
-        for (key, raw) in providerIDs where key.compare("Tmdb", options: [.caseInsensitive]) == .orderedSame {
+        for (key, raw) in providerIDs where isTMDBKey(key) {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if let value = Int(trimmed) {
                 return value
             }
         }
         return nil
+    }
+
+    static func isTMDBKey(_ key: String) -> Bool {
+        let compact = key.lowercased().filter(\.isLetter)
+        return compact == "tmdb"
+            || compact == "tmdbid"
+            || compact == "themoviedb"
+            || compact == "moviedb"
+            || compact == "themoviedatabase"
     }
 
     /// Returns the IMDb identifier stored in Jellyfin provider IDs (`tt1375666`).

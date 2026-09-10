@@ -26,11 +26,30 @@ enum OpenSubtitlesPlugin {
 }
 
 enum RemoteSubtitleOffer {
+    /// Jellyfin lets administrators and users with Edit Subtitles manage remote subtitles.
+    static func canManageSubtitles(isAdministrator: Bool, enableSubtitleManagement: Bool) -> Bool {
+        isAdministrator || enableSubtitleManagement
+    }
+
+    /// `/Plugins` is often admin-only. An empty list is not proof Open Subtitles is missing.
+    static func pluginAvailable(
+        listed: Bool,
+        catalogNames: [String],
+        canManageSubtitles: Bool,
+        canListPlugins: Bool
+    ) -> Bool {
+        if listed { return true }
+        if !catalogNames.isEmpty { return false }
+        if canListPlugins { return false }
+        return canManageSubtitles
+    }
+
     static func shouldShowAddSubtitles(
+        canManageSubtitles: Bool,
         pluginAvailable: Bool,
         supportsRemote: Bool
     ) -> Bool {
-        supportsRemote && pluginAvailable
+        canManageSubtitles && pluginAvailable && supportsRemote
     }
 }
 

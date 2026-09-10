@@ -259,6 +259,9 @@ struct LandscapeCard: View {
                 DownloadCoverBadge(item: item)
             }
             .posterCard()
+            .overlay(alignment: .topLeading) {
+                PosterQualityBadgeStack(item: item, compact: true)
+            }
             .frame(width: size.width, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityCaption)
@@ -320,6 +323,10 @@ struct LandscapeCard: View {
         var parts = [item.name, item.continueWatchingCaption].compactMap { $0 }
         if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
             parts.append(download)
+        }
+        let quality = PosterQualityBadges.badges(for: item).map(\.accessibilityLabel)
+        if !quality.isEmpty {
+            parts.append(contentsOf: quality)
         }
         return parts.joined(separator: ", ")
     }
@@ -384,15 +391,24 @@ struct ReplayLandscapeCard: View {
                 }
             }
             .posterCard()
+            .overlay(alignment: .topLeading) {
+                PosterQualityBadgeStack(item: item, compact: true)
+            }
             .frame(width: size.width, alignment: .leading)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(
-                ([item.continueWatchingTitle, item.recentlyWatchedCaption]
-                    .compactMap { $0 }
-                    + [downloads.coverMark(for: item, account: session.session).accessibilityCaption].compactMap { $0 }
-                )
-                .joined(separator: ", ")
-            )
+            .accessibilityLabel(accessibilityCaption)
+    }
+
+    private var accessibilityCaption: String {
+        var parts = [item.continueWatchingTitle, item.recentlyWatchedCaption].compactMap { $0 }
+        if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
+            parts.append(download)
+        }
+        let quality = PosterQualityBadges.badges(for: item).map(\.accessibilityLabel)
+        if !quality.isEmpty {
+            parts.append(contentsOf: quality)
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -667,6 +683,9 @@ struct PortraitPoster: View {
                     DownloadCoverBadge(item: item)
                 }
                 .posterCard()
+                .overlay(alignment: .bottomLeading) {
+                    PosterQualityBadgeStack(item: item)
+                }
 
             if let rank {
                 Text("\(rank)")
@@ -684,6 +703,10 @@ struct PortraitPoster: View {
         var parts = [item.name]
         if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
             parts.append(download)
+        }
+        let quality = PosterQualityBadges.badges(for: item).map(\.accessibilityLabel)
+        if !quality.isEmpty {
+            parts.append(contentsOf: quality)
         }
         return parts.joined(separator: ", ")
     }

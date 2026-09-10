@@ -57,6 +57,18 @@ final class ServerURLTests: XCTestCase {
         XCTAssertEqual(url?.absoluteString, "https://example.com/Videos/1/stream.ts?static=true&api_key=tok")
     }
 
+    func testJoinsEnhancedTMDBPathWithoutInjectingAPIKey() {
+        let base = URL(string: "https://example.com")!
+        let url = ServerURL.resolve(
+            base: base,
+            path: "/JellyfinEnhanced/tmdb/movie/27205/reviews?language=en-US&page=1"
+        )
+        XCTAssertEqual(
+            url?.absoluteString,
+            "https://example.com/JellyfinEnhanced/tmdb/movie/27205/reviews?language=en-US&page=1"
+        )
+    }
+
     func testAppendingQueryKeepsReverseProxyPath() {
         let base = URL(string: "https://media.example.com/jellyfin")!
         let path = ServerURL.resolve(base: base, path: "/Items")!

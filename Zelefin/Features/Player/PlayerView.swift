@@ -395,10 +395,7 @@ struct PlayerView: View {
                     model: model,
                     title: model.plan.item.name,
                     quality: session.launchOptions(for: activeItem.id).resolvedQuality,
-                    canAddSubtitles: RemoteSubtitleOffer.shouldShowAddSubtitles(
-                        pluginAvailable: session.openSubtitlesAvailable,
-                        supportsRemote: activeItem.supportsRemoteSubtitles
-                    ),
+                    canAddSubtitles: session.shouldShowAddSubtitles(for: activeItem),
                     onClose: { dismiss() },
                     onQualityChange: { quality in
                         Task { await changeQuality(quality) }

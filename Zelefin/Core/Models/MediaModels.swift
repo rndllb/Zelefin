@@ -126,6 +126,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var hasClosedCaptions: Bool = false
     var hasAudioDescription: Bool = false
     var sourceBitrate: Int? = nil
+    var tmdbID: Int? = nil
 
     var progress: Double {
         guard let runtime, runtime > 0 else { return 0 }
@@ -251,7 +252,8 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             criticRating: criticRating,
             videoResolution: .unknown,
             hasClosedCaptions: false,
-            hasAudioDescription: false
+            hasAudioDescription: false,
+            tmdbID: tmdbID
         )
     }
 
@@ -465,7 +467,8 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             videoResolution: videoResolution,
             hasClosedCaptions: hasClosedCaptions,
             hasAudioDescription: hasAudioDescription,
-            sourceBitrate: sourceBitrate
+            sourceBitrate: sourceBitrate,
+            tmdbID: tmdbID
         )
     }
 }

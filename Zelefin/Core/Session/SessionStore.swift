@@ -26,7 +26,24 @@ final class SessionStore {
     private(set) var isLoadingHome = false
     private(set) var introSkipperAvailable = false
     private(set) var openSubtitlesAvailable = false
+    private(set) var jellyfinEnhancedAvailable = false
     private(set) var isAdministrator = false
+    private(set) var enableSubtitleManagement = false
+
+    var canManageSubtitles: Bool {
+        RemoteSubtitleOffer.canManageSubtitles(
+            isAdministrator: isAdministrator,
+            enableSubtitleManagement: enableSubtitleManagement
+        )
+    }
+
+    func shouldShowAddSubtitles(for item: MediaItem) -> Bool {
+        RemoteSubtitleOffer.shouldShowAddSubtitles(
+            canManageSubtitles: canManageSubtitles,
+            pluginAvailable: openSubtitlesAvailable,
+            supportsRemote: item.supportsRemoteSubtitles
+        )
+    }
     private(set) var tmdbCatalog = JellyfinTmdbCatalog()
     private(set) var currentSSID: String?
     private(set) var activeRoute: HomeNetworkRoute = .remote
@@ -122,6 +139,8 @@ final class SessionStore {
 
     var isSignedIn: Bool { session != nil && library != nil }
 
+    var isReviewDemo: Bool { ReviewDemo.isSession(session) }
+
     var homeNetworkProfile: HomeNetworkProfile {
         guard let id = session?.accountID else { return HomeNetworkProfile() }
         return HomeNetworkStore.profile(for: id)
@@ -172,6 +191,13 @@ final class SessionStore {
             fallbackName: username,
             client: jellyfin
         )
+    }
+
+    func connectReviewDemo() {
+        guard ReviewDemo.isEnabled else { return }
+        let saved = ReviewDemo.session
+        apply(saved)
+        persist(saved)
     }
 
     /// Signs in with Quick Connect, calling `presentCode` when the code is ready.
@@ -348,12 +374,23 @@ final class SessionStore {
         Task { await refreshHome() }
     }
 
+    func hideFromHomeQueue(_ item: MediaItem) async throws {
+        guard jellyfinEnhancedAvailable, let client else {
+            throw ZelefinError.server("Jellyfin Enhanced is not installed on this server.")
+        }
+        let surface = JellyfinEnhancedHomeHide.surface(queueKind: item.queueKind)
+        try await JellyfinEnhancedClient(client: client).hideFromHome(itemID: item.id, surface: surface)
+        removeFromHome(itemID: item.id)
+        Task { await refreshHome() }
+    }
+
     private func removeFromHome(itemID: String) {
         homeLayout = HomeLayoutPreferences.removing(itemID, from: homeLayout)
         persistSnapshot()
     }
 
     private func refreshAccount() async {
+        guard !ReviewDemo.isSession(session) else { return }
         guard let client else { return }
         guard let user = try? await client.send(Paths.getCurrentUser).value else { return }
         guard var saved = session else { return }
@@ -382,7 +419,9 @@ final class SessionStore {
         isLoadingHome = false
         introSkipperAvailable = false
         openSubtitlesAvailable = false
+        jellyfinEnhancedAvailable = false
         isAdministrator = false
+        enableSubtitleManagement = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
         playbackLaunchOptions = [:]
@@ -437,6 +476,10 @@ final class SessionStore {
             PluginSettings.clearSeerrSession()
         }
         session = saved
+        if ReviewDemo.isSession(saved) {
+            applyReviewDemo(saved)
+            return
+        }
         startHomeNetworkMonitor()
         let endpoint = homeNetworkEndpoint(for: saved)
         activeRoute = endpoint.route
@@ -455,19 +498,54 @@ final class SessionStore {
         serverName = saved.serverName ?? saved.serverURL.host
         introSkipperAvailable = false
         openSubtitlesAvailable = false
+        jellyfinEnhancedAvailable = false
         isAdministrator = false
+        enableSubtitleManagement = false
         itemDetailMemory = [:]
         playbackLaunchOptions = [:]
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
-        Task { await refreshAdministratorStatus() }
+        Task { await refreshSessionCapabilities() }
         Task { await loadHome(force: true) }
-        Task { await detectPlugins() }
         Task { await refreshHomeNetworkSSID() }
         RemoteControlHub.shared.connect(client: jellyfin, session: saved)
         if serverVersion == nil {
             Task { await refreshServerCapabilities(at: endpoint.url) }
         }
+    }
+
+    private func applyReviewDemo(_ saved: SavedSession) {
+        let jellyfin = JellyfinNetworking.client(
+            url: saved.serverURL,
+            accessToken: saved.accessToken,
+            deviceID: saved.deviceID
+        )
+        client = jellyfin
+        library = ReviewDemo.libraryClient(deviceID: saved.deviceID)
+        serverName = saved.serverName
+        introSkipperAvailable = false
+        openSubtitlesAvailable = false
+        jellyfinEnhancedAvailable = false
+        isAdministrator = false
+        enableSubtitleManagement = false
+        itemDetailMemory = [:]
+        playbackLaunchOptions = [:]
+        libraries = ReviewDemoCatalog.libraries
+        homeLayout = HomeLayout(
+            featured: ReviewDemoCatalog.featured,
+            sections: HomeLayoutPreferences.assemble(
+                resume: ReviewDemoCatalog.continueWatching,
+                nextUp: ReviewDemoCatalog.nextUp,
+                merge: HomeLayoutPreferences.mergeContinueAndNextUp,
+                libraries: [ReviewDemoCatalog.recentlyAddedMovies, ReviewDemoCatalog.recentlyAddedShows],
+                collections: ReviewDemoCatalog.collectionsSection,
+                genres: ReviewDemoCatalog.genresSection,
+                recentlyWatched: ReviewDemoCatalog.recentlyWatched
+            )
+        )
+        homeError = nil
+        isLoadingHome = false
+        Task { await loadHome(force: true) }
     }
 
     func saveHomeNetwork(_ profile: HomeNetworkProfile) {
@@ -499,7 +577,7 @@ final class SessionStore {
     }
 
     private func applyHomeNetworkEndpoint() {
-        guard let saved = session else { return }
+        guard let saved = session, !ReviewDemo.isSession(saved) else { return }
         let endpoint = homeNetworkEndpoint(for: saved)
         activeRoute = endpoint.route
         if let client, HomeNetworkResolver.isSameEndpoint(client.configuration.url, endpoint.url) {
@@ -545,27 +623,46 @@ final class SessionStore {
         guard let client else {
             introSkipperAvailable = false
             openSubtitlesAvailable = false
+            jellyfinEnhancedAvailable = false
             return
         }
         let names = await JellyfinPluginCatalog.activeNames(client: client)
         introSkipperAvailable = IntroSkipperPlugin.isInstalled(names: names)
-        openSubtitlesAvailable = OpenSubtitlesPlugin.isInstalled(names: names)
+        openSubtitlesAvailable = RemoteSubtitleOffer.pluginAvailable(
+            listed: OpenSubtitlesPlugin.isInstalled(names: names),
+            catalogNames: names,
+            canManageSubtitles: canManageSubtitles,
+            canListPlugins: isAdministrator
+        )
+        if JellyfinEnhancedPlugin.isInstalled(names: names) {
+            jellyfinEnhancedAvailable = true
+        } else {
+            jellyfinEnhancedAvailable = await JellyfinEnhancedClient(client: client).isReachable()
+        }
     }
 
     func detectIntroSkipper() async {
+        await refreshSessionCapabilities()
+    }
+
+    func refreshSessionCapabilities() async {
+        await refreshAdministratorStatus()
         await detectPlugins()
     }
 
     func refreshAdministratorStatus() async {
         guard let client else {
             isAdministrator = false
+            enableSubtitleManagement = false
             return
         }
         do {
             let user = try await client.send(Paths.getCurrentUser).value
             isAdministrator = user.policy?.isAdministrator == true
+            enableSubtitleManagement = user.policy?.enableSubtitleManagement == true
         } catch {
             isAdministrator = false
+            enableSubtitleManagement = false
         }
     }
 
@@ -780,7 +877,7 @@ final class SessionStore {
             homeError = "The server did not return any titles."
         }
         isLoadingHome = false
-        if let session {
+        if let session, !ReviewDemo.isSession(session) {
             startPosterPrefetch(for: session)
         }
     }

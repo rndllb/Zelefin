@@ -14,7 +14,6 @@ struct SettingsView: View {
         .zelefinSettingsChrome(title: "Settings")
         .task {
             await session.detectIntroSkipper()
-            await session.refreshAdministratorStatus()
         }
     }
 
@@ -119,6 +118,9 @@ struct SettingsView: View {
         }
         if session.openSubtitlesAvailable {
             parts.append("Open Subtitles")
+        }
+        if session.jellyfinEnhancedAvailable {
+            parts.append("Jellyfin Enhanced")
         }
         if PluginSettings.isSeerrConfigured {
             parts.append("Seerr")

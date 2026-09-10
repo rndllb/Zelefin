@@ -5,18 +5,30 @@ enum ItemMapper {
     static let listImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo]
 
     static let homeFields: [ItemFields] = [
-        .primaryImageAspectRatio
+        .primaryImageAspectRatio,
+        .mediaStreams,
+        .providerIDs,
+        .width,
+        .height
     ]
 
     static let listFields: [ItemFields] = [
         .overview,
         .genres,
-        .primaryImageAspectRatio
+        .primaryImageAspectRatio,
+        .mediaStreams,
+        .providerIDs,
+        .width,
+        .height
     ]
 
     static let episodeFields: [ItemFields] = [
         .overview,
-        .primaryImageAspectRatio
+        .primaryImageAspectRatio,
+        .mediaStreams,
+        .providerIDs,
+        .width,
+        .height
     ]
 
     static let detailFields: [ItemFields] = [
@@ -123,10 +135,11 @@ enum ItemMapper {
             dateCreated: dto.dateCreated,
             lastPlayedDate: dto.userData?.lastPlayedDate,
             playCount: dto.userData?.playCount ?? 0,
-            videoResolution: videoResolution(from: dto.mediaStreams),
+            videoResolution: videoResolution(from: dto),
             hasClosedCaptions: hasClosedCaptions(from: dto.mediaStreams),
             hasAudioDescription: hasAudioDescription(from: dto.mediaStreams),
-            sourceBitrate: sourceBitrate(from: dto)
+            sourceBitrate: sourceBitrate(from: dto),
+            tmdbID: JellyfinTmdbCatalog.tmdbID(from: dto.providerIDs)
         )
     }
 
@@ -169,7 +182,16 @@ enum ItemMapper {
 
     static func videoRange(from streams: [MediaStream]?) -> VideoRange {
         guard let video = streams?.first(where: { $0.type == .video }) else { return .sdr }
-        let range = video.videoRangeType.map { String(describing: $0).lowercased() } ?? ""
+        let range = [
+            video.videoRangeType?.rawValue,
+            video.videoRange?.rawValue,
+            video.colorPrimaries,
+            video.colorSpace,
+            video.videoRangeType.map { String(describing: $0) }
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+        .lowercased()
 
         if range.contains("dovi") || range.contains("dolby") {
             return .dolbyVision
@@ -177,11 +199,14 @@ enum ItemMapper {
         if range.contains("hdr10+") || range.contains("hdr10plus") {
             return .hdr10Plus
         }
-        if range.contains("hdr10") || range.contains("hdr") {
+        if range.contains("hdr10") || range.contains("smpte2084") || range.contains("pq") {
             return .hdr10
         }
         if range.contains("hlg") {
             return .hlg
+        }
+        if range.contains("hdr") || range.contains("bt2020") {
+            return .hdr10
         }
         return .sdr
     }
@@ -208,9 +233,19 @@ enum ItemMapper {
         return .stereo
     }
 
+    static func videoResolution(from dto: BaseItemDto) -> VideoResolution {
+        let fromStreams = videoResolution(from: dto.mediaStreams)
+        if fromStreams != .unknown { return fromStreams }
+        return videoResolution(width: dto.width, height: dto.height)
+    }
+
     static func videoResolution(from streams: [MediaStream]?) -> VideoResolution {
         guard let video = streams?.first(where: { $0.type == .video }) else { return .unknown }
-        let longEdge = max(video.width ?? 0, video.height ?? 0)
+        return videoResolution(width: video.width, height: video.height)
+    }
+
+    static func videoResolution(width: Int?, height: Int?) -> VideoResolution {
+        let longEdge = max(width ?? 0, height ?? 0)
         if longEdge >= 3800 { return .fourK }
         if longEdge >= 1200 { return .hd }
         if longEdge > 0 { return .sd }

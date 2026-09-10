@@ -39,6 +39,7 @@ struct ParentalRatingChoice: Identifiable, Equatable, Sendable, Hashable {
 struct UserPolicyDraft: Equatable, Sendable {
     var isAdministrator: Bool
     var isDisabled: Bool
+    var enableSubtitleManagement: Bool
     var remoteClientBitrateLimit: Int
     var maxParentalRating: Int?
     var blockUnratedItems: Set<UnratedItem>
@@ -50,6 +51,7 @@ extension UserPolicyDraft {
     init(policy: UserPolicy) {
         isAdministrator = policy.isAdministrator == true
         isDisabled = policy.isDisabled == true
+        enableSubtitleManagement = policy.enableSubtitleManagement
         remoteClientBitrateLimit = max(0, policy.remoteClientBitrateLimit ?? 0)
         maxParentalRating = policy.maxParentalRating
         blockUnratedItems = Set(policy.blockUnratedItems ?? [])
@@ -61,6 +63,7 @@ extension UserPolicyDraft {
         var next = policy
         next.isAdministrator = isAdministrator
         next.isDisabled = isDisabled
+        next.enableSubtitleManagement = enableSubtitleManagement
         next.remoteClientBitrateLimit = remoteClientBitrateLimit
         next.maxParentalRating = maxParentalRating
         next.blockUnratedItems = Array(blockUnratedItems).sorted { $0.rawValue < $1.rawValue }

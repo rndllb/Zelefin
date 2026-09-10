@@ -2,7 +2,7 @@ import Foundation
 
 /// On-disk copy of Home and the user’s library list so a cold launch can paint immediately.
 struct HomeSnapshot: Codable, Equatable, Sendable {
-    static let currentVersion = 5
+    static let currentVersion = 6
 
     var version: Int
     var userID: String
