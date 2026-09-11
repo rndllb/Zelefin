@@ -22,6 +22,8 @@ enum ItemMapper {
         .height
     ]
 
+    static let alertFields: [ItemFields] = listFields + [.dateCreated]
+
     static let episodeFields: [ItemFields] = [
         .overview,
         .primaryImageAspectRatio,

@@ -5,6 +5,7 @@ import UserNotifications
 
 extension Notification.Name {
     static let zelefinPlaybackSessions = Notification.Name("zelefin.playbackSessions")
+    static let zelefinLibraryChanged = Notification.Name("zelefin.libraryChanged")
 }
 
 @MainActor
@@ -14,11 +15,15 @@ final class LibraryAlertMonitor {
     static let backgroundTaskIdentifier = "app.zelefin.client.library-alerts"
     static let sessionPollSeconds: TimeInterval = 5
     static let libraryPollSeconds: TimeInterval = 90
+    static let backgroundRefreshSeconds: TimeInterval = 5 * 60
     static var sessionInterval: Duration { .seconds(sessionPollSeconds) }
     static var libraryInterval: Duration { .seconds(libraryPollSeconds) }
 
     private var pollTask: Task<Void, Never>?
+    private var sessionPollTask: Task<Void, Never>?
     private var sessionWatch: Task<Void, Never>?
+    private var libraryWatch: Task<Void, Never>?
+    private var libraryChangeDebounce: Task<Void, Never>?
     /// Websocket pushes and the poll can overlap; evaluate one snapshot at a time so a slow fetch cannot rewind “already notified”.
     private var evaluateChain = Task<Void, Never> {}
     private var isPollingLibrary = false
@@ -42,7 +47,7 @@ final class LibraryAlertMonitor {
 
     static func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: backgroundTaskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: backgroundRefreshSeconds)
         try? BGTaskScheduler.shared.submit(request)
     }
 
@@ -53,24 +58,38 @@ final class LibraryAlertMonitor {
     func start(session: SessionStore) {
         stop()
         guard session.isSignedIn, !session.isReviewDemo, LibraryAlertSettings.isEnabled else { return }
+        if session.isAdministrator {
+            LibraryAlertSettings.lastKnownAdministrator = true
+        }
         Self.scheduleBackgroundRefresh()
-        pollTask = Task { [weak self] in
+        sessionPollTask = Task { [weak self] in
             if await LibraryAlertCenter.shared.authorizationStatus() == .notDetermined {
                 _ = await LibraryAlertCenter.shared.requestAuthorization()
             }
+            while !Task.isCancelled {
+                await self?.poll(session: session, includeLibrary: false)
+                try? await Task.sleep(for: Self.sessionInterval)
+            }
+        }
+        pollTask = Task { [weak self] in
             await self?.poll(session: session, includeLibrary: true)
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.sessionInterval)
+                try? await Task.sleep(for: Self.libraryInterval)
                 guard !Task.isCancelled else { return }
-                let elapsed = Date().timeIntervalSince(self?.lastLibraryPoll ?? .distantPast)
-                await self?.poll(session: session, includeLibrary: elapsed >= Self.libraryPollSeconds)
+                await self?.poll(session: session, includeLibrary: true)
             }
         }
         sessionWatch = Task { [weak self] in
             for await notification in NotificationCenter.default.notifications(named: .zelefinPlaybackSessions) {
                 guard !Task.isCancelled else { return }
-                let sessions = notification.object as? [PlaybackSession] ?? []
+                guard let sessions = notification.object as? [PlaybackSession] else { continue }
                 await self?.ingest(sessions: sessions, session: session)
+            }
+        }
+        libraryWatch = Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: .zelefinLibraryChanged) {
+                guard !Task.isCancelled else { return }
+                self?.noteLibraryChanged(session: session)
             }
         }
     }
@@ -78,21 +97,20 @@ final class LibraryAlertMonitor {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        sessionPollTask?.cancel()
+        sessionPollTask = nil
         sessionWatch?.cancel()
         sessionWatch = nil
+        libraryWatch?.cancel()
+        libraryWatch = nil
+        libraryChangeDebounce?.cancel()
+        libraryChangeDebounce = nil
     }
 
     func handleBackground(_ task: BGAppRefreshTask) async {
         Self.scheduleBackgroundRefresh()
         let work = Task { @MainActor in
-            for _ in 0..<20 {
-                if Task.isCancelled { return }
-                if let session = self.attachedSession, session.isSignedIn, !session.isRestoring {
-                    await self.poll(session: session, includeLibrary: true)
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
+            await self.pollFromSavedSession()
         }
         task.expirationHandler = {
             work.cancel()
@@ -105,12 +123,56 @@ final class LibraryAlertMonitor {
         await poll(session: session, includeLibrary: true)
     }
 
+    /// Checks Jellyfin using the saved account, without waiting for the UI session to finish restoring.
+    func pollFromSavedSession() async {
+        guard LibraryAlertSettings.isEnabled else { return }
+        let authorized = await LibraryAlertCenter.shared.authorizationStatus()
+        guard authorized == .authorized || authorized == .provisional else { return }
+        guard let saved = try? SessionVault().load(), !ReviewDemo.isSession(saved) else { return }
+
+        if let session = attachedSession, session.isSignedIn, !session.isRestoring, !session.isReviewDemo {
+            await poll(session: session, includeLibrary: true)
+            return
+        }
+
+        let client = JellyfinNetworking.client(
+            url: saved.serverURL,
+            accessToken: saved.accessToken,
+            deviceID: saved.deviceID
+        )
+        let library = JellyfinLibraryClient(
+            client: client,
+            userID: saved.userID,
+            serverVersion: saved.serverVersion
+        )
+        let preferences = LibraryAlertSettings.preferences(
+            isAdministrator: LibraryAlertSettings.lastKnownAdministrator
+        )
+        let librarySlice = await fetchLibrarySlice(
+            library: library,
+            accountID: saved.accountID,
+            preferences: preferences
+        )
+        let sessions = await fetchSessions(library: library, preferences: preferences)
+        await evaluateSaved(
+            saved: saved,
+            latestItems: librarySlice.items,
+            sessions: sessions,
+            requests: librarySlice.requests,
+            tasks: librarySlice.tasks
+        )
+    }
+
     func ingest(sessions: [PlaybackSession], session: SessionStore) async {
-        guard session.isSignedIn, !session.isReviewDemo, session.isAdministrator else { return }
+        guard session.isSignedIn, !session.isReviewDemo else { return }
         guard LibraryAlertSettings.isEnabled else { return }
         guard LibraryAlertSettings.streams || LibraryAlertSettings.online else { return }
+        let isAdmin = session.isAdministrator || LibraryAlertSettings.lastKnownAdministrator
+        guard isAdmin else { return }
         await evaluate(
-            session: session,
+            accountID: session.session?.accountID,
+            deviceID: session.session?.deviceID,
+            isAdministrator: true,
             latestItems: nil,
             sessions: sessions,
             requests: nil,
@@ -118,31 +180,74 @@ final class LibraryAlertMonitor {
         )
     }
 
+    private func noteLibraryChanged(session: SessionStore) {
+        libraryChangeDebounce?.cancel()
+        libraryChangeDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.poll(session: session, includeLibrary: true)
+        }
+    }
+
+    private func evaluateSaved(
+        saved: SavedSession,
+        latestItems: [MediaItem]?,
+        sessions: [PlaybackSession]?,
+        requests: [LibraryAlertRequest]?,
+        tasks: [LibraryAlertTask]?
+    ) async {
+        await evaluate(
+            accountID: saved.accountID,
+            deviceID: saved.deviceID,
+            isAdministrator: LibraryAlertSettings.lastKnownAdministrator,
+            latestItems: latestItems,
+            sessions: sessions,
+            requests: requests,
+            tasks: tasks
+        )
+    }
+
     private func poll(session: SessionStore, includeLibrary: Bool) async {
         if includeLibrary {
             guard !isPollingLibrary else { return }
+            isPollingLibrary = true
         }
+        defer { if includeLibrary { isPollingLibrary = false } }
         guard session.isSignedIn, !session.isReviewDemo else { return }
         guard let library = session.library, let saved = session.session else { return }
-        let preferences = LibraryAlertSettings.preferences(isAdministrator: session.isAdministrator)
+        if session.isAdministrator {
+            LibraryAlertSettings.lastKnownAdministrator = true
+        }
+        let isAdmin = session.isAdministrator || LibraryAlertSettings.lastKnownAdministrator
+        let preferences = LibraryAlertSettings.preferences(isAdministrator: isAdmin)
         guard preferences.isEnabled else { return }
         let authorized = await LibraryAlertCenter.shared.authorizationStatus()
         guard authorized == .authorized || authorized == .provisional else { return }
 
-        if includeLibrary { isPollingLibrary = true }
-        defer { if includeLibrary { isPollingLibrary = false } }
-
-        let librarySlice = includeLibrary
-            ? await fetchLibrarySlice(library: library, accountID: saved.accountID, preferences: preferences)
-            : nil
-        let sessions = await fetchSessions(library: library, preferences: preferences)
+        let slice: LibraryPollSlice?
+        let playbackSessions: [PlaybackSession]?
+        if includeLibrary {
+            async let fetchedSlice = fetchLibrarySlice(
+                library: library,
+                accountID: saved.accountID,
+                preferences: preferences
+            )
+            async let fetchedSessions = fetchSessions(library: library, preferences: preferences)
+            slice = await fetchedSlice
+            playbackSessions = await fetchedSessions
+        } else {
+            slice = nil
+            playbackSessions = await fetchSessions(library: library, preferences: preferences)
+        }
 
         await evaluate(
-            session: session,
-            latestItems: librarySlice?.items,
-            sessions: sessions,
-            requests: librarySlice?.requests,
-            tasks: librarySlice?.tasks
+            accountID: saved.accountID,
+            deviceID: saved.deviceID,
+            isAdministrator: isAdmin,
+            latestItems: slice?.items,
+            sessions: playbackSessions,
+            requests: slice?.requests,
+            tasks: slice?.tasks
         )
     }
 
@@ -183,12 +288,15 @@ final class LibraryAlertMonitor {
         library: JellyfinLibraryClient,
         preferences: LibraryAlertPreferences
     ) async -> [PlaybackSession]? {
-        guard preferences.isAdministrator, preferences.streams || preferences.online else { return nil }
+        guard preferences.streams || preferences.online else { return nil }
+        guard preferences.isAdministrator || LibraryAlertSettings.lastKnownAdministrator else { return nil }
         return try? await library.playbackSessions()
     }
 
     private func evaluate(
-        session: SessionStore,
+        accountID: String?,
+        deviceID: String?,
+        isAdministrator: Bool,
         latestItems: [MediaItem]?,
         sessions: [PlaybackSession]?,
         requests: [LibraryAlertRequest]?,
@@ -198,7 +306,9 @@ final class LibraryAlertMonitor {
         let work = Task { @MainActor in
             await prior.value
             await self.performEvaluate(
-                session: session,
+                accountID: accountID,
+                deviceID: deviceID,
+                isAdministrator: isAdministrator,
                 latestItems: latestItems,
                 sessions: sessions,
                 requests: requests,
@@ -210,32 +320,34 @@ final class LibraryAlertMonitor {
     }
 
     private func performEvaluate(
-        session: SessionStore,
+        accountID: String?,
+        deviceID: String?,
+        isAdministrator: Bool,
         latestItems: [MediaItem]?,
         sessions: [PlaybackSession]?,
         requests: [LibraryAlertRequest]?,
         tasks: [LibraryAlertTask]?
     ) async {
-        guard let saved = session.session else { return }
+        guard let accountID, let deviceID else { return }
         let authorized = await LibraryAlertCenter.shared.authorizationStatus()
         guard authorized == .authorized || authorized == .provisional else { return }
-        let preferences = LibraryAlertSettings.preferences(isAdministrator: session.isAdministrator)
+        let preferences = LibraryAlertSettings.preferences(isAdministrator: isAdministrator)
         guard preferences.isEnabled else { return }
 
-        let previous = LibraryAlertSnapshotStore.load(accountID: saved.accountID)
+        let previous = LibraryAlertSnapshotStore.load(accountID: accountID)
         let input = LibraryAlertInput(
             latestItems: latestItems,
             sessions: sessions,
             requests: requests,
             tasks: tasks,
-            localDeviceID: saved.deviceID
+            localDeviceID: deviceID
         )
         let result = LibraryAlertEngine.evaluate(
             previous: previous,
             input: input,
             preferences: preferences
         )
-        LibraryAlertSnapshotStore.save(result.next, accountID: saved.accountID)
+        LibraryAlertSnapshotStore.save(result.next, accountID: accountID)
         guard !result.alerts.isEmpty else { return }
         LibraryAlertCenter.shared.post(result.alerts)
     }

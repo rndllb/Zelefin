@@ -58,10 +58,18 @@ struct RootView: View {
             startLibraryAlertMonitor()
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, session.isSignedIn, !session.isReviewDemo else { return }
+            guard session.isSignedIn, !session.isReviewDemo else { return }
             LibraryAlertMonitor.shared.attach(session: session)
-            LibraryAlertMonitor.scheduleBackgroundRefresh()
-            Task { await LibraryAlertMonitor.shared.poll(session: session) }
+            switch phase {
+            case .active:
+                LibraryAlertMonitor.scheduleBackgroundRefresh()
+                Task { await LibraryAlertMonitor.shared.poll(session: session) }
+            case .background:
+                LibraryAlertMonitor.scheduleBackgroundRefresh()
+                Task { await LibraryAlertMonitor.shared.pollFromSavedSession() }
+            default:
+                break
+            }
         }
         .onOpenURL { url in
             Task { await deepLinks.handle(url, session: session) }
@@ -112,7 +120,7 @@ struct RootView: View {
 
     private func startLibraryAlertMonitor() {
         LibraryAlertMonitor.shared.attach(session: session)
-        guard session.isSignedIn, !session.isReviewDemo else { return }
+        guard session.isSignedIn, !session.isRestoring, !session.isReviewDemo else { return }
         LibraryAlertMonitor.shared.start(session: session)
     }
 }

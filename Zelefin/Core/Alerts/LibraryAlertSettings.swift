@@ -7,6 +7,7 @@ enum LibraryAlertSettings {
     static let onlineKey = "zelefin.alerts.online"
     static let requestsKey = "zelefin.alerts.requests"
     static let scheduledTasksKey = "zelefin.alerts.tasks"
+    static let lastAdministratorKey = "zelefin.alerts.last-admin"
 
     static var isEnabled: Bool {
         get { bool(for: enabledKey) }
@@ -36,6 +37,11 @@ enum LibraryAlertSettings {
     static var scheduledTasks: Bool {
         get { bool(for: scheduledTasksKey) }
         set { UserDefaults.standard.set(newValue, forKey: scheduledTasksKey) }
+    }
+
+    static var lastKnownAdministrator: Bool {
+        get { UserDefaults.standard.bool(forKey: lastAdministratorKey) }
+        set { UserDefaults.standard.set(newValue, forKey: lastAdministratorKey) }
     }
 
     static func preferences(isAdministrator: Bool) -> LibraryAlertPreferences {

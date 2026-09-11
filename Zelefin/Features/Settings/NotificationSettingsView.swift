@@ -23,7 +23,7 @@ struct NotificationSettingsView: View {
                 Toggle("New titles", isOn: $libraryAdds)
                     .disabled(!isEnabled)
             } footer: {
-                Text("Zelefin checks this Jellyfin server for newly added movies, shows, and episodes. Tapping a notification opens that title. No Jellyfin notification plugin is required.")
+                Text("Zelefin checks this Jellyfin server for movies, shows, and episodes added after this device already knows the library. Signing out does not replay titles that were already there. Tapping a notification opens that title.")
             }
 
             if session.isAdministrator {
@@ -57,9 +57,9 @@ struct NotificationSettingsView: View {
         case .notDetermined:
             "Zelefin asks iOS for permission when you turn this on. Alerts are created on this device by checking the server; they are not push from Jellyfin."
         case .authorized, .provisional, .ephemeral:
-            "Alerts are created on this device by checking the server. iOS may also refresh in the background when it can."
+            "Alerts are created on this device by checking the server. iOS may wait before it lets Zelefin check while the app is closed; opening the app checks immediately."
         @unknown default:
-            "Alerts are created on this device by checking the server. iOS may also refresh in the background when it can."
+            "Alerts are created on this device by checking the server. iOS may wait before it lets Zelefin check while the app is closed; opening the app checks immediately."
         }
     }
 

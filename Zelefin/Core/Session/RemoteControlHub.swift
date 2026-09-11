@@ -175,7 +175,10 @@ final class RemoteControlHub {
             let interval = TimeInterval(max(5, (keep.data ?? 30) / 2))
             startKeepAlive(every: interval, generation: generation)
         case let .sessionsMessage(message):
-            publishSessions(message.data)
+            guard let dtos = message.data else { return }
+            publishSessions(dtos)
+        case .libraryChangedMessage:
+            NotificationCenter.default.post(name: .zelefinLibraryChanged, object: nil)
         case let .playstateMessage(message):
             if let command = message.data?.command,
                let action = RemotePlaybackAction.playstate(command, seekTicks: message.data?.seekPositionTicks)
@@ -229,42 +232,87 @@ final class RemoteControlHub {
         try? await task.send(.string(text))
     }
 
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .formatted(JellyfinISO8601DateFormatter())
-        return decoder
-    }()
+    private static let decoder = JellyfinJSONDate.decoder
 }
 
-/// Matches Jellyfin’s ISO-8601 timestamps, including values without fractional seconds.
-private final class JellyfinISO8601DateFormatter: DateFormatter, @unchecked Sendable {
-    private static let withoutSeconds: DateFormatter = {
+enum JellyfinJSONDate {
+    static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom(parse)
+        return decoder
+    }()
+
+    static func parse(_ decoder: Decoder) throws -> Date {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if let date = date(from: raw) {
+            return date
+        }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Invalid Jellyfin date \(raw)"
+        )
+    }
+
+    static func date(from raw: String) -> Date? {
+        if let date = fractionalInternet.date(from: raw) {
+            return date
+        }
+        if let date = internet.date(from: raw) {
+            return date
+        }
+        if let date = fractionalOffset.date(from: raw) {
+            return date
+        }
+        if let date = offset.date(from: raw) {
+            return date
+        }
+        return dateByTruncatingFraction(raw)
+    }
+
+    /// Jellyfin often sends 7 fractional digits (`...1234567Z`). ISO8601DateFormatter
+    /// only accepts milliseconds, so keep the first three and try again.
+    private static func dateByTruncatingFraction(_ raw: String) -> Date? {
+        guard let regex = try? NSRegularExpression(pattern: #"(\.\d{3})\d+"#) else { return nil }
+        let trimmed = regex.stringByReplacingMatches(
+            in: raw,
+            range: NSRange(raw.startIndex..., in: raw),
+            withTemplate: "$1"
+        )
+        guard trimmed != raw else { return nil }
+        return fractionalInternet.date(from: trimmed)
+            ?? fractionalOffset.date(from: trimmed)
+            ?? internet.date(from: trimmed)
+            ?? offset.date(from: trimmed)
+    }
+
+    private nonisolated(unsafe) static let fractionalInternet: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private nonisolated(unsafe) static let internet: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private nonisolated(unsafe) static let fractionalOffset: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .iso8601)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSSXXXXX"
         return formatter
     }()
 
-    override init() {
-        super.init()
-        applyFractionalSecondsFormat()
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        applyFractionalSecondsFormat()
-    }
-
-    override func date(from string: String) -> Date? {
-        super.date(from: string) ?? Self.withoutSeconds.date(from: string)
-    }
-
-    private func applyFractionalSecondsFormat() {
-        calendar = Calendar(identifier: .iso8601)
-        locale = Locale(identifier: "en_US_POSIX")
-        timeZone = TimeZone(secondsFromGMT: 0)
-        dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
-    }
+    private nonisolated(unsafe) static let offset: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+        return formatter
+    }()
 }

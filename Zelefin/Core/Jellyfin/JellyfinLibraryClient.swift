@@ -105,21 +105,25 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     /// Latest movies, shows, and episodes for local “new on server” alerts.
-    func recentlyAddedForAlerts() async -> [MediaItem] {
+    /// Returns `nil` when every request failed, so a timeout cannot look like an empty library.
+    func recentlyAddedForAlerts() async -> [MediaItem]? {
         async let movies = ignoringErrors {
-            try await latestMedia(include: [.movie], parentID: nil, fields: ItemMapper.listFields, limit: 24)
-        } ?? []
+            try await latestMedia(include: [.movie], parentID: nil, fields: ItemMapper.alertFields, limit: 24)
+        }
         async let shows = ignoringErrors {
-            try await latestMedia(include: [.series], parentID: nil, fields: ItemMapper.listFields, limit: 24)
-        } ?? []
+            try await latestMedia(include: [.series], parentID: nil, fields: ItemMapper.alertFields, limit: 24)
+        }
         async let episodes = ignoringErrors {
-            try await latestMedia(include: [.episode], parentID: nil, fields: ItemMapper.listFields, limit: 24)
-        } ?? []
+            try await latestMedia(include: [.episode], parentID: nil, fields: ItemMapper.alertFields, limit: 24)
+        }
         let movieItems = await movies
         let showItems = await shows
         let episodeItems = await episodes
+        if movieItems == nil, showItems == nil, episodeItems == nil {
+            return nil
+        }
         var seen = Set<String>()
-        return (movieItems + showItems + episodeItems).filter { seen.insert($0.id).inserted }
+        return ((movieItems ?? []) + (showItems ?? []) + (episodeItems ?? [])).filter { seen.insert($0.id).inserted }
     }
 
     func markPlayed(itemID: String) async throws {
@@ -1303,10 +1307,10 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
     /// Sessions Jellyfin still considers active, including idle clients.
     func playbackSessions(activeWithinSeconds: Int = 960) async throws -> [PlaybackSession] {
-        let result = try await client.send(
-            Paths.getSessions(parameters: .init(activeWithinSeconds: activeWithinSeconds))
-        ).value
-        return PlaybackSession.sorted(result.compactMap(PlaybackSession.init(dto:)))
+        let request = Paths.getSessions(parameters: .init(activeWithinSeconds: activeWithinSeconds))
+        let data = try await client.data(for: request).value
+        let dtos = try JellyfinJSONDate.decoder.decode([SessionInfoDto].self, from: data)
+        return PlaybackSession.sorted(dtos.compactMap(PlaybackSession.init(dto:)))
     }
 
     func sendPlaystate(

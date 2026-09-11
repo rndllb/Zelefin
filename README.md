@@ -56,10 +56,12 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 Zelefin watches the server from this device. It does not need a Jellyfin notification plugin.
 
-- New movies, shows, and episodes: a banner on this iPhone or iPad, and tapping it opens that title
+- New movies, shows, and episodes added after this device has already seen the library: a banner on this iPhone or iPad, and tapping it opens that title
+- Signing out and back in does not replay titles that were already on the server
 - Administrators also get streams started, users coming online on another device, scheduled tasks starting, and new Seerr requests when Seerr is signed in under Plugins
 - Settings → Notifications to turn each kind on or off
-- Stream and online alerts follow Jellyfin session updates while the app is open; iOS may also refresh in the background
+- Stream and online alerts follow Jellyfin session updates while the app is open; library adds also fire when Jellyfin reports a library change
+- iOS may also refresh in the background. That is not instant push from Jellyfin; opening the app always checks right away
 
 ### Playback
 

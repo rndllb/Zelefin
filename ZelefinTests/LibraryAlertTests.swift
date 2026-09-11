@@ -3,7 +3,7 @@ import XCTest
 
 final class LibraryAlertTests: XCTestCase {
     func testFirstLibraryPollPrimesWithoutNotifying() {
-        let movie = MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021)
+        let movie = MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older)
         let result = LibraryAlertEngine.evaluate(
             previous: .empty,
             input: Self.input(items: [movie]),
@@ -12,19 +12,20 @@ final class LibraryAlertTests: XCTestCase {
         XCTAssertTrue(result.alerts.isEmpty)
         XCTAssertTrue(result.next.primedLibrary)
         XCTAssertEqual(result.next.seenItemIDs, ["dune"])
+        XCTAssertEqual(result.next.libraryWatermark, Self.older)
     }
 
     func testNewMovieNotifiesAndOpensThatItem() {
         let previous = LibraryAlertEngine.evaluate(
             previous: .empty,
-            input: Self.input(items: [MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021)]),
+            input: Self.input(items: [MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older)]),
             preferences: Self.userPrefs
         ).next
         let result = LibraryAlertEngine.evaluate(
             previous: previous,
             input: Self.input(items: [
-                MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021),
-                MediaItem.previewMovie(id: "andor", name: "Andor", year: 2022)
+                MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older),
+                MediaItem.previewMovie(id: "andor", name: "Andor", year: 2022, added: Self.newer)
             ]),
             preferences: Self.userPrefs
         )
@@ -34,18 +35,100 @@ final class LibraryAlertTests: XCTestCase {
         XCTAssertEqual(result.alerts[0].body, "Andor (2022)")
     }
 
-    func testEpisodesCollapseToTheShow() {
+    func testSigningInDoesNotReplayTitlesAlreadyOnTheServer() {
+        let latest = [
+            MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older),
+            MediaItem.previewMovie(id: "andor", name: "Andor", year: 2022, added: Self.older)
+        ]
+        let previous = LibraryAlertEngine.evaluate(
+            previous: .empty,
+            input: Self.input(items: latest),
+            preferences: Self.userPrefs
+        ).next
+        let again = LibraryAlertEngine.evaluate(
+            previous: previous,
+            input: Self.input(items: latest),
+            preferences: Self.userPrefs
+        )
+        XCTAssertTrue(again.alerts.isEmpty)
+    }
+
+    func testExistingLatestTitlesAreNotNewAfterAFreshBaseline() {
+        let latest = [
+            MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older),
+            MediaItem.previewSeries(id: "andor", name: "Andor", year: 2022, added: Self.older)
+        ]
+        let result = LibraryAlertEngine.evaluate(
+            previous: .empty,
+            input: Self.input(items: latest),
+            preferences: Self.userPrefs
+        )
+        XCTAssertTrue(result.alerts.isEmpty)
+
+        let replay = LibraryAlertEngine.evaluate(
+            previous: .empty,
+            input: Self.input(items: latest),
+            preferences: Self.userPrefs
+        )
+        XCTAssertTrue(replay.alerts.isEmpty)
+    }
+
+    func testLegacySnapshotWithoutWatermarkRebaselinesWithoutNotifying() {
+        let previous = LibraryAlertSnapshot(
+            seenItemIDs: [],
+            playingKeys: [],
+            onlineSessionIDs: [],
+            seenRequestIDs: [],
+            runningTaskIDs: [],
+            primedLibrary: true,
+            primedAdmin: false,
+            primedSessions: false,
+            libraryWatermark: nil
+        )
+        let latest = [
+            MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older),
+            MediaItem.previewMovie(id: "andor", name: "Andor", year: 2022, added: Self.older)
+        ]
+        let result = LibraryAlertEngine.evaluate(
+            previous: previous,
+            input: Self.input(items: latest),
+            preferences: Self.userPrefs
+        )
+        XCTAssertTrue(result.alerts.isEmpty)
+        XCTAssertEqual(result.next.libraryWatermark, Self.older)
+        XCTAssertEqual(Set(result.next.seenItemIDs), ["dune", "andor"])
+    }
+
+    func testTitlesOlderThanTheBaselineAreNotNew() {
         let previous = LibraryAlertEngine.evaluate(
             previous: .empty,
             input: Self.input(items: []),
             preferences: Self.userPrefs
         ).next
+        XCTAssertNotNil(previous.libraryWatermark)
         let result = LibraryAlertEngine.evaluate(
             previous: previous,
             input: Self.input(items: [
-                MediaItem.previewEpisode(id: "ep-1", seriesID: "show-1", seriesName: "Andor"),
-                MediaItem.previewEpisode(id: "ep-2", seriesID: "show-1", seriesName: "Andor"),
-                MediaItem.previewSeries(id: "show-1", name: "Andor", year: 2022)
+                MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older)
+            ]),
+            preferences: Self.userPrefs
+        )
+        XCTAssertTrue(result.alerts.isEmpty)
+    }
+
+    func testEpisodesCollapseToTheShow() {
+        let previous = LibraryAlertEngine.evaluate(
+            previous: .empty,
+            input: Self.input(items: [MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older)]),
+            preferences: Self.userPrefs
+        ).next
+        let result = LibraryAlertEngine.evaluate(
+            previous: previous,
+            input: Self.input(items: [
+                MediaItem.previewMovie(id: "dune", name: "Dune", year: 2021, added: Self.older),
+                MediaItem.previewEpisode(id: "ep-1", seriesID: "show-1", seriesName: "Andor", added: Self.newer),
+                MediaItem.previewEpisode(id: "ep-2", seriesID: "show-1", seriesName: "Andor", added: Self.newer),
+                MediaItem.previewSeries(id: "show-1", name: "Andor", year: 2022, added: Self.newer)
             ]),
             preferences: Self.userPrefs
         )
@@ -57,13 +140,13 @@ final class LibraryAlertTests: XCTestCase {
     func testOverflowSummarizesExtraTitles() {
         let previous = LibraryAlertEngine.evaluate(
             previous: .empty,
-            input: Self.input(items: []),
+            input: Self.input(items: [MediaItem.previewMovie(id: "old", name: "Old", year: 2020, added: Self.older)]),
             preferences: Self.userPrefs
         ).next
-        let items = (1...5).map { MediaItem.previewMovie(id: "m\($0)", name: "Movie \($0)", year: 2024) }
+        let items = (1...5).map { MediaItem.previewMovie(id: "m\($0)", name: "Movie \($0)", year: 2024, added: Self.newer) }
         let result = LibraryAlertEngine.evaluate(
             previous: previous,
-            input: Self.input(items: items),
+            input: Self.input(items: [MediaItem.previewMovie(id: "old", name: "Old", year: 2020, added: Self.older)] + items),
             preferences: Self.userPrefs
         )
         XCTAssertEqual(result.alerts.count, 4)
@@ -341,6 +424,9 @@ final class LibraryAlertTests: XCTestCase {
 }
 
 private extension LibraryAlertTests {
+    static let older = Date(timeIntervalSince1970: 1_700_000_000)
+    static let newer = Date(timeIntervalSince1970: 1_800_000_000)
+
     static let userPrefs = LibraryAlertPreferences(
         isEnabled: true,
         libraryAdds: true,
@@ -452,22 +538,23 @@ private extension LibraryAlertTests {
 }
 
 private extension MediaItem {
-    static func previewMovie(id: String, name: String, year: Int) -> MediaItem {
-        preview(id: id, name: name, kind: .movie, year: year)
+    static func previewMovie(id: String, name: String, year: Int, added: Date? = nil) -> MediaItem {
+        preview(id: id, name: name, kind: .movie, year: year, dateCreated: added)
     }
 
-    static func previewSeries(id: String, name: String, year: Int) -> MediaItem {
-        preview(id: id, name: name, kind: .series, year: year)
+    static func previewSeries(id: String, name: String, year: Int, added: Date? = nil) -> MediaItem {
+        preview(id: id, name: name, kind: .series, year: year, dateCreated: added)
     }
 
-    static func previewEpisode(id: String, seriesID: String, seriesName: String) -> MediaItem {
+    static func previewEpisode(id: String, seriesID: String, seriesName: String, added: Date? = nil) -> MediaItem {
         preview(
             id: id,
             name: "One Way Out",
             kind: .episode,
             year: 2022,
             seriesName: seriesName,
-            seriesID: seriesID
+            seriesID: seriesID,
+            dateCreated: added
         )
     }
 
@@ -477,7 +564,8 @@ private extension MediaItem {
         kind: MediaKind,
         year: Int?,
         seriesName: String? = nil,
-        seriesID: String? = nil
+        seriesID: String? = nil,
+        dateCreated: Date? = nil
     ) -> MediaItem {
         MediaItem(
             id: id,
@@ -509,7 +597,8 @@ private extension MediaItem {
             imageItemID: nil,
             queueKind: .resume,
             videoRange: .sdr,
-            audioFormat: .unknown
+            audioFormat: .unknown,
+            dateCreated: dateCreated
         )
     }
 }

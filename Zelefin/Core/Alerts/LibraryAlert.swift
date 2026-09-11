@@ -99,6 +99,8 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
     var primedLibrary: Bool
     var primedAdmin: Bool
     var primedSessions: Bool
+    /// Newest `DateCreated` already used as a baseline. Titles older than this are not “new”.
+    var libraryWatermark: Date?
 
     static let empty = LibraryAlertSnapshot(
         seenItemIDs: [],
@@ -108,7 +110,8 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
         runningTaskIDs: [],
         primedLibrary: false,
         primedAdmin: false,
-        primedSessions: false
+        primedSessions: false,
+        libraryWatermark: nil
     )
 
     var seenItemIDSet: Set<String> { Set(seenItemIDs) }
@@ -116,6 +119,7 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
     var onlineSessionIDSet: Set<String> { Set(onlineSessionIDs) }
     var seenRequestIDSet: Set<String> { Set(seenRequestIDs) }
     var runningTaskIDSet: Set<String> { Set(runningTaskIDs) }
+    var hasLibraryBaseline: Bool { primedLibrary && libraryWatermark != nil }
 
     init(
         seenItemIDs: [String],
@@ -125,7 +129,8 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
         runningTaskIDs: [String],
         primedLibrary: Bool,
         primedAdmin: Bool,
-        primedSessions: Bool
+        primedSessions: Bool,
+        libraryWatermark: Date? = nil
     ) {
         self.seenItemIDs = seenItemIDs
         self.playingKeys = playingKeys
@@ -135,6 +140,7 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
         self.primedLibrary = primedLibrary
         self.primedAdmin = primedAdmin
         self.primedSessions = primedSessions
+        self.libraryWatermark = libraryWatermark
     }
 
     init(from decoder: Decoder) throws {
@@ -149,6 +155,7 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
         primedLibrary = try container.decodeIfPresent(Bool.self, forKey: .primedLibrary) ?? false
         primedAdmin = try container.decodeIfPresent(Bool.self, forKey: .primedAdmin) ?? false
         primedSessions = try container.decodeIfPresent(Bool.self, forKey: .primedSessions) ?? false
+        libraryWatermark = try container.decodeIfPresent(Date.self, forKey: .libraryWatermark)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -161,6 +168,7 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
         try container.encode(primedLibrary, forKey: .primedLibrary)
         try container.encode(primedAdmin, forKey: .primedAdmin)
         try container.encode(primedSessions, forKey: .primedSessions)
+        try container.encodeIfPresent(libraryWatermark, forKey: .libraryWatermark)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -172,6 +180,7 @@ struct LibraryAlertSnapshot: Codable, Equatable, Sendable {
         case primedLibrary
         case primedAdmin
         case primedSessions
+        case libraryWatermark
         case onlineUserIDs
     }
 }
@@ -212,6 +221,17 @@ enum LibraryAlertEngine {
             next = result.next
         }
 
+        if preferences.isAdministrator, let sessions = input.sessions, preferences.streams || preferences.online {
+            let sessionResult = sessionAlerts(
+                previous: next,
+                sessions: sessions,
+                preferences: preferences,
+                localDeviceID: input.localDeviceID
+            )
+            alerts.append(contentsOf: sessionResult.alerts)
+            next = sessionResult.next
+        }
+
         if preferences.isAdministrator {
             let admin = adminAlerts(previous: next, input: input, preferences: preferences)
             alerts.append(contentsOf: admin.alerts)
@@ -232,13 +252,17 @@ enum LibraryAlertEngine {
             incoming: incoming.map(\.id),
             cap: seenItemCap
         )
+        next.libraryWatermark = advancedWatermark(previous.libraryWatermark, incoming: incoming)
 
-        guard previous.primedLibrary else {
+        guard previous.hasLibraryBaseline else {
             next.primedLibrary = true
+            next.libraryWatermark = incoming.compactMap(\.dateCreated).max() ?? Date()
             return ([], next)
         }
 
-        let fresh = incoming.filter { !previous.seenItemIDSet.contains($0.id) }
+        let fresh = incoming.filter { item in
+            !previous.seenItemIDSet.contains(item.id) && wasAddedAfterBaseline(item, watermark: previous.libraryWatermark)
+        }
         guard !fresh.isEmpty else { return ([], next) }
 
         let visible = Array(fresh.prefix(maxItemAlerts))
@@ -253,6 +277,25 @@ enum LibraryAlertEngine {
         return (alerts, next)
     }
 
+    private static func wasAddedAfterBaseline(_ item: CollapsedItem, watermark: Date?) -> Bool {
+        guard let watermark, let created = item.dateCreated else { return false }
+        return created > watermark
+    }
+
+    private static func advancedWatermark(_ current: Date?, incoming: [CollapsedItem]) -> Date? {
+        let newest = incoming.compactMap(\.dateCreated).max()
+        switch (current, newest) {
+        case let (current?, newest?):
+            return max(current, newest)
+        case let (current?, nil):
+            return current
+        case let (nil, newest?):
+            return newest
+        case (nil, nil):
+            return current
+        }
+    }
+
     private static func adminAlerts(
         previous: LibraryAlertSnapshot,
         input: LibraryAlertInput,
@@ -260,17 +303,6 @@ enum LibraryAlertEngine {
     ) -> (alerts: [LibraryAlert], next: LibraryAlertSnapshot) {
         var next = previous
         var alerts: [LibraryAlert] = []
-
-        if let sessions = input.sessions {
-            let sessionResult = sessionAlerts(
-                previous: next,
-                sessions: sessions,
-                preferences: preferences,
-                localDeviceID: input.localDeviceID
-            )
-            alerts.append(contentsOf: sessionResult.alerts)
-            next = sessionResult.next
-        }
 
         if let requestIDs = input.requests?.map(\.id) {
             next.seenRequestIDs = mergeSeen(previous: next.seenRequestIDs, incoming: requestIDs, cap: seenRequestCap)
@@ -281,7 +313,7 @@ enum LibraryAlertEngine {
 
         guard previous.primedAdmin else {
             next.primedAdmin = true
-            return (alerts, next)
+            return ([], next)
         }
 
         if preferences.requests, let requests = input.requests {
@@ -363,14 +395,32 @@ enum LibraryAlertEngine {
     private struct CollapsedItem {
         var id: String
         var title: String
+        var dateCreated: Date?
     }
 
     private static func collapsedLibraryItems(_ items: [MediaItem]) -> [CollapsedItem] {
-        var seen = Set<String>()
-        return items.compactMap { item in
+        var collapsed: [CollapsedItem] = []
+        for item in items {
             let id = item.seriesDetailItemID ?? item.id
-            guard seen.insert(id).inserted else { return nil }
-            return CollapsedItem(id: id, title: libraryTitle(for: item))
+            if let index = collapsed.firstIndex(where: { $0.id == id }) {
+                collapsed[index].dateCreated = maxDate(collapsed[index].dateCreated, item.dateCreated)
+                continue
+            }
+            collapsed.append(CollapsedItem(id: id, title: libraryTitle(for: item), dateCreated: item.dateCreated))
+        }
+        return collapsed
+    }
+
+    private static func maxDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+        switch (lhs, rhs) {
+        case let (lhs?, rhs?):
+            return max(lhs, rhs)
+        case let (lhs?, nil):
+            return lhs
+        case let (nil, rhs?):
+            return rhs
+        case (nil, nil):
+            return nil
         }
     }
 

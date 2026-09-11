@@ -159,6 +159,7 @@ final class SessionStore {
         guard let box = try? vault.loadBox(), let saved = box.current else { return }
         accounts = box.accounts
         apply(saved, serverVersion: saved.serverVersion)
+        await refreshSessionCapabilities()
     }
 
     func addUserOnCurrentServer(username: String, password: String) async throws {
@@ -651,18 +652,14 @@ final class SessionStore {
     }
 
     func refreshAdministratorStatus() async {
-        guard let client else {
-            isAdministrator = false
-            enableSubtitleManagement = false
-            return
-        }
+        guard let client else { return }
         do {
             let user = try await client.send(Paths.getCurrentUser).value
             isAdministrator = user.policy?.isAdministrator == true
             enableSubtitleManagement = user.policy?.enableSubtitleManagement == true
+            LibraryAlertSettings.lastKnownAdministrator = isAdministrator
         } catch {
-            isAdministrator = false
-            enableSubtitleManagement = false
+            // Keep the last known admin flag so a blip cannot stop session alerts.
         }
     }
 
