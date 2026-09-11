@@ -35,6 +35,12 @@ struct LibraryView: View {
                         }
                         .zelefinLibraryListRow()
                         NavigationLink {
+                            CatalogBrowseView(title: "Favorites", libraryKind: .favorites)
+                        } label: {
+                            Label("Favorites", systemImage: "heart.fill")
+                        }
+                        .zelefinLibraryListRow()
+                        NavigationLink {
                             DownloadedItemsView()
                         } label: {
                             Label("Downloaded", systemImage: "arrow.down.circle")
@@ -190,7 +196,7 @@ struct LibraryGenresView: View {
                                 Text(genre.name)
                             } icon: {
                                 Image(systemName: GenreSymbol.systemImage(for: genre.name))
-                                    .foregroundStyle(Color.blue)
+                                    .foregroundStyle(.tint)
                             }
                         }
                         .zelefinLibraryListRow()

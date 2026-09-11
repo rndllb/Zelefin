@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(DownloadStore.self) private var downloads
     @Environment(DeepLinkStore.self) private var deepLinks
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var profileSheet: ProfileSheet?
 
     var body: some View {
@@ -31,16 +32,36 @@ struct RootView: View {
             profileSheet = notification.object as? ProfileSheet
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinRemotePlayItem)) { notification in
-            guard session.isSignedIn, let itemID = notification.object as? String else { return }
-            deepLinks.presentedItemID = itemID
+            guard let itemID = notification.object as? String else { return }
+            deepLinks.openLibraryItem(itemID, session: session)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenLibraryItem)) { notification in
+            guard let itemID = notification.object as? String else { return }
+            deepLinks.openLibraryItem(itemID, session: session)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenScheduledTasks)) { _ in
+            guard session.isSignedIn else { return }
+            profileSheet = .scheduledTasks
         }
         .onChange(of: session.isSignedIn) { _, signedIn in
             if !signedIn {
                 profileSheet = nil
                 deepLinks.dismissPresentedItem()
+                LibraryAlertMonitor.shared.stop()
             } else {
                 Task { await deepLinks.flushPending(session: session) }
+                startLibraryAlertMonitor()
             }
+        }
+        .onChange(of: session.isAdministrator) { _, isAdmin in
+            guard isAdmin else { return }
+            startLibraryAlertMonitor()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, session.isSignedIn, !session.isReviewDemo else { return }
+            LibraryAlertMonitor.shared.attach(session: session)
+            LibraryAlertMonitor.scheduleBackgroundRefresh()
+            Task { await LibraryAlertMonitor.shared.poll(session: session) }
         }
         .onOpenURL { url in
             Task { await deepLinks.handle(url, session: session) }
@@ -75,10 +96,23 @@ struct RootView: View {
             Text(deepLinks.errorMessage ?? "")
         }
         .preferredColorScheme(.dark)
-        .tint(session.isSignedIn ? Color.accentColor : .white)
+        .zelefinAccentTint()
         .task {
             await session.restore()
+            startLibraryAlertMonitor()
+            if let itemID = LibraryAlertCenter.shared.takePendingItemID() {
+                deepLinks.openLibraryItem(itemID, session: session)
+            }
+            if LibraryAlertCenter.shared.takePendingScheduledTasks() {
+                profileSheet = .scheduledTasks
+            }
             await deepLinks.flushPending(session: session)
         }
+    }
+
+    private func startLibraryAlertMonitor() {
+        LibraryAlertMonitor.shared.attach(session: session)
+        guard session.isSignedIn, !session.isReviewDemo else { return }
+        LibraryAlertMonitor.shared.start(session: session)
     }
 }

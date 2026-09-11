@@ -104,7 +104,7 @@ struct CacheSettingsView: View {
             }
             .disabled(artwork.total.isEmpty)
             Toggle("Auto-refresh missing images", isOn: $autoRefreshMissingImages)
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
         } header: {
             Text("Images")
         } footer: {
@@ -129,7 +129,7 @@ struct CacheSettingsView: View {
             }
             .disabled(metadata.total.isEmpty)
             Toggle("Auto-refresh missing metadata", isOn: $autoRefreshMissingMetadata)
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
             Button {
                 Task { await refreshMetadata() }
             } label: {

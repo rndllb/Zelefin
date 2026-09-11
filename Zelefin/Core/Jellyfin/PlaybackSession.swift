@@ -192,6 +192,12 @@ extension PlaybackSession {
         if dto.transcodingInfo != nil, method == .unknown {
             method = .transcode
         }
+        let unresolvedPlayingName: String?
+        if item == nil, let playing = dto.nowPlayingItem {
+            unresolvedPlayingName = playing.name ?? "Playing"
+        } else {
+            unresolvedPlayingName = nil
+        }
         self.init(
             id: id,
             userID: dto.userID,
@@ -207,7 +213,7 @@ extension PlaybackSession {
             supportsRemoteControl: dto.isSupportsRemoteControl ?? false,
             supportsMediaControl: dto.isSupportsMediaControl ?? false,
             nowPlaying: item,
-            nowPlayingName: item == nil ? dto.nowPlayingItem?.name : nil,
+            nowPlayingName: unresolvedPlayingName,
             nowViewingName: dto.nowViewingItem?.name,
             position: TickClock.seconds(from: dto.playState?.positionTicks ?? 0),
             runtime: runtime,

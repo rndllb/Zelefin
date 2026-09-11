@@ -1004,6 +1004,7 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(LibraryKind.shows.recentlyAddedTitle(libraryName: "TV"), "Recently Added Shows")
         XCTAssertEqual(LibraryKind.inferred(fromName: "TV Shows"), .shows)
         XCTAssertFalse(LibraryKind.collections.appearsOnHome)
+        XCTAssertFalse(LibraryKind.favorites.appearsOnHome)
         XCTAssertEqual(
             HomeLayoutPreferences.libraryTabLibraries(libraries).map(\.id),
             ["m", "s", "tv", "mix"]
@@ -1020,6 +1021,7 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertTrue(LibraryKind.other.appearsInLibrary)
         XCTAssertFalse(LibraryKind.music.appearsInLibrary)
         XCTAssertFalse(LibraryKind.collections.appearsInLibrary)
+        XCTAssertFalse(LibraryKind.favorites.appearsInLibrary)
         XCTAssertFalse(LibraryKind.homeVideos.appearsInLibrary)
 
         let collectionRow = HomeSection(
@@ -1414,20 +1416,23 @@ final class TrailerLinkParserTests: XCTestCase {
 
 final class AppTabTests: XCTestCase {
     func testOrderedKeepsKnownTabsAndFillsMissing() {
-        XCTAssertEqual(AppTab.ordered(from: "library,movies"), [.library, .movies, .home, .shows, .collections])
-        XCTAssertEqual(AppTab.ordered(from: "nope,home"), [.home, .movies, .shows, .collections, .library])
+        XCTAssertEqual(AppTab.ordered(from: "library,movies"), [.library, .movies, .home, .shows, .collections, .favorites])
+        XCTAssertEqual(AppTab.ordered(from: "nope,home"), [.home, .movies, .shows, .collections, .library, .favorites])
         XCTAssertEqual(AppTab.raw(from: [.shows, .home, .shows]), "shows,home")
-        XCTAssertEqual(AppTab.defaultOrderRaw, "home,movies,shows,collections,library")
+        XCTAssertEqual(AppTab.defaultOrderRaw, "home,movies,shows,collections,library,favorites")
     }
 
     func testHomeCannotBeHidden() {
         XCTAssertFalse(AppTab.home.canHide)
         XCTAssertTrue(AppTab.movies.canHide)
         XCTAssertTrue(AppTab.collections.canHide)
+        XCTAssertTrue(AppTab.favorites.canHide)
+        XCTAssertEqual(AppTab.favorites.title, "Favorites")
         XCTAssertEqual(AppTab.collections.title, "Collections")
         XCTAssertEqual(AppTab.collections.customizationID, "app.zelefin.tab.collections")
         XCTAssertEqual(AppTab.library.customizationID, "app.zelefin.tab.library")
-        XCTAssertEqual(AppTab.hiddenByDefault, [.collections])
+        XCTAssertEqual(AppTab.favorites.customizationID, "app.zelefin.tab.favorites")
+        XCTAssertEqual(AppTab.hiddenByDefault, [.collections, .favorites])
         XCTAssertFalse(AppTab.hiddenByDefault.contains(.movies))
     }
 }

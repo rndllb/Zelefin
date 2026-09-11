@@ -8,10 +8,21 @@ final class DeepLinkStore {
     var errorMessage: String?
     var browserFallbackURL: URL?
     private var pending: URL?
+    private var pendingItemID: String?
 
     var presentedItem: DeepLinkItem? {
         get { presentedItemID.map(DeepLinkItem.init) }
         set { presentedItemID = newValue?.id }
+    }
+
+    func openLibraryItem(_ itemID: String, session: SessionStore) {
+        let trimmed = itemID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if session.isSignedIn {
+            presentedItemID = trimmed
+        } else {
+            pendingItemID = trimmed
+        }
     }
 
     func handle(_ url: URL, session: SessionStore) async {
@@ -24,6 +35,10 @@ final class DeepLinkStore {
     }
 
     func flushPending(session: SessionStore) async {
+        if session.isSignedIn, let pendingItemID {
+            presentedItemID = pendingItemID
+            self.pendingItemID = nil
+        }
         guard let pending else { return }
         self.pending = nil
         await handle(pending, session: session)

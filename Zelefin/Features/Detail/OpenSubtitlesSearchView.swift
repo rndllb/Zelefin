@@ -22,7 +22,7 @@ struct OpenSubtitlesSearchView: View {
                     }
                 }
                 Toggle("Perfect match only", isOn: $perfectMatch)
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
             } footer: {
                 Text("Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash.")
             }

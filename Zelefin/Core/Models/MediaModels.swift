@@ -483,11 +483,12 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
     case playlists
     case homeVideos
     case collections
+    case favorites
     case other
 
     var appearsOnHome: Bool {
         switch self {
-        case .music, .books, .photos, .liveTV, .playlists, .collections:
+        case .music, .books, .photos, .liveTV, .playlists, .collections, .favorites:
             false
         case .movies, .shows, .homeVideos, .other:
             true
@@ -498,7 +499,7 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         switch self {
         case .movies, .shows, .other, .liveTV:
             true
-        case .music, .books, .photos, .playlists, .homeVideos, .collections:
+        case .music, .books, .photos, .playlists, .homeVideos, .collections, .favorites:
             false
         }
     }

@@ -14,6 +14,8 @@ struct ProfileView: View {
     @State private var isUpdatingPhoto = false
     @State private var localAvatar: UIImage?
     @State private var pickerItem: PhotosPickerItem?
+    @State private var tokenVisible = false
+    @State private var tokenCopied = false
 
     var body: some View {
         Form {
@@ -22,6 +24,18 @@ struct ProfileView: View {
                     .listRowInsets(EdgeInsets(top: 20, leading: 16, bottom: 16, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+            }
+
+            if session.session != nil {
+                Section {
+                    LabeledContent("User", value: displayName)
+                    LabeledContent("Server", value: session.session?.serverURL.absoluteString ?? serverLabel)
+                    accessTokenRow
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text("Your access token authenticates this device to Jellyfin. Copy it only into apps you trust.")
+                }
             }
 
             Section {
@@ -94,6 +108,60 @@ struct ProfileView: View {
 
     private var canUpdatePassword: Bool {
         !currentPassword.isEmpty && !newPassword.isEmpty && newPassword == confirmPassword
+    }
+
+    private var accessToken: String {
+        session.session?.accessToken ?? ""
+    }
+
+    private var accessTokenRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Token")
+                .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 10) {
+                Group {
+                    if tokenVisible {
+                        Text(accessToken)
+                            .textSelection(.enabled)
+                    } else {
+                        Text(maskedToken)
+                    }
+                }
+                    .font(.footnote.monospaced())
+                    .lineLimit(tokenVisible ? 6 : 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(tokenVisible ? "Access token" : "Hidden access token")
+                Button {
+                    tokenVisible.toggle()
+                } label: {
+                    Image(systemName: tokenVisible ? "eye.slash" : "eye")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(tokenVisible ? "Hide token" : "Show token")
+                Button {
+                    copyAccessToken()
+                } label: {
+                    Image(systemName: tokenCopied ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .disabled(accessToken.isEmpty)
+                .accessibilityLabel(tokenCopied ? "Copied" : "Copy token")
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var maskedToken: String {
+        guard !accessToken.isEmpty else { return "—" }
+        return String(repeating: "•", count: min(28, max(12, accessToken.count)))
+    }
+
+    private func copyAccessToken() {
+        guard !accessToken.isEmpty else { return }
+        UIPasteboard.general.string = accessToken
+        tokenCopied = true
+        statusIsError = false
+        status = "Access token copied."
     }
 
     private var identityHero: some View {
@@ -176,7 +244,7 @@ struct ProfileView: View {
             if isCurrent {
                 Image(systemName: "checkmark")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AccentPreferences.current)
             }
         }
         .padding(.vertical, 4)
@@ -270,7 +338,7 @@ struct AddAccountView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "server.rack")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AccentPreferences.current)
                         .frame(width: 28)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(serverLabel)
@@ -282,7 +350,7 @@ struct AddAccountView: View {
                     Spacer(minLength: 0)
                     Image(systemName: "checkmark")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AccentPreferences.current)
                 }
                 .padding(.vertical, 4)
             } footer: {

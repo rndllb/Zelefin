@@ -191,6 +191,12 @@ struct SeerrListedRequest: Decodable, Sendable {
     var id: Int
     var media: SeerrMediaInfo
     var requestedBy: SeerrUser?
+
+    init(id: Int, media: SeerrMediaInfo, requestedBy: SeerrUser? = nil) {
+        self.id = id
+        self.media = media
+        self.requestedBy = requestedBy
+    }
 }
 
 extension SeerrClient {
@@ -215,6 +221,14 @@ extension SeerrClient {
             studios: SeerrCompany.studios,
             networks: SeerrCompany.networks
         )
+    }
+
+    func listedRequests(page: Int = 1) async throws -> [SeerrListedRequest] {
+        let payload: SeerrRequestListResponse = try await fetch(
+            SeerrDiscoverQuery.requests.path,
+            query: SeerrDiscoverQuery.requests.queryItems(page: page)
+        )
+        return payload.results
     }
 
     func discover(_ query: SeerrDiscoverQuery, page: Int = 1) async throws -> SeerrDiscoverPage {

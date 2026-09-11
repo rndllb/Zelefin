@@ -23,9 +23,9 @@ struct PluginSettingsView: View {
                         .foregroundStyle(session.introSkipperAvailable ? .green : .secondary)
                 }
                 Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
                 Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
             } header: {
                 Text("Intro Skipper")
             } footer: {

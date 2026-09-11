@@ -19,13 +19,13 @@ struct PlaybackSettingsView: View {
         Form {
             Section {
                 Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
                 Picker(adaptiveBitrate ? "Maximum Quality" : "Default Quality", selection: $maxBitrate) {
                     ForEach(PlaybackQuality.allCases) { quality in
                         Text(quality.title).tag(quality.rawValue)
                     }
                 }
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
             } header: {
                 Text("Quality")
             } footer: {
@@ -81,13 +81,13 @@ struct PlaybackSettingsView: View {
                         Text(interval.title).tag(interval.rawValue)
                     }
                 }
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
                 Picker("Skip Forward", selection: $skipForward) {
                     ForEach(PlaybackSkipInterval.allCases) { interval in
                         Text(interval.title).tag(interval.rawValue)
                     }
                 }
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
             } header: {
                 Text("Controls")
             } footer: {
@@ -96,7 +96,7 @@ struct PlaybackSettingsView: View {
 
             Section {
                 Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
             } header: {
                 Text("Episodes")
             } footer: {
@@ -109,11 +109,11 @@ struct PlaybackSettingsView: View {
                         Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
                     }
                 }
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
                 Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
                 Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
                     .disabled(!useNativeVideoPlayer)
             } header: {
                 Text("Player")

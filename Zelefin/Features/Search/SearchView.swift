@@ -544,7 +544,7 @@ private struct SearchPage: View {
                         recents = []
                     }
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.tint)
                     .buttonStyle(.plain)
                 }
             }

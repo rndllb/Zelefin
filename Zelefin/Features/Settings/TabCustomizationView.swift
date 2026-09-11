@@ -5,12 +5,35 @@ struct TabCustomizationView: View {
     @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(HomeLayoutPreferences.mergeContinueAndNextUpKey) private var mergeContinueAndNextUp = false
+    @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
+    @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
 
     var body: some View {
         List {
             Section {
+                VStack(alignment: .leading, spacing: 16) {
+                    AccentColorPickerGrid(
+                        accentPresetId: $accentPresetId,
+                        customAccentHex: $customAccentHex
+                    )
+                    .padding(.vertical, 4)
+
+                    if accentPresetId == AccentPreferences.customId {
+                        CustomAccentColorControls(
+                            accentPresetId: $accentPresetId,
+                            customAccentHex: $customAccentHex
+                        )
+                    }
+                }
+                .padding(.vertical, 8)
+            } header: {
+                Text("Accent Color")
+            } footer: {
+                Text("Accent color tints buttons, highlights, and icons throughout the app.")
+            }
+
+            Section {
                 Toggle("Combine Continue Watching and Next Up", isOn: $mergeContinueAndNextUp)
-                    .tint(Color.accentColor)
             } footer: {
                 Text(homeFooterCopy)
             }

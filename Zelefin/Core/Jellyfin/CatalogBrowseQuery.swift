@@ -148,6 +148,12 @@ struct CatalogBrowseQuery: Hashable, Sendable {
 
     static let `default` = CatalogBrowseQuery()
 
+    func applyingFavoriteFilter() -> CatalogBrowseQuery {
+        var next = self
+        next.statuses.insert(.favorite)
+        return next
+    }
+
     var isDefault: Bool {
         statuses.isEmpty
             && features.isEmpty

@@ -7,12 +7,14 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case shows
     case collections
     case library
+    case favorites
 
     static let orderStorageKey = "zelefin.tab-order"
     static let customizationStorageKey = "zelefin.tab-customization"
     static let hiddenDefaultsAppliedKey = "zelefin.tab-hidden-defaults-v1"
-    static let defaultOrderRaw = "home,movies,shows,collections,library"
-    static let hiddenByDefault: Set<AppTab> = [.collections]
+    static let favoritesHiddenDefaultKey = "zelefin.tab-hidden-defaults-favorites"
+    static let defaultOrderRaw = "home,movies,shows,collections,library,favorites"
+    static let hiddenByDefault: Set<AppTab> = [.collections, .favorites]
 
     var id: String { rawValue }
 
@@ -23,6 +25,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .shows: "Shows"
         case .collections: "Collections"
         case .library: "Library"
+        case .favorites: "Favorites"
         }
     }
 
@@ -33,6 +36,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .shows: "tv"
         case .collections: "square.grid.2x2.fill"
         case .library: "rectangle.stack.fill"
+        case .favorites: "heart.fill"
         }
     }
 
@@ -71,7 +75,11 @@ extension AppTab {
     }
 
     static func applyHiddenDefaults(to customization: inout TabViewCustomization) {
-        for tab in hiddenByDefault where tab.canHide {
+        hide(hiddenByDefault, in: &customization)
+    }
+
+    static func hide(_ tabs: Set<AppTab>, in customization: inout TabViewCustomization) {
+        for tab in tabs where tab.canHide {
             customization[sidebarVisibility: tab.customizationID] = .hidden
         }
     }

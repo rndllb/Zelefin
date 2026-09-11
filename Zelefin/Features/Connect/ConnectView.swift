@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Sign-in canvas modeled on Vellum’s login, with a white accent and Jellyfin-only fields.
+/// Sign-in canvas. The isometric Z leads; credentials sit in a single column under it.
 struct ConnectView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("zelefin.last-server") private var address = ""
     @AppStorage("zelefin.last-username") private var username = ""
     @State private var password = ""
@@ -24,25 +25,22 @@ struct ConnectView: View {
             LoginPalette.canvas
                 .ignoresSafeArea()
 
-            accentBlobs
+            markGlow
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    logoBlock
-                        .padding(.top, 36)
-                        .padding(.bottom, 28)
-
-                    headerBlock
-                        .padding(.bottom, 28)
+                    brandBlock
+                        .padding(.top, horizontalSizeClass == .regular ? 56 : 28)
+                        .padding(.bottom, 32)
 
                     credentialsCard
                         .padding(.bottom, 22)
 
                     statusText
 
-                    HStack(spacing: 12) {
-                        testConnectionButton
+                    VStack(spacing: 12) {
                         loginButton
+                        testConnectionButton
                     }
 
                     if isUsingQuickConnect {
@@ -50,19 +48,21 @@ struct ConnectView: View {
                             .padding(.top, 22)
                     } else {
                         quickConnectButton
-                            .padding(.top, 14)
+                            .padding(.top, 16)
                     }
 
                     if ReviewDemo.isEnabled {
                         reviewDemoButton
-                            .padding(.top, 14)
+                            .padding(.top, 12)
                     }
                 }
+                .frame(maxWidth: 440)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 26)
                 .padding(.bottom, 44)
             }
         }
-        .tint(LoginPalette.accent)
+        .tint(AccentPreferences.current)
         .onDisappear { cancelQuickConnect() }
         .alert("Password help", isPresented: $showsPasswordHelp) {
             Button("OK", role: .cancel) {}
@@ -73,60 +73,47 @@ struct ConnectView: View {
 
     // MARK: - Chrome
 
-    private var accentBlobs: some View {
+    private var markGlow: some View {
         GeometryReader { geo in
-            ZStack {
-                accentBlob
-                    .frame(width: geo.size.width * 0.62, height: geo.size.width * 0.52)
-                    .position(x: geo.size.width * 0.88, y: geo.size.height * 0.08)
+            let isPad = horizontalSizeClass == .regular
+            let endRadius = isPad
+                ? hypot(geo.size.width / 2, geo.size.height)
+                : max(geo.size.width * 0.72, 220)
 
-                accentBlob
-                    .frame(width: geo.size.width * 0.72, height: geo.size.width * 0.58)
-                    .position(x: geo.size.width * 0.82, y: geo.size.height * 0.94)
-            }
+            RadialGradient(
+                colors: [
+                    LoginPalette.cyan.opacity(0.28),
+                    LoginPalette.cobalt.opacity(0.16),
+                    LoginPalette.canvas
+                ],
+                center: .top,
+                startRadius: 12,
+                endRadius: endRadius
+            )
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    private var accentBlob: some View {
-        Ellipse()
-            .fill(
-                RadialGradient(
-                    colors: [
-                        LoginPalette.accent.opacity(0.42),
-                        LoginPalette.accent.opacity(0.14),
-                        LoginPalette.accent.opacity(0),
-                    ],
-                    center: .center,
-                    startRadius: 8,
-                    endRadius: 140
-                )
-            )
-            .blur(radius: 26)
-    }
-
-    private var logoBlock: some View {
-        VStack(spacing: 14) {
-            ConnectBrandMark(size: 88)
-            Text("Zelefin")
-                .font(.title2.weight(.bold))
-                .foregroundStyle(LoginPalette.primaryText)
+    private var brandBlock: some View {
+        VStack(spacing: 18) {
+            ConnectBrandMark(size: horizontalSizeClass == .regular ? 196 : 168)
+            VStack(spacing: 8) {
+                Text("Zelefin")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(LoginPalette.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                Text("Please sign in to continue.")
+                    .font(.subheadline)
+                    .foregroundStyle(LoginPalette.secondaryText)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var headerBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Login")
-                .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(LoginPalette.primaryText)
-
-            Text("Please sign in to continue.")
-                .font(.subheadline)
-                .foregroundStyle(LoginPalette.secondaryText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Zelefin. Please sign in to continue.")
     }
 
     // MARK: - Fields
@@ -156,7 +143,7 @@ struct ConnectView: View {
                 TextField("Username", text: $username)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoginPalette.fieldValue)
-                    .tint(LoginPalette.accent)
+                    .tint(AccentPreferences.current)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -193,7 +180,7 @@ struct ConnectView: View {
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(LoginPalette.captionText)
-        .tint(LoginPalette.accent)
+        .tint(AccentPreferences.current)
         .padding(.top, 8)
     }
 
@@ -203,7 +190,7 @@ struct ConnectView: View {
             TextField("Client ID or token ID", text: $gatewayClientID)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
-                .tint(LoginPalette.accent)
+                .tint(AccentPreferences.current)
                 .textContentType(.username)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -215,7 +202,7 @@ struct ConnectView: View {
             SecureField("Client secret or access token", text: $gatewayClientSecret)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
-                .tint(LoginPalette.accent)
+                .tint(AccentPreferences.current)
                 .textContentType(.password)
         }
 
@@ -240,7 +227,7 @@ struct ConnectView: View {
                     Text("FORGOT")
                         .font(.caption.weight(.bold))
                         .tracking(0.8)
-                        .foregroundStyle(LoginPalette.accent)
+                        .foregroundStyle(AccentPreferences.current)
                 }
                 .buttonStyle(.plain)
             }
@@ -255,7 +242,7 @@ struct ConnectView: View {
                 SecureField("Password", text: $password)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoginPalette.fieldValue)
-                    .tint(LoginPalette.accent)
+                    .tint(AccentPreferences.current)
                     .textContentType(.password)
 
                 Spacer(minLength: 0)
@@ -348,13 +335,13 @@ struct ConnectView: View {
                 if isCheckingConnection {
                     ProgressView()
                         .controlSize(.small)
-                        .tint(LoginPalette.actionLabel)
+                        .tint(.white)
                 }
                 Text(isCheckingConnection ? "TESTING…" : "TEST CONNECTION")
                     .font(.caption.weight(.bold))
                     .tracking(0.9)
             }
-            .modifier(LoginActionButtonStyle())
+            .modifier(LoginSecondaryButtonStyle())
         }
         .buttonStyle(.plain)
         .disabled(trimmedAddress.isEmpty || isBusy)
@@ -440,7 +427,7 @@ struct ConnectView: View {
                 cancelQuickConnect()
             }
             .font(.caption.weight(.bold))
-            .foregroundStyle(LoginPalette.accent)
+            .foregroundStyle(AccentPreferences.current)
             .buttonStyle(.plain)
         }
         .padding(18)
@@ -543,10 +530,11 @@ struct ConnectView: View {
 }
 
 private enum LoginPalette {
-    static let accent = Color.white
+    static let cyan = AccentPreferences.cyan.color
+    static let cobalt = Color(red: 0.0, green: 0.22, blue: 0.98)
     static let canvas = Color.black
     static let primaryText = Color.white
-    static let secondaryText = Color.white.opacity(0.62)
+    static let secondaryText = Color.white.opacity(0.72)
     static let captionText = Color.white.opacity(0.55)
     static let iconTint = Color.white.opacity(0.55)
     static let fieldValue = Color.white
@@ -564,30 +552,20 @@ private struct LoginActionButtonStyle: ViewModifier {
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                LoginPalette.accent,
-                                LoginPalette.accent.opacity(0.86),
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .fill(AccentPreferences.current)
             )
-            .shadow(color: LoginPalette.accent.opacity(0.45), radius: 14, x: 0, y: 8)
     }
 }
 
 private struct LoginSecondaryButtonStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .foregroundStyle(LoginPalette.accent)
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(LoginPalette.accent, lineWidth: 1.5)
+                    .strokeBorder(Color.white.opacity(0.55), lineWidth: 1.5)
             )
     }
 }

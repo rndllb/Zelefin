@@ -44,7 +44,7 @@ targets:
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: YES
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home."
-        INFOPLIST_KEY_UIBackgroundModes: audio
+        INFOPLIST_KEY_UIBackgroundModes: "audio fetch"
         ENABLE_PREVIEWS: YES
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
@@ -73,6 +73,11 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UIRequiresFullScreen: false
         NSLocationWhenInUseUsageDescription: "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home."
+        UIBackgroundModes:
+          - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - app.zelefin.client.library-alerts
   ZelefinTests:
     type: bundle.unit-test
     platform: iOS

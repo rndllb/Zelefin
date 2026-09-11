@@ -28,6 +28,7 @@ struct CatalogBrowseView: View {
         case .movies: return "Movies from this server will show up here."
         case .shows: return "Shows from this server will show up here."
         case .collections: return "Collections from this server will show up here."
+        case .favorites: return "Movies and shows you mark as favorites will show up here."
         default: return "Titles from this server will show up here."
         }
     }
@@ -36,6 +37,7 @@ struct CatalogBrowseView: View {
         switch libraryKind {
         case .shows: "tv"
         case .collections: "square.grid.2x2.fill"
+        case .favorites: "heart.fill"
         default: "film"
         }
     }

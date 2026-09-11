@@ -165,6 +165,8 @@ enum ReviewDemoCatalog {
         [northAtlantic]
     }
 
+    static let favoriteIDs: Set<String> = [harborLights.id, stationNorth.id]
+
     static var collectionMembers: [String: [MediaItem]] {
         [northAtlantic.id: [harborLights, glassHarbor, cartographer]]
     }
@@ -323,6 +325,9 @@ enum ReviewDemoCatalog {
         }
         if query.statuses.contains(.continueWatching) {
             result = result.filter { $0.playbackPosition > 0 }
+        }
+        if query.statuses.contains(.favorite) {
+            result = result.filter { favoriteIDs.contains($0.id) }
         }
         let resolutions = query.videoKinds.filter(\.isResolution)
         if !resolutions.isEmpty {

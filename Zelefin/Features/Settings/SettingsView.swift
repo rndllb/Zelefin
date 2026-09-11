@@ -38,9 +38,15 @@ struct SettingsView: View {
             settingsRow("Sessions", systemImage: "play.tv") {
                 SessionsView()
             }
+            settingsRow("Notifications", systemImage: "bell", subtitle: notificationsSubtitle) {
+                NotificationSettingsView()
+            }
             if session.isAdministrator {
                 settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls") {
                     UserManagementView()
+                }
+                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress") {
+                    ScheduledTasksView()
                 }
             }
         }
@@ -91,7 +97,7 @@ struct SettingsView: View {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
                     .font(.body.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(.tint)
                     .frame(width: 28, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -109,6 +115,18 @@ struct SettingsView: View {
     private var accountDisplayName: String {
         let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? "Account" : name
+    }
+
+    private var notificationsSubtitle: String? {
+        guard LibraryAlertSettings.isEnabled else { return "Off" }
+        let parts = [
+            LibraryAlertSettings.libraryAdds ? "New titles" : nil,
+            session.isAdministrator && LibraryAlertSettings.streams ? "Streams" : nil,
+            session.isAdministrator && LibraryAlertSettings.online ? "Online" : nil,
+            session.isAdministrator && LibraryAlertSettings.requests && PluginSettings.isSeerrConfigured ? "Requests" : nil,
+            session.isAdministrator && LibraryAlertSettings.scheduledTasks ? "Tasks" : nil
+        ].compactMap { $0 }
+        return parts.isEmpty ? "On" : parts.joined(separator: " · ")
     }
 
     private var pluginsSubtitle: String? {
@@ -167,7 +185,7 @@ extension View {
             .toolbarBackground(ZelefinSettingsChrome.canvas, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .tint(Color.accentColor)
+            .zelefinAccentTint()
     }
 }
 

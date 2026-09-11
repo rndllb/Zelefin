@@ -259,11 +259,11 @@ struct UserAccountEditorView: View {
     private var permissionsSection: some View {
         Section {
             Toggle("Administrator", isOn: administratorBinding)
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
             Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
             Toggle("Disable Account", isOn: disabledBinding)
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
         } header: {
             Text("Permissions")
         } footer: {
@@ -278,7 +278,7 @@ struct UserAccountEditorView: View {
                     Text(bitrateTitle(limit)).tag(limit)
                 }
             }
-            .tint(Color.accentColor)
+            .tint(AccentPreferences.current)
             .onChange(of: draft.remoteClientBitrateLimit) { _, _ in
                 Task { await savePolicy() }
             }
@@ -318,10 +318,10 @@ struct UserAccountEditorView: View {
                     Text(rating.name).tag(rating.id)
                 }
             }
-            .tint(Color.accentColor)
+            .tint(AccentPreferences.current)
             ForEach(UnratedItem.allCases, id: \.self) { item in
                 Toggle(item.settingsTitle, isOn: unratedBinding(item))
-                    .tint(Color.accentColor)
+                    .tint(AccentPreferences.current)
             }
         } header: {
             Text("Parental Controls")
@@ -333,11 +333,11 @@ struct UserAccountEditorView: View {
     private var librarySection: some View {
         Section {
             Toggle("All libraries", isOn: allFoldersBinding)
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
             if !draft.enableAllFolders {
                 ForEach(folders) { folder in
                     Toggle(folder.name, isOn: folderBinding(folder.id))
-                        .tint(Color.accentColor)
+                        .tint(AccentPreferences.current)
                 }
             }
         } header: {

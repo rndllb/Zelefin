@@ -23,7 +23,7 @@ struct NetworkSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .tint(Color.accentColor)
+                .tint(AccentPreferences.current)
             } header: {
                 Text("Local Network")
             }
@@ -49,7 +49,7 @@ struct NetworkSettingsView: View {
                 }
                 LabeledContent("Using") {
                     Text(session.activeRoute.title)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AccentPreferences.current)
                 }
             }
 

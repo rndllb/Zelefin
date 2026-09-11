@@ -8,6 +8,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Sign in
 
+- Branded sign-in with the Zelefin mark
 - Jellyfin server URL, username, and password
 - Try Review Demo on the sign-in screen: a sample library for App Review (Home, Movies, Shows, title pages, and Play) with no Jellyfin server. Hide the button with `ReviewDemo.isEnabled`, or delete `Zelefin/ReviewDemo` after approval.
 - Quick Connect from another signed-in device
@@ -15,6 +16,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Access Gateway tokens for Cloudflare Zero Trust or Pangolin, sent on every request including artwork and playback
 - Multiple saved accounts on this device, with switch-user and Add User from Profile
 - Profile photo (camera or photo library) and password change
+- Access token on Profile, hidden until you reveal it, with copy
 
 ### Home
 
@@ -28,12 +30,13 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Browse
 
-- Tabs for Home, Movies, Shows, Collections, and Library (Collections hidden by default)
+- Tabs for Home, Movies, Shows, Collections, Library, and Favorites (Collections and Favorites hidden by default)
 - Reorder or hide tabs in Interface settings; iPad can also Edit the sidebar
+- Favorites is movies and series marked favorite on the server; it is also listed under Library
 - Movies and Shows load the full catalog, not the first page
 - Sort by name, date added, date played, release date, runtime, play count, ratings, parental rating, or random
 - Filter by played, unplayed, favorite, continue watching, genres, years, studios, tags, languages, ratings, subtitles, trailers, extras, and video kind (SD / HD / 4K, DVD, Blu-ray, ISO)
-- Library lists every Jellyfin library on the server, plus Collections, Downloaded, and Genres
+- Library lists every Jellyfin library on the server, plus Collections, Favorites, Downloaded, and Genres
 - Indexing status sits under the header while the catalog is still catching up
 
 ### Title details
@@ -48,6 +51,15 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Download and share from the same pill
 - Add Subtitles on movies and episodes when this account can edit subtitles (administrator or Edit Subtitles) and Open Subtitles is on the server
 - Share a `zelefin://` link plus the Jellyfin web URL so another install or a browser can open the title
+
+### Notifications
+
+Zelefin watches the server from this device. It does not need a Jellyfin notification plugin.
+
+- New movies, shows, and episodes: a banner on this iPhone or iPad, and tapping it opens that title
+- Administrators also get streams started, users coming online on another device, scheduled tasks starting, and new Seerr requests when Seerr is signed in under Plugins
+- Settings → Notifications to turn each kind on or off
+- Stream and online alerts follow Jellyfin session updates while the app is open; iOS may also refresh in the background
 
 ### Playback
 
@@ -97,6 +109,13 @@ Settings → Plugins shows what this Jellyfin server actually has installed. Zel
 - Transcode details (codec, resolution, bitrate, reason)
 - Remote control of other clients that accept it (play, pause, skip, volume)
 - This device also accepts remote control from Jellyfin while the socket stays up
+- This device reports its marketing model name to Jellyfin, such as iPhone 17 Pro
+
+### Scheduled tasks
+
+- Administrators can open Scheduled Tasks from Settings or the profile menu
+- Start or cancel a task, and watch progress while it runs
+- Tapping a “scheduled task started” notification opens this list
 
 ### Users
 
@@ -118,6 +137,7 @@ Settings → Plugins shows what this Jellyfin server actually has installed. Zel
 
 ### Interface
 
+- Accent color for buttons, highlights, and icons. Cyan (the login button) is the default; presets and a custom hex are in Interface settings
 - Combine Continue Watching and Next Up
 - Drag to reorder tabs, hide any tab except Home, reset to defaults
 

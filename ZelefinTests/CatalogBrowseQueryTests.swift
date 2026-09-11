@@ -23,6 +23,7 @@ final class CatalogBrowseQueryTests: XCTestCase {
         XCTAssertEqual(query.itemFilters, [.isFavorite])
         XCTAssertFalse(query.isDefault)
         XCTAssertEqual(query.activeFilterCount, 3)
+        XCTAssertEqual(CatalogBrowseQuery.default.applyingFavoriteFilter().itemFilters, [.isFavorite])
     }
 
     func testContinueWatchingUsesResumableFilter() {

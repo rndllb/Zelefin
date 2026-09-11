@@ -112,6 +112,7 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient {
         case .movies: ReviewDemoCatalog.filterOptions(from: ReviewDemoCatalog.movies)
         case .shows: ReviewDemoCatalog.filterOptions(from: ReviewDemoCatalog.shows)
         case .collections: ReviewDemoCatalog.filterOptions(from: ReviewDemoCatalog.collections)
+        case .favorites: ReviewDemoCatalog.filterOptions(from: ReviewDemoCatalog.movies + ReviewDemoCatalog.shows)
         default: ReviewDemoCatalog.filterOptions(from: ReviewDemoCatalog.movies + ReviewDemoCatalog.shows)
         }
     }
@@ -141,6 +142,23 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient {
         let items = ReviewDemoCatalog.items(matching: query, from: ReviewDemoCatalog.collections)
         await onPage?(CatalogPageUpdate(items: items, totalCount: items.count))
         return items
+    }
+
+    override func browseCatalog(
+        kind: LibraryKind,
+        libraries: [MediaLibrary],
+        query: CatalogBrowseQuery = .default,
+        onPage: CatalogPageHandler? = nil
+    ) async -> [MediaItem] {
+        if kind == .favorites {
+            let items = ReviewDemoCatalog.items(
+                matching: query.applyingFavoriteFilter(),
+                from: ReviewDemoCatalog.movies + ReviewDemoCatalog.shows
+            )
+            await onPage?(CatalogPageUpdate(items: items, totalCount: items.count))
+            return items
+        }
+        return await super.browseCatalog(kind: kind, libraries: libraries, query: query, onPage: onPage)
     }
 
     override func catalogCount(kind: LibraryKind, libraries: [MediaLibrary]) async -> Int {
@@ -287,4 +305,12 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient {
     ) async throws {}
 
     override func sendSessionCommand(sessionID: String, command: GeneralCommandType) async throws {}
+
+    override func scheduledTasks() async throws -> [ScheduledTask] {
+        []
+    }
+
+    override func startScheduledTask(id: String) async throws {}
+
+    override func stopScheduledTask(id: String) async throws {}
 }

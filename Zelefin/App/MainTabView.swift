@@ -6,6 +6,7 @@ struct MainTabView: View {
     @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
+    @AppStorage(AppTab.favoritesHiddenDefaultKey) private var favoritesHiddenDefaultApplied = false
 
     var body: some View {
         tabView
@@ -47,9 +48,15 @@ struct MainTabView: View {
     }
 
     private func applyHiddenTabDefaultsIfNeeded() {
-        guard !hiddenDefaultsApplied else { return }
-        AppTab.applyHiddenDefaults(to: &tabCustomization)
-        hiddenDefaultsApplied = true
+        if !hiddenDefaultsApplied {
+            AppTab.applyHiddenDefaults(to: &tabCustomization)
+            hiddenDefaultsApplied = true
+            favoritesHiddenDefaultApplied = true
+            return
+        }
+        guard !favoritesHiddenDefaultApplied else { return }
+        AppTab.hide([.favorites], in: &tabCustomization)
+        favoritesHiddenDefaultApplied = true
     }
 
     private var visibleTabs: [AppTab] {
@@ -75,6 +82,8 @@ struct MainTabView: View {
             CatalogBrowseView(title: "Collections", libraryKind: .collections)
         case .library:
             LibraryView()
+        case .favorites:
+            CatalogBrowseView(title: "Favorites", libraryKind: .favorites)
         }
     }
 }
@@ -82,6 +91,7 @@ struct MainTabView: View {
 enum ProfileSheet: String, Identifiable {
     case profile
     case sessions
+    case scheduledTasks
     case settings
     case addUser
 
@@ -160,6 +170,9 @@ struct ProfileMenu: View {
                     otherAccounts: session.otherAccounts,
                     onProfile: { ProfilePresentation.show(.profile) },
                     onSessions: { ProfilePresentation.show(.sessions) },
+                    onScheduledTasks: session.isAdministrator
+                        ? { ProfilePresentation.show(.scheduledTasks) }
+                        : nil,
                     onAddUser: { ProfilePresentation.show(.addUser) },
                     onSettings: { ProfilePresentation.show(.settings) },
                     onSignOut: { Task { await session.signOut() } },
@@ -203,6 +216,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
     var otherAccounts: [SavedSession]
     var onProfile: () -> Void
     var onSessions: () -> Void
+    var onScheduledTasks: (() -> Void)?
     var onAddUser: () -> Void
     var onSettings: () -> Void
     var onSignOut: () -> Void
@@ -250,6 +264,13 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                     parent.onSessions()
                 }
             ]
+            if let onScheduledTasks = parent.onScheduledTasks {
+                rows.append(
+                    Self.action("Scheduled Tasks", "clock.arrow.2.circlepath") {
+                        onScheduledTasks()
+                    }
+                )
+            }
             if !parent.otherAccounts.isEmpty {
                 let switchTo = parent.onSwitchTo
                 let users = parent.otherAccounts.map { account in
@@ -335,6 +356,9 @@ struct ProfileSheetContainer: View {
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .sessions:
                 SessionsView()
+                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+            case .scheduledTasks:
+                ScheduledTasksView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .settings:
                 SettingsView()

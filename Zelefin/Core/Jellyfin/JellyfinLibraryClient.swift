@@ -104,6 +104,24 @@ class JellyfinLibraryClient: @unchecked Sendable {
         await ignoringErrors { try await featuredItems() } ?? []
     }
 
+    /// Latest movies, shows, and episodes for local “new on server” alerts.
+    func recentlyAddedForAlerts() async -> [MediaItem] {
+        async let movies = ignoringErrors {
+            try await latestMedia(include: [.movie], parentID: nil, fields: ItemMapper.listFields, limit: 24)
+        } ?? []
+        async let shows = ignoringErrors {
+            try await latestMedia(include: [.series], parentID: nil, fields: ItemMapper.listFields, limit: 24)
+        } ?? []
+        async let episodes = ignoringErrors {
+            try await latestMedia(include: [.episode], parentID: nil, fields: ItemMapper.listFields, limit: 24)
+        } ?? []
+        let movieItems = await movies
+        let showItems = await shows
+        let episodeItems = await episodes
+        var seen = Set<String>()
+        return (movieItems + showItems + episodeItems).filter { seen.insert($0.id).inserted }
+    }
+
     func markPlayed(itemID: String) async throws {
         _ = try await client.send(Paths.markPlayedItem(itemID: itemID, userID: userID, datePlayed: Date()))
     }
@@ -281,6 +299,15 @@ class JellyfinLibraryClient: @unchecked Sendable {
             }
             return (try? await collectionItems(query: query, onPage: onPage)) ?? []
         }
+        if kind == .favorites {
+            return (try? await catalogItems(
+                genreID: nil,
+                parentID: nil,
+                include: [.movie, .series],
+                query: query.applyingFavoriteFilter(),
+                onPage: onPage
+            )) ?? []
+        }
         let matches = HomeLayoutPreferences.libraries(libraries, matching: kind)
         return await items(inLibraries: matches, query: query, onPage: onPage)
     }
@@ -293,6 +320,9 @@ class JellyfinLibraryClient: @unchecked Sendable {
                 if scoped > 0 { return scoped }
             }
             return await countItems(include: [.boxSet], parentID: nil)
+        }
+        if kind == .favorites {
+            return await browseCatalog(kind: .favorites, libraries: libraries).count
         }
         let matches = HomeLayoutPreferences.libraries(libraries, matching: kind)
         return await countItems(in: matches)
@@ -1165,6 +1195,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         case .movies: [.movie]
         case .shows: [.series]
         case .collections: [.boxSet]
+        case .favorites: [.movie, .series]
         default: [.movie, .series]
         }
     }
@@ -1297,6 +1328,19 @@ class JellyfinLibraryClient: @unchecked Sendable {
         _ = try await client.send(
             Paths.sendGeneralCommand(sessionID: sessionID, command: command.rawValue)
         )
+    }
+
+    func scheduledTasks() async throws -> [ScheduledTask] {
+        let result = try await client.send(Paths.getTasks()).value
+        return ScheduledTask.sorted(result.compactMap(ScheduledTask.init(dto:)))
+    }
+
+    func startScheduledTask(id: String) async throws {
+        _ = try await client.send(Paths.startTask(taskID: id))
+    }
+
+    func stopScheduledTask(id: String) async throws {
+        _ = try await client.send(Paths.stopTask(taskID: id))
     }
 }
 
