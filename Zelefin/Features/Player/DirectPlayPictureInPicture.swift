@@ -3,7 +3,7 @@ import CoreMedia
 
 /// Picture in Picture for the sample-buffer Direct Play path.
 @MainActor
-final class DirectPlayPictureInPicture: NSObject, @preconcurrency AVPictureInPictureControllerDelegate, AVPictureInPictureSampleBufferPlaybackDelegate {
+final class DirectPlayPictureInPicture: NSObject, AVPictureInPictureControllerDelegate, AVPictureInPictureSampleBufferPlaybackDelegate {
     private(set) var controller: AVPictureInPictureController?
     private weak var source: DirectPlayPiPSource?
     private weak var engine: DirectPlayEngine?
@@ -75,8 +75,8 @@ final class DirectPlayPictureInPicture: NSObject, @preconcurrency AVPictureInPic
             controller.startPictureInPicture()
             return
         }
-        DispatchQueue.main.async { [weak self, weak controller] in
-            guard let self, let controller, controller.isPictureInPicturePossible else { return }
+        DispatchQueue.main.async { [weak controller] in
+            guard let controller, controller.isPictureInPicturePossible else { return }
             controller.startPictureInPicture()
         }
     }

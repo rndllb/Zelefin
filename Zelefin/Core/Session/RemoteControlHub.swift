@@ -298,7 +298,7 @@ enum JellyfinJSONDate {
         return formatter
     }()
 
-    private nonisolated(unsafe) static let fractionalOffset: DateFormatter = {
+    private static let fractionalOffset: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .iso8601)
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -307,7 +307,7 @@ enum JellyfinJSONDate {
         return formatter
     }()
 
-    private nonisolated(unsafe) static let offset: DateFormatter = {
+    private static let offset: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .iso8601)
         formatter.locale = Locale(identifier: "en_US_POSIX")

@@ -164,6 +164,18 @@ struct TMDBUserReview: Equatable, Identifiable, Sendable {
     var author: String
     var content: String
     var rating: Double?
+
+    /// TMDB scores are out of 10; title-page stars are out of 5.
+    var starsOutOfFive: Double? {
+        guard let rating else { return nil }
+        return min(5, max(0, rating / 2))
+    }
+
+    static func averageStars(in reviews: [TMDBUserReview]) -> Double? {
+        let scores = reviews.compactMap(\.starsOutOfFive)
+        guard !scores.isEmpty else { return nil }
+        return scores.reduce(0, +) / Double(scores.count)
+    }
 }
 
 struct JellyfinEnhancedClient: Sendable {

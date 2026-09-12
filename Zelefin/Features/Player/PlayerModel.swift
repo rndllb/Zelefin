@@ -105,12 +105,7 @@ final class PlayerModel {
                 try await startDirectPlay()
                 setPlaybackRate(PlaybackPreferences.defaultRate)
             }
-            await reporter?.started(
-                at: PlaybackResumePolicy.reportStartPosition(
-                    playhead: currentSeconds,
-                    plannedStart: plan.startTime
-                )
-            )
+            await reportPlaybackStarted()
             didStart = true
             RemoteControlHub.shared.attach(self)
         } catch is CancellationError {
@@ -143,7 +138,27 @@ final class PlayerModel {
         nativePictureInPictureActive = false
         stopWhenPictureInPictureEnds = false
         RemoteControlHub.shared.detach(self)
-        await reporter?.stopped(at: seconds)
+        await reportPlaybackStopped(at: seconds)
+    }
+
+    private func reportPlaybackStarted() async {
+        guard let reporter else { return }
+        await reporter.started(
+            at: PlaybackResumePolicy.reportStartPosition(
+                playhead: currentSeconds,
+                plannedStart: plan.startTime
+            )
+        )
+    }
+
+    private func reportPlaybackStopped(at seconds: TimeInterval) async {
+        guard let reporter else { return }
+        await reporter.stopped(at: seconds)
+    }
+
+    private func reportProgress(at seconds: TimeInterval? = nil, isPaused: Bool) async {
+        guard let reporter else { return }
+        await reporter.progress(at: seconds ?? currentSeconds, isPaused: isPaused)
     }
 
     func markPlaybackViewDismissed() {
@@ -241,7 +256,7 @@ final class PlayerModel {
         case .stop, .next:
             break
         }
-        Task { await reporter?.progress(at: currentSeconds, isPaused: isPaused) }
+        Task { await reportProgress(isPaused: isPaused) }
     }
 
     private func pausePlayback() {
@@ -329,7 +344,9 @@ final class PlayerModel {
                 }
                 return
             }
-            await engine?.seek(to: target)
+            if let engine {
+                await engine.seek(to: target)
+            }
         }
         pendingDirectPlaySeek = nil
         isDrainingDirectPlaySeeks = false
@@ -344,7 +361,7 @@ final class PlayerModel {
             lastTrustedTime = rendered
             currentTime = rendered
             publishWaitState()
-            Task { await reporter?.progress(at: rendered, isPaused: isPaused) }
+            Task { await reportProgress(at: rendered, isPaused: isPaused) }
         case .rejected, .stalled:
             // A stalled seek jumps the clock and can leave video waiting on a PTS
             // that never arrives (black frame + audio from the wrong place). Keep
@@ -465,7 +482,7 @@ final class PlayerModel {
         ) else { return }
         didAttemptDeferredResume = true
         let target = plan.startTime
-        Task { await seek(to: target) }
+        Task { seek(to: target) }
     }
 
     private func startDirectPlay() async throws {
@@ -717,7 +734,7 @@ final class PlayerModel {
                     } else {
                         isPaused = false
                     }
-                    await self.reporter?.progress(at: seconds, isPaused: isPaused)
+                    await self.reportProgress(at: seconds, isPaused: isPaused)
                 }
             }
             .store(in: &cancellables)
@@ -741,7 +758,7 @@ final class PlayerModel {
                         self.isBuffering = waiting
                     }
                 }
-                await self.reporter?.progress(at: seconds, isPaused: self.isPaused)
+                await self.reportProgress(at: seconds, isPaused: self.isPaused)
             }
         }
     }

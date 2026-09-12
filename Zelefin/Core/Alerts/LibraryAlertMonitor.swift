@@ -1,6 +1,7 @@
 import BackgroundTasks
 import Foundation
 import Observation
+import UIKit
 import UserNotifications
 
 extension Notification.Name {
@@ -12,10 +13,10 @@ extension Notification.Name {
 @Observable
 final class LibraryAlertMonitor {
     static let shared = LibraryAlertMonitor()
-    static let backgroundTaskIdentifier = "app.zelefin.client.library-alerts"
+    nonisolated static let backgroundTaskIdentifier = "app.zelefin.client.library-alerts"
     static let sessionPollSeconds: TimeInterval = 5
     static let libraryPollSeconds: TimeInterval = 90
-    static let backgroundRefreshSeconds: TimeInterval = 5 * 60
+    nonisolated static let backgroundRefreshSeconds: TimeInterval = 15 * 60
     static var sessionInterval: Duration { .seconds(sessionPollSeconds) }
     static var libraryInterval: Duration { .seconds(libraryPollSeconds) }
 
@@ -30,25 +31,38 @@ final class LibraryAlertMonitor {
     private var lastLibraryPoll = Date.distantPast
     private weak var attachedSession: SessionStore?
 
-    static func registerBackgroundRefresh() {
+    /// BGTaskScheduler invokes this on a background queue. The method and identifier must
+    /// stay nonisolated so Swift does not trap when iOS wakes Zelefin while it is closed.
+    nonisolated static func registerBackgroundRefresh() {
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: backgroundTaskIdentifier,
             using: nil
         ) { task in
-            guard let refresh = task as? BGAppRefreshTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            Task { @MainActor in
-                await LibraryAlertMonitor.shared.handleBackground(refresh)
-            }
+            handleBackgroundLaunch(task)
         }
     }
 
-    static func scheduleBackgroundRefresh() {
+    nonisolated static func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: backgroundTaskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: backgroundRefreshSeconds)
         try? BGTaskScheduler.shared.submit(request)
+    }
+
+    nonisolated private static func handleBackgroundLaunch(_ task: BGTask) {
+        guard task is BGAppRefreshTask else {
+            task.setTaskCompleted(success: false)
+            return
+        }
+        scheduleBackgroundRefresh()
+        let completion = BackgroundRefreshCompletion(task)
+        let work = Task { @MainActor in
+            await LibraryAlertMonitor.shared.pollFromSavedSession()
+            completion.finish(success: !Task.isCancelled)
+        }
+        task.expirationHandler = { @Sendable in
+            work.cancel()
+            completion.finish(success: false)
+        }
     }
 
     func attach(session: SessionStore) {
@@ -107,20 +121,25 @@ final class LibraryAlertMonitor {
         libraryChangeDebounce = nil
     }
 
-    func handleBackground(_ task: BGAppRefreshTask) async {
-        Self.scheduleBackgroundRefresh()
-        let work = Task { @MainActor in
-            await self.pollFromSavedSession()
-        }
-        task.expirationHandler = {
-            work.cancel()
-        }
-        await work.value
-        task.setTaskCompleted(success: true)
-    }
-
     func poll(session: SessionStore) async {
         await poll(session: session, includeLibrary: true)
+    }
+
+    /// Finishes a Jellyfin check after the user leaves, before iOS suspends the process.
+    func pollWhenEnteringBackground() async {
+        let application = UIApplication.shared
+        var identifier = UIBackgroundTaskIdentifier.invalid
+        identifier = application.beginBackgroundTask(withName: Self.backgroundTaskIdentifier) {
+            application.endBackgroundTask(identifier)
+            identifier = .invalid
+        }
+        defer {
+            if identifier != .invalid {
+                application.endBackgroundTask(identifier)
+            }
+        }
+        Self.scheduleBackgroundRefresh()
+        await pollFromSavedSession()
     }
 
     /// Checks Jellyfin using the saved account, without waiting for the UI session to finish restoring.
@@ -380,4 +399,22 @@ private struct LibraryPollSlice {
     var items: [MediaItem]?
     var requests: [LibraryAlertRequest]?
     var tasks: [LibraryAlertTask]?
+}
+
+/// Owns the BGTask so the launch handler can finish it from MainActor or expiration without a sending race.
+private final class BackgroundRefreshCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: BGTask?
+
+    init(_ task: BGTask) {
+        self.task = task
+    }
+
+    func finish(success: Bool) {
+        lock.lock()
+        let task = self.task
+        self.task = nil
+        lock.unlock()
+        task?.setTaskCompleted(success: success)
+    }
 }

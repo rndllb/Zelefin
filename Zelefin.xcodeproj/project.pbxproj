@@ -237,7 +237,7 @@
 		6B29699E73366394F845A819 /* CachePreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachePreferences.swift; sourceTree = "<group>"; };
 		6BCDDAB553BF67632BBED0A3 /* TitleMoreInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleMoreInfoView.swift; sourceTree = "<group>"; };
 		6CB210D9DAE494EEEB082A68 /* CacheInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheInventory.swift; sourceTree = "<group>"; };
-		701A570AFFC8E6919725D4E9 /* ZelefinTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ZelefinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		701A570AFFC8E6919725D4E9 /* ZelefinTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZelefinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		70570648810229F4C3D58AD9 /* ServerURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerURLTests.swift; sourceTree = "<group>"; };
 		71462C344B3D23F5BF516CED /* ReviewDemoCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewDemoCatalog.swift; sourceTree = "<group>"; };
 		718BE9CE0F1DAEE939B194EB /* JellyfinItemCollections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinItemCollections.swift; sourceTree = "<group>"; };
@@ -966,6 +966,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Zelefin/Info.plist;
@@ -992,6 +993,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGNING_ALLOWED = NO;
+				DEVELOPMENT_TEAM = F7YZT72GUX;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1010,6 +1012,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGNING_ALLOWED = NO;
+				DEVELOPMENT_TEAM = F7YZT72GUX;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1097,6 +1100,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Zelefin/Info.plist;

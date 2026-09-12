@@ -1,7 +1,7 @@
 import Foundation
 import JellyfinAPI
 
-final class ReviewDemoLibraryClient: JellyfinLibraryClient {
+final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable {
     override func updateServerVersion(_ raw: String?) {}
 
     override func artworkURL(for item: MediaItem, style: HomeSection.Style) -> URL? {

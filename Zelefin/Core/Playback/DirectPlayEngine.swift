@@ -78,6 +78,7 @@ enum PlaybackPictureInPicturePolicy {
         !pictureInPictureActive
     }
 
+    @MainActor
     static func isLayerInWindow(_ layer: CALayer) -> Bool {
         var node: CALayer? = layer
         while let current = node {

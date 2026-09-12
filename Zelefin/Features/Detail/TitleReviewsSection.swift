@@ -112,52 +112,101 @@ struct TitleEnhancedExtras: View {
 
 struct TitleTMDBReviewsSection: View {
     let reviews: [TMDBUserReview]
+    @State private var expanded = false
     @State private var expandedIDs: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "TMDB Reviews", showsChevron: false)
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(reviews) { review in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(review.author)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
-                            Spacer(minLength: 8)
-                            if let rating = review.rating {
-                                Text(String(format: "%.0f/10", rating))
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.white.opacity(0.55))
-                            }
-                        }
-                        Text(shownText(for: review))
-                            .font(.body)
-                            .foregroundStyle(.white.opacity(0.86))
-                            .fixedSize(horizontal: false, vertical: true)
-                        if review.content.count > 280 {
-                            Button(expandedIDs.contains(review.id) ? "Show Less" : "Read More") {
-                                if expandedIDs.contains(review.id) {
-                                    expandedIDs.remove(review.id)
-                                } else {
-                                    expandedIDs.insert(review.id)
-                                }
-                            }
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.white)
-                        }
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expanded.toggle()
+                    if !expanded {
+                        expandedIDs = []
                     }
                 }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "quote.opening")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.72))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("TMDB Reviews")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text(summary)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    Spacer(minLength: 8)
+                    if let stars = TMDBUserReview.averageStars(in: reviews) {
+                        TitleStarRating(rating: stars, size: 12)
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                .padding(.horizontal, 16)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16)
+            .buttonStyle(.plain)
+            .accessibilityLabel(headerAccessibility)
+            .accessibilityHint(expanded ? "Collapse" : "Show reviews")
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(reviews) { review in
+                        reviewRow(review)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
         }
     }
 
-    private func shownText(for review: TMDBUserReview) -> String {
-        if expandedIDs.contains(review.id) || review.content.count <= 280 {
-            return review.content
+    private var summary: String {
+        reviews.count == 1 ? "1 review" : "\(reviews.count) reviews"
+    }
+
+    private var headerAccessibility: String {
+        if let stars = TMDBUserReview.averageStars(in: reviews) {
+            return "TMDB Reviews, \(summary), \(String(format: "%.1f", stars)) out of 5 stars"
         }
-        return String(review.content.prefix(280)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+        return "TMDB Reviews, \(summary)"
+    }
+
+    private func reviewRow(_ review: TMDBUserReview) -> some View {
+        let isOpen = expandedIDs.contains(review.id)
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if isOpen {
+                    expandedIDs.remove(review.id)
+                } else {
+                    expandedIDs.insert(review.id)
+                }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(review.author)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Spacer(minLength: 8)
+                    if let stars = review.starsOutOfFive {
+                        TitleStarRating(rating: stars, size: 11)
+                    }
+                }
+                Text(review.content)
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(isOpen ? nil : 2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(isOpen ? "Collapse review" : "Show full review")
     }
 }
 

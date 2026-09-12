@@ -65,8 +65,7 @@ struct RootView: View {
                 LibraryAlertMonitor.scheduleBackgroundRefresh()
                 Task { await LibraryAlertMonitor.shared.poll(session: session) }
             case .background:
-                LibraryAlertMonitor.scheduleBackgroundRefresh()
-                Task { await LibraryAlertMonitor.shared.pollFromSavedSession() }
+                Task { await LibraryAlertMonitor.shared.pollWhenEnteringBackground() }
             default:
                 break
             }

@@ -219,7 +219,7 @@ struct OpenSubtitlesClient: Sendable {
                 itemID: itemID,
                 parameters: .init(
                     metadataRefreshMode: .validationOnly,
-                    imageRefreshMode: .none
+                    imageRefreshMode: MetadataRefreshMode.none
                 )
             )
         )

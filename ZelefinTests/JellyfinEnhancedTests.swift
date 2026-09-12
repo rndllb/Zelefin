@@ -89,6 +89,21 @@ final class JellyfinEnhancedPluginTests: XCTestCase {
         XCTAssertEqual(reviews.count, 1)
         XCTAssertEqual(reviews[0].author, "Chris")
         XCTAssertEqual(reviews[0].rating, 8)
+        XCTAssertEqual(reviews[0].starsOutOfFive, 4)
+        XCTAssertEqual(TMDBUserReview.averageStars(in: reviews), 4)
+    }
+
+    func testTMDBScoresMapOntoFiveStars() {
+        XCTAssertEqual(TMDBUserReview(id: "1", author: "A", content: "", rating: 6).starsOutOfFive, 3)
+        XCTAssertEqual(TMDBUserReview(id: "2", author: "B", content: "", rating: 7).starsOutOfFive, 3.5)
+        XCTAssertNil(TMDBUserReview(id: "3", author: "C", content: "", rating: nil).starsOutOfFive)
+        XCTAssertEqual(
+            TMDBUserReview.averageStars(in: [
+                TMDBUserReview(id: "1", author: "A", content: "", rating: 8),
+                TMDBUserReview(id: "2", author: "B", content: "", rating: 6)
+            ]),
+            3.5
+        )
     }
 }
 
