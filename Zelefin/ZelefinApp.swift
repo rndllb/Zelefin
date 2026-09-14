@@ -11,6 +11,13 @@ final class ZelefinAppDelegate: NSObject, UIApplicationDelegate {
         LibraryAlertMonitor.registerBackgroundRefresh()
         return true
     }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        PushNotificationCenter.didRegister(deviceToken: deviceToken)
+    }
 }
 
 @main

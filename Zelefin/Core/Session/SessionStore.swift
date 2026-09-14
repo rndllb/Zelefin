@@ -27,6 +27,7 @@ final class SessionStore {
     private(set) var introSkipperAvailable = false
     private(set) var openSubtitlesAvailable = false
     private(set) var jellyfinEnhancedAvailable = false
+    private(set) var companionAvailable = false
     private(set) var isAdministrator = false
     private(set) var enableSubtitleManagement = false
 
@@ -271,6 +272,7 @@ final class SessionStore {
     func signOut() async {
         homeTask?.cancel()
         let remote = client
+        let companion = remote.map(ZelefinCompanionClient.init)
         let remaining: SavedSession?
         if let id = session?.accountID, var box = try? vault.loadBox() {
             remaining = box.remove(id: id)
@@ -282,11 +284,13 @@ final class SessionStore {
             accounts = []
         }
         clearLocalSession()
+        CompanionSettings.pluginInstalled = false
         if let remaining {
             apply(remaining, serverVersion: remaining.serverVersion)
             persist(remaining)
         }
         Task {
+            await companion?.deleteDevice()
             try? await remote?.signOut()
         }
     }
@@ -421,6 +425,7 @@ final class SessionStore {
         introSkipperAvailable = false
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
+        companionAvailable = false
         isAdministrator = false
         enableSubtitleManagement = false
         tmdbCatalog = JellyfinTmdbCatalog()
@@ -500,6 +505,7 @@ final class SessionStore {
         introSkipperAvailable = false
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
+        companionAvailable = false
         isAdministrator = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
@@ -527,6 +533,7 @@ final class SessionStore {
         introSkipperAvailable = false
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
+        companionAvailable = false
         isAdministrator = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
@@ -625,6 +632,8 @@ final class SessionStore {
             introSkipperAvailable = false
             openSubtitlesAvailable = false
             jellyfinEnhancedAvailable = false
+            companionAvailable = false
+            CompanionSettings.pluginInstalled = false
             return
         }
         let names = await JellyfinPluginCatalog.activeNames(client: client)
@@ -639,6 +648,27 @@ final class SessionStore {
             jellyfinEnhancedAvailable = true
         } else {
             jellyfinEnhancedAvailable = await JellyfinEnhancedClient(client: client).isReachable()
+        }
+        var companion = ZelefinCompanionPlugin.isInstalled(names: names)
+        if !companion {
+            companion = await ZelefinCompanionClient(client: client).config() != nil
+        }
+        companionAvailable = companion
+        CompanionSettings.pluginInstalled = companionAvailable
+        if companionAvailable {
+            await registerCompanionPush()
+        }
+    }
+
+    func registerPushToken(_ token: String) async {
+        guard companionAvailable, let client else { return }
+        await ZelefinCompanionClient(client: client).registerDevice(token: token)
+    }
+
+    private func registerCompanionPush() async {
+        _ = await PushNotificationCenter.requestPermissionIfNeeded()
+        if let token = PushNotificationCenter.storedToken {
+            await registerPushToken(token)
         }
     }
 

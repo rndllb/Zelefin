@@ -54,14 +54,15 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Notifications
 
-Zelefin watches the server from this device. It does not need a Jellyfin notification plugin.
+Zelefin watches the server from this device. For lock-screen alerts while the app stays closed, install the [Zelefin plugin](https://github.com/rndllb/Zelefin-Plugin) on Jellyfin.
 
 - New movies, shows, and episodes added after this device has already seen the library: a banner on this iPhone or iPad, and tapping it opens that title
 - Signing out and back in does not replay titles that were already on the server
 - Administrators also get streams started, users coming online on another device, scheduled tasks starting, and new Seerr requests when Seerr is signed in under Plugins
 - Settings → Notifications to turn each kind on or off
 - Stream and online alerts follow Jellyfin session updates while the app is open; library adds also fire when Jellyfin reports a library change
-- iOS may also refresh in the background. That is not instant push from Jellyfin; opening the app always checks right away
+- With the plugin, those events are Apple Push from your Jellyfin. You do not paste an Apple key on the server. Without the plugin, iOS only lets this device check in the background occasionally, and opening the app always checks right away
+- Privacy and support: [zelefin.app/privacy](https://zelefin.app/privacy), [zelefin.app/support](https://zelefin.app/support)
 
 ### Playback
 
@@ -87,6 +88,7 @@ Zelefin watches the server from this device. It does not need a Jellyfin notific
 
 Settings → Plugins shows what this Jellyfin server actually has installed. Zelefin does not install plugins; it uses the ones already on the server.
 
+- **Zelefin** — Companion plugin for lock-screen alerts, Seerr URL and API key, and Intro Skipper defaults. Install from [Zelefin-Plugin](https://github.com/rndllb/Zelefin-Plugin). Jellyfin admins do not need an Apple Developer account.
 - **Intro Skipper** — Skip Intro and Skip Credits during playback. Optional auto-skip for intros and credits.
 - **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Requires an administrator or a user with Edit Subtitles. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
 - **Jellyfin Enhanced** — Remove from Continue Watching or Next Up without changing watched state. TMDB reviews, household reviews, and awards on the title page. Detection uses the plugin list, or `/JellyfinEnhanced/version` when `/Plugins` is admin-only.
@@ -154,6 +156,12 @@ open Zelefin.xcodeproj
 Select an iPhone or iPad destination and run. Sign in with your Jellyfin server URL, username, and password, or tap Try Review Demo to browse a sample library. Local HTTP servers are allowed.
 
 Requires iOS 18. This build is iPhone and iPad only.
+
+## Links
+
+- App: [github.com/rndllb/Zelefin](https://github.com/rndllb/Zelefin)
+- Plugin: [github.com/rndllb/Zelefin-Plugin](https://github.com/rndllb/Zelefin-Plugin)
+- Site: [zelefin.app](https://zelefin.app)
 
 ## Not in this build
 

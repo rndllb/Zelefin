@@ -41,7 +41,11 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
 
     func requestAuthorization() async -> Bool {
         do {
-            return try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            if granted {
+                await PushNotificationCenter.registerForRemoteNotifications()
+            }
+            return granted
         } catch {
             return false
         }
@@ -65,7 +69,7 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private static func userInfo(for alert: LibraryAlert) -> [String: String] {
+    nonisolated static func userInfo(for alert: LibraryAlert) -> [String: String] {
         var info = [LibraryAlertUserInfo.kind: alert.kind.rawValue]
         if let itemID = alert.itemID, !itemID.isEmpty {
             info[LibraryAlertUserInfo.itemID] = itemID
@@ -73,30 +77,74 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
         return info
     }
 
+    /// Completion-handler form is required: the `async` `didReceive` bridging resumes
+    /// off the main thread, and UIKit then snapshots the scene from that queue (SIGABRT).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
     }
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        let userInfo = response.notification.request.content.userInfo
-        let kind = userInfo[LibraryAlertUserInfo.kind] as? String
-        if kind == LibraryAlert.Kind.scheduledTask.rawValue {
-            await MainActor.run {
-                LibraryAlertCenter.shared.pendingScheduledTasks = true
-                NotificationCenter.default.post(name: .zelefinOpenScheduledTasks, object: nil)
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let destination = LibraryAlertDestination.parse(response.notification.request.content.userInfo)
+        // UN's completion handler is not Sendable; it must still run on the main queue
+        // so UIKit can snapshot the scene without SIGABRT.
+        nonisolated(unsafe) let finish = completionHandler
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                LibraryAlertCenter.shared.remember(destination)
+                finish()
             }
-            return
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    LibraryAlertCenter.shared.publishRememberedOpen()
+                }
+            }
         }
-        guard let itemID = userInfo[LibraryAlertUserInfo.itemID] as? String, !itemID.isEmpty else { return }
-        await MainActor.run {
-            LibraryAlertCenter.shared.pendingItemID = itemID
+    }
+
+    private func remember(_ destination: LibraryAlertDestination?) {
+        switch destination {
+        case .scheduledTasks:
+            pendingScheduledTasks = true
+        case .libraryItem(let itemID):
+            pendingItemID = itemID
+        case nil:
+            break
+        }
+    }
+
+    private func publishRememberedOpen() {
+        if pendingScheduledTasks {
+            NotificationCenter.default.post(name: .zelefinOpenScheduledTasks, object: nil)
+        }
+        if let itemID = pendingItemID {
             NotificationCenter.default.post(name: .zelefinOpenLibraryItem, object: itemID)
         }
+    }
+}
+
+enum LibraryAlertDestination: Equatable, Sendable {
+    case libraryItem(String)
+    case scheduledTasks
+
+    static func parse(_ userInfo: [AnyHashable: Any]) -> LibraryAlertDestination? {
+        let kind = userInfo[LibraryAlertUserInfo.kind] as? String
+        if kind == LibraryAlert.Kind.scheduledTask.rawValue {
+            return .scheduledTasks
+        }
+        if let itemID = userInfo[LibraryAlertUserInfo.itemID] as? String, !itemID.isEmpty {
+            return .libraryItem(itemID)
+        }
+        if let itemID = userInfo["itemId"] as? String, !itemID.isEmpty {
+            return .libraryItem(itemID)
+        }
+        return nil
     }
 }

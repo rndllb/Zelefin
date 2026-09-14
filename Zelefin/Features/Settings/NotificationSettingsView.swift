@@ -55,11 +55,11 @@ struct NotificationSettingsView: View {
         case .denied:
             "Notifications are off in iOS Settings. Turn them on for Zelefin to see banners on this device."
         case .notDetermined:
-            "Zelefin asks iOS for permission when you turn this on. Alerts are created on this device by checking the server; they are not push from Jellyfin."
+            "Zelefin asks iOS for permission when you turn this on. With the Zelefin Jellyfin plugin, alerts are push from your server. Without it, this device checks Jellyfin itself."
         case .authorized, .provisional, .ephemeral:
-            "Alerts are created on this device by checking the server. iOS may wait before it lets Zelefin check while the app is closed; opening the app checks immediately."
+            "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
         @unknown default:
-            "Alerts are created on this device by checking the server. iOS may wait before it lets Zelefin check while the app is closed; opening the app checks immediately."
+            "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
         }
     }
 
@@ -80,6 +80,8 @@ struct NotificationSettingsView: View {
             await refreshAuthorization()
             if authorization == .denied {
                 isEnabled = false
+            } else {
+                _ = await PushNotificationCenter.requestPermissionIfNeeded()
             }
         }
         LibraryAlertMonitor.shared.stop()

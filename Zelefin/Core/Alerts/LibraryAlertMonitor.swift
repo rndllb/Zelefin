@@ -80,6 +80,7 @@ final class LibraryAlertMonitor {
             if await LibraryAlertCenter.shared.authorizationStatus() == .notDetermined {
                 _ = await LibraryAlertCenter.shared.requestAuthorization()
             }
+            _ = await PushNotificationCenter.requestPermissionIfNeeded()
             while !Task.isCancelled {
                 await self?.poll(session: session, includeLibrary: false)
                 try? await Task.sleep(for: Self.sessionInterval)
@@ -368,6 +369,12 @@ final class LibraryAlertMonitor {
         )
         LibraryAlertSnapshotStore.save(result.next, accountID: accountID)
         guard !result.alerts.isEmpty else { return }
+        if CompanionSettings.pluginInstalled {
+            let leftover = result.alerts.filter { $0.kind == .scheduledTask }
+            guard !leftover.isEmpty else { return }
+            LibraryAlertCenter.shared.post(leftover)
+            return
+        }
         LibraryAlertCenter.shared.post(result.alerts)
     }
 

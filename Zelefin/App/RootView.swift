@@ -35,11 +35,17 @@ struct RootView: View {
             guard let itemID = notification.object as? String else { return }
             deepLinks.openLibraryItem(itemID, session: session)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .zelefinPushTokenReady)) { notification in
+            guard let token = notification.object as? String else { return }
+            Task { await session.registerPushToken(token) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenLibraryItem)) { notification in
+            _ = LibraryAlertCenter.shared.takePendingItemID()
             guard let itemID = notification.object as? String else { return }
             deepLinks.openLibraryItem(itemID, session: session)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenScheduledTasks)) { _ in
+            _ = LibraryAlertCenter.shared.takePendingScheduledTasks()
             guard session.isSignedIn else { return }
             profileSheet = .scheduledTasks
         }
@@ -63,6 +69,7 @@ struct RootView: View {
             switch phase {
             case .active:
                 LibraryAlertMonitor.scheduleBackgroundRefresh()
+                consumePendingNotificationDestination()
                 Task { await LibraryAlertMonitor.shared.poll(session: session) }
             case .background:
                 Task { await LibraryAlertMonitor.shared.pollWhenEnteringBackground() }
@@ -107,13 +114,18 @@ struct RootView: View {
         .task {
             await session.restore()
             startLibraryAlertMonitor()
-            if let itemID = LibraryAlertCenter.shared.takePendingItemID() {
-                deepLinks.openLibraryItem(itemID, session: session)
-            }
-            if LibraryAlertCenter.shared.takePendingScheduledTasks() {
-                profileSheet = .scheduledTasks
-            }
+            consumePendingNotificationDestination()
             await deepLinks.flushPending(session: session)
+        }
+    }
+
+    private func consumePendingNotificationDestination() {
+        if let itemID = LibraryAlertCenter.shared.takePendingItemID() {
+            deepLinks.openLibraryItem(itemID, session: session)
+        }
+        if LibraryAlertCenter.shared.takePendingScheduledTasks() {
+            guard session.isSignedIn else { return }
+            profileSheet = .scheduledTasks
         }
     }
 

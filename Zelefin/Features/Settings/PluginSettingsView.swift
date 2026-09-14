@@ -59,6 +59,23 @@ struct PluginSettingsView: View {
             }
 
             Section {
+                HStack {
+                    Text("Zelefin")
+                    Spacer()
+                    Text(session.companionAvailable ? "Installed" : "Not on this server")
+                        .foregroundStyle(session.companionAvailable ? .green : .secondary)
+                }
+            } header: {
+                Text("Notifications plugin")
+            } footer: {
+                if session.companionAvailable {
+                    Text("This server can push lock-screen alerts while Zelefin is closed. Allow notifications on this iPhone after sign-in.")
+                } else {
+                    Text("Install the Zelefin plugin on Jellyfin if you want new titles and streams while the app is closed. Without it, this iPhone only checks when you open Zelefin.")
+                }
+            }
+
+            Section {
                 if isSeerrSignedIn {
                     LabeledContent("Server") {
                         Text(seerrURL)
