@@ -218,20 +218,27 @@ final class PlayerModel {
         }
     }
 
+    var onUserTransport: ((RemotePlaybackAction) -> Void)?
+    @ObservationIgnored private var isApplyingRemote = false
+
     func togglePlayPause() {
+        let pause = !isPaused
         if let engine {
             engine.togglePlayPause()
-            return
-        }
-        guard let player else { return }
-        if player.rate == 0 {
-            player.play()
         } else {
-            player.pause()
+            guard let player else { return }
+            if player.rate == 0 {
+                player.play()
+            } else {
+                player.pause()
+            }
         }
+        notifyUserTransport(pause ? .pause : .play)
     }
 
     func applyRemote(_ action: RemotePlaybackAction) {
+        isApplyingRemote = true
+        defer { isApplyingRemote = false }
         switch action {
         case .playPause:
             togglePlayPause()
@@ -317,6 +324,12 @@ final class PlayerModel {
             player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
         }
         skipPrompt = SkipSegment.prompt(in: skipSegments, at: clamped + 0.05)
+        notifyUserTransport(.seek(clamped))
+    }
+
+    private func notifyUserTransport(_ action: RemotePlaybackAction) {
+        guard !isApplyingRemote else { return }
+        onUserTransport?(action)
     }
 
     private func enqueueDirectPlaySeek(_ seconds: TimeInterval) {

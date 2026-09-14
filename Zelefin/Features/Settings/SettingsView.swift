@@ -3,6 +3,8 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
+    @State private var showsLibraryScanConfirm = false
+    @State private var libraryScanMessage: String?
 
     var body: some View {
         List {
@@ -14,6 +16,18 @@ struct SettingsView: View {
         .zelefinSettingsChrome(title: "Settings")
         .task {
             await session.detectIntroSkipper()
+        }
+        .confirmationDialog(
+            "Scan every library?",
+            isPresented: $showsLibraryScanConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Scan Libraries") {
+                Task { await scanLibraries() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Jellyfin will look for new files and refresh metadata. This can take a while on a large server.")
         }
     }
 
@@ -38,6 +52,9 @@ struct SettingsView: View {
             settingsRow("Sessions", systemImage: "play.tv") {
                 SessionsView()
             }
+            settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle) {
+                SyncPlayView()
+            }
             settingsRow("Notifications", systemImage: "bell", subtitle: notificationsSubtitle) {
                 NotificationSettingsView()
             }
@@ -47,6 +64,34 @@ struct SettingsView: View {
                 }
                 settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress") {
                     ScheduledTasksView()
+                }
+                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Who signed in, what scanned, what failed") {
+                    ActivityLogView()
+                }
+                settingsRow("Backups", systemImage: "externaldrive.badge.timemachine", subtitle: "Archive and restore this server") {
+                    ServerBackupsView()
+                }
+                settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
+                    ServerBrandingView()
+                }
+                Button {
+                    showsLibraryScanConfirm = true
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.tint)
+                            .frame(width: 28, alignment: .center)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Scan Libraries")
+                            if let libraryScanMessage {
+                                Text(libraryScanMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -158,6 +203,19 @@ struct SettingsView: View {
         let total = images + metadata
         guard total > 0 else { return nil }
         return CacheInventory.formatBytes(total)
+    }
+
+    private var syncPlaySubtitle: String? {
+        session.syncPlayGroupName
+    }
+
+    private func scanLibraries() async {
+        do {
+            try await session.library?.scanLibraries()
+            libraryScanMessage = "Scan started"
+        } catch {
+            libraryScanMessage = error.localizedDescription
+        }
     }
 }
 

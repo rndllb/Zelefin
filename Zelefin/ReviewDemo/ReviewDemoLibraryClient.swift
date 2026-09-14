@@ -224,6 +224,75 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
         ReviewDemoCatalog.search(term: term)
     }
 
+    override func searchLibrary(_ term: String) async throws -> [LibrarySearchHit] {
+        try await search(term: term).map { item in
+            LibrarySearchHit(
+                id: item.id,
+                name: item.name,
+                kind: .title(item.kind),
+                subtitle: item.searchListSubtitle,
+                year: item.year,
+                imageTag: item.primaryImageTag
+            )
+        }
+    }
+
+    override func markFavorite(itemID: String, isFavorite: Bool) async throws -> Bool {
+        isFavorite
+    }
+
+    override func setLikes(itemID: String, likes: Bool?) async throws -> Bool? {
+        likes
+    }
+
+    override func specialFeatures(for itemID: String) async -> [TitleExtra] {
+        []
+    }
+
+    override func themeVideos(for itemID: String) async -> [TitleExtra] {
+        []
+    }
+
+    override func cinemaIntros(for itemID: String) async -> [MediaItem] {
+        []
+    }
+
+    override func movieRecommendationsIgnoringErrors() async -> [HomeSection] {
+        []
+    }
+
+    override func upcomingEpisodesIgnoringErrors() async -> [MediaItem] {
+        []
+    }
+
+    override func mediaVersions(for itemID: String) async -> [MediaVersion] {
+        []
+    }
+
+    override func person(id: String) async -> CreditPerson? {
+        ReviewDemoCatalog.credits.first { $0.id == id }
+    }
+
+    override func items(
+        studioID: String,
+        query: CatalogBrowseQuery = .default,
+        onPage: CatalogPageHandler? = nil
+    ) async throws -> [MediaItem] {
+        try await items(personID: studioID, query: query, onPage: onPage)
+    }
+
+    override func boxSets() async -> [MediaItem] {
+        ReviewDemoCatalog.collectionsSection.items
+    }
+
+    override func addToCollection(collectionID: String, itemIDs: [String]) async throws {}
+
+    override func removeFromCollection(collectionID: String, itemIDs: [String]) async throws {}
+
+    override func createCollection(name: String, itemIDs: [String]) async throws {}
+
+    override func playOnSession(sessionID: String, itemIDs: [String], startPosition: TimeInterval? = nil) async throws {}
+
     override func originalFileDownloadURL(for itemID: String) throws -> URL {
         throw ZelefinError.server("Downloads are not available in the App Review demo.")
     }
@@ -248,7 +317,8 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
         subtitleIndex: Int? = nil,
         allowDirectPlay: Bool = true,
         maxBitrate: Int? = nil,
-        startTime: TimeInterval? = nil
+        startTime: TimeInterval? = nil,
+        mediaSourceID: String? = nil
     ) async throws -> PlaybackPlan {
         let audio = MediaTrack(
             id: 1,
@@ -313,4 +383,76 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
     override func startScheduledTask(id: String) async throws {}
 
     override func stopScheduledTask(id: String) async throws {}
+
+    override func activityLog(limit: Int = 80) async throws -> [ActivityLogItem] { [] }
+
+    override func serverBackups() async throws -> [ServerBackup] { [] }
+
+    override func createServerBackup() async throws -> ServerBackup {
+        throw ZelefinError.server("Backups are not available in the App Review demo.")
+    }
+
+    override func restoreServerBackup(_ backup: ServerBackup) async throws {}
+
+    override func scanLibraries() async throws {}
+
+    override func refreshItemMetadata(itemID: String, replaceImages: Bool = false) async throws {}
+
+    override func deleteLibraryItem(itemID: String) async throws {}
+
+    override func remoteArtwork(for itemID: String) async throws -> [RemoteImageChoice] { [] }
+
+    override func downloadRemoteArtwork(itemID: String, imageURL: URL) async throws {}
+
+    override func serverBranding() async throws -> ServerBranding {
+        ServerBranding(loginDisclaimer: "", customCSS: "", splashscreenEnabled: false)
+    }
+
+    override func updateServerBranding(_ branding: ServerBranding) async throws {}
+
+    override func uploadSplashscreen(_ imageData: Data) async throws {}
+
+    override func deleteSplashscreen() async throws {}
+
+    override func displayPreferenceCustomPrefs() async throws -> [String: String] { [:] }
+
+    override func updateDisplayPreferenceCustomPrefs(_ prefs: [String: String]) async throws {}
+
+    override func playlists() async throws -> [MediaItem] { [] }
+
+    override func playlistEntries(playlistID: String) async throws -> [PlaylistEntry] { [] }
+
+    override func createPlaylist(name: String, itemIDs: [String]) async throws {}
+
+    override func addToPlaylist(playlistID: String, itemIDs: [String]) async throws {}
+
+    override func removeFromPlaylist(playlistID: String, entryIDs: [String]) async throws {}
+
+    override func liveTVChannels() async throws -> [MediaItem] { [] }
+
+    override func liveTVRecordings() async throws -> [MediaItem] { [] }
+
+    override func airingPrograms() async throws -> [MediaItem] { [] }
+
+    override func syncPlayGroups() async throws -> [SyncPlayGroupInfo] { [] }
+
+    override func syncPlayCreateGroup(name: String) async throws -> SyncPlayGroupInfo {
+        SyncPlayGroupInfo(id: "demo", name: name, participants: [], stateLabel: "Idle")
+    }
+
+    override func syncPlayJoinGroup(id: String) async throws {}
+
+    override func syncPlayLeaveGroup() async throws {}
+
+    override func syncPlaySetQueue(itemIDs: [String], startPosition: TimeInterval = 0) async throws {}
+
+    override func syncPlayPause() async throws {}
+
+    override func syncPlayUnpause() async throws {}
+
+    override func syncPlaySeek(to seconds: TimeInterval) async throws {}
+
+    override func syncPlayStop() async throws {}
+
+    override func syncPlayReady(isPlaying: Bool, playlistItemID: String?, position: TimeInterval) async throws {}
 }

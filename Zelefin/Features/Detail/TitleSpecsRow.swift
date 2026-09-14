@@ -33,7 +33,17 @@ struct TitleSpecsRow: View {
                     Text("\(Int(score.rounded()))%")
                 }
                 .fixedSize()
-                .accessibilityLabel("Rotten Tomatoes \(Int(score.rounded())) percent")
+                    .accessibilityLabel("Rotten Tomatoes \(Int(score.rounded())) percent")
+            }
+            if let audience = item.communityRating, audience > 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "star.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.yellow)
+                    Text(audience <= 10 ? String(format: "%.1f", audience) : "\(Int(audience.rounded()))%")
+                }
+                .fixedSize()
+                .accessibilityLabel("Audience score")
             }
             if let age = item.ageGateLabel {
                 HStack(spacing: 3) {

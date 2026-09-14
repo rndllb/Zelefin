@@ -5,6 +5,9 @@ extension Notification.Name {
     static let zelefinRemotePlayItem = Notification.Name("zelefin.remotePlayItem")
     static let zelefinRemoteStopPlayback = Notification.Name("zelefin.remoteStopPlayback")
     static let zelefinRemoteNextTrack = Notification.Name("zelefin.remoteNextTrack")
+    static let zelefinSyncPlayJoined = Notification.Name("zelefin.syncPlayJoined")
+    static let zelefinSyncPlayLeft = Notification.Name("zelefin.syncPlayLeft")
+    static let zelefinSyncPlayQueueItem = Notification.Name("zelefin.syncPlayQueueItem")
 }
 
 enum RemotePlaybackAction: Equatable, Sendable {
@@ -191,6 +194,56 @@ final class RemoteControlHub {
             }
         case let .playMessage(message):
             publishRemotePlay(itemIDs: message.data?.itemIDs ?? [], startIndex: message.data?.startIndex ?? 0)
+        case let .syncPlayCommandMessage(message):
+            applySyncPlay(message.data)
+        case let .syncPlayGroupUpdateMessage(message):
+            applySyncPlayGroup(message.data)
+        default:
+            break
+        }
+    }
+
+    private func applySyncPlay(_ command: SendCommand?) {
+        guard let command else { return }
+        switch command.command {
+        case .pause:
+            apply(.pause)
+        case .unpause:
+            apply(.play)
+        case .stop:
+            apply(.stop)
+        case .seek:
+            if let ticks = command.positionTicks {
+                apply(.seek(TickClock.seconds(from: ticks)))
+            }
+        default:
+            break
+        }
+    }
+
+    private func applySyncPlayGroup(_ update: GroupUpdate?) {
+        guard let update else { return }
+        switch update {
+        case let .syncPlayGroupJoinedUpdate(joined):
+            let id = joined.groupID ?? joined.data?.groupID
+            NotificationCenter.default.post(
+                name: .zelefinSyncPlayJoined,
+                object: id,
+                userInfo: ["name": joined.data?.groupName ?? ""]
+            )
+        case .syncPlayGroupLeftUpdate, .syncPlayGroupDoesNotExistUpdate, .syncPlayNotInGroupUpdate:
+            NotificationCenter.default.post(name: .zelefinSyncPlayLeft, object: nil)
+        case let .syncPlayPlayQueueUpdate(queue):
+            let items = queue.data?.playlist ?? []
+            let index = queue.data?.playingItemIndex ?? 0
+            let current = items.indices.contains(index) ? items[index] : items.first
+            if let playlistItemID = current?.playlistItemID {
+                NotificationCenter.default.post(name: .zelefinSyncPlayQueueItem, object: playlistItemID)
+            }
+            if let itemID = current?.itemID {
+                NotificationCenter.default.post(name: .zelefinRemotePlayItem, object: itemID)
+                NotificationCenter.default.post(name: .zelefinSyncPlayQueueItem, object: current?.playlistItemID)
+            }
         default:
             break
         }

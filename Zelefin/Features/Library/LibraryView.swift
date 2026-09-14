@@ -98,6 +98,9 @@ struct LibraryView: View {
         case .movies: "film"
         case .shows: "tv"
         case .liveTV: "dot.radiowaves.left.and.right"
+        case .books: "book"
+        case .photos: "photo"
+        case .playlists: "list.bullet.rectangle"
         case .collections: "square.grid.2x2.fill"
         default: "rectangle.stack"
         }
@@ -134,7 +137,7 @@ struct LibraryPreviewSection: View {
                     HStack(spacing: PosterMetrics.rowSpacing) {
                         ForEach(items.prefix(12)) { item in
                             NavigationLink {
-                                ItemDetailView(item: item)
+                                LibraryItemRoute(item: item)
                             } label: {
                                 PortraitPoster(
                                     item: item,
@@ -243,37 +246,39 @@ struct LibraryItemsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            if isLoading && items.isEmpty {
-                ProgressView().tint(.white).padding(.top, 80)
-            } else if items.isEmpty {
-                ContentUnavailableView(
-                    query.isDefault ? "No Titles Yet" : "No Matches",
-                    systemImage: "rectangle.stack",
-                    description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
-                )
-                .padding(.top, 40)
+        Group {
+            if library.libraryKind == .liveTV {
+                LiveTVView()
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    CatalogIndexBar(progress: indexProgress)
-                    LazyVGrid(columns: columns, spacing: 20) {
-                        ForEach(items) { item in
-                            NavigationLink {
-                                if item.kind == .collection {
-                                    CatalogGridView(title: item.name, query: .parent(item.id))
-                                } else {
-                                    ItemDetailView(item: item)
+                ScrollView {
+                    if isLoading && items.isEmpty {
+                        ProgressView().tint(.white).padding(.top, 80)
+                    } else if items.isEmpty {
+                        ContentUnavailableView(
+                            query.isDefault ? "No Titles Yet" : "No Matches",
+                            systemImage: "rectangle.stack",
+                            description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
+                        )
+                        .padding(.top, 40)
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            CatalogIndexBar(progress: indexProgress)
+                            LazyVGrid(columns: columns, spacing: 20) {
+                                ForEach(items) { item in
+                                    NavigationLink {
+                                        LibraryItemRoute(item: item)
+                                    } label: {
+                                        FillingPortraitPoster(
+                                            item: item,
+                                            imageURL: session.library?.primaryURL(for: item)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                            } label: {
-                                FillingPortraitPoster(
-                                    item: item,
-                                    imageURL: session.library?.primaryURL(for: item)
-                                )
                             }
-                            .buttonStyle(.plain)
+                            .padding(16)
                         }
                     }
-                    .padding(16)
                 }
             }
         }

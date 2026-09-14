@@ -4,9 +4,9 @@ import JellyfinAPI
 import os
 
 class JellyfinLibraryClient: @unchecked Sendable {
-    private let client: JellyfinClient
-    private let userID: String
-    private let artwork: ArtworkURLBuilder
+    let client: JellyfinClient
+    let userID: String
+    let artwork: ArtworkURLBuilder
     private let streams: StreamURLBuilder
     private let serverCapabilities: OSAllocatedUnfairLock<JellyfinServerCapabilities>
     /// `nil` until version is known or the first collections lookup probes `/Items/{id}/Collections`.
@@ -86,6 +86,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
         case collections(HomeSection?)
         case genres(HomeSection?)
         case libraryHome(libraries: [MediaLibrary], sections: [HomeSection])
+        case recommendations([HomeSection])
+        case upcoming([MediaItem])
     }
 
     func resumeItemsIgnoringErrors() async -> [MediaItem] {
@@ -375,66 +377,19 @@ class JellyfinLibraryClient: @unchecked Sendable {
         return (item, dto)
     }
 
+    /// Jellyfin 12 trailers: local extras (`-trailer` / `trailers/` / `.trailer`) first,
+    /// then the item's `RemoteTrailers` (usually TMDb/NFO YouTube) if none exist on disk.
     func trailers(for dto: BaseItemDto) async -> [TitleTrailer] {
         guard let itemID = dto.id else { return [] }
-        var trailers: [TitleTrailer] = []
-        var seenYouTube: Set<String> = []
-        var seenVimeo: Set<String> = []
-        let isSeries = dto.type == .series
-        let tmdbID = JellyfinTmdbCatalog.tmdbID(from: dto.providerIDs)
-        let imdbID = JellyfinTmdbCatalog.imdbID(from: dto.providerIDs)
-
-        func appendYouTube(id: String, title: String) {
-            guard TitleTrailer.isOfficialTrailer(title: title) else { return }
-            if seenYouTube.insert(id).inserted {
-                trailers.append(.youtube(id: id, title: title))
-            }
-        }
 
         if let locals = try? await client.send(Paths.getLocalTrailers(itemID: itemID, userID: userID)).value {
-            for local in locals {
-                if let item = ItemMapper.mediaItem(from: local) {
-                    trailers.append(.jellyfin(item))
-                }
+            let items = locals.compactMap(ItemMapper.mediaItem(from:)).map(TitleTrailer.jellyfin)
+            if !items.isEmpty {
+                return items
             }
         }
 
-        for remote in dto.remoteTrailers ?? [] {
-            guard let url = remote.url else { continue }
-            let title = displayTitle(remote.name)
-            if let youtubeID = TrailerLinkParser.youtubeVideoID(from: url) {
-                appendYouTube(id: youtubeID, title: title)
-            } else if let vimeoID = TrailerLinkParser.vimeoVideoID(from: url),
-                      TitleTrailer.isOfficialTrailer(title: title),
-                      seenVimeo.insert(vimeoID).inserted
-            {
-                trailers.append(.vimeo(id: vimeoID, title: title))
-            }
-        }
-
-        if let tmdbID, let seerr = PluginSettings.seerrClient {
-            for video in await seerr.videos(tmdbID: tmdbID, isSeries: isSeries) {
-                if case .youtube(let youtubeID) = video.kind {
-                    appendYouTube(id: youtubeID, title: video.title)
-                }
-            }
-        }
-
-        if seenYouTube.isEmpty, seenVimeo.isEmpty, trailers.isEmpty {
-            let extras = await WikidataTrailers.youtubeIDs(
-                imdbID: imdbID,
-                tmdbID: tmdbID,
-                isSeries: isSeries
-            )
-            if let youtubeID = extras.first {
-                appendYouTube(id: youtubeID, title: "Official Trailer")
-            }
-        }
-
-        let locals = trailers.filter { $0.jellyfinItem != nil }
-        let remotes = trailers.filter { $0.jellyfinItem == nil }
-            .sorted { $0.trailerRank < $1.trailerRank }
-        return locals + remotes
+        return JellyfinTrailers.remotes(from: dto.remoteTrailers)
     }
 
     func similarItems(for item: MediaItem) async -> [MediaItem] {
@@ -619,6 +574,24 @@ class JellyfinLibraryClient: @unchecked Sendable {
         }
     }
 
+    func items(studioID: String, query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
+        try await pagedMediaItems(query: query, onPage: onPage) { start, limit in
+            .init(
+                userID: userID,
+                startIndex: start,
+                limit: limit,
+                isRecursive: true,
+                fields: ItemMapper.listFields,
+                includeItemTypes: [.movie, .series],
+                sortBy: [.sortName],
+                enableUserData: true,
+                enableImageTypes: ItemMapper.listImageTypes,
+                studioIDs: [studioID],
+                enableTotalRecordCount: true
+            )
+        }
+    }
+
     func credits(for itemID: String, from dto: BaseItemDto) async -> [CreditPerson] {
         let fromDTO = ItemMapper.credits(from: dto.people)
         if !fromDTO.isEmpty { return fromDTO }
@@ -637,11 +610,6 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
     func personImageURL(id: String, tag: String?, maxHeight: Int = 360) -> URL? {
         artwork.image(itemID: id, type: "Primary", tag: tag, maxHeight: maxHeight)
-    }
-
-    private func displayTitle(_ name: String?) -> String {
-        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "Trailer" : trimmed
     }
 
     func seasons(seriesID: String) async throws -> [MediaItem] {
@@ -756,7 +724,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
         subtitleIndex: Int? = nil,
         allowDirectPlay: Bool = true,
         maxBitrate: Int? = nil,
-        startTime: TimeInterval? = nil
+        startTime: TimeInterval? = nil,
+        mediaSourceID: String? = nil
     ) async throws -> PlaybackPlan {
         try await fetchPlaybackPlan(
             for: item,
@@ -764,7 +733,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
             subtitleIndex: subtitleIndex,
             enableDirectPlay: allowDirectPlay,
             maxBitrate: maxBitrate,
-            startTime: startTime
+            startTime: startTime,
+            mediaSourceID: mediaSourceID
         )
     }
 
@@ -783,7 +753,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
         subtitleIndex: Int?,
         enableDirectPlay: Bool,
         maxBitrate: Int?,
-        startTime: TimeInterval?
+        startTime: TimeInterval?,
+        mediaSourceID: String?
     ) async throws -> PlaybackPlan {
         let bitrate = maxBitrate ?? PlaybackPreferences.maxStreamingBitrate
         let resume = await resolvedResumePosition(requested: startTime, item: item)
@@ -799,6 +770,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
             enableTranscoding: true,
             isAutoOpenLiveStream: true,
             maxStreamingBitrate: bitrate,
+            mediaSourceID: mediaSourceID,
             startTimeTicks: TickClock.intTicks(from: resume),
             subtitleStreamIndex: subtitleIndex,
             userID: userID
@@ -812,20 +784,26 @@ class JellyfinLibraryClient: @unchecked Sendable {
                 startTimeTicks: TickClock.intTicks(from: resume),
                 audioStreamIndex: audioIndex,
                 subtitleStreamIndex: subtitleIndex,
+                mediaSourceID: mediaSourceID,
                 isAutoOpenLiveStream: true,
                 enableDirectPlay: enableDirectPlay,
                 enableDirectStream: true,
                 enableTranscoding: true
             )
-        let response = try await client.send(
+        async let playback = client.send(
             Paths.getPostedPlaybackInfo(
                 itemID: item.id,
                 parameters: query,
                 body
             )
-        ).value
+        )
+        async let detail = client.send(Paths.getItem(itemID: item.id, userID: userID))
+        let response = try await playback.value
+        let dto = try? await detail.value
 
-        guard let source = response.mediaSources?.first else {
+        let sources = response.mediaSources ?? []
+        let source = sources.first(where: { $0.id == mediaSourceID }) ?? sources.first
+        guard let source else {
             throw ZelefinError.emptyPlaybackSources
         }
 
@@ -852,7 +830,10 @@ class JellyfinLibraryClient: @unchecked Sendable {
             extraHTTPHeaders: source.requiredHTTPHeaders ?? [:],
             audioTracks: ItemMapper.tracks(from: streams, kind: .audio),
             subtitleTracks: ItemMapper.tracks(from: streams, kind: .subtitle),
-            externalSubtitles: self.streams.externalSubtitles(itemID: item.id, source: source)
+            externalSubtitles: self.streams.externalSubtitles(itemID: item.id, source: source),
+            chapters: dto.map(ItemMapper.chapters(from:)) ?? [],
+            trickplay: dto.flatMap { ItemMapper.trickplay(from: $0, sourceID: source.id) },
+            versions: ItemMapper.versions(from: sources)
         )
     }
 
@@ -1186,6 +1167,11 @@ class JellyfinLibraryClient: @unchecked Sendable {
         case .movies: [.movie, .boxSet]
         case .shows: [.series]
         case .collections: [.boxSet]
+        case .books: [.book]
+        case .photos: [.photo, .photoAlbum]
+        case .liveTV: [.tvChannel]
+        case .playlists: [.playlist]
+        case .homeVideos: [.video, .movie]
         default: includeTypes(for: library)
         }
     }
@@ -1200,6 +1186,11 @@ class JellyfinLibraryClient: @unchecked Sendable {
         case .shows: [.series]
         case .collections: [.boxSet]
         case .favorites: [.movie, .series]
+        case .books: [.book]
+        case .photos: [.photo, .photoAlbum]
+        case .liveTV: [.tvChannel]
+        case .playlists: [.playlist]
+        case .homeVideos: [.video, .movie]
         default: [.movie, .series]
         }
     }
@@ -1214,6 +1205,10 @@ class JellyfinLibraryClient: @unchecked Sendable {
         case .shows: [.series]
         case .homeVideos: [.video, .movie]
         case .collections: [.boxSet]
+        case .books: [.book]
+        case .photos: [.photo, .photoAlbum]
+        case .liveTV: [.tvChannel]
+        case .playlists: [.playlist]
         default: [.movie, .series, .video]
         }
     }
@@ -1334,6 +1329,559 @@ class JellyfinLibraryClient: @unchecked Sendable {
         )
     }
 
+    func playOnSession(sessionID: String, itemIDs: [String], startPosition: TimeInterval? = nil) async throws {
+        _ = try await client.send(
+            Paths.play(
+                sessionID: sessionID,
+                parameters: .init(
+                    playCommand: .playNow,
+                    itemIDs: itemIDs,
+                    startPositionTicks: startPosition.map(TickClock.intTicks(from:))
+                )
+            )
+        )
+    }
+
+    func markFavorite(itemID: String, isFavorite: Bool) async throws -> Bool {
+        let data = isFavorite
+            ? try await client.send(Paths.markFavoriteItem(itemID: itemID, userID: userID)).value
+            : try await client.send(Paths.unmarkFavoriteItem(itemID: itemID, userID: userID)).value
+        return data.isFavorite ?? isFavorite
+    }
+
+    func setLikes(itemID: String, likes: Bool?) async throws -> Bool? {
+        if let likes {
+            let data = try await client.send(
+                Paths.updateUserItemRating(itemID: itemID, userID: userID, isLikes: likes)
+            ).value
+            return data.isLikes
+        }
+        let data = try await client.send(Paths.deleteUserItemRating(itemID: itemID, userID: userID)).value
+        return data.isLikes
+    }
+
+    func specialFeatures(for itemID: String) async -> [TitleExtra] {
+        let dtos = (try? await client.send(Paths.getSpecialFeatures(itemID: itemID, userID: userID)).value) ?? []
+        return dtos.compactMap { dto in
+            guard let item = ItemMapper.mediaItem(from: dto) else { return nil }
+            return TitleExtra(item: item, caption: ItemMapper.extraCaption(from: dto))
+        }
+    }
+
+    func themeVideos(for itemID: String) async -> [TitleExtra] {
+        let result = try? await client.send(
+            Paths.getThemeMedia(itemID: itemID, parameters: .init(userID: userID, isInheritFromParent: true))
+        ).value
+        return (result?.themeVideosResult?.items ?? []).compactMap { dto in
+            guard let item = ItemMapper.mediaItem(from: dto) else { return nil }
+            return TitleExtra(item: item, caption: "Theme")
+        }
+    }
+
+    func cinemaIntros(for itemID: String) async -> [MediaItem] {
+        let result = try? await client.send(Paths.getIntros(itemID: itemID, userID: userID)).value
+        return (result?.items ?? []).compactMap(ItemMapper.mediaItem(from:)).filter { $0.id != itemID }
+    }
+
+    func movieRecommendationsIgnoringErrors() async -> [HomeSection] {
+        (try? await movieRecommendations()) ?? []
+    }
+
+    func movieRecommendations() async throws -> [HomeSection] {
+        let rows = try await client.send(
+            Paths.getMovieRecommendations(
+                parameters: .init(
+                    userID: userID,
+                    fields: ItemMapper.homeFields,
+                    categoryLimit: 5,
+                    itemLimit: 16
+                )
+            )
+        ).value
+        return rows.enumerated().compactMap { index, row in
+            let items = (row.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+            guard !items.isEmpty else { return nil }
+            return HomeSection(
+                id: "recommend-\(row.categoryID ?? "\(index)")",
+                title: ItemMapper.recommendationTitle(from: row),
+                style: .portrait,
+                items: items
+            )
+        }
+    }
+
+    func upcomingEpisodesIgnoringErrors() async -> [MediaItem] {
+        (try? await upcomingEpisodes()) ?? []
+    }
+
+    func upcomingEpisodes() async throws -> [MediaItem] {
+        let result = try await client.send(
+            Paths.getUpcomingEpisodes(
+                parameters: .init(
+                    userID: userID,
+                    limit: 20,
+                    fields: ItemMapper.listFields,
+                    enableImages: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableUserData: true
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap { ItemMapper.mediaItem(from: $0, queueKind: .nextUp) }
+    }
+
+    func mediaVersions(for itemID: String) async -> [MediaVersion] {
+        let dto = try? await client.send(Paths.getItem(itemID: itemID, userID: userID)).value
+        return ItemMapper.versions(from: dto?.mediaSources)
+    }
+
+    func person(id: String) async -> CreditPerson? {
+        guard let dto = try? await client.send(Paths.getItem(itemID: id, userID: userID)).value else {
+            return nil
+        }
+        let name = dto.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty else { return nil }
+        return CreditPerson(
+            id: dto.id ?? id,
+            name: name,
+            roleLabel: "Cast & Crew",
+            imageTag: dto.imageTags?["Primary"],
+            rank: 0,
+            overview: dto.overview,
+            birthYear: dto.productionYear ?? dto.premiereDate.flatMap {
+                Calendar.current.dateComponents([.year], from: $0).year
+            }
+        )
+    }
+
+    func searchLibrary(_ term: String) async throws -> [LibrarySearchHit] {
+        let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let result = try await client.send(
+            Paths.getSearchHints(
+                parameters: .init(
+                    limit: 24,
+                    userID: userID,
+                    searchTerm: trimmed,
+                    includeItemTypes: [
+                        .movie, .series, .episode, .boxSet, .person, .genre, .studio,
+                        .playlist, .tvChannel, .book, .photo, .video
+                    ],
+                    isIncludePeople: true,
+                    isIncludeMedia: true,
+                    isIncludeGenres: true,
+                    isIncludeStudios: true,
+                    isIncludeArtists: false
+                )
+            )
+        ).value
+        var seen = Set<String>()
+        return (result.searchHints ?? []).compactMap { hint in
+            guard let hit = ItemMapper.searchHit(from: hint), seen.insert(hit.id).inserted else { return nil }
+            return hit
+        }
+    }
+
+    func boxSets() async -> [MediaItem] {
+        let result = try? await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    limit: 80,
+                    isRecursive: true,
+                    fields: ItemMapper.listFields,
+                    includeItemTypes: [.boxSet],
+                    enableUserData: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableImages: true
+                )
+            )
+        ).value
+        return (result?.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
+
+    func addToCollection(collectionID: String, itemIDs: [String]) async throws {
+        _ = try await client.send(Paths.addToCollection(collectionID: collectionID, ids: itemIDs))
+    }
+
+    func removeFromCollection(collectionID: String, itemIDs: [String]) async throws {
+        _ = try await client.send(Paths.removeFromCollection(collectionID: collectionID, ids: itemIDs))
+    }
+
+    func createCollection(name: String, itemIDs: [String]) async throws {
+        _ = try await client.send(
+            Paths.createCollection(parameters: .init(name: name, ids: itemIDs))
+        )
+    }
+
+    func chapterImageURL(itemID: String, index: Int, tag: String?) -> URL? {
+        artwork.image(itemID: itemID, type: "Chapter/\(index)", tag: tag, maxWidth: 480, format: "jpg")
+    }
+
+    func trickplayTileURL(itemID: String, info: TrickplayInfo, time: TimeInterval) -> URL? {
+        artwork.trickplayTile(
+            itemID: itemID,
+            width: info.width,
+            index: info.tileIndex(at: time),
+            mediaSourceID: info.mediaSourceID
+        )
+    }
+
+    func activityLog(limit: Int = 80) async throws -> [ActivityLogItem] {
+        let result = try await client.send(
+            Paths.getLogEntries(parameters: .init(startIndex: 0, limit: limit))
+        ).value
+        return (result.items ?? []).compactMap { entry in
+            let title = entry.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !title.isEmpty else { return nil }
+            let id = entry.id.map(String.init) ?? "\(title)-\(entry.date?.timeIntervalSince1970 ?? 0)"
+            return ActivityLogItem(
+                id: id,
+                title: title,
+                detail: entry.shortOverview ?? entry.overview,
+                date: entry.date,
+                type: entry.type
+            )
+        }
+    }
+
+    func serverBackups() async throws -> [ServerBackup] {
+        try await client.send(Paths.listBackups).value.compactMap { dto in
+            guard let path = dto.path, !path.isEmpty else { return nil }
+            return ServerBackup(
+                id: path,
+                path: path,
+                dateCreated: dto.dateCreated,
+                serverVersion: dto.serverVersion
+            )
+        }
+    }
+
+    func createServerBackup() async throws -> ServerBackup {
+        let dto = try await client.send(
+            Paths.createBackup(
+                BackupOptionsDto(isDatabase: true, isMetadata: true, isSubtitles: true, isTrickplay: true)
+            )
+        ).value
+        guard let path = dto.path, !path.isEmpty else {
+            throw ZelefinError.server("The server did not return a backup path.")
+        }
+        return ServerBackup(
+            id: path,
+            path: path,
+            dateCreated: dto.dateCreated,
+            serverVersion: dto.serverVersion
+        )
+    }
+
+    func restoreServerBackup(_ backup: ServerBackup) async throws {
+        _ = try await client.send(
+            Paths.startRestoreBackup(BackupRestoreRequestDto(archiveFileName: backup.fileName))
+        )
+    }
+
+    func scanLibraries() async throws {
+        _ = try await client.send(Paths.refreshLibrary)
+    }
+
+    func refreshItemMetadata(itemID: String, replaceImages: Bool = false) async throws {
+        _ = try await client.send(
+            Paths.refreshItem(
+                itemID: itemID,
+                parameters: .init(
+                    metadataRefreshMode: .fullRefresh,
+                    imageRefreshMode: replaceImages ? .fullRefresh : .default,
+                    isReplaceAllMetadata: false,
+                    isReplaceAllImages: replaceImages,
+                    isRegenerateTrickplay: false
+                )
+            )
+        )
+    }
+
+    func deleteLibraryItem(itemID: String) async throws {
+        _ = try await client.send(Paths.deleteItem(itemID: itemID))
+    }
+
+    func remoteArtwork(for itemID: String) async throws -> [RemoteImageChoice] {
+        let result = try await client.send(
+            Paths.getRemoteImages(
+                itemID: itemID,
+                parameters: .init(type: .primary, startIndex: 0, limit: 40, isIncludeAllLanguages: true)
+            )
+        ).value
+        return (result.images ?? []).compactMap { info in
+            guard let raw = info.url, let url = URL(string: raw) else { return nil }
+            let thumb = info.thumbnailURL.flatMap(URL.init(string:))
+            return RemoteImageChoice(
+                id: raw,
+                imageURL: url,
+                thumbnailURL: thumb,
+                provider: info.providerName ?? "Provider",
+                typeName: info.type?.rawValue ?? "Primary",
+                width: info.width,
+                height: info.height
+            )
+        }
+    }
+
+    func downloadRemoteArtwork(itemID: String, imageURL: URL) async throws {
+        _ = try await client.send(
+            Paths.downloadRemoteImage(itemID: itemID, type: .primary, imageURL: imageURL.absoluteString)
+        )
+    }
+
+    func serverBranding() async throws -> ServerBranding {
+        let dto = try await client.send(Paths.getBrandingOptions).value
+        return ServerBranding(
+            loginDisclaimer: dto.loginDisclaimer ?? "",
+            customCSS: dto.customCss ?? "",
+            splashscreenEnabled: dto.isSplashscreenEnabled ?? false
+        )
+    }
+
+    func updateServerBranding(_ branding: ServerBranding) async throws {
+        _ = try await client.send(
+            Paths.updateBrandingConfiguration(
+                BrandingOptionsDto(
+                    customCss: branding.customCSS,
+                    isSplashscreenEnabled: branding.splashscreenEnabled,
+                    loginDisclaimer: branding.loginDisclaimer
+                )
+            )
+        )
+    }
+
+    func uploadSplashscreen(_ imageData: Data) async throws {
+        _ = try await client.send(Paths.uploadCustomSplashscreen(imageData.base64EncodedData()))
+    }
+
+    func deleteSplashscreen() async throws {
+        _ = try await client.send(Paths.deleteCustomSplashscreen)
+    }
+
+    func displayPreferenceCustomPrefs() async throws -> [String: String] {
+        let dto = try await client.send(
+            Paths.getDisplayPreferences(
+                displayPreferencesID: DisplayPreferencesSync.preferenceID,
+                userID: userID,
+                client: DeviceIdentity.clientName
+            )
+        ).value
+        return dto.customPrefs ?? [:]
+    }
+
+    func updateDisplayPreferenceCustomPrefs(_ prefs: [String: String]) async throws {
+        _ = try await client.send(
+            Paths.updateDisplayPreferences(
+                displayPreferencesID: DisplayPreferencesSync.preferenceID,
+                userID: userID,
+                client: DeviceIdentity.clientName,
+                DisplayPreferencesDto(
+                    client: DeviceIdentity.clientName,
+                    customPrefs: prefs,
+                    id: DisplayPreferencesSync.preferenceID
+                )
+            )
+        )
+    }
+
+    func playlists() async throws -> [MediaItem] {
+        let result = try await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    limit: 80,
+                    isRecursive: true,
+                    fields: ItemMapper.listFields,
+                    includeItemTypes: [.playlist],
+                    enableUserData: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableImages: true
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
+
+    func playlistEntries(playlistID: String) async throws -> [PlaylistEntry] {
+        let result = try await client.send(
+            Paths.getPlaylistItems(
+                playlistID: playlistID,
+                parameters: .init(
+                    userID: userID,
+                    fields: ItemMapper.listFields,
+                    enableImages: true,
+                    enableUserData: true,
+                    enableImageTypes: ItemMapper.listImageTypes
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap { dto in
+            guard let item = ItemMapper.mediaItem(from: dto) else { return nil }
+            return PlaylistEntry(
+                id: dto.playlistItemID ?? item.id,
+                entryID: dto.playlistItemID,
+                item: item
+            )
+        }
+    }
+
+    func createPlaylist(name: String, itemIDs: [String]) async throws {
+        _ = try await client.send(
+            Paths.createPlaylist(
+                CreatePlaylistDto(
+                    ids: itemIDs,
+                    mediaType: .video,
+                    name: name,
+                    userID: userID
+                )
+            )
+        )
+    }
+
+    func addToPlaylist(playlistID: String, itemIDs: [String]) async throws {
+        _ = try await client.send(
+            Paths.addItemToPlaylist(playlistID: playlistID, ids: itemIDs, userID: userID)
+        )
+    }
+
+    func removeFromPlaylist(playlistID: String, entryIDs: [String]) async throws {
+        _ = try await client.send(
+            Paths.removeItemFromPlaylist(playlistID: playlistID, entryIDs: entryIDs)
+        )
+    }
+
+    func liveTVChannels() async throws -> [MediaItem] {
+        let result = try await client.send(
+            Paths.getLiveTvChannels(
+                parameters: .init(
+                    userID: userID,
+                    enableImages: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    fields: ItemMapper.listFields,
+                    enableUserData: true,
+                    sortBy: [.sortName],
+                    isAddCurrentProgram: true
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
+
+    func liveTVRecordings() async throws -> [MediaItem] {
+        let result = try await client.send(
+            Paths.getRecordings(
+                parameters: .init(
+                    userID: userID,
+                    limit: 40,
+                    enableImages: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    fields: ItemMapper.listFields,
+                    enableUserData: true
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
+
+    func airingPrograms() async throws -> [MediaItem] {
+        let result = try await client.send(
+            Paths.getLiveTvPrograms(
+                parameters: .init(
+                    userID: userID,
+                    isAiring: true,
+                    limit: 40,
+                    enableImages: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableUserData: true,
+                    fields: ItemMapper.listFields
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+    }
+
+    func syncPlayGroups() async throws -> [SyncPlayGroupInfo] {
+        try await client.send(Paths.syncPlayGetGroups).value.compactMap { dto in
+            guard let id = dto.groupID, !id.isEmpty else { return nil }
+            let name = dto.groupName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return SyncPlayGroupInfo(
+                id: id,
+                name: name.isEmpty ? "SyncPlay" : name,
+                participants: dto.participants ?? [],
+                stateLabel: dto.state?.rawValue ?? "Idle"
+            )
+        }
+    }
+
+    func syncPlayCreateGroup(name: String) async throws -> SyncPlayGroupInfo {
+        let dto = try await client.send(
+            Paths.syncPlayCreateGroup(NewGroupRequestDto(groupName: name))
+        ).value
+        guard let id = dto.groupID, !id.isEmpty else {
+            throw ZelefinError.server("The server did not return a SyncPlay group.")
+        }
+        let trimmed = dto.groupName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return SyncPlayGroupInfo(
+            id: id,
+            name: trimmed.isEmpty ? name : trimmed,
+            participants: dto.participants ?? [],
+            stateLabel: dto.state?.rawValue ?? "Idle"
+        )
+    }
+
+    func syncPlayJoinGroup(id: String) async throws {
+        _ = try await client.send(Paths.syncPlayJoinGroup(JoinGroupRequestDto(groupID: id)))
+    }
+
+    func syncPlayLeaveGroup() async throws {
+        _ = try await client.send(Paths.syncPlayLeaveGroup)
+    }
+
+    func syncPlaySetQueue(itemIDs: [String], startPosition: TimeInterval = 0) async throws {
+        _ = try await client.send(
+            Paths.syncPlaySetNewQueue(
+                PlayRequestDto(
+                    playingItemPosition: 0,
+                    playingQueue: itemIDs,
+                    startPositionTicks: TickClock.intTicks(from: startPosition)
+                )
+            )
+        )
+    }
+
+    func syncPlayPause() async throws {
+        _ = try await client.send(Paths.syncPlayPause)
+    }
+
+    func syncPlayUnpause() async throws {
+        _ = try await client.send(Paths.syncPlayUnpause)
+    }
+
+    func syncPlaySeek(to seconds: TimeInterval) async throws {
+        _ = try await client.send(
+            Paths.syncPlaySeek(SeekRequestDto(positionTicks: TickClock.intTicks(from: seconds)))
+        )
+    }
+
+    func syncPlayStop() async throws {
+        _ = try await client.send(Paths.syncPlayStop)
+    }
+
+    func syncPlayReady(isPlaying: Bool, playlistItemID: String?, position: TimeInterval) async throws {
+        _ = try await client.send(
+            Paths.syncPlayReady(
+                ReadyRequestDto(
+                    isPlaying: isPlaying,
+                    playlistItemID: playlistItemID,
+                    positionTicks: TickClock.intTicks(from: position),
+                    when: Date()
+                )
+            )
+        )
+    }
+
     func scheduledTasks() async throws -> [ScheduledTask] {
         let result = try await client.send(Paths.getTasks()).value
         return ScheduledTask.sorted(result.compactMap(ScheduledTask.init(dto:)))
@@ -1431,64 +1979,24 @@ struct CatalogPage: Sendable {
     let totalCount: Int?
 }
 
-/// YouTube video IDs published on Wikidata for a title (no API key).
-enum WikidataTrailers {
-    static func youtubeIDs(imdbID: String?, tmdbID: Int?, isSeries: Bool) async -> [String] {
-        guard let query = sparql(imdbID: imdbID, tmdbID: tmdbID, isSeries: isSeries) else { return [] }
-        var components = URLComponents(string: "https://query.wikidata.org/sparql")
-        components?.queryItems = [
-            URLQueryItem(name: "format", value: "json"),
-            URLQueryItem(name: "query", value: query)
-        ]
-        guard let url = components?.url else { return [] }
-
-        var request = URLRequest(url: url)
-        request.setValue(
-            "Zelefin/\(DeviceIdentity.version) (https://github.com/rndllb/Zelefin)",
-            forHTTPHeaderField: "User-Agent"
-        )
-        request.setValue("application/sparql-results+json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 12
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200 ..< 300).contains(http.statusCode),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = object["results"] as? [String: Any],
-              let bindings = results["bindings"] as? [[String: Any]]
-        else {
-            return []
-        }
-
+/// Maps Jellyfin item `RemoteTrailers` the same way the server web client does.
+enum JellyfinTrailers {
+    static func remotes(from urls: [MediaURL]?) -> [TitleTrailer] {
+        var trailers: [TitleTrailer] = []
         var seen: Set<String> = []
-        var ids: [String] = []
-        for binding in bindings {
-            guard let youtube = binding["youtube"] as? [String: Any],
-                  let value = youtube["value"] as? String,
-                  let videoID = TrailerLinkParser.youtubeVideoID(from: value) ?? TrailerLinkParser.youtubeVideoID(from: "https://youtu.be/\(value)"),
-                  seen.insert(videoID).inserted
+        for remote in urls ?? [] {
+            guard let url = remote.url else { continue }
+            let title = displayTitle(remote.name)
+            guard let trailer = TitleTrailer.jellyfinRemote(url: url, title: title),
+                  seen.insert(trailer.id).inserted
             else { continue }
-            ids.append(videoID)
+            trailers.append(trailer)
         }
-        return ids
+        return trailers
     }
 
-    static func sparql(imdbID: String?, tmdbID: Int?, isSeries: Bool) -> String? {
-        var clauses: [String] = []
-        if let imdbID, imdbID.hasPrefix("tt"), imdbID.dropFirst(2).allSatisfy(\.isNumber) {
-            clauses.append("{ ?item wdt:P345 \"\(imdbID)\" }")
-        }
-        if let tmdbID {
-            let property = isSeries ? "P4983" : "P4947"
-            clauses.append("{ ?item wdt:\(property) \"\(tmdbID)\" }")
-        }
-        guard !clauses.isEmpty else { return nil }
-        return """
-        SELECT DISTINCT ?youtube WHERE {
-          \(clauses.joined(separator: " UNION "))
-          ?item wdt:P1651 ?youtube.
-        }
-        LIMIT 6
-        """
+    static func displayTitle(_ name: String?) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Trailer" : trimmed
     }
 }

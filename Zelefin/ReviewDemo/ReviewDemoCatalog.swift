@@ -535,6 +535,10 @@ enum ReviewDemoCatalog {
         case .episode: .episode
         case .collection: .boxSet
         case .genre: .genre
+        case .playlist: .playlist
+        case .liveTV: .tvChannel
+        case .book: .book
+        case .photo: .photo
         case .unknown: .movie
         }
     }

@@ -345,7 +345,7 @@ private struct SearchPage: View {
     var headerVisible: Binding<Bool>? = nil
     var onDismissKeyboard: (() -> Void)? = nil
 
-    @State private var results: [MediaItem] = []
+    @State private var hits: [LibrarySearchHit] = []
     @State private var seerrResults: [SeerrTitle] = []
     @State private var recents: [MediaItem] = SearchHistoryStore.load()
     @State private var genres: [MediaItem] = []
@@ -482,18 +482,18 @@ private struct SearchPage: View {
     private var libraryContent: some View {
         if trimmedTerm.isEmpty {
             recentsSection
-        } else if isLoadingResults && results.isEmpty {
+        } else if isLoadingResults && hits.isEmpty {
             ProgressView()
                 .tint(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 40)
-        } else if results.isEmpty {
+        } else if hits.isEmpty {
             ContentUnavailableView.search(text: trimmedTerm)
                 .padding(.top, 24)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(results) { item in
-                    searchRow(item, isRecent: false)
+                ForEach(hits) { hit in
+                    searchHitRow(hit)
                 }
             }
         }
@@ -650,6 +650,77 @@ private struct SearchPage: View {
         }
     }
 
+    @ViewBuilder
+    private func searchHitRow(_ hit: LibrarySearchHit) -> some View {
+        HStack(spacing: 14) {
+            NavigationLink {
+                searchDestination(hit)
+            } label: {
+                HStack(spacing: 14) {
+                    PosterImage(url: searchImageURL(hit))
+                        .frame(width: 52, height: 78)
+                        .posterCard(cornerRadius: 6)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(hit.name)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        if let subtitle = hit.subtitle {
+                            Text(subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.45))
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 0.5)
+                .padding(.leading, 82)
+        }
+    }
+
+    @ViewBuilder
+    private func searchDestination(_ hit: LibrarySearchHit) -> some View {
+        switch hit.kind {
+        case let .title(kind):
+            switch kind {
+            case .playlist:
+                PlaylistDetailView(playlist: hit.recentItem(kind: kind))
+            case .photo:
+                PhotoViewerView(item: hit.recentItem(kind: kind))
+            default:
+                ItemDetailView(itemID: hit.id)
+                    .onAppear {
+                        recordRecent(hit.recentItem(kind: kind))
+                    }
+            }
+        case .person:
+            PersonDetailView(personID: hit.id, name: hit.name, imageTag: hit.imageTag)
+        case .genre:
+            CatalogGridView(title: hit.name, query: .genre(hit.id))
+        case .studio:
+            CatalogGridView(title: hit.name, query: .studio(hit.id))
+        }
+    }
+
+    private func searchImageURL(_ hit: LibrarySearchHit) -> URL? {
+        switch hit.kind {
+        case .person:
+            return session.library?.personImageURL(id: hit.id, tag: hit.imageTag)
+        default:
+            return session.library?.artwork.image(itemID: hit.id, type: "Primary", tag: hit.imageTag, maxHeight: ArtworkURLBuilder.posterMaxHeight, format: "jpg")
+        }
+    }
+
     private func loadGenres() async {
         if let cached = session.homeLayout.sections.first(where: { $0.id == "genres" })?.items, !cached.isEmpty {
             genres = cached
@@ -669,7 +740,7 @@ private struct SearchPage: View {
     private func search(_ newValue: String) async {
         let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
-            results = []
+            hits = []
             seerrResults = []
             discoverError = nil
             isLoadingResults = false
@@ -677,7 +748,7 @@ private struct SearchPage: View {
         }
         isLoadingResults = true
         if scope == .discover, let client = PluginSettings.seerrClient {
-            results = []
+            hits = []
             do {
                 seerrResults = try await client.search(term: trimmed)
                 discoverError = nil
@@ -688,7 +759,7 @@ private struct SearchPage: View {
         } else {
             seerrResults = []
             discoverError = nil
-            results = (try? await session.library?.search(term: trimmed)) ?? []
+            hits = (try? await session.library?.searchLibrary(trimmed)) ?? []
         }
         isLoadingResults = false
     }

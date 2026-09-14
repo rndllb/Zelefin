@@ -30,6 +30,10 @@ final class SessionStore {
     private(set) var companionAvailable = false
     private(set) var isAdministrator = false
     private(set) var enableSubtitleManagement = false
+    var syncPlayGroupID: String?
+    var syncPlayGroupName: String?
+    var syncPlayPlaylistItemID: String?
+    var pendingPlayerItem: MediaItem?
 
     var canManageSubtitles: Bool {
         RemoteSubtitleOffer.canManageSubtitles(
@@ -389,6 +393,116 @@ final class SessionStore {
         Task { await refreshHome() }
     }
 
+    func toggleFavorite(_ item: MediaItem) async throws -> MediaItem {
+        guard let library else { throw ZelefinError.missingUser }
+        let next = !item.isFavorite
+        let saved = try await library.markFavorite(itemID: item.id, isFavorite: next)
+        return item.withFavorite(saved)
+    }
+
+    func setLikes(_ item: MediaItem, likes: Bool?) async throws -> MediaItem {
+        guard let library else { throw ZelefinError.missingUser }
+        let saved = try await library.setLikes(itemID: item.id, likes: likes)
+        return item.withLikes(saved)
+    }
+
+    func playOnSession(sessionID: String, item: MediaItem) async throws {
+        guard let library else { throw ZelefinError.missingUser }
+        try await library.playOnSession(
+            sessionID: sessionID,
+            itemIDs: [item.id],
+            startPosition: item.playbackPosition > 5 ? item.playbackPosition : nil
+        )
+    }
+
+    func pullDisplayPreferences() async {
+        guard let library, !isReviewDemo else { return }
+        guard let prefs = try? await library.displayPreferenceCustomPrefs() else { return }
+        DisplayPreferencesSync.apply(prefs)
+    }
+
+    func pushDisplayPreferences() async {
+        guard let library, !isReviewDemo else { return }
+        try? await library.updateDisplayPreferenceCustomPrefs(DisplayPreferencesSync.customPrefs())
+    }
+
+    func noteSyncPlayJoined(groupID: String?, name: String?) {
+        syncPlayGroupID = groupID
+        if let name, !name.isEmpty {
+            syncPlayGroupName = name
+        }
+    }
+
+    func noteSyncPlayLeft() {
+        syncPlayGroupID = nil
+        syncPlayGroupName = nil
+        syncPlayPlaylistItemID = nil
+    }
+
+    func noteSyncPlayPlaylistItem(_ playlistItemID: String?) {
+        syncPlayPlaylistItemID = playlistItemID
+    }
+
+    func createSyncPlayGroup(name: String) async throws {
+        guard let library else { throw ZelefinError.missingUser }
+        let group = try await library.syncPlayCreateGroup(name: name)
+        syncPlayGroupID = group.id
+        syncPlayGroupName = group.name
+    }
+
+    func joinSyncPlayGroup(_ group: SyncPlayGroupInfo) async throws {
+        guard let library else { throw ZelefinError.missingUser }
+        try await library.syncPlayJoinGroup(id: group.id)
+        syncPlayGroupID = group.id
+        syncPlayGroupName = group.name
+    }
+
+    func leaveSyncPlayGroup() async throws {
+        try await library?.syncPlayLeaveGroup()
+        noteSyncPlayLeft()
+    }
+
+    func playInSyncPlay(_ item: MediaItem, createGroupNamed name: String? = nil) async throws {
+        if let name, syncPlayGroupID == nil {
+            try await createSyncPlayGroup(name: name)
+        }
+        guard syncPlayGroupID != nil, let library else {
+            throw ZelefinError.server("Join or create a SyncPlay group first.")
+        }
+        try await library.syncPlaySetQueue(
+            itemIDs: [item.id],
+            startPosition: item.playbackPosition > 5 ? item.playbackPosition : 0
+        )
+        pendingPlayerItem = item
+    }
+
+    func forwardSyncPlay(_ action: RemotePlaybackAction) async {
+        guard syncPlayGroupID != nil, let library else { return }
+        do {
+            switch action {
+            case .pause:
+                try await library.syncPlayPause()
+            case .play, .playPause:
+                try await library.syncPlayUnpause()
+            case .seek(let time):
+                try await library.syncPlaySeek(to: time)
+            case .stop:
+                try await library.syncPlayStop()
+            default:
+                break
+            }
+        } catch {
+            // Keep local playback going if the group command fails.
+        }
+    }
+
+    func presentSyncPlayItem(id: String) async {
+        guard let pair = try? await library?.item(id: id) else { return }
+        if pendingPlayerItem?.id != pair.0.id {
+            pendingPlayerItem = pair.0
+        }
+    }
+
     private func removeFromHome(itemID: String) {
         homeLayout = HomeLayoutPreferences.removing(itemID, from: homeLayout)
         persistSnapshot()
@@ -428,6 +542,10 @@ final class SessionStore {
         companionAvailable = false
         isAdministrator = false
         enableSubtitleManagement = false
+        syncPlayGroupID = nil
+        syncPlayGroupName = nil
+        syncPlayPlaylistItemID = nil
+        pendingPlayerItem = nil
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
         playbackLaunchOptions = [:]
@@ -513,6 +631,7 @@ final class SessionStore {
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
         Task { await refreshSessionCapabilities() }
+        Task { await pullDisplayPreferences() }
         Task { await loadHome(force: true) }
         Task { await refreshHomeNetworkSSID() }
         RemoteControlHub.shared.connect(client: jellyfin, session: saved)
@@ -788,6 +907,7 @@ final class SessionStore {
     func persistItemDetail(
         item: MediaItem,
         trailers: [TitleTrailer],
+        extras: [TitleExtra] = [],
         related: [MediaItem],
         credits: [CreditPerson],
         collections: [ItemCollectionMembership],
@@ -804,6 +924,7 @@ final class SessionStore {
             savedAt: Date(),
             item: item,
             trailers: trailers,
+            extras: extras,
             related: related,
             credits: credits,
             collections: collections,
@@ -838,6 +959,8 @@ final class SessionStore {
         var collections: HomeSection?
         var genres: HomeSection?
         var catalog: [MediaLibrary] = []
+        var recommendations: [HomeSection] = []
+        var upcoming: [MediaItem] = []
 
         await withTaskGroup(of: JellyfinLibraryClient.HomeChunk.self) { group in
             group.addTask { .continueWatching(await library.resumeItemsIgnoringErrors()) }
@@ -850,6 +973,8 @@ final class SessionStore {
             }
             group.addTask { .collections(await library.collectionsSectionIgnoringErrors()) }
             group.addTask { .genres(await library.genresSectionIgnoringErrors()) }
+            group.addTask { .recommendations(await library.movieRecommendationsIgnoringErrors()) }
+            group.addTask { .upcoming(await library.upcomingEpisodesIgnoringErrors()) }
 
             for await chunk in group {
                 if Task.isCancelled { break }
@@ -869,6 +994,10 @@ final class SessionStore {
                     collections = section
                 case let .genres(section):
                     genres = section
+                case let .recommendations(sections):
+                    recommendations = sections
+                case let .upcoming(items):
+                    upcoming = items
                 }
 
                 guard !showingCachedHome else { continue }
@@ -881,6 +1010,8 @@ final class SessionStore {
                     genres: genres,
                     recentlyWatched: recentlyWatched,
                     catalog: catalog,
+                    recommendations: recommendations,
+                    upcoming: upcoming,
                     persist: false
                 )
             }
@@ -897,6 +1028,8 @@ final class SessionStore {
             genres: genres,
             recentlyWatched: recentlyWatched,
             catalog: catalog,
+            recommendations: recommendations,
+            upcoming: upcoming,
             persist: true
         )
 
@@ -918,6 +1051,8 @@ final class SessionStore {
         genres: HomeSection?,
         recentlyWatched: [MediaItem],
         catalog: [MediaLibrary],
+        recommendations: [HomeSection],
+        upcoming: [MediaItem],
         persist: Bool
     ) {
         let merge = HomeLayoutPreferences.mergeContinueAndNextUp
@@ -928,7 +1063,9 @@ final class SessionStore {
             libraries: librarySections,
             collections: collections,
             genres: genres,
-            recentlyWatched: recentlyWatched
+            recentlyWatched: recentlyWatched,
+            recommendations: recommendations,
+            upcoming: upcoming
         )
 
         if !catalog.isEmpty {

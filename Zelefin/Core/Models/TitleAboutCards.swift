@@ -3,12 +3,14 @@ import Foundation
 enum TitleAboutCard: Equatable, Identifiable, Sendable {
     case synopsis(title: String, genres: String?, overview: String?)
     case tomatometer(score: Int, isFresh: Bool, meaning: String)
+    case audience(score: String, meaning: String)
     case commonSense(age: String, meaning: String)
 
     var id: String {
         switch self {
         case .synopsis: "synopsis"
         case .tomatometer: "tomatometer"
+        case .audience: "audience"
         case .commonSense: "commonSense"
         }
     }
@@ -18,12 +20,14 @@ enum TitleAboutCards {
     static func cards(for item: MediaItem) -> [TitleAboutCard] {
         let synopsis = synopsisCard(for: item)
         let tomatometer = tomatometerCard(for: item)
+        let audience = audienceCard(for: item)
         let commonSense = commonSenseCard(for: item)
-        guard synopsis != nil || tomatometer != nil || commonSense != nil else { return [] }
+        guard synopsis != nil || tomatometer != nil || audience != nil || commonSense != nil else { return [] }
 
         var cards: [TitleAboutCard] = []
         cards.append(synopsis ?? .synopsis(title: item.name, genres: genreLine(from: item.genres), overview: nil))
         if let tomatometer { cards.append(tomatometer) }
+        if let audience { cards.append(audience) }
         if let commonSense { cards.append(commonSense) }
         return cards
     }
@@ -93,6 +97,24 @@ enum TitleAboutCards {
             isFresh: score >= 60,
             meaning: tomatometerMeaning(score: score)
         )
+    }
+
+    static func audienceMeaning(score: Double) -> String {
+        if score <= 10 {
+            return "Community score stored on this Jellyfin item, usually from TMDB user votes."
+        }
+        return "Community score stored on this Jellyfin item."
+    }
+
+    private static func audienceCard(for item: MediaItem) -> TitleAboutCard? {
+        guard let score = item.communityRating, score > 0 else { return nil }
+        let label: String
+        if score <= 10 {
+            label = String(format: score.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", score)
+        } else {
+            label = "\(Int(score.rounded()))%"
+        }
+        return .audience(score: label, meaning: audienceMeaning(score: score))
     }
 
     private static func commonSenseCard(for item: MediaItem) -> TitleAboutCard? {

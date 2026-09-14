@@ -14,6 +14,7 @@ struct AVKitPlaybackChrome: View {
     var onAddSubtitles: () -> Void
     var onAudioChange: (Int) -> Void
     var onSubtitleChange: (Int?) -> Void
+    var onSkipCinema: (() -> Void)? = nil
 
     @State private var controlsVisible = true
     @State private var isScrubbing = false
@@ -53,8 +54,16 @@ struct AVKitPlaybackChrome: View {
                 .transition(.opacity)
             }
 
-            if let title = model.skipPrompt?.title {
-                skipIntro(title)
+            if let onSkipCinema {
+                skipIntro("Skip", action: onSkipCinema)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, horizontalPadding)
+                    .padding(.bottom, controlsVisible ? 64 : 10)
+            } else if let title = model.skipPrompt?.title {
+                skipIntro(title, action: {
+                    model.skipCurrentSegment()
+                    revealControls()
+                })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, horizontalPadding)
                     .padding(.bottom, controlsVisible ? 64 : 10)
@@ -215,11 +224,8 @@ struct AVKitPlaybackChrome: View {
         72
     }
 
-    private func skipIntro(_ title: String) -> some View {
-        Button(title) {
-            model.skipCurrentSegment()
-            revealControls()
-        }
+    private func skipIntro(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.white)
         .padding(.horizontal, 16)
@@ -326,6 +332,7 @@ private enum AVKitPlaybackSettingsPage: Equatable {
     case speed
     case audio
     case subtitles
+    case chapters
 }
 
 private struct AVKitPlaybackSettingsMenuButton: View {
@@ -370,6 +377,7 @@ private struct AVKitPlaybackSettingsPanel: View {
                     case .speed: speedRows
                     case .audio: audioRows
                     case .subtitles: subtitleRows
+                    case .chapters: chapterRows
                     }
                 }
                 .padding(.vertical, 6)
@@ -417,6 +425,7 @@ private struct AVKitPlaybackSettingsPanel: View {
         case .speed: "Playback Speed"
         case .audio: "Select Audio"
         case .subtitles: "Select Subtitles"
+        case .chapters: "Chapters"
         }
     }
 
@@ -450,6 +459,15 @@ private struct AVKitPlaybackSettingsPanel: View {
         ) {
             page = .subtitles
         }
+        if !model.plan.chapters.isEmpty {
+            settingsRow(
+                title: "Chapters",
+                value: "\(model.plan.chapters.count)",
+                systemImage: "list.bullet"
+            ) {
+                page = .chapters
+            }
+        }
         if canAddSubtitles {
             Button(action: onAddSubtitles) {
                 rowLabel(title: "Add Subtitles", value: nil, systemImage: "plus.bubble", showsChevron: false)
@@ -480,6 +498,18 @@ private struct AVKitPlaybackSettingsPanel: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var chapterRows: some View {
+        ForEach(model.plan.chapters) { chapter in
+            choiceRow(
+                "\(PlaybackTimeFormatting.elapsed(chapter.startTime))  \(chapter.name)",
+                selected: false
+            ) {
+                model.seek(to: chapter.startTime)
+                onClose()
+            }
+        }
     }
 
     private var qualityRows: some View {
@@ -628,33 +658,47 @@ private struct AVKitTimelineChrome: View {
     @Binding var isScrubbing: Bool
     @Binding var scrubTime: TimeInterval
     var onSeekEnded: (TimeInterval) -> Void
+    @Environment(SessionStore.self) private var session
 
     private var displayedTime: TimeInterval {
         isScrubbing ? scrubTime : model.currentTime
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(PlaybackTimeFormatting.elapsed(displayedTime))
-                .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(minWidth: 48, alignment: .leading)
-            AVKitScrubber(
-                value: displayedTime,
-                duration: max(model.duration, 0.001),
-                onEditingChanged: { editing, time in
-                    isScrubbing = editing
-                    scrubTime = time
-                    if !editing {
-                        onSeekEnded(time)
+        VStack(spacing: 8) {
+            if isScrubbing,
+               let info = model.plan.trickplay,
+               let url = session.library?.trickplayTileURL(
+                    itemID: model.plan.item.id,
+                    info: info,
+                    time: displayedTime
+               ) {
+                TrickplayTilePreview(url: url, info: info, time: displayedTime)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            HStack(spacing: 12) {
+                Text(PlaybackTimeFormatting.elapsed(displayedTime))
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 48, alignment: .leading)
+                AVKitScrubber(
+                    value: displayedTime,
+                    duration: max(model.duration, 0.001),
+                    chapters: model.plan.chapters,
+                    onEditingChanged: { editing, time in
+                        isScrubbing = editing
+                        scrubTime = time
+                        if !editing {
+                            onSeekEnded(time)
+                        }
                     }
-                }
-            )
-            .frame(height: 28)
-            Text(PlaybackTimeFormatting.remaining(displayedTime, duration: model.duration))
-                .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(minWidth: 56, alignment: .trailing)
+                )
+                .frame(height: 28)
+                Text(PlaybackTimeFormatting.remaining(displayedTime, duration: model.duration))
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 56, alignment: .trailing)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -662,10 +706,48 @@ private struct AVKitTimelineChrome: View {
     }
 }
 
+private struct TrickplayTilePreview: View {
+    let url: URL
+    let info: TrickplayInfo
+    let time: TimeInterval
+
+    var body: some View {
+        let cell = info.cell(at: time)
+        let thumbW = CGFloat(max(info.thumbnailWidth, 1))
+        let thumbH = CGFloat(max(info.thumbnailHeight, 1))
+        let tileW = thumbW * CGFloat(max(info.tileWidth, 1))
+        let tileH = thumbH * CGFloat(max(info.tileHeight, 1))
+        let previewW: CGFloat = 160
+        let previewH = previewW * (thumbH / thumbW)
+        AsyncImage(url: url) { image in
+            image
+                .resizable()
+                .interpolation(.low)
+                .frame(width: tileW, height: tileH, alignment: .topLeading)
+                .offset(x: -CGFloat(cell.column) * thumbW, y: -CGFloat(cell.row) * thumbH)
+                .frame(width: thumbW, height: thumbH, alignment: .topLeading)
+                .clipped()
+                .scaleEffect(previewW / thumbW, anchor: .topLeading)
+                .frame(width: previewW, height: previewH, alignment: .topLeading)
+                .clipped()
+        } placeholder: {
+            Color.white.opacity(0.12)
+                .frame(width: previewW, height: previewH)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(.white.opacity(0.28), lineWidth: 0.8)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// Capsule timeline matching AVKit: thin until dragged, then a thicker white fill.
 private struct AVKitScrubber: View {
     var value: TimeInterval
     var duration: TimeInterval
+    var chapters: [MediaChapter] = []
     var onEditingChanged: (_ editing: Bool, _ time: TimeInterval) -> Void
 
     @State private var dragTime: TimeInterval?
@@ -687,6 +769,14 @@ private struct AVKitScrubber: View {
                 Capsule()
                     .fill(.white)
                     .frame(width: max(4, knobX), height: isDragging ? 8 : 5)
+                ForEach(chapters) { chapter in
+                    let x = CGFloat(min(1, max(0, chapter.startTime / duration))) * width
+                    Capsule()
+                        .fill(.white.opacity(0.7))
+                        .frame(width: 1.5, height: isDragging ? 10 : 7)
+                        .offset(x: x)
+                        .allowsHitTesting(false)
+                }
                 if isDragging {
                     Circle()
                         .fill(.white)

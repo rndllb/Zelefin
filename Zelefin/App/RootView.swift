@@ -9,114 +9,180 @@ struct RootView: View {
     @State private var profileSheet: ProfileSheet?
 
     var body: some View {
-        Group {
-            if session.isRestoring {
-                ZStack {
-                    Color.black.ignoresSafeArea()
-                    ProgressView()
-                        .tint(.white)
-                }
-            } else if session.isSignedIn {
-                MainTabView()
-            } else {
-                ConnectView()
+        rootContent
+            .sheet(item: $profileSheet) { destination in
+                ProfileSheetContainer(destination: destination)
+                    .environment(session)
+                    .environment(downloads)
             }
-        }
-        .sheet(item: $profileSheet) { destination in
-            ProfileSheetContainer(destination: destination)
+            .modifier(RootNotificationModifier(profileSheet: $profileSheet))
+            .modifier(RootSessionLifecycleModifier(profileSheet: $profileSheet))
+            .sheet(item: Binding(
+                get: { deepLinks.presentedItem },
+                set: { deepLinks.presentedItem = $0 }
+            )) { item in
+                NavigationStack {
+                    ItemDetailView(itemID: item.id)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Done") { deepLinks.dismissPresentedItem() }
+                            }
+                        }
+                }
                 .environment(session)
                 .environment(downloads)
+            }
+            .fullScreenCover(item: Binding(
+                get: { session.pendingPlayerItem },
+                set: { session.pendingPlayerItem = $0 }
+            )) { item in
+                PlayerView(item: item)
+                    .environment(session)
+                    .environment(downloads)
+            }
+            .alert(
+                "Can't Open Title",
+                isPresented: Binding(
+                    get: { deepLinks.errorMessage != nil },
+                    set: { if !$0 { deepLinks.clearError() } }
+                )
+            ) {
+                if let url = deepLinks.browserFallbackURL {
+                    Button("Open in Browser") { openURL(url) }
+                }
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deepLinks.errorMessage ?? "")
+            }
+            .preferredColorScheme(.dark)
+            .zelefinAccentTint()
+            .task {
+                await session.restore()
+                startLibraryAlertMonitor()
+                consumePendingNotificationDestination()
+                await deepLinks.flushPending(session: session)
+            }
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
+        if session.isRestoring {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ProgressView()
+                    .tint(.white)
+            }
+        } else if session.isSignedIn {
+            MainTabView()
+        } else {
+            ConnectView()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .zelefinProfileSheet)) { notification in
-            guard session.isSignedIn else { return }
-            profileSheet = notification.object as? ProfileSheet
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zelefinRemotePlayItem)) { notification in
-            guard let itemID = notification.object as? String else { return }
+    }
+
+    private func consumePendingNotificationDestination() {
+        if let itemID = LibraryAlertCenter.shared.takePendingItemID() {
             deepLinks.openLibraryItem(itemID, session: session)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .zelefinPushTokenReady)) { notification in
-            guard let token = notification.object as? String else { return }
-            Task { await session.registerPushToken(token) }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenLibraryItem)) { notification in
-            _ = LibraryAlertCenter.shared.takePendingItemID()
-            guard let itemID = notification.object as? String else { return }
-            deepLinks.openLibraryItem(itemID, session: session)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenScheduledTasks)) { _ in
-            _ = LibraryAlertCenter.shared.takePendingScheduledTasks()
+        if LibraryAlertCenter.shared.takePendingScheduledTasks() {
             guard session.isSignedIn else { return }
             profileSheet = .scheduledTasks
         }
-        .onChange(of: session.isSignedIn) { _, signedIn in
-            if !signedIn {
-                profileSheet = nil
-                deepLinks.dismissPresentedItem()
-                LibraryAlertMonitor.shared.stop()
-            } else {
-                Task { await deepLinks.flushPending(session: session) }
+    }
+
+    private func startLibraryAlertMonitor() {
+        LibraryAlertMonitor.shared.attach(session: session)
+        guard session.isSignedIn, !session.isRestoring, !session.isReviewDemo else { return }
+        LibraryAlertMonitor.shared.start(session: session)
+    }
+}
+
+private struct RootNotificationModifier: ViewModifier {
+    @Environment(SessionStore.self) private var session
+    @Environment(DeepLinkStore.self) private var deepLinks
+    @Binding var profileSheet: ProfileSheet?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinProfileSheet)) { notification in
+                guard session.isSignedIn else { return }
+                profileSheet = notification.object as? ProfileSheet
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinRemotePlayItem)) { notification in
+                guard let itemID = notification.object as? String else { return }
+                if session.syncPlayGroupID != nil {
+                    Task { await session.presentSyncPlayItem(id: itemID) }
+                } else {
+                    deepLinks.openLibraryItem(itemID, session: session)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinSyncPlayJoined)) { notification in
+                session.noteSyncPlayJoined(
+                    groupID: notification.object as? String,
+                    name: notification.userInfo?["name"] as? String
+                )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinSyncPlayLeft)) { _ in
+                session.noteSyncPlayLeft()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinSyncPlayQueueItem)) { notification in
+                session.noteSyncPlayPlaylistItem(notification.object as? String)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinPushTokenReady)) { notification in
+                guard let token = notification.object as? String else { return }
+                Task { await session.registerPushToken(token) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenLibraryItem)) { notification in
+                _ = LibraryAlertCenter.shared.takePendingItemID()
+                guard let itemID = notification.object as? String else { return }
+                deepLinks.openLibraryItem(itemID, session: session)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenScheduledTasks)) { _ in
+                _ = LibraryAlertCenter.shared.takePendingScheduledTasks()
+                guard session.isSignedIn else { return }
+                profileSheet = .scheduledTasks
+            }
+    }
+}
+
+private struct RootSessionLifecycleModifier: ViewModifier {
+    @Environment(SessionStore.self) private var session
+    @Environment(DeepLinkStore.self) private var deepLinks
+    @Environment(\.scenePhase) private var scenePhase
+    @Binding var profileSheet: ProfileSheet?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: session.isSignedIn) { _, signedIn in
+                if !signedIn {
+                    profileSheet = nil
+                    deepLinks.dismissPresentedItem()
+                    LibraryAlertMonitor.shared.stop()
+                } else {
+                    Task { await deepLinks.flushPending(session: session) }
+                    startLibraryAlertMonitor()
+                }
+            }
+            .onChange(of: session.isAdministrator) { _, isAdmin in
+                guard isAdmin else { return }
                 startLibraryAlertMonitor()
             }
-        }
-        .onChange(of: session.isAdministrator) { _, isAdmin in
-            guard isAdmin else { return }
-            startLibraryAlertMonitor()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            guard session.isSignedIn, !session.isReviewDemo else { return }
-            LibraryAlertMonitor.shared.attach(session: session)
-            switch phase {
-            case .active:
-                LibraryAlertMonitor.scheduleBackgroundRefresh()
-                consumePendingNotificationDestination()
-                Task { await LibraryAlertMonitor.shared.poll(session: session) }
-            case .background:
-                Task { await LibraryAlertMonitor.shared.pollWhenEnteringBackground() }
-            default:
-                break
+            .onChange(of: scenePhase) { _, phase in
+                guard session.isSignedIn, !session.isReviewDemo else { return }
+                LibraryAlertMonitor.shared.attach(session: session)
+                switch phase {
+                case .active:
+                    LibraryAlertMonitor.scheduleBackgroundRefresh()
+                    consumePendingNotificationDestination()
+                    Task { await LibraryAlertMonitor.shared.poll(session: session) }
+                case .background:
+                    Task { await LibraryAlertMonitor.shared.pollWhenEnteringBackground() }
+                default:
+                    break
+                }
             }
-        }
-        .onOpenURL { url in
-            Task { await deepLinks.handle(url, session: session) }
-        }
-        .sheet(item: Binding(
-            get: { deepLinks.presentedItem },
-            set: { deepLinks.presentedItem = $0 }
-        )) { item in
-            NavigationStack {
-                ItemDetailView(itemID: item.id)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { deepLinks.dismissPresentedItem() }
-                        }
-                    }
+            .onOpenURL { url in
+                Task { await deepLinks.handle(url, session: session) }
             }
-            .environment(session)
-            .environment(downloads)
-        }
-        .alert(
-            "Can't Open Title",
-            isPresented: Binding(
-                get: { deepLinks.errorMessage != nil },
-                set: { if !$0 { deepLinks.clearError() } }
-            )
-        ) {
-            if let url = deepLinks.browserFallbackURL {
-                Button("Open in Browser") { openURL(url) }
-            }
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(deepLinks.errorMessage ?? "")
-        }
-        .preferredColorScheme(.dark)
-        .zelefinAccentTint()
-        .task {
-            await session.restore()
-            startLibraryAlertMonitor()
-            consumePendingNotificationDestination()
-            await deepLinks.flushPending(session: session)
-        }
     }
 
     private func consumePendingNotificationDestination() {

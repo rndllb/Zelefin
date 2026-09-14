@@ -154,12 +154,6 @@ struct SeerrClient: Sendable {
         try await get(baseURL.appending(path: "api/v1/tv/\(id)"))
     }
 
-    func videos(tmdbID: Int, isSeries: Bool) async -> [TitleTrailer] {
-        let path = isSeries ? "api/v1/tv/\(tmdbID)" : "api/v1/movie/\(tmdbID)"
-        guard let payload: SeerrRelatedVideosPayload = try? await fetch(path) else { return [] }
-        return payload.trailers
-    }
-
     func currentUser() async throws -> SeerrUser {
         try await get(baseURL.appending(path: "api/v1/auth/me"))
     }
@@ -629,16 +623,6 @@ struct SeerrTvDetails: Decodable, Sendable {
     }
 }
 
-struct SeerrRelatedVideosPayload: Decodable, Sendable {
-    var relatedVideos: [SeerrRelatedVideo]?
-
-    var trailers: [TitleTrailer] {
-        (relatedVideos ?? [])
-            .compactMap(\.titleTrailer)
-            .sorted { $0.trailerRank < $1.trailerRank }
-    }
-}
-
 struct SeerrRelatedVideo: Decodable, Sendable {
     var key: String?
     var name: String?
@@ -646,21 +630,6 @@ struct SeerrRelatedVideo: Decodable, Sendable {
     var type: String?
     var url: String?
     var official: Bool?
-
-    var titleTrailer: TitleTrailer? {
-        let title = name?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let display = (title?.isEmpty == false) ? title! : "Trailer"
-        guard TitleTrailer.isOfficialTrailer(title: display, type: type, official: official) else {
-            return nil
-        }
-        if let key, let youtubeID = TrailerLinkParser.youtubeVideoID(from: key) {
-            return .youtube(id: youtubeID, title: display)
-        }
-        if let url, let youtubeID = TrailerLinkParser.youtubeVideoID(from: url) {
-            return .youtube(id: youtubeID, title: display)
-        }
-        return nil
-    }
 }
 
 struct SeerrSeason: Decodable, Hashable, Sendable, Identifiable {

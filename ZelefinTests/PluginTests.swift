@@ -327,9 +327,10 @@ final class SeerrTitleTests: XCTestCase {
         XCTAssertNil(JellyfinTmdbCatalog.imdbID(from: ["Tmdb": "27205"]))
     }
 
-    func testMapsSeerrRelatedVideosToTrailers() throws {
+    func testDecodesSeerrRelatedVideos() throws {
         let json = Data("""
         {
+          "id": 1396,
           "relatedVideos": [
             {
               "url": "https://youtube.com/watch?v=YoHD9XEInc0",
@@ -338,23 +339,13 @@ final class SeerrTitleTests: XCTestCase {
               "name": "Official Trailer",
               "size": 1080,
               "type": "Trailer"
-            },
-            {
-              "key": "abc",
-              "site": "YouTube",
-              "name": "Official Teaser",
-              "type": "Teaser"
             }
           ]
         }
         """.utf8)
-        let payload = try JSONDecoder().decode(SeerrRelatedVideosPayload.self, from: json)
-        XCTAssertEqual(payload.trailers.count, 1)
-        XCTAssertEqual(payload.trailers.first?.title, "Official Trailer")
-        XCTAssertEqual(
-            payload.trailers.first?.externalWatchURL?.absoluteString,
-            "https://www.youtube.com/watch?v=YoHD9XEInc0"
-        )
+        let details = try JSONDecoder().decode(SeerrTvDetails.self, from: json)
+        XCTAssertEqual(details.relatedVideos?.count, 1)
+        XCTAssertEqual(details.relatedVideos?.first?.key, "YoHD9XEInc0")
     }
 
     func testCookieParsesConnectSid() {

@@ -64,13 +64,9 @@ struct CatalogBrowseView: View {
                         CatalogIndexBar(progress: indexProgress)
                         LazyVGrid(columns: columns, spacing: 20) {
                             ForEach(items) { item in
-                                NavigationLink {
-                                    if item.kind == .collection {
-                                        CatalogGridView(title: item.name, query: .parent(item.id))
-                                    } else {
-                                        ItemDetailView(item: item)
-                                    }
-                                } label: {
+                            NavigationLink {
+                                LibraryItemRoute(item: item)
+                            } label: {
                                     FillingPortraitPoster(
                                         item: item,
                                         imageURL: session.library?.primaryURL(for: item)

@@ -17,6 +17,8 @@ struct PlayerView: View {
     @State private var resumeOverride: TimeInterval?
     @State private var appliedBitrate: Int?
     @State private var liveBitrateOverride: Int?
+    @State private var cinemaQueue: [MediaItem] = []
+    @State private var cinemaIndex = 0
 
     init(item: MediaItem) {
         self.item = item
@@ -79,6 +81,10 @@ struct PlayerView: View {
         .openSubtitlesSearch(item: $subtitleSearchItem)
     }
 
+    private var isCinemaBumper: Bool {
+        cinemaIndex + 1 < cinemaQueue.count
+    }
+
     private func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .background:
@@ -129,15 +135,24 @@ struct PlayerView: View {
             return
         }
         do {
-            let launch = session.launchOptions(for: activeItem.id)
+            let launch = session.launchOptions(for: item.id)
+            if cinemaQueue.isEmpty, !launch.skipCinemaIntros {
+                let intros = await library.cinemaIntros(for: item.id)
+                if !intros.isEmpty {
+                    cinemaQueue = intros + [item]
+                    cinemaIndex = 0
+                    activeItem = intros[0]
+                }
+            }
             let maxBitrate = await streamingBitrate(for: launch)
             appliedBitrate = maxBitrate
             var plan = try await library.playbackPlan(
                 for: activeItem,
-                audioIndex: launch.audioIndex,
-                subtitleIndex: launch.subtitleStreamIndex,
+                audioIndex: isCinemaBumper ? nil : launch.audioIndex,
+                subtitleIndex: isCinemaBumper ? nil : launch.subtitleStreamIndex,
                 maxBitrate: maxBitrate,
-                startTime: resumeOverride ?? activeItem.playbackPosition
+                startTime: isCinemaBumper ? 0 : (resumeOverride ?? activeItem.playbackPosition),
+                mediaSourceID: isCinemaBumper ? nil : launch.mediaSourceID
             )
             resumeOverride = nil
             if PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
@@ -149,11 +164,12 @@ struct PlayerView: View {
             ) {
                 plan = try await library.playbackPlan(
                     for: activeItem,
-                    audioIndex: launch.audioIndex,
-                    subtitleIndex: launch.subtitleStreamIndex,
+                    audioIndex: isCinemaBumper ? nil : launch.audioIndex,
+                    subtitleIndex: isCinemaBumper ? nil : launch.subtitleStreamIndex,
                     allowDirectPlay: false,
                     maxBitrate: maxBitrate,
-                    startTime: plan.startTime
+                    startTime: plan.startTime,
+                    mediaSourceID: isCinemaBumper ? nil : launch.mediaSourceID
                 )
             }
             try Task.checkCancellation()
@@ -276,6 +292,9 @@ struct PlayerView: View {
             reporter = nil
         }
         let created = PlayerModel(plan: plan, reporter: reporter)
+        created.onUserTransport = { action in
+            Task { await session.forwardSyncPlay(action) }
+        }
         if let skipSegments {
             created.skipSegments = skipSegments
         }
@@ -293,6 +312,13 @@ struct PlayerView: View {
             }
             try Task.checkCancellation()
             await created.start()
+            if session.syncPlayGroupID != nil {
+                try? await session.library?.syncPlayReady(
+                    isPlaying: true,
+                    playlistItemID: session.syncPlayPlaylistItemID,
+                    position: plan.startTime
+                )
+            }
         } catch is CancellationError {
             await created.stop()
         } catch {
@@ -301,6 +327,21 @@ struct PlayerView: View {
     }
 
     private func advanceOrDismiss() async {
+        if cinemaIndex + 1 < cinemaQueue.count {
+            cinemaIndex += 1
+            await model?.stop()
+            model = nil
+            didFallBackToRemux = false
+            fallbackError = nil
+            activeItem = cinemaQueue[cinemaIndex]
+            liveBitrateOverride = nil
+            appliedBitrate = nil
+            resumeOverride = cinemaIndex == cinemaQueue.count - 1 ? item.playbackPosition : 0
+            await prepareAndStart()
+            return
+        }
+        cinemaQueue = []
+        cinemaIndex = 0
         guard PlaybackPreferences.autoPlayNextEpisode else {
             dismiss()
             return
@@ -339,7 +380,8 @@ struct PlayerView: View {
                 for: activeItem,
                 allowDirectPlay: false,
                 maxBitrate: await streamingBitrate(for: launch),
-                startTime: resumeOverride ?? activeItem.playbackPosition
+                startTime: resumeOverride ?? activeItem.playbackPosition,
+                mediaSourceID: isCinemaBumper ? nil : launch.mediaSourceID
             )
             try Task.checkCancellation()
             await startPlayback(remux, skipSegments: skip)
@@ -394,8 +436,8 @@ struct PlayerView: View {
                 AVKitPlaybackChrome(
                     model: model,
                     title: model.plan.item.name,
-                    quality: session.launchOptions(for: activeItem.id).resolvedQuality,
-                    canAddSubtitles: session.shouldShowAddSubtitles(for: activeItem),
+                    quality: session.launchOptions(for: item.id).resolvedQuality,
+                    canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
                     onClose: { dismiss() },
                     onQualityChange: { quality in
                         Task { await changeQuality(quality) }
@@ -413,7 +455,8 @@ struct PlayerView: View {
                             options.subtitlesDisabled = id == nil
                             options.subtitleIndex = id
                         }
-                    }
+                    },
+                    onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
                 )
                 if !model.hasFirstFrame || model.isBuffering {
                     ProgressView()
@@ -425,8 +468,14 @@ struct PlayerView: View {
             NativePlayerContainer(
                 player: player,
                 surfaceGeneration: model.surfaceGeneration,
-                skipTitle: model.skipPrompt?.title,
-                onSkip: { model.skipCurrentSegment() },
+                skipTitle: isCinemaBumper ? "Skip" : model.skipPrompt?.title,
+                onSkip: {
+                    if isCinemaBumper {
+                        Task { await advanceOrDismiss() }
+                    } else {
+                        model.skipCurrentSegment()
+                    }
+                },
                 onPictureInPictureActive: { model.setNativePictureInPictureActive($0) }
             )
             .ignoresSafeArea()

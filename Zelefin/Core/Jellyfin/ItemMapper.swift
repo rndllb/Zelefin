@@ -105,7 +105,7 @@ enum ItemMapper {
             id: id,
             name: name,
             kind: kind,
-            overview: dto.overview,
+            overview: overview(from: dto),
             year: dto.productionYear,
             runtime: dto.runTimeTicks.map(TickClock.seconds(from:)),
             officialRating: dto.officialRating,
@@ -141,7 +141,10 @@ enum ItemMapper {
             hasClosedCaptions: hasClosedCaptions(from: dto.mediaStreams),
             hasAudioDescription: hasAudioDescription(from: dto.mediaStreams),
             sourceBitrate: sourceBitrate(from: dto),
-            tmdbID: JellyfinTmdbCatalog.tmdbID(from: dto.providerIDs)
+            tmdbID: JellyfinTmdbCatalog.tmdbID(from: dto.providerIDs),
+            isFavorite: dto.userData?.isFavorite ?? false,
+            likes: dto.userData?.isLikes,
+            premiereDate: dto.premiereDate
         )
     }
 
@@ -302,6 +305,13 @@ enum ItemMapper {
         streams?.first(where: { $0.type == .video })?.codec
     }
 
+    private static func overview(from dto: BaseItemDto) -> String? {
+        let text = dto.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !text.isEmpty { return dto.overview }
+        let program = dto.currentProgram?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return program.isEmpty ? nil : dto.currentProgram?.name
+    }
+
     private static func kind(from type: BaseItemKind?) -> MediaKind? {
         switch type {
         case .movie: .movie
@@ -310,6 +320,11 @@ enum ItemMapper {
         case .episode: .episode
         case .boxSet: .collection
         case .genre: .genre
+        case .playlist: .playlist
+        case .tvChannel: .liveTV
+        case .book: .book
+        case .photo: .photo
+        case .photoAlbum: .collection
         case .collectionFolder, .userView, .userRootFolder, .aggregateFolder, .basePluginFolder:
             nil
         default: .unknown
@@ -346,5 +361,144 @@ enum ItemMapper {
     private static func imageTag(from dto: BaseItemDto, named name: String) -> String? {
         guard let tags = dto.imageTags else { return nil }
         return tags[name] ?? tags[name.lowercased()]
+    }
+
+    static func extraCaption(from dto: BaseItemDto) -> String {
+        switch dto.extraType {
+        case .behindTheScenes: "Behind the Scenes"
+        case .deletedScene: "Deleted Scene"
+        case .interview: "Interview"
+        case .scene: "Scene"
+        case .featurette: "Featurette"
+        case .clip: "Clip"
+        case .short: "Short"
+        case .sample: "Sample"
+        case .themeVideo: "Theme"
+        case .trailer: "Trailer"
+        default: "Extra"
+        }
+    }
+
+    static func chapters(from dto: BaseItemDto) -> [MediaChapter] {
+        (dto.chapters ?? []).enumerated().compactMap { index, chapter in
+            guard let ticks = chapter.startPositionTicks else { return nil }
+            let name = chapter.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return MediaChapter(
+                index: index,
+                name: name.isEmpty ? "Chapter \(index + 1)" : name,
+                startTime: TickClock.seconds(from: ticks),
+                imageTag: chapter.imageTag
+            )
+        }
+    }
+
+    static func versions(from sources: [MediaSourceInfo]?) -> [MediaVersion] {
+        (sources ?? []).compactMap { source in
+            guard let id = source.id, !id.isEmpty else { return nil }
+            return MediaVersion(id: id, title: versionTitle(from: source))
+        }
+    }
+
+    static func versionTitle(from source: MediaSourceInfo) -> String {
+        if let name = source.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
+        if let path = source.path?.split(separator: "/").last.map(String.init), !path.isEmpty {
+            return path
+        }
+        if let container = source.container, !container.isEmpty {
+            return container.uppercased()
+        }
+        return "Version"
+    }
+
+    static func trickplay(from dto: BaseItemDto, sourceID: String?) -> TrickplayInfo? {
+        guard let manifest = dto.trickplay, !manifest.isEmpty else { return nil }
+        let sourceKey = sourceID.flatMap { key in
+            manifest[key] != nil ? key : nil
+        } ?? manifest.keys.sorted().first
+        guard let sourceKey, let widths = manifest[sourceKey], !widths.isEmpty else { return nil }
+        let chosen = widths.min { lhs, rhs in
+            abs((Int(lhs.key) ?? 0) - 320) < abs((Int(rhs.key) ?? 0) - 320)
+        }
+        guard let chosen, let width = Int(chosen.key) ?? chosen.value.width else { return nil }
+        let info = chosen.value
+        let intervalMs = info.interval ?? 10_000
+        return TrickplayInfo(
+            width: width,
+            interval: TimeInterval(intervalMs) / 1000,
+            thumbnailCount: info.thumbnailCount ?? 0,
+            tileWidth: info.tileWidth ?? 10,
+            tileHeight: info.tileHeight ?? 10,
+            thumbnailWidth: info.width ?? width,
+            thumbnailHeight: info.height ?? 180,
+            mediaSourceID: sourceKey
+        )
+    }
+
+    static func searchHit(from hint: SearchHint) -> LibrarySearchHit? {
+        guard let id = hint.id ?? hint.itemID, let name = hint.name, !name.isEmpty else { return nil }
+        let kind: LibrarySearchHit.Kind
+        switch hint.type {
+        case .movie: kind = .title(.movie)
+        case .series: kind = .title(.series)
+        case .episode: kind = .title(.episode)
+        case .boxSet: kind = .title(.collection)
+        case .playlist: kind = .title(.playlist)
+        case .tvChannel: kind = .title(.liveTV)
+        case .book: kind = .title(.book)
+        case .photo: kind = .title(.photo)
+        case .photoAlbum: kind = .title(.collection)
+        case .video: kind = .title(.unknown)
+        case .person: kind = .person
+        case .genre: kind = .genre
+        case .studio: kind = .studio
+        case .audio, .musicArtist, .musicAlbum, .musicGenre, .musicVideo, .audioBook:
+            return nil
+        default:
+            return nil
+        }
+        var subtitleParts: [String] = []
+        switch kind {
+        case .title(.movie): subtitleParts.append("Movie")
+        case .title(.series): subtitleParts.append("Show")
+        case .title(.episode): subtitleParts.append(hint.series ?? "Episode")
+        case .title(.collection): subtitleParts.append("Collection")
+        case .title(.playlist): subtitleParts.append("Playlist")
+        case .title(.liveTV): subtitleParts.append("Live TV")
+        case .title(.book): subtitleParts.append("Book")
+        case .title(.photo): subtitleParts.append("Photo")
+        case .title: subtitleParts.append("Title")
+        case .person: subtitleParts.append("Person")
+        case .genre: subtitleParts.append("Genre")
+        case .studio: subtitleParts.append("Studio")
+        }
+        if let year = hint.productionYear {
+            subtitleParts.append("\(year)")
+        }
+        return LibrarySearchHit(
+            id: id,
+            name: name,
+            kind: kind,
+            subtitle: subtitleParts.joined(separator: " · "),
+            year: hint.productionYear,
+            imageTag: hint.primaryImageTag
+        )
+    }
+
+    static func recommendationTitle(from dto: RecommendationDto) -> String {
+        let name = dto.baselineItemName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        switch dto.recommendationType {
+        case .similarToRecentlyPlayed:
+            return name.isEmpty ? "Because You Watched" : "Because You Watched \(name)"
+        case .similarToLikedItem:
+            return name.isEmpty ? "Because You Liked" : "Because You Liked \(name)"
+        case .hasDirectorFromRecentlyPlayed, .hasLikedDirector:
+            return name.isEmpty ? "More From This Director" : "Directed Like \(name)"
+        case .hasActorFromRecentlyPlayed, .hasLikedActor:
+            return name.isEmpty ? "More From This Cast" : "Starring Like \(name)"
+        default:
+            return name.isEmpty ? "Recommended" : name
+        }
     }
 }

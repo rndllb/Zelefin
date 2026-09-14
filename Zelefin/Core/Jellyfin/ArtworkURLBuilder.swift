@@ -23,7 +23,11 @@ struct ArtworkURLBuilder: Sendable {
     /// Movies and shows without a Primary tag have no poster. Collections still request
     /// untagged covers because Jellyfin often serves collages without a tag.
     static func requestsPrimary(kind: MediaKind, tag: String?) -> Bool {
-        tag != nil || kind == .collection
+        tag != nil || kind == .collection || kind == .photo || kind == .playlist
+    }
+
+    func splashscreenURL() -> URL? {
+        ServerURL.resolve(base: client.configuration.url, path: "/Branding/Splashscreen")
     }
 
     func thumb(for item: MediaItem, maxWidth: Int) -> URL? {
@@ -128,5 +132,13 @@ struct ArtworkURLBuilder: Sendable {
         if let tag { query.append("tag=\(tag)") }
         if let token { query.append("api_key=\(token)") }
         return query
+    }
+
+    func trickplayTile(itemID: String, width: Int, index: Int, mediaSourceID: String?) -> URL? {
+        var query = ["quality=90"]
+        if let mediaSourceID { query.append("mediaSourceId=\(mediaSourceID)") }
+        if let token = client.accessToken { query.append("api_key=\(token)") }
+        let path = "/Videos/\(itemID)/Trickplay/\(width)/\(index).jpg?\(query.joined(separator: "&"))"
+        return ServerURL.resolve(base: client.configuration.url, path: path)
     }
 }

@@ -5,6 +5,7 @@ struct ItemDetailView: View {
     @Environment(SessionStore.self) private var session
     @Environment(DownloadStore.self) private var downloads
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let itemID: String
     let focusEpisodeID: String?
@@ -13,6 +14,7 @@ struct ItemDetailView: View {
     @State private var seasons: [MediaItem] = []
     @State private var episodes: [MediaItem] = []
     @State private var trailers: [TitleTrailer] = []
+    @State private var extras: [TitleExtra] = []
     @State private var related: [MediaItem] = []
     @State private var credits: [CreditPerson] = []
     @State private var collections: [ItemCollectionMembership] = []
@@ -26,6 +28,13 @@ struct ItemDetailView: View {
     @State private var moreInfo = TitleMoreInfo()
     @State private var playingItem: MediaItem?
     @State private var playingWebTrailer: TitleTrailer?
+    @State private var showsCollectionEditor = false
+    @State private var showsPlaylistEditor = false
+    @State private var showsPlayOnDevice = false
+    @State private var showsSyncPlay = false
+    @State private var showsRemoteImages = false
+    @State private var showsDeleteConfirm = false
+    @State private var viewingPhoto: MediaItem?
     @State private var errorMessage: String?
     @State private var downloadRemovalPrompt: DownloadRemovalPrompt?
     @State private var downloadRemovalItem: MediaItem?
@@ -52,6 +61,116 @@ struct ItemDetailView: View {
     }
 
     var body: some View {
+        page
+            .fullScreenCover(item: $playingItem, onDismiss: {
+                Task { await refreshPlaybackProgress() }
+            }) { item in
+                PlayerView(item: item)
+            }
+            .fullScreenCover(item: $playingWebTrailer) { trailer in
+                if let url = trailer.externalWatchURL {
+                    TrailerSafariView(url: url)
+                        .ignoresSafeArea()
+                }
+            }
+            .sheet(isPresented: $showsCollectionEditor) {
+                if let item {
+                    CollectionEditSheet(item: item) {
+                        showsCollectionEditor = false
+                        Task { await refreshCollections() }
+                    }
+                }
+            }
+            .sheet(isPresented: $showsPlayOnDevice) {
+                if let item {
+                    PlayOnDeviceSheet(item: item) {
+                        showsPlayOnDevice = false
+                    }
+                }
+            }
+            .sheet(isPresented: $showsPlaylistEditor) {
+                if let item {
+                    PlaylistPickerSheet(item: item) {
+                        showsPlaylistEditor = false
+                    }
+                }
+            }
+            .sheet(isPresented: $showsSyncPlay) {
+                if let item {
+                    SyncPlayPlaySheet(item: item) {
+                        showsSyncPlay = false
+                    }
+                }
+            }
+            .sheet(isPresented: $showsRemoteImages) {
+                if let item {
+                    RemoteImagePickerView(item: item) {
+                        showsRemoteImages = false
+                    }
+                }
+            }
+            .fullScreenCover(item: $viewingPhoto) { photo in
+                NavigationStack {
+                    PhotoViewerView(item: photo)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Done") { viewingPhoto = nil }
+                            }
+                        }
+                }
+            }
+            .confirmationDialog(
+                "Delete this title from the library?",
+                isPresented: $showsDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Files", role: .destructive) {
+                    Task { await deleteFromLibrary() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Jellyfin will remove this item and its files from the server. This cannot be undone.")
+            }
+            .sheet(isPresented: $showsMoreInfo) {
+                if let item {
+                    TitleMoreInfoView(item: item, info: moreInfo) {
+                        showsMoreInfo = false
+                    }
+                    .presentationBackground(TitleMoreInfoView.sheetBackground)
+                }
+            }
+            .sheet(isPresented: $showsAboutPage) {
+                if let item {
+                    TitleAboutPage(item: item) {
+                        showsAboutPage = false
+                    }
+                    .presentationBackground(TitleMoreInfoView.sheetBackground)
+                }
+            }
+            .alert("Playback", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
+            .downloadRemovalConfirmation($downloadRemovalPrompt) {
+                if let downloadRemovalItem {
+                    downloads.removeDownloaded(item: downloadRemovalItem, account: session.session)
+                }
+                downloadRemovalItem = nil
+            }
+            .openSubtitlesSearch(item: $subtitleSearchItem)
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinSubtitlesSaved)) { notification in
+                guard let savedID = notification.userInfo?[SubtitleCatalogRefresh.itemIDKey] as? String else {
+                    return
+                }
+                Task { await refreshAfterSubtitleSave(savedItemID: savedID) }
+            }
+    }
+
+    private var page: some View {
         GeometryReader { geo in
             Group {
                 if isLoading {
@@ -71,6 +190,11 @@ struct ItemDetailView: View {
                             if !trailers.isEmpty {
                                 trailersSection(for: item)
                                     .padding(.top, item.kind == .series ? 0 : 4)
+                                    .padding(.bottom, 20)
+                            }
+
+                            if !extras.isEmpty {
+                                extrasSection(for: item)
                                     .padding(.bottom, 20)
                             }
 
@@ -134,22 +258,42 @@ struct ItemDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if let item {
                     HStack(spacing: 8) {
-                        if item.kind == .movie {
-                            Menu {
+                        Menu {
+                            TitleUserActions(
+                                item: item,
+                                onChange: { self.item = $0 },
+                                onCollections: { showsCollectionEditor = true },
+                                onPlaylists: item.kind == .playlist || item.kind == .photo || item.kind == .book
+                                    ? nil
+                                    : { showsPlaylistEditor = true },
+                                onPlayElsewhere: { showsPlayOnDevice = true },
+                                onSyncPlay: item.kind.usesVideoPlayer ? { showsSyncPlay = true } : nil,
+                                onRefreshMetadata: session.isAdministrator
+                                    ? { Task { await refreshMetadata() } }
+                                    : nil,
+                                onRemoteImage: session.isAdministrator
+                                    ? { showsRemoteImages = true }
+                                    : nil,
+                                onDelete: session.isAdministrator
+                                    ? { showsDeleteConfirm = true }
+                                    : nil
+                            )
+                            if item.kind == .movie {
+                                Divider()
                                 TitlePlaybackMenus(
                                     item: item,
                                     streamRevision: mediaStreamRevision,
                                     onAddSubtitles: { subtitleSearchItem = item }
                                 )
-                            } label: {
-                                Image(systemName: "ellipsis")
-                                    .font(.body.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 36, height: 36)
-                                    .contentShape(Rectangle())
                             }
-                            .accessibilityLabel("More")
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.body.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .contentShape(Rectangle())
                         }
+                        .accessibilityLabel("More")
                         DetailDownloadSharePill(item: item, episodes: episodes)
                     }
                 }
@@ -158,54 +302,6 @@ struct ItemDetailView: View {
         }
         .tint(.white)
         .task { await load() }
-        .fullScreenCover(item: $playingItem, onDismiss: {
-            Task { await refreshPlaybackProgress() }
-        }) { item in
-            PlayerView(item: item)
-        }
-        .fullScreenCover(item: $playingWebTrailer) { trailer in
-            if let url = trailer.externalWatchURL {
-                TrailerSafariView(url: url)
-                    .ignoresSafeArea()
-            }
-        }
-        .sheet(isPresented: $showsMoreInfo) {
-            if let item {
-                TitleMoreInfoView(item: item, info: moreInfo) {
-                    showsMoreInfo = false
-                }
-                .presentationBackground(TitleMoreInfoView.sheetBackground)
-            }
-        }
-        .sheet(isPresented: $showsAboutPage) {
-            if let item {
-                TitleAboutPage(item: item) {
-                    showsAboutPage = false
-                }
-                .presentationBackground(TitleMoreInfoView.sheetBackground)
-            }
-        }
-        .alert("Playback", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
-        .downloadRemovalConfirmation($downloadRemovalPrompt) {
-            if let downloadRemovalItem {
-                downloads.removeDownloaded(item: downloadRemovalItem, account: session.session)
-            }
-            downloadRemovalItem = nil
-        }
-        .openSubtitlesSearch(item: $subtitleSearchItem)
-        .onReceive(NotificationCenter.default.publisher(for: .zelefinSubtitlesSaved)) { notification in
-            guard let savedID = notification.userInfo?[SubtitleCatalogRefresh.itemIDKey] as? String else {
-                return
-            }
-            Task { await refreshAfterSubtitleSave(savedItemID: savedID) }
-        }
     }
 
     private func hero(for item: MediaItem, width: CGFloat, height: CGFloat) -> some View {
@@ -284,7 +380,22 @@ struct ItemDetailView: View {
     private func playProgressRow(for playbackItem: MediaItem) -> some View {
         let title = item ?? playbackItem
         return VStack(spacing: 10) {
-            playProgressButton(for: playbackItem, allowRelatedDownload: true)
+            if title.kind == .book {
+                EmptyView()
+            } else if title.kind == .photo {
+                Button {
+                    viewingPhoto = title
+                } label: {
+                    Label("View", systemImage: "photo")
+                        .font(.headline)
+                        .foregroundStyle(.black)
+                        .frame(width: 175, height: 45)
+                        .background(Color.white, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            } else {
+                playProgressButton(for: playbackItem, allowRelatedDownload: true)
+            }
             DownloadStatusBanner(item: title)
         }
     }
@@ -506,6 +617,32 @@ struct ItemDetailView: View {
         }
     }
 
+    private func extrasSection(for item: MediaItem) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Extras", showsChevron: false)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                    ForEach(extras) { extra in
+                        Button {
+                            play(extra.item)
+                        } label: {
+                            TrailerLandscapeCard(
+                                title: extra.title,
+                                caption: extra.caption,
+                                imageURL: session.library?.artworkURL(for: extra.item, style: .replayLandscape)
+                                    ?? session.library?.backdropURL(for: extra.item)
+                                    ?? session.library?.backdropURL(for: item)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(height: PosterMetrics.landscapeSize.height * sidebarLayout.scale)
+        }
+    }
+
     private var relatedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             NavigationLink {
@@ -534,7 +671,7 @@ struct ItemDetailView: View {
                 LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
                     ForEach(credits) { person in
                         NavigationLink {
-                            CatalogGridView(title: person.name, query: .person(person.id))
+                            PersonDetailView(personID: person.id, name: person.name, imageTag: person.imageTag)
                         } label: {
                             CastMemberCard(
                                 person: person,
@@ -623,6 +760,7 @@ struct ItemDetailView: View {
     private func apply(_ snapshot: ItemDetailSnapshot) {
         item = snapshot.item
         trailers = snapshot.trailers
+        extras = snapshot.extras
         related = snapshot.related
         credits = snapshot.credits
         collections = snapshot.collections
@@ -643,6 +781,7 @@ struct ItemDetailView: View {
         session.persistItemDetail(
             item: item,
             trailers: trailers,
+            extras: extras,
             related: related,
             credits: credits,
             collections: collections,
@@ -661,6 +800,8 @@ struct ItemDetailView: View {
             isLoading = false
 
             async let fetchedTrailers = library.trailers(for: dto)
+            async let fetchedExtras = library.specialFeatures(for: loaded.id)
+            async let fetchedThemes = library.themeVideos(for: loaded.id)
             async let fetchedRelated = library.similarItems(for: loaded)
             async let fetchedCredits = library.credits(for: loaded.id, from: dto)
 
@@ -693,6 +834,13 @@ struct ItemDetailView: View {
             trailers = await fetchedTrailers
             persistSnapshot()
 
+            var extrasList = await fetchedExtras
+            let themes = await fetchedThemes
+            let extraIDs = Set(extrasList.map(\.id))
+            extrasList.append(contentsOf: themes.filter { !extraIDs.contains($0.id) })
+            extras = extrasList
+            persistSnapshot()
+
             collections = await library.collections(containing: loaded.id)
             persistSnapshot()
         } catch {
@@ -719,6 +867,12 @@ struct ItemDetailView: View {
             let fetched = (try? await library.episodes(seriesID: loaded.id)) ?? []
             episodes = MediaItem.orderedShowEpisodes(fetched, seasons: seasons)
         }
+        persistSnapshot()
+    }
+
+    private func refreshCollections() async {
+        guard let library = session.library else { return }
+        collections = await library.collections(containing: itemID)
         persistSnapshot()
     }
 
@@ -819,6 +973,10 @@ struct ItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, allowRelatedDownload: Bool = false) {
+        if item.kind == .photo {
+            viewingPhoto = item
+            return
+        }
         if let local = downloads.playableItem(
             for: item,
             allowRelated: allowRelatedDownload,
@@ -828,6 +986,25 @@ struct ItemDetailView: View {
             return
         }
         playingItem = item
+    }
+
+    private func refreshMetadata() async {
+        guard let item else { return }
+        do {
+            try await session.library?.refreshItemMetadata(itemID: item.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func deleteFromLibrary() async {
+        guard let item else { return }
+        do {
+            try await session.library?.deleteLibraryItem(itemID: item.id)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
 }
@@ -879,7 +1056,7 @@ private struct CastCrewListView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 ForEach(people) { person in
                     NavigationLink {
-                        CatalogGridView(title: person.name, query: .person(person.id))
+                        PersonDetailView(personID: person.id, name: person.name, imageTag: person.imageTag)
                     } label: {
                         HStack(spacing: 14) {
                             PosterImage(

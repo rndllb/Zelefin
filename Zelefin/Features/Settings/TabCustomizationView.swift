@@ -67,7 +67,16 @@ struct TabCustomizationView: View {
         }
         .zelefinSettingsChrome(title: "Interface")
         .onChange(of: mergeContinueAndNextUp) {
-            Task { await session.refreshHome() }
+            Task {
+                await session.refreshHome()
+                await session.pushDisplayPreferences()
+            }
+        }
+        .onChange(of: tabOrderRaw) {
+            Task { await session.pushDisplayPreferences() }
+        }
+        .task {
+            await session.pullDisplayPreferences()
         }
     }
 

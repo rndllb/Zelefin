@@ -163,6 +163,8 @@ struct PlaybackLaunchOptions: Hashable, Sendable {
     var audioIndex: Int?
     var subtitleIndex: Int?
     var subtitlesDisabled: Bool = false
+    var mediaSourceID: String?
+    var skipCinemaIntros: Bool = false
 
     var resolvedQuality: PlaybackQuality {
         quality ?? PlaybackPreferences.selectedQuality

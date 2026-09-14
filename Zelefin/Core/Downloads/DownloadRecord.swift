@@ -197,7 +197,7 @@ enum DownloadEligibility {
         case .series:
             let hero = MediaItem.heroPlaybackItem(title: item, episodes: episodes)
             return hero.kind == .episode ? hero : nil
-        case .season, .collection, .genre, .unknown:
+        case .season, .collection, .genre, .playlist, .liveTV, .book, .photo, .unknown:
             return nil
         }
     }
@@ -296,7 +296,7 @@ enum DownloadPlaybackSelection {
             seriesID = item.id
         case .episode:
             seriesID = item.seriesID
-        case .movie, .season, .collection, .genre, .unknown:
+        case .movie, .season, .collection, .genre, .playlist, .liveTV, .book, .photo, .unknown:
             return nil
         }
         guard let seriesID, !seriesID.isEmpty else { return nil }

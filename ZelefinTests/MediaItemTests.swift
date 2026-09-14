@@ -1,3 +1,4 @@
+import JellyfinAPI
 import UIKit
 import XCTest
 @testable import Zelefin
@@ -1007,7 +1008,7 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertFalse(LibraryKind.favorites.appearsOnHome)
         XCTAssertEqual(
             HomeLayoutPreferences.libraryTabLibraries(libraries).map(\.id),
-            ["m", "s", "tv", "mix"]
+            ["m", "books", "s", "home", "tv", "mix"]
         )
         XCTAssertEqual(
             HomeLayoutPreferences.libraries(libraries, matching: .movies).map(\.id),
@@ -1019,10 +1020,13 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         )
         XCTAssertTrue(LibraryKind.liveTV.appearsInLibrary)
         XCTAssertTrue(LibraryKind.other.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.books.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.photos.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.playlists.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.homeVideos.appearsInLibrary)
         XCTAssertFalse(LibraryKind.music.appearsInLibrary)
         XCTAssertFalse(LibraryKind.collections.appearsInLibrary)
         XCTAssertFalse(LibraryKind.favorites.appearsInLibrary)
-        XCTAssertFalse(LibraryKind.homeVideos.appearsInLibrary)
 
         let collectionRow = HomeSection(
             id: "library-cols",
@@ -1353,6 +1357,18 @@ final class TrailerLinkParserTests: XCTestCase {
             "YoHD9XEInc0"
         )
         XCTAssertEqual(TrailerLinkParser.youtubeVideoID(from: "YoHD9XEInc0"), "YoHD9XEInc0")
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "plugin://plugin.video.youtube/?action=play_video&videoid=YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "plugin://plugin.video.youtube/play/?video_id=YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
+        XCTAssertEqual(
+            TrailerLinkParser.youtubeVideoID(from: "plugin://plugin.video.youtube/?action=play_video&amp;videoid=YoHD9XEInc0"),
+            "YoHD9XEInc0"
+        )
         XCTAssertNil(TrailerLinkParser.youtubeVideoID(from: "https://vimeo.com/123456789"))
         XCTAssertNil(TrailerLinkParser.youtubeVideoID(from: "not a trailer"))
         XCTAssertNil(TrailerLinkParser.youtubeVideoID(from: "short"))
@@ -1402,15 +1418,120 @@ final class TrailerLinkParserTests: XCTestCase {
         XCTAssertEqual(imdb.caption, "IMDb")
     }
 
-    func testWikidataSparqlUsesImdbAndTmdb() {
-        let query = WikidataTrailers.sparql(imdbID: "tt1375666", tmdbID: 27205, isSeries: false)
-        XCTAssertTrue(query?.contains("P345 \"tt1375666\"") == true)
-        XCTAssertTrue(query?.contains("P4947 \"27205\"") == true)
-        XCTAssertTrue(query?.contains("P1651") == true)
-        XCTAssertNil(WikidataTrailers.sparql(imdbID: nil, tmdbID: nil, isSeries: false))
+    func testJellyfinRemoteTrailersUseServerMetadata() {
+        let youtube = TitleTrailer.jellyfinRemote(
+            url: "https://www.youtube.com/watch?v=YoHD9XEInc0",
+            title: "Official Trailer"
+        )
+        XCTAssertEqual(youtube?.id, "yt-YoHD9XEInc0")
+        XCTAssertEqual(youtube?.externalWatchURL?.absoluteString, "https://www.youtube.com/watch?v=YoHD9XEInc0")
 
-        let series = WikidataTrailers.sparql(imdbID: nil, tmdbID: 1396, isSeries: true)
-        XCTAssertTrue(series?.contains("P4983 \"1396\"") == true)
+        let kodi = TitleTrailer.jellyfinRemote(
+            url: "plugin://plugin.video.youtube/play/?video_id=YoHD9XEInc0",
+            title: "Trailer"
+        )
+        XCTAssertEqual(kodi?.id, "yt-YoHD9XEInc0")
+
+        let remotes = JellyfinTrailers.remotes(from: [
+            MediaURL(name: "Official Trailer", url: "https://www.youtube.com/watch?v=YoHD9XEInc0"),
+            MediaURL(name: "Duplicate", url: "https://youtu.be/YoHD9XEInc0"),
+            MediaURL(name: "Vimeo Cut", url: "https://vimeo.com/123456789")
+        ])
+        XCTAssertEqual(remotes.map(\.id), ["yt-YoHD9XEInc0", "vimeo-123456789"])
+        XCTAssertEqual(JellyfinTrailers.displayTitle(nil), "Trailer")
+        XCTAssertEqual(JellyfinTrailers.displayTitle("  Official Trailer  "), "Official Trailer")
+    }
+}
+
+final class LibraryDiscoveryMappingTests: XCTestCase {
+    func testSearchHintsDropMusicAndKeepTitles() {
+        let movie = ItemMapper.searchHit(
+            from: SearchHint(id: "m1", name: "Dune", productionYear: 2021, type: .movie)
+        )
+        XCTAssertEqual(movie?.id, "m1")
+        XCTAssertEqual(movie?.kind, .title(.movie))
+        XCTAssertEqual(movie?.subtitle, "Movie · 2021")
+
+        let person = ItemMapper.searchHit(
+            from: SearchHint(id: "p1", name: "Timothée Chalamet", type: .person)
+        )
+        XCTAssertEqual(person?.kind, .person)
+
+        XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "a1", name: "Song", type: .audio)))
+        XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "a2", name: "Artist", type: .musicArtist)))
+        XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "a3", name: "Album", type: .musicAlbum)))
+    }
+
+    func testRecommendationTitles() {
+        XCTAssertEqual(
+            ItemMapper.recommendationTitle(
+                from: RecommendationDto(baselineItemName: "Dune", recommendationType: .similarToRecentlyPlayed)
+            ),
+            "Because You Watched Dune"
+        )
+        XCTAssertEqual(
+            ItemMapper.recommendationTitle(from: RecommendationDto(recommendationType: .similarToLikedItem)),
+            "Because You Liked"
+        )
+    }
+
+    func testTrickplayTileMath() {
+        let info = TrickplayInfo(
+            width: 320,
+            interval: 10,
+            thumbnailCount: 25,
+            tileWidth: 10,
+            tileHeight: 10,
+            thumbnailWidth: 320,
+            thumbnailHeight: 180,
+            mediaSourceID: "src"
+        )
+        XCTAssertEqual(info.thumbnailIndex(at: 0), 0)
+        XCTAssertEqual(info.thumbnailIndex(at: 25), 2)
+        XCTAssertEqual(info.tileIndex(at: 0), 0)
+        XCTAssertEqual(info.cell(at: 25).column, 2)
+        XCTAssertEqual(info.cell(at: 25).row, 0)
+        XCTAssertEqual(info.thumbnailIndex(at: 10_000), 24)
+    }
+
+    func testFavoriteAndLikeCopies() {
+        var item = MediaItem(
+            id: "1",
+            name: "Dune",
+            kind: .movie,
+            overview: nil,
+            year: 2021,
+            runtime: 100,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+        item = item.withFavorite(true).withLikes(true)
+        XCTAssertTrue(item.isFavorite)
+        XCTAssertEqual(item.likes, true)
+        item = item.withLikes(nil)
+        XCTAssertNil(item.likes)
     }
 }
 

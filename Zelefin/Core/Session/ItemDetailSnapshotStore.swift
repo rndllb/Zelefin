@@ -2,7 +2,7 @@ import Foundation
 
 /// On-disk copy of a title’s detail page so a later visit can paint immediately.
 struct ItemDetailSnapshot: Codable, Equatable, Sendable {
-    static let currentVersion = 2
+    static let currentVersion = 3
     static let maxCachedTitles = 48
 
     var version: Int
@@ -12,6 +12,7 @@ struct ItemDetailSnapshot: Codable, Equatable, Sendable {
     var savedAt: Date
     var item: MediaItem
     var trailers: [TitleTrailer]
+    var extras: [TitleExtra]
     var related: [MediaItem]
     var credits: [CreditPerson]
     var collections: [ItemCollectionMembership]

@@ -64,6 +64,7 @@ final class ItemDetailSnapshotStoreTests: XCTestCase {
             savedAt: Date(timeIntervalSince1970: 1_720_000_000),
             item: movie,
             trailers: [.youtube(id: "abc", title: "Official Trailer")],
+            extras: [],
             related: [sampleMovie(id: "rel-1", name: "Dune: Part Two")],
             credits: [
                 CreditPerson(id: "p1", name: "Timothée Chalamet", roleLabel: "Paul Atreides", imageTag: "tag", rank: 0)

@@ -19,11 +19,26 @@ struct ConnectView: View {
     @State private var quickConnectCode: String?
     @State private var isStartingQuickConnect = false
     @State private var quickConnectTask: Task<Void, Never>?
+    @State private var loginDisclaimer: String?
+    @State private var splashscreenURL: URL?
 
     var body: some View {
         ZStack {
             LoginPalette.canvas
                 .ignoresSafeArea()
+
+            if let splashscreenURL {
+                PosterImage(
+                    url: splashscreenURL,
+                    aspectRatio: 1,
+                    contentMode: .fill,
+                    fill: .clear
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .ignoresSafeArea()
+                .opacity(0.28)
+            }
 
             markGlow
 
@@ -35,6 +50,13 @@ struct ConnectView: View {
 
                     credentialsCard
                         .padding(.bottom, 22)
+
+                    if let disclaimer = loginDisclaimer, !disclaimer.isEmpty {
+                        Text(disclaimer)
+                            .font(.footnote)
+                            .foregroundStyle(LoginPalette.secondaryText)
+                            .padding(.bottom, 18)
+                    }
 
                     statusText
 
@@ -64,6 +86,7 @@ struct ConnectView: View {
         }
         .tint(AccentPreferences.current)
         .onDisappear { cancelQuickConnect() }
+        .task(id: address) { await loadBranding() }
         .alert("Password help", isPresented: $showsPasswordHelp) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -518,6 +541,25 @@ struct ConnectView: View {
                 isStartingQuickConnect = false
                 quickConnectCode = nil
             }
+        }
+    }
+
+    private func loadBranding() async {
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = try? ServerURL.normalize(trimmed) else {
+            loginDisclaimer = nil
+            splashscreenURL = nil
+            return
+        }
+        let branding = await ServerProbe().branding(at: url)
+        loginDisclaimer = branding?.loginDisclaimer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if branding?.splashscreenEnabled == true {
+            splashscreenURL = ServerURL.resolve(base: url, path: "/Branding/Splashscreen")
+        } else {
+            splashscreenURL = nil
+        }
+        if loginDisclaimer?.isEmpty == true {
+            loginDisclaimer = nil
         }
     }
 

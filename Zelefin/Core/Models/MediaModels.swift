@@ -7,7 +7,20 @@ enum MediaKind: String, Hashable, Sendable, Codable {
     case episode
     case collection
     case genre
+    case playlist
+    case liveTV
+    case book
+    case photo
     case unknown
+
+    var usesVideoPlayer: Bool {
+        switch self {
+        case .movie, .series, .season, .episode, .liveTV, .unknown:
+            true
+        case .collection, .genre, .playlist, .book, .photo:
+            false
+        }
+    }
 }
 
 enum VideoRange: String, Hashable, Sendable, Codable {
@@ -127,6 +140,9 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var hasAudioDescription: Bool = false
     var sourceBitrate: Int? = nil
     var tmdbID: Int? = nil
+    var isFavorite: Bool = false
+    var likes: Bool? = nil
+    var premiereDate: Date? = nil
 
     var progress: Double {
         guard let runtime, runtime > 0 else { return 0 }
@@ -253,7 +269,10 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             videoResolution: .unknown,
             hasClosedCaptions: false,
             hasAudioDescription: false,
-            tmdbID: tmdbID
+            tmdbID: tmdbID,
+            isFavorite: isFavorite,
+            likes: likes,
+            premiereDate: premiereDate
         )
     }
 
@@ -345,6 +364,10 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         case .series, .season, .episode: "Show"
         case .collection: "Collection"
         case .genre: "Genre"
+        case .playlist: "Playlist"
+        case .liveTV: "Live TV"
+        case .book: "Book"
+        case .photo: "Photo"
         case .unknown: "Title"
         }
     }
@@ -468,8 +491,23 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             hasClosedCaptions: hasClosedCaptions,
             hasAudioDescription: hasAudioDescription,
             sourceBitrate: sourceBitrate,
-            tmdbID: tmdbID
+            tmdbID: tmdbID,
+            isFavorite: isFavorite,
+            likes: likes,
+            premiereDate: premiereDate
         )
+    }
+
+    func withFavorite(_ value: Bool) -> MediaItem {
+        var copy = self
+        copy.isFavorite = value
+        return copy
+    }
+
+    func withLikes(_ value: Bool?) -> MediaItem {
+        var copy = self
+        copy.likes = value
+        return copy
     }
 }
 
@@ -497,9 +535,9 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
 
     var appearsInLibrary: Bool {
         switch self {
-        case .movies, .shows, .other, .liveTV:
+        case .movies, .shows, .other, .liveTV, .books, .photos, .playlists, .homeVideos:
             true
-        case .music, .books, .photos, .playlists, .homeVideos, .collections, .favorites:
+        case .music, .collections, .favorites:
             false
         }
     }
@@ -786,6 +824,107 @@ struct CreditPerson: Identifiable, Hashable, Sendable, Codable {
     let roleLabel: String
     let imageTag: String?
     let rank: Int
+    var overview: String? = nil
+    var birthYear: Int? = nil
+}
+
+struct TitleExtra: Identifiable, Hashable, Sendable, Codable {
+    let item: MediaItem
+    let caption: String
+
+    var id: String { item.id }
+    var title: String { item.name }
+}
+
+struct MediaChapter: Identifiable, Hashable, Sendable, Codable {
+    var id: Int { index }
+    let index: Int
+    let name: String
+    let startTime: TimeInterval
+    let imageTag: String?
+}
+
+struct MediaVersion: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+}
+
+struct TrickplayInfo: Hashable, Sendable {
+    let width: Int
+    let interval: TimeInterval
+    let thumbnailCount: Int
+    let tileWidth: Int
+    let tileHeight: Int
+    let thumbnailWidth: Int
+    let thumbnailHeight: Int
+    let mediaSourceID: String?
+
+    var thumbnailsPerTile: Int { max(1, tileWidth * tileHeight) }
+
+    func thumbnailIndex(at time: TimeInterval) -> Int {
+        guard interval > 0 else { return 0 }
+        return min(max(0, Int(time / interval)), max(0, thumbnailCount - 1))
+    }
+
+    func tileIndex(at time: TimeInterval) -> Int {
+        thumbnailIndex(at: time) / thumbnailsPerTile
+    }
+
+    func cell(at time: TimeInterval) -> (column: Int, row: Int) {
+        let local = thumbnailIndex(at: time) % thumbnailsPerTile
+        return (local % max(tileWidth, 1), local / max(tileWidth, 1))
+    }
+}
+
+struct LibrarySearchHit: Identifiable, Hashable, Sendable {
+    enum Kind: Hashable, Sendable {
+        case title(MediaKind)
+        case person
+        case genre
+        case studio
+    }
+
+    let id: String
+    let name: String
+    let kind: Kind
+    let subtitle: String?
+    let year: Int?
+    let imageTag: String?
+
+    func recentItem(kind: MediaKind) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: name,
+            kind: kind,
+            overview: nil,
+            year: year,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: imageTag,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+    }
 }
 
 struct ItemCollectionMembership: Identifiable, Hashable, Sendable, Codable {
@@ -825,6 +964,9 @@ struct PlaybackPlan: Hashable, Sendable {
     let audioTracks: [MediaTrack]
     let subtitleTracks: [MediaTrack]
     var externalSubtitles: [ExternalSubtitleSidecar] = []
+    var chapters: [MediaChapter] = []
+    var trickplay: TrickplayInfo? = nil
+    var versions: [MediaVersion] = []
 }
 
 struct ExternalSubtitleSidecar: Hashable, Sendable {
@@ -931,6 +1073,23 @@ struct TitleTrailer: Identifiable, Hashable, Sendable, Codable {
         TitleTrailer(id: "jf-\(item.id)", title: item.name, kind: .jellyfin(item))
     }
 
+    /// Remote trailer URL from Jellyfin metadata (TMDb / NFO), usually YouTube.
+    static func jellyfinRemote(url: String, title: String) -> TitleTrailer? {
+        if let youtubeID = TrailerLinkParser.youtubeVideoID(from: url) {
+            return .youtube(id: youtubeID, title: title)
+        }
+        if let vimeoID = TrailerLinkParser.vimeoVideoID(from: url) {
+            return .vimeo(id: vimeoID, title: title)
+        }
+        guard let parsed = URL(string: url),
+              let scheme = parsed.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+        return TitleTrailer(id: "web-\(url)", title: title, kind: .catalog(parsed))
+    }
+
     static func tmdbPage(id: Int, isSeries: Bool) -> TitleTrailer {
         let path = isSeries ? "tv" : "movie"
         let url = URL(string: "https://www.themoviedb.org/\(path)/\(id)")!
@@ -945,8 +1104,15 @@ struct TitleTrailer: Identifiable, Hashable, Sendable, Codable {
 
 enum TrailerLinkParser {
     static func youtubeVideoID(from raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "&amp;", with: "&")
         if isYouTubeID(trimmed) { return trimmed }
+        if trimmed.lowercased().hasPrefix("plugin://plugin.video.youtube"),
+           let videoID = kodiYouTubeID(from: trimmed)
+        {
+            return videoID
+        }
         guard let url = URL(string: trimmed) else { return nil }
         let host = (url.host ?? "").lowercased()
 
@@ -992,6 +1158,18 @@ enum TrailerLinkParser {
         }
         if let last = parts.last, isVimeoID(last) {
             return last
+        }
+        return nil
+    }
+
+    /// Jellyfin NFO / Kodi YouTube plugin URLs stored as remote trailers.
+    private static func kodiYouTubeID(from raw: String) -> String? {
+        guard let components = URLComponents(string: raw) else { return nil }
+        let items = components.queryItems ?? []
+        for name in ["videoid", "video_id", "v"] {
+            if let value = items.first(where: { $0.name.lowercased() == name })?.value {
+                return validatedYouTubeID(value)
+            }
         }
         return nil
     }

@@ -31,9 +31,17 @@ enum HomeLayoutPreferences {
         libraries: [HomeSection],
         collections: HomeSection?,
         genres: HomeSection?,
-        recentlyWatched: [MediaItem]
+        recentlyWatched: [MediaItem],
+        recommendations: [HomeSection] = [],
+        upcoming: [MediaItem] = []
     ) -> [HomeSection] {
         var sections = playbackQueueSections(resume: resume, nextUp: nextUp, merge: merge)
+        if !upcoming.isEmpty {
+            sections.append(
+                HomeSection(id: "upcoming", title: "Upcoming Episodes", style: .landscape, items: upcoming)
+            )
+        }
+        sections.append(contentsOf: recommendations)
         sections.append(contentsOf: librarySectionsExcludingCollections(libraries))
         if let collections { sections.append(collections) }
         if let genres { sections.append(genres) }

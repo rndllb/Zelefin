@@ -143,10 +143,8 @@ struct MediaRow: View {
     private func itemDestination(_ item: MediaItem) -> some View {
         if item.kind == .genre {
             CatalogGridView(title: item.name, query: .genre(item.id))
-        } else if item.kind == .collection {
-            CatalogGridView(title: item.name, query: .parent(item.id))
         } else {
-            ItemDetailView(item: item)
+            LibraryItemRoute(item: item)
         }
     }
 
@@ -239,11 +237,7 @@ struct SectionGridView: View {
             LazyVGrid(columns: columns, spacing: 20) {
                 ForEach(section.items) { item in
                     NavigationLink {
-                        if item.kind == .collection {
-                            CatalogGridView(title: item.name, query: .parent(item.id))
-                        } else {
-                            ItemDetailView(item: item)
-                        }
+                        LibraryItemRoute(item: item)
                     } label: {
                         FillingPortraitPoster(
                             item: item,
@@ -461,6 +455,7 @@ struct CatalogGridView: View {
         case genre(String)
         case parent(String)
         case person(String)
+        case studio(String)
     }
 
     @State private var items: [MediaItem] = []
@@ -495,11 +490,7 @@ struct CatalogGridView: View {
                     LazyVGrid(columns: columns, spacing: 20) {
                         ForEach(items) { item in
                             NavigationLink {
-                                if item.kind == .collection {
-                                    CatalogGridView(title: item.name, query: .parent(item.id))
-                                } else {
-                                    ItemDetailView(item: item)
-                                }
+                                LibraryItemRoute(item: item)
                             } label: {
                                 FillingPortraitPoster(
                                     item: item,
@@ -549,7 +540,7 @@ struct CatalogGridView: View {
     private func loadOptions() async {
         guard let library = session.library else { return }
         switch query {
-        case .genre, .person:
+        case .genre, .person, .studio:
             options = await library.mixedCatalogFilterOptions()
         case let .parent(id):
             options = await library.collectionFilterOptions(parentID: id)
@@ -576,6 +567,8 @@ struct CatalogGridView: View {
                 items = try await library.items(parentID: id, query: browseQuery, onPage: onPage)
             case let .person(id):
                 items = try await library.items(personID: id, query: browseQuery, onPage: onPage)
+            case let .studio(id):
+                items = try await library.items(studioID: id, query: browseQuery, onPage: onPage)
             }
         } catch is CancellationError {
             return

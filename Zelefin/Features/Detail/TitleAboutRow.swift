@@ -56,6 +56,19 @@ struct TitleAboutRow: View {
                 meaning: meaning,
                 accessibilityLabel: "Rotten Tomatoes \(score) percent. \(meaning)"
             )
+        case let .audience(score, meaning):
+            ratingCard(
+                icon: {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.yellow)
+                        .accessibilityHidden(true)
+                },
+                value: score,
+                label: "AUDIENCE",
+                meaning: meaning,
+                accessibilityLabel: "Audience score \(score). \(meaning)"
+            )
         case let .commonSense(age, meaning):
             ratingCard(
                 icon: {

@@ -83,6 +83,8 @@ struct PlaybackQueueMenuContent: View {
         let actions = PlaybackQueueMenuLayout.actions(context: context, kind: item.kind)
         let downloadState = downloads.control(for: item, account: session.session)
 
+        TitleUserActions(item: item, onChange: { _ in })
+
         if actions.contains(.download) {
             Button(DownloadControlCopy.title(for: downloadState), systemImage: DownloadControlCopy.symbol(for: downloadState)) {
                 onDownload()
@@ -152,11 +154,36 @@ struct TitlePlaybackMenus: View {
     @State private var loadedSubtitles: [MediaTrack] = []
     @State private var didLoadTracks = false
     @State private var localRevision = 0
+    @State private var versions: [MediaVersion] = []
 
     var body: some View {
         let options = session.launchOptions(for: item.id)
         let quality = options.resolvedQuality
         Group {
+            if versions.count > 1 {
+                Menu("Version") {
+                    ForEach(versions) { version in
+                        Button {
+                            session.updateLaunchOptions(for: item.id) { $0.mediaSourceID = version.id }
+                        } label: {
+                            if options.mediaSourceID == version.id || (options.mediaSourceID == nil && version.id == versions.first?.id) {
+                                Label(version.title, systemImage: "checkmark")
+                            } else {
+                                Text(version.title)
+                            }
+                        }
+                    }
+                }
+            }
+            Button {
+                session.updateLaunchOptions(for: item.id) { $0.skipCinemaIntros.toggle() }
+            } label: {
+                if options.skipCinemaIntros {
+                    Label("Skip Cinema Intros", systemImage: "checkmark")
+                } else {
+                    Text("Skip Cinema Intros")
+                }
+            }
             Menu("Quality") {
                 ForEach(PlaybackQuality.allCases) { option in
                     Button {
@@ -228,6 +255,7 @@ struct TitlePlaybackMenus: View {
         }
         .task(id: "\(item.id)-\(streamRevision)-\(localRevision)") {
             await reloadTracks()
+            versions = await session.library?.mediaVersions(for: item.id) ?? []
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinSubtitlesSaved)) { notification in
             guard let savedID = notification.userInfo?[SubtitleCatalogRefresh.itemIDKey] as? String,

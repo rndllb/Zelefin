@@ -65,6 +65,19 @@ final class TitleAboutCardsTests: XCTestCase {
         )
     }
 
+    func testAudienceCardUsesCommunityScore() {
+        var item = movie(genres: ["Drama"], overview: "A quiet story.", rating: nil)
+        item.communityRating = 8.4
+        let cards = TitleAboutCards.cards(for: item)
+        XCTAssertEqual(cards.map(\.id), ["synopsis", "audience"])
+        guard case let .audience(score, meaning) = cards[1] else {
+            return XCTFail("Expected audience card")
+        }
+        XCTAssertEqual(score, "8.4")
+        XCTAssertTrue(meaning.localizedCaseInsensitiveContains("TMDB"))
+        XCTAssertFalse(meaning.localizedCaseInsensitiveContains("Rotten"))
+    }
+
     private func movie(
         genres: [String],
         overview: String?,
