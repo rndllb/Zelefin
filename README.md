@@ -88,7 +88,7 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 
 Settings → Plugins shows what this Jellyfin server actually has installed. Zelefin does not install plugins; it uses the ones already on the server.
 
-- **Zelefin** — Companion plugin for lock-screen alerts, Seerr URL and API key, and Intro Skipper defaults. Install from [Zelefin-Plugin](https://github.com/rndllb/Zelefin-Plugin). Jellyfin admins do not need an Apple Developer account.
+- **Zelefin** — Companion plugin for lock-screen alerts, Seerr URL and API key, and Intro Skipper defaults. In Jellyfin: Dashboard → Plugins → Catalog → add `https://raw.githubusercontent.com/rndllb/Zelefin-Plugin/main/manifest.json`, then install Zelefin. Admins do not need an Apple Developer account.
 - **Intro Skipper** — Skip Intro and Skip Credits during playback. Optional auto-skip for intros and credits.
 - **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Requires an administrator or a user with Edit Subtitles. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
 - **Jellyfin Enhanced** — Remove from Continue Watching or Next Up without changing watched state. TMDB reviews, household reviews, and awards on the title page. Detection uses the plugin list, or `/JellyfinEnhanced/version` when `/Plugins` is admin-only.
