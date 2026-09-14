@@ -129,11 +129,11 @@
 		C9B27DCBF87BCD02CACB6626 /* TitleMoreInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BCDDAB553BF67632BBED0A3 /* TitleMoreInfoView.swift */; };
 		C9DF62189A922B6BFB377D88 /* PlaybackStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D3DA2B029145A9467370607 /* PlaybackStats.swift */; };
 		CB918BC23B07B8F6FB49597E /* ZelefinApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A3420636CC744549112CED /* ZelefinApp.swift */; };
-		D4B5C6D7E8F901A2B3C4D5E6 /* ZelefinCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A4B5C6D7E8F901A2B3C4D5 /* ZelefinCompanion.swift */; };
 		CB99EF44E406A58BAE1C3BDC /* SnapshotCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEFEB3E7B67400FFCDE9FAF2 /* SnapshotCoding.swift */; };
 		CBBF41E4A5A1BA5A12DB8439 /* DirectPlayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D87D81908990EEF26062A2 /* DirectPlayEngine.swift */; };
 		CCAA3CF9A1B135A2B5A870B0 /* HomeSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E3620DFE3228BDC6BBAC59 /* HomeSnapshotStore.swift */; };
 		D024A4466316494A01DF1001 /* AVKitPlaybackChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73413AFEA74159ABE3AB3815 /* AVKitPlaybackChrome.swift */; };
+		D4B5C6D7E8F901A2B3C4D5E6 /* ZelefinCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A4B5C6D7E8F901A2B3C4D5 /* ZelefinCompanion.swift */; };
 		D4B8DE13D6D16B7698FA8DD0 /* DownloadedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA44AD1DF2E3D8CBCFA598B /* DownloadedItemsView.swift */; };
 		D4E18538C606F896F7F34E23 /* JellyfinServerCapabilitiesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B59BE005E89E43A1FDAC551F /* JellyfinServerCapabilitiesTests.swift */; };
 		D79F783E47DC6967AFD6748F /* ItemDetailSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA915B636DA7F6AA5CE759D /* ItemDetailSnapshotStore.swift */; };
@@ -252,8 +252,6 @@
 		7940008AB391DA5EF5BF3770 /* AccessGateway.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGateway.swift; sourceTree = "<group>"; };
 		7DB0AE9BE6FD098B818186F5 /* TitleShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleShare.swift; sourceTree = "<group>"; };
 		827D07BC596A9C91C877571D /* PluginSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSettings.swift; sourceTree = "<group>"; };
-		B2F3C4D5E6F708192A3B4C /* PushNotificationCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationCenter.swift; sourceTree = "<group>"; };
-		C3A4B5C6D7E8F901A2B3C4D5 /* ZelefinCompanion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinCompanion.swift; sourceTree = "<group>"; };
 		82E2AE060FC5F2C11DFE9D1F /* LibraryAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlert.swift; sourceTree = "<group>"; };
 		8716D6D7DB0E6EE84349C3C8 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
 		88D3AD7E1BB3E4C6887F0775 /* RemoteControlHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlHub.swift; sourceTree = "<group>"; };
@@ -288,6 +286,7 @@
 		AC796E8C0A14B604A4384875 /* DownloadControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadControls.swift; sourceTree = "<group>"; };
 		AEFEB3E7B67400FFCDE9FAF2 /* SnapshotCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotCoding.swift; sourceTree = "<group>"; };
 		B04FDA5715EFC42BDC77D688 /* SeerrClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeerrClient.swift; sourceTree = "<group>"; };
+		B2F3C4D5E6F708192A3B4C /* PushNotificationCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationCenter.swift; sourceTree = "<group>"; };
 		B46842F4BE5C58220DF85053 /* PlaybackTimeFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackTimeFormatting.swift; sourceTree = "<group>"; };
 		B59BE005E89E43A1FDAC551F /* JellyfinServerCapabilitiesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinServerCapabilitiesTests.swift; sourceTree = "<group>"; };
 		B6359B9FE2041843E6943C81 /* RemoteControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlTests.swift; sourceTree = "<group>"; };
@@ -296,6 +295,7 @@
 		BBE9FA471A5F2AEFB32BF9AC /* JellyfinEnhancedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinEnhancedTests.swift; sourceTree = "<group>"; };
 		BD5FA036EDA5443231414E95 /* MediaItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItemTests.swift; sourceTree = "<group>"; };
 		C2660D221D9BE4C888A4EBA3 /* OpenSubtitlesClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenSubtitlesClient.swift; sourceTree = "<group>"; };
+		C3A4B5C6D7E8F901A2B3C4D5 /* ZelefinCompanion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinCompanion.swift; sourceTree = "<group>"; };
 		C69D4FC449A5A69EC7217C20 /* JellyfinByteRangeReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinByteRangeReader.swift; sourceTree = "<group>"; };
 		C8CDAA036B77400E155AB566 /* DirectPlayPictureLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectPlayPictureLayout.swift; sourceTree = "<group>"; };
 		CAED4C9AFE0CF63BDE79CBDD /* ReviewDemoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewDemoTests.swift; sourceTree = "<group>"; };
@@ -974,7 +974,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Zelefin/Info.plist;
@@ -1108,7 +1108,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Zelefin/Info.plist;
