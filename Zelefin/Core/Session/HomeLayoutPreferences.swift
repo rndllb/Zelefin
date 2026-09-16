@@ -15,8 +15,18 @@ enum HomeRowKind: String, CaseIterable, Identifiable, Hashable, Sendable {
     static let orderStorageKey = "zelefin.home-row-order"
     static let hiddenStorageKey = "zelefin.home-row-hidden"
     static let defaultOrderRaw = allCases.map(\.rawValue).joined(separator: ",")
+    static let freeOrder: [HomeRowKind] = [
+        .featured,
+        .continueWatching,
+        .recentlyAddedMovies,
+        .recentlyAddedShows
+    ]
 
     var id: String { rawValue }
+
+    var isIncludedInFreeLayout: Bool {
+        Self.freeOrder.contains(self)
+    }
 
     var title: String {
         switch self {
@@ -167,7 +177,8 @@ enum HomeLayoutPreferences {
         featured: [MediaItem],
         sections: [HomeSection],
         order: [HomeRowKind],
-        hidden: Set<HomeRowKind>
+        hidden: Set<HomeRowKind>,
+        isPlus: Bool = true
     ) -> [HomeFeedItem] {
         var buckets: [HomeRowKind: [HomeSection]] = [:]
         var leftovers: [HomeSection] = []
@@ -179,8 +190,18 @@ enum HomeLayoutPreferences {
             }
         }
 
+        let resolvedOrder: [HomeRowKind]
+        let resolvedHidden: Set<HomeRowKind>
+        if isPlus {
+            resolvedOrder = HomeRowKind.ordered(from: HomeRowKind.raw(from: order))
+            resolvedHidden = hidden
+        } else {
+            resolvedOrder = HomeRowKind.freeOrder
+            resolvedHidden = Set(HomeRowKind.allCases).subtracting(HomeRowKind.freeOrder)
+        }
+
         var feed: [HomeFeedItem] = []
-        for kind in HomeRowKind.ordered(from: HomeRowKind.raw(from: order)) where !hidden.contains(kind) {
+        for kind in resolvedOrder where !resolvedHidden.contains(kind) {
             if kind == .featured {
                 if !featured.isEmpty {
                     feed.append(.featured(featured))
@@ -189,7 +210,9 @@ enum HomeLayoutPreferences {
             }
             feed.append(contentsOf: (buckets[kind] ?? []).map(HomeFeedItem.section))
         }
-        feed.append(contentsOf: leftovers.map(HomeFeedItem.section))
+        if isPlus {
+            feed.append(contentsOf: leftovers.map(HomeFeedItem.section))
+        }
         return feed
     }
 

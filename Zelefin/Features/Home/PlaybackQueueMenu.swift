@@ -303,6 +303,7 @@ struct PlaybackQueueOverflowButton: View {
 
     @Environment(SessionStore.self) private var session
     @Environment(DownloadStore.self) private var downloads
+    @Environment(PlusEntitlement.self) private var plus
     @State private var errorMessage: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
     @State private var subtitleSearchItem: MediaItem?
@@ -369,6 +370,7 @@ struct PlaybackQueueOverflowButton: View {
         case .downloaded:
             removalPrompt = .make(item: item)
         case .idle:
+            guard plus.require(.downloads) else { return }
             await startDownload()
         }
     }

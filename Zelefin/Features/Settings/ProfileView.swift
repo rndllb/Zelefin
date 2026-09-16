@@ -5,6 +5,7 @@ import PhotosUI
 
 struct ProfileView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(PlusEntitlement.self) private var plus
     @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirmPassword = ""
@@ -78,10 +79,24 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                NavigationLink {
-                    AddAccountView()
-                } label: {
-                    Label("Add User", systemImage: "person.badge.plus")
+                if plus.isUnlocked {
+                    NavigationLink {
+                        AddAccountView()
+                    } label: {
+                        Label("Add User", systemImage: "person.badge.plus")
+                    }
+                } else {
+                    Button {
+                        plus.request(.extraAccounts)
+                    } label: {
+                        HStack {
+                            Label("Add User", systemImage: "person.badge.plus")
+                            Spacer(minLength: 8)
+                            Image(systemName: "lock.fill")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
                 }
             } header: {
                 Text("Users")

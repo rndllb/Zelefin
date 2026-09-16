@@ -1,0 +1,78 @@
+{
+  "identifier" : "A81F3C90",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : true,
+      "internalID" : "650000000000001",
+      "localizations" : [
+        {
+          "description" : "Unlock Zelefin Plus on this Apple Account, forever.",
+          "displayName" : "Zelefin Plus Lifetime",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.zelefin.plus.lifetime",
+      "referenceName" : "Zelefin Plus Lifetime",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "650000000000010",
+      "localizations" : [
+        {
+          "description" : "Zelefin Plus",
+          "displayName" : "Zelefin Plus",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Zelefin Plus",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "9.99",
+          "familyShareable" : true,
+          "groupNumber" : 1,
+          "internalID" : "650000000000002",
+          "introductoryOffer" : {
+            "displayPrice" : "0",
+            "internalID" : "650000000000003",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1W"
+          },
+          "localizations" : [
+            {
+              "description" : "Zelefin Plus for one year, with a 7-day free trial.",
+              "displayName" : "Zelefin Plus Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "app.zelefin.plus.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Zelefin Plus Annual",
+          "subscriptionGroupID" : "650000000000010",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

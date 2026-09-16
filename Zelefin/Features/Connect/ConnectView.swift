@@ -40,7 +40,7 @@ struct ConnectView: View {
                 .opacity(0.28)
             }
 
-            markGlow
+            LoginCanvasGlow(isRegularWidth: horizontalSizeClass == .regular)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -92,32 +92,6 @@ struct ConnectView: View {
         } message: {
             Text("Reset your password in the Jellyfin web interface, or ask your server administrator.")
         }
-    }
-
-    // MARK: - Chrome
-
-    private var markGlow: some View {
-        GeometryReader { geo in
-            let isPad = horizontalSizeClass == .regular
-            let endRadius = isPad
-                ? hypot(geo.size.width / 2, geo.size.height)
-                : max(geo.size.width * 0.72, 220)
-
-            RadialGradient(
-                colors: [
-                    LoginPalette.cyan.opacity(0.28),
-                    LoginPalette.cobalt.opacity(0.16),
-                    LoginPalette.canvas
-                ],
-                center: .top,
-                startRadius: 12,
-                endRadius: endRadius
-            )
-            .frame(width: geo.size.width, height: geo.size.height)
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
     private var brandBlock: some View {
@@ -180,14 +154,7 @@ struct ConnectView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(LoginPalette.divider, lineWidth: 1)
-        )
+        .modifier(LoginCardBackground())
         .onChange(of: gatewayClientID) { _, value in
             AccessGateway.clientID = value
         }
@@ -455,14 +422,7 @@ struct ConnectView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(LoginPalette.divider, lineWidth: 1)
-        )
+        .modifier(LoginCardBackground())
     }
 
     private var trimmedAddress: String {
@@ -568,46 +528,5 @@ struct ConnectView: View {
         quickConnectTask = nil
         isStartingQuickConnect = false
         quickConnectCode = nil
-    }
-}
-
-private enum LoginPalette {
-    static let cyan = AccentPreferences.cyan.color
-    static let cobalt = Color(red: 0.0, green: 0.22, blue: 0.98)
-    static let canvas = Color.black
-    static let primaryText = Color.white
-    static let secondaryText = Color.white.opacity(0.72)
-    static let captionText = Color.white.opacity(0.55)
-    static let iconTint = Color.white.opacity(0.55)
-    static let fieldValue = Color.white
-    static let divider = Color.white.opacity(0.12)
-    static let actionLabel = Color.black
-    static let success = Color(red: 0.22, green: 0.78, blue: 0.42)
-    static let failure = Color(red: 1, green: 0.38, blue: 0.38)
-}
-
-private struct LoginActionButtonStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .foregroundStyle(LoginPalette.actionLabel)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(AccentPreferences.current)
-            )
-    }
-}
-
-private struct LoginSecondaryButtonStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.55), lineWidth: 1.5)
-            )
     }
 }

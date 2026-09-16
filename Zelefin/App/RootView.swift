@@ -4,6 +4,7 @@ struct RootView: View {
     @Environment(SessionStore.self) private var session
     @Environment(DownloadStore.self) private var downloads
     @Environment(DeepLinkStore.self) private var deepLinks
+    @Environment(PlusEntitlement.self) private var plus
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @State private var profileSheet: ProfileSheet?
@@ -14,6 +15,7 @@ struct RootView: View {
                 ProfileSheetContainer(destination: destination)
                     .environment(session)
                     .environment(downloads)
+                    .environment(plus)
             }
             .modifier(RootNotificationModifier(profileSheet: $profileSheet))
             .modifier(RootSessionLifecycleModifier(profileSheet: $profileSheet))
@@ -31,6 +33,7 @@ struct RootView: View {
                 }
                 .environment(session)
                 .environment(downloads)
+                .environment(plus)
             }
             .fullScreenCover(item: Binding(
                 get: { session.pendingPlayerItem },
@@ -39,6 +42,7 @@ struct RootView: View {
                 PlayerView(item: item)
                     .environment(session)
                     .environment(downloads)
+                    .environment(plus)
             }
             .alert(
                 "Can't Open Title",
@@ -57,10 +61,16 @@ struct RootView: View {
             .preferredColorScheme(.dark)
             .zelefinAccentTint()
             .task {
+                plus.isReviewDemo = session.isReviewDemo
+                await plus.start()
                 await session.restore()
+                plus.isReviewDemo = session.isReviewDemo
                 startLibraryAlertMonitor()
                 consumePendingNotificationDestination()
                 await deepLinks.flushPending(session: session)
+            }
+            .onChange(of: session.isReviewDemo) { _, demo in
+                plus.isReviewDemo = demo
             }
     }
 
@@ -84,7 +94,7 @@ struct RootView: View {
             deepLinks.openLibraryItem(itemID, session: session)
         }
         if LibraryAlertCenter.shared.takePendingScheduledTasks() {
-            guard session.isSignedIn else { return }
+            guard session.isSignedIn, plus.isUnlocked else { return }
             profileSheet = .scheduledTasks
         }
     }
@@ -99,6 +109,7 @@ struct RootView: View {
 private struct RootNotificationModifier: ViewModifier {
     @Environment(SessionStore.self) private var session
     @Environment(DeepLinkStore.self) private var deepLinks
+    @Environment(PlusEntitlement.self) private var plus
     @Binding var profileSheet: ProfileSheet?
 
     func body(content: Content) -> some View {
@@ -138,7 +149,7 @@ private struct RootNotificationModifier: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .zelefinOpenScheduledTasks)) { _ in
                 _ = LibraryAlertCenter.shared.takePendingScheduledTasks()
-                guard session.isSignedIn else { return }
+                guard session.isSignedIn, plus.isUnlocked else { return }
                 profileSheet = .scheduledTasks
             }
     }
@@ -147,6 +158,7 @@ private struct RootNotificationModifier: ViewModifier {
 private struct RootSessionLifecycleModifier: ViewModifier {
     @Environment(SessionStore.self) private var session
     @Environment(DeepLinkStore.self) private var deepLinks
+    @Environment(PlusEntitlement.self) private var plus
     @Environment(\.scenePhase) private var scenePhase
     @Binding var profileSheet: ProfileSheet?
 
@@ -190,7 +202,7 @@ private struct RootSessionLifecycleModifier: ViewModifier {
             deepLinks.openLibraryItem(itemID, session: session)
         }
         if LibraryAlertCenter.shared.takePendingScheduledTasks() {
-            guard session.isSignedIn else { return }
+            guard session.isSignedIn, plus.isUnlocked else { return }
             profileSheet = .scheduledTasks
         }
     }

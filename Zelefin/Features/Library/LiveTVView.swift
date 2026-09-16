@@ -3,6 +3,7 @@ import UIKit
 
 struct LiveTVView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(PlusEntitlement.self) private var plus
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     var showsBackButton = false
@@ -22,16 +23,10 @@ struct LiveTVView: View {
 
     var body: some View {
         Group {
-            if isLoading && channels.isEmpty && recordings.isEmpty {
-                ProgressView().tint(.white)
-            } else if let errorMessage, channels.isEmpty, recordings.isEmpty {
-                ContentUnavailableView(
-                    "No Live TV",
-                    systemImage: "dot.radiowaves.left.and.right",
-                    description: Text(errorMessage)
-                )
+            if plus.isUnlocked {
+                liveTVBody
             } else {
-                loadedBody
+                PlusLockedPage(feature: .liveTV)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -60,8 +55,29 @@ struct LiveTVView: View {
         } message: {
             Text(actionError ?? "")
         }
-        .task { await load() }
-        .refreshable { await load() }
+        .task {
+            guard plus.isUnlocked else { return }
+            await load()
+        }
+        .refreshable {
+            guard plus.isUnlocked else { return }
+            await load()
+        }
+    }
+
+    @ViewBuilder
+    private var liveTVBody: some View {
+        if isLoading && channels.isEmpty && recordings.isEmpty {
+            ProgressView().tint(.white)
+        } else if let errorMessage, channels.isEmpty, recordings.isEmpty {
+            ContentUnavailableView(
+                "No Live TV",
+                systemImage: "dot.radiowaves.left.and.right",
+                description: Text(errorMessage)
+            )
+        } else {
+            loadedBody
+        }
     }
 
     private var loadedBody: some View {
@@ -92,11 +108,11 @@ struct LiveTVView: View {
     }
 
     private var chipsInHeader: Bool {
-        !showsBackButton && tabBarPlacement == .sidebar
+        plus.isUnlocked && !showsBackButton && tabBarPlacement == .sidebar
     }
 
     private var showsProgramFilters: Bool {
-        section == .onNow || section == .guide || section == .channels
+        plus.isUnlocked && (section == .onNow || section == .guide || section == .channels)
     }
 
     private var pageHeaderClearance: CGFloat {

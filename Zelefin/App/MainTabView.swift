@@ -3,6 +3,7 @@ import UIKit
 
 struct MainTabView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(PlusEntitlement.self) private var plus
     @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
@@ -35,7 +36,7 @@ struct MainTabView: View {
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
         }
         .tabViewStyle(.sidebarAdaptable)
-        .tabViewCustomization($tabCustomization)
+        .tabViewCustomization(tabCustomizationBinding)
         .tabViewSidebarBottomBar {
             ProfileMenu(diameter: 36, showsName: true)
                 .padding(.leading, 20)
@@ -46,6 +47,16 @@ struct MainTabView: View {
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .onAppear { applyHiddenTabDefaultsIfNeeded() }
         .background(.clear)
+    }
+
+    private var tabCustomizationBinding: Binding<TabViewCustomization> {
+        Binding(
+            get: { tabCustomization },
+            set: { newValue in
+                guard plus.require(.interface) else { return }
+                tabCustomization = newValue
+            }
+        )
     }
 
     private func applyHiddenTabDefaultsIfNeeded() {
@@ -158,6 +169,7 @@ enum ProfilePresentation {
 
 struct ProfileMenu: View {
     @Environment(SessionStore.self) private var session
+    private var plus: PlusEntitlement { PlusEntitlement.shared }
     var diameter: CGFloat = 45
     var showsName = false
 
@@ -178,11 +190,20 @@ struct ProfileMenu: View {
                     accessibilityLabel: showsName ? displayName : "Profile",
                     otherAccounts: session.otherAccounts,
                     onProfile: { ProfilePresentation.show(.profile) },
-                    onSessions: { ProfilePresentation.show(.sessions) },
+                    onSessions: {
+                        guard plus.require(.sessions) else { return }
+                        ProfilePresentation.show(.sessions)
+                    },
                     onScheduledTasks: session.isAdministrator
-                        ? { ProfilePresentation.show(.scheduledTasks) }
+                        ? {
+                            guard plus.require(.adminTools) else { return }
+                            ProfilePresentation.show(.scheduledTasks)
+                        }
                         : nil,
-                    onAddUser: { ProfilePresentation.show(.addUser) },
+                    onAddUser: {
+                        guard plus.require(.extraAccounts) else { return }
+                        ProfilePresentation.show(.addUser)
+                    },
                     onSettings: { ProfilePresentation.show(.settings) },
                     onSignOut: { Task { await session.signOut() } },
                     onSwitchTo: { account in

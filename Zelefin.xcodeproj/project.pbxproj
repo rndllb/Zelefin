@@ -146,6 +146,7 @@
 		C4A91B7E2F8D4C11A6B3E205 /* TitleLibraryActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B02C8F309E5D22B7C4F316 /* TitleLibraryActions.swift */; };
 		E4BF757DA701C6AD91C49F7A /* SeerrRequestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8976E4C707E0FA34E637C1 /* SeerrRequestView.swift */; };
 		E84E6FF0C59F6AAA0E50B687 /* AccentPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF24D35FA852C0BF61F8F20 /* AccentPreferences.swift */; };
+		1A7E9C4B2D8F01A3E5C64789 /* LoginChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3B8C1D4E6A702B91C5D0E8 /* LoginChrome.swift */; };
 		ECEDB8B905CCBF53583EEA6B /* CachePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B29699E73366394F845A819 /* CachePreferences.swift */; };
 		EF413980E7A8078ABDB62755 /* DownloadControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC796E8C0A14B604A4384875 /* DownloadControls.swift */; };
 		F03913930483624958E7F319 /* DownloadRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B72C645A75F7BB05FF93C8 /* DownloadRecord.swift */; };
@@ -166,6 +167,9 @@
 		A66C77D88F00112233445566 /* LiveTVModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66D77E88A00112233445567 /* LiveTVModels.swift */; };
 		A77D88E99011223344556677 /* LiveTVView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77E88F99011223344556678 /* LiveTVView.swift */; };
 		A88E99F00122334455667788 /* LiveTVTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88F99001122334455667789 /* LiveTVTests.swift */; };
+		D77E88F99011223344556681 /* PlusEntitlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77E88F99011223344556680 /* PlusEntitlement.swift */; };
+		D77E88F99011223344556683 /* PlusPaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77E88F99011223344556682 /* PlusPaywallView.swift */; };
+		D77E88F99011223344556685 /* PlusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77E88F99011223344556684 /* PlusTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -229,6 +233,7 @@
 		4AA00042D68CFDE4D66A9828 /* TitleAboutPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleAboutPage.swift; sourceTree = "<group>"; };
 		D5B02C8F309E5D22B7C4F316 /* TitleLibraryActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleLibraryActions.swift; sourceTree = "<group>"; };
 		4CF24D35FA852C0BF61F8F20 /* AccentPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentPreferences.swift; sourceTree = "<group>"; };
+		9F3B8C1D4E6A702B91C5D0E8 /* LoginChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginChrome.swift; sourceTree = "<group>"; };
 		4E14D0E5EC6A8906776644E7 /* LibraryAlertCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlertCenter.swift; sourceTree = "<group>"; };
 		4E5E802541E0099E218AA1D7 /* ZelefinError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinError.swift; sourceTree = "<group>"; };
 		4EB149618554E68DACFC0809 /* Zelefin.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = Zelefin.icon; sourceTree = "<group>"; };
@@ -340,6 +345,10 @@
 		B66D77E88A00112233445567 /* LiveTVModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVModels.swift; sourceTree = "<group>"; };
 		B77E88F99011223344556678 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
 		B88F99001122334455667789 /* LiveTVTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVTests.swift; sourceTree = "<group>"; };
+		C77E88F99011223344556680 /* PlusEntitlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusEntitlement.swift; sourceTree = "<group>"; };
+		C77E88F99011223344556682 /* PlusPaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusPaywallView.swift; sourceTree = "<group>"; };
+		C77E88F99011223344556684 /* PlusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusTests.swift; sourceTree = "<group>"; };
+		C77E88F99011223344556686 /* Zelefin.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Zelefin.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -367,6 +376,7 @@
 				9AD77EB677C64A3A9B1FBD50 /* Info.plist */,
 				337D353434F2FA6B761C88F9 /* Zelefin.entitlements */,
 				4EB149618554E68DACFC0809 /* Zelefin.icon */,
+				C77E88F99011223344556686 /* Zelefin.storekit */,
 				38A3420636CC744549112CED /* ZelefinApp.swift */,
 			);
 			path = Zelefin;
@@ -459,6 +469,7 @@
 				B55C66D77E88F99A00112234 /* LibraryAdminTests.swift */,
 				B88F99001122334455667789 /* LiveTVTests.swift */,
 				BD5FA036EDA5443231414E95 /* MediaItemTests.swift */,
+				C77E88F99011223344556684 /* PlusTests.swift */,
 				1046D5D2E1462B7C9A995DE7 /* PlaybackPipelineTests.swift */,
 				41477F1EAFB8BA14BF0DAA87 /* PlaybackSessionTests.swift */,
 				35520B035EA3BB6DD34F49EE /* PluginTests.swift */,
@@ -573,6 +584,7 @@
 				6BC64128456574759DFC487E /* Home */,
 				BCA0D0554F29331D44A0A20D /* Library */,
 				733B4DF12EDBF1750D0CE434 /* Player */,
+				C77E88F99011223344556688 /* Plus */,
 				B193AD7AC6E92B545C9E0902 /* Search */,
 				39AD6DC3C5465AAA16A39BE1 /* Settings */,
 			);
@@ -591,6 +603,7 @@
 			children = (
 				4CF24D35FA852C0BF61F8F20 /* AccentPreferences.swift */,
 				EA634249D6C166F245B90A45 /* AppleTVChrome.swift */,
+				9F3B8C1D4E6A702B91C5D0E8 /* LoginChrome.swift */,
 				2270D3618FBCD955D4102210 /* PosterQualityBadgeStack.swift */,
 			);
 			path = Design;
@@ -666,6 +679,7 @@
 				A3EA3EA60D203D1960972197 /* Networking */,
 				252AA3628DD33AC671096AA7 /* Playback */,
 				835DE220E2614A2ABA4D571B /* Plugins */,
+				C77E88F99011223344556687 /* Plus */,
 				EAE6369FF414AF120C05446C /* Session */,
 			);
 			path = Core;
@@ -704,6 +718,22 @@
 				768407D7FEFE84C273C70606 /* WiFiSSID.swift */,
 			);
 			path = Session;
+			sourceTree = "<group>";
+		};
+		C77E88F99011223344556687 /* Plus */ = {
+			isa = PBXGroup;
+			children = (
+				C77E88F99011223344556680 /* PlusEntitlement.swift */,
+			);
+			path = Plus;
+			sourceTree = "<group>";
+		};
+		C77E88F99011223344556688 /* Plus */ = {
+			isa = PBXGroup;
+			children = (
+				C77E88F99011223344556682 /* PlusPaywallView.swift */,
+			);
+			path = Plus;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -830,6 +860,7 @@
 				D024A4466316494A01DF1001 /* AVKitPlaybackChrome.swift in Sources */,
 				AEA91F74A87B49B52FE925DE /* AccentColorPicker.swift in Sources */,
 				E84E6FF0C59F6AAA0E50B687 /* AccentPreferences.swift in Sources */,
+				1A7E9C4B2D8F01A3E5C64789 /* LoginChrome.swift in Sources */,
 				FAEA902B02CC3EE0FCB3A9FC /* AccessGateway.swift in Sources */,
 				59278DC5A4B724C1B9712DAD /* AccessGatewaySection.swift in Sources */,
 				A37C059EA5BFD6DC83AE2062 /* AdaptiveBitrate.swift in Sources */,
@@ -899,6 +930,8 @@
 				2D9AF06D9B34FBF16CBD18D3 /* PlaybackTimeFormatting.swift in Sources */,
 				171029B1DCECFB111465241F /* PlayerModel.swift in Sources */,
 				AA16ED4B77238005E27D6B23 /* PlayerView.swift in Sources */,
+				D77E88F99011223344556681 /* PlusEntitlement.swift in Sources */,
+				D77E88F99011223344556683 /* PlusPaywallView.swift in Sources */,
 				9FBBC0DED11C68C2CF19A2BC /* PluginSettings.swift in Sources */,
 				A1E2B3C4D5E6F708192A3B4C /* PushNotificationCenter.swift in Sources */,
 				A51CA84891F64D4DAE739EB2 /* PluginSettingsView.swift in Sources */,
@@ -979,6 +1012,7 @@
 				81558868807FFC142C1B9E86 /* PlaybackPipelineTests.swift in Sources */,
 				F0FA53750E0A13FDBA614936 /* PlaybackSessionTests.swift in Sources */,
 				38F108752DB25265F5ED6563 /* PluginTests.swift in Sources */,
+				D77E88F99011223344556685 /* PlusTests.swift in Sources */,
 				634D87457DB72C0557C31ECA /* QuickConnectTests.swift in Sources */,
 				67CB59D76818020158739BE0 /* RemoteControlTests.swift in Sources */,
 				357E574F3E9D980961C1E0F7 /* ReviewDemoTests.swift in Sources */,

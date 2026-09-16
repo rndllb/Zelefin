@@ -3,6 +3,7 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(PlusEntitlement.self) private var plus
     @State private var showsLibraryScanConfirm = false
     @State private var libraryScanMessage: String?
 
@@ -49,32 +50,33 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
             .accessibilityLabel("\(accountDisplayName), Account info")
-            settingsRow("Sessions", systemImage: "play.tv") {
+            settingsRow("Sessions", systemImage: "play.tv", feature: .sessions) {
                 SessionsView()
             }
-            settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle) {
+            settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle, feature: .syncPlay) {
                 SyncPlayView()
             }
             settingsRow("Notifications", systemImage: "bell", subtitle: notificationsSubtitle) {
                 NotificationSettingsView()
             }
             if session.isAdministrator {
-                settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls") {
+                settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls", feature: .adminTools) {
                     UserManagementView()
                 }
-                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress") {
+                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress", feature: .adminTools) {
                     ScheduledTasksView()
                 }
-                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Who signed in, what scanned, what failed") {
+                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Who signed in, what scanned, what failed", feature: .adminTools) {
                     ActivityLogView()
                 }
-                settingsRow("Backups", systemImage: "externaldrive.badge.timemachine", subtitle: "Archive and restore this server") {
+                settingsRow("Backups", systemImage: "externaldrive.badge.timemachine", subtitle: "Archive and restore this server", feature: .adminTools) {
                     ServerBackupsView()
                 }
-                settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
+                settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen", feature: .adminTools) {
                     ServerBrandingView()
                 }
                 Button {
+                    guard plus.require(.adminTools) else { return }
                     showsLibraryScanConfirm = true
                 } label: {
                     HStack(spacing: 14) {
@@ -124,37 +126,92 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
+            plusRow
             settingsRow("About", systemImage: "info.circle", subtitle: DeviceIdentity.version) {
                 SettingsAboutView()
             }
         }
     }
 
-    private func settingsRow<Destination: View>(
-        _ title: String,
-        systemImage: String,
-        subtitle: String? = nil,
-        @ViewBuilder destination: () -> Destination
-    ) -> some View {
-        NavigationLink {
-            destination()
+    private var plusRow: some View {
+        Button {
+            plus.request(.downloads)
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: systemImage)
+                Image(systemName: "star.circle")
                     .font(.body.weight(.medium))
                     .foregroundStyle(.tint)
                     .frame(width: 28, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text("Zelefin Plus")
+                    Text(plus.status.settingsLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
             .padding(.vertical, 2)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func settingsRow<Destination: View>(
+        _ title: String,
+        systemImage: String,
+        subtitle: String? = nil,
+        feature: PlusFeature? = nil,
+        @ViewBuilder destination: () -> Destination
+    ) -> some View {
+        if let feature, !plus.isUnlocked {
+            Button {
+                plus.request(feature)
+            } label: {
+                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, showsLock: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            NavigationLink {
+                destination()
+            } label: {
+                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, showsLock: false)
+            }
+        }
+    }
+
+    private func settingsRowLabel(
+        _ title: String,
+        systemImage: String,
+        subtitle: String?,
+        showsLock: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.tint)
+                .frame(width: 28, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if showsLock {
+                Spacer(minLength: 8)
+                Image(systemName: "lock.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     private var accountDisplayName: String {
@@ -220,6 +277,8 @@ struct SettingsView: View {
 }
 
 struct SettingsAboutView: View {
+    @Environment(PlusEntitlement.self) private var plus
+
     var body: some View {
         List {
             Section {
@@ -227,6 +286,22 @@ struct SettingsAboutView: View {
             } footer: {
                 Text("A native Jellyfin client for iPhone and iPad.")
             }
+            #if DEBUG
+            Section {
+                Picker("Plus", selection: Binding(
+                    get: { plus.debugOverride },
+                    set: { plus.debugOverride = $0 }
+                )) {
+                    ForEach(PlusDebugOverride.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+            } header: {
+                Text("Debug")
+            } footer: {
+                Text("Locked makes Plus features ask you to pay. Then tap Live TV, a download, or an extra Home row. Fake Store is only for trying a pretend purchase.")
+            }
+            #endif
         }
         .zelefinSettingsChrome(title: "About")
     }

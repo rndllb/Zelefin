@@ -188,6 +188,7 @@ struct TitleUserActions: View {
     var onDelete: (() -> Void)? = nil
 
     @Environment(SessionStore.self) private var session
+    private var plus: PlusEntitlement { PlusEntitlement.shared }
 
     var body: some View {
         Button {
@@ -221,22 +222,37 @@ struct TitleUserActions: View {
             Button("Add to Playlist…", systemImage: "list.bullet.rectangle", action: onPlaylists)
         }
         if let onPlayElsewhere {
-            Button("Play on Another Device…", systemImage: "tv.badge.wifi", action: onPlayElsewhere)
+            Button("Play on Another Device…", systemImage: "tv.badge.wifi") {
+                guard plus.require(.sessions) else { return }
+                onPlayElsewhere()
+            }
         }
         if let onSyncPlay {
-            Button("Play in SyncPlay…", systemImage: "person.2.wave.2", action: onSyncPlay)
+            Button("Play in SyncPlay…", systemImage: "person.2.wave.2") {
+                guard plus.require(.syncPlay) else { return }
+                onSyncPlay()
+            }
         }
         if onRefreshMetadata != nil || onRemoteImage != nil || onDelete != nil {
             Divider()
         }
         if let onRefreshMetadata {
-            Button("Refresh Metadata", systemImage: "arrow.clockwise", action: onRefreshMetadata)
+            Button("Refresh Metadata", systemImage: "arrow.clockwise") {
+                guard plus.require(.adminTools) else { return }
+                onRefreshMetadata()
+            }
         }
         if let onRemoteImage {
-            Button("Choose Remote Image…", systemImage: "photo.on.rectangle", action: onRemoteImage)
+            Button("Choose Remote Image…", systemImage: "photo.on.rectangle") {
+                guard plus.require(.adminTools) else { return }
+                onRemoteImage()
+            }
         }
         if let onDelete {
-            Button("Delete from Library…", systemImage: "trash", role: .destructive, action: onDelete)
+            Button("Delete from Library…", systemImage: "trash", role: .destructive) {
+                guard plus.require(.adminTools) else { return }
+                onDelete()
+            }
         }
     }
 
