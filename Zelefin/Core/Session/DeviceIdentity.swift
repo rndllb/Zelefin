@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import UIKit
 
 enum DeviceIdentity {
     static let clientName = "Zelefin"
@@ -50,11 +49,8 @@ enum DeviceIdentity {
     }
 
     private static var familyFallback: String {
-        switch UIDevice.current.userInterfaceIdiom {
-        case .pad: "iPad"
-        case .phone: "iPhone"
-        default: UIDevice.current.model
-        }
+        if ProcessInfo.processInfo.isiOSAppOnMac { return "Mac" }
+        return "iPhone"
     }
 
     private static let names: [String: String] = [

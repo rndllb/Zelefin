@@ -509,6 +509,49 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         copy.likes = value
         return copy
     }
+
+    static func liveChannelStub(
+        id: String,
+        name: String,
+        primaryImageTag: String? = nil,
+        overview: String? = nil,
+        parentBackdropItemID: String? = nil,
+        backdropImageTag: String? = nil,
+        imageItemID: String? = nil
+    ) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: name,
+            kind: .liveTV,
+            overview: overview,
+            year: nil,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: primaryImageTag,
+            thumbImageTag: nil,
+            backdropImageTag: backdropImageTag,
+            backdropImageTags: backdropImageTag.map { [$0] } ?? [],
+            logoImageTag: nil,
+            parentBackdropItemID: parentBackdropItemID,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: imageItemID,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+    }
 }
 
 enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
@@ -526,18 +569,18 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
 
     var appearsOnHome: Bool {
         switch self {
-        case .music, .books, .photos, .liveTV, .playlists, .collections, .favorites:
-            false
-        case .movies, .shows, .homeVideos, .other:
+        case .movies, .shows:
             true
+        default:
+            false
         }
     }
 
     var appearsInLibrary: Bool {
         switch self {
-        case .movies, .shows, .other, .liveTV, .books, .photos, .playlists, .homeVideos:
+        case .movies, .shows, .liveTV:
             true
-        case .music, .collections, .favorites:
+        default:
             false
         }
     }
@@ -967,6 +1010,8 @@ struct PlaybackPlan: Hashable, Sendable {
     var chapters: [MediaChapter] = []
     var trickplay: TrickplayInfo? = nil
     var versions: [MediaVersion] = []
+    var isLive: Bool = false
+    var liveStreamID: String? = nil
 }
 
 struct ExternalSubtitleSidecar: Hashable, Sendable {

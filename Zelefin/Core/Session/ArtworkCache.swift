@@ -301,7 +301,7 @@ final class ArtworkCache: @unchecked Sendable {
                     timeout: timeout,
                     ignoreCache: !isPrefetch
                 )
-                self.inflight.withLock { $0.removeValue(forKey: lookup) }
+                self.inflight.withLock { _ = $0.removeValue(forKey: lookup) }
                 return outcome
             }
             state[lookup] = created
@@ -318,7 +318,7 @@ final class ArtworkCache: @unchecked Sendable {
         let key = Self.diskKey(for: url)
         inflight.withLock { state in
             state[key]?.cancel()
-            state.removeValue(forKey: key)
+            _ = state.removeValue(forKey: key)
         }
     }
 

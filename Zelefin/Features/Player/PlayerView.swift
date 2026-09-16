@@ -53,6 +53,7 @@ struct PlayerView: View {
         }
         .onChange(of: model?.isFinished) { _, finished in
             guard finished == true else { return }
+            if model?.plan.isLive == true { return }
             Task { await advanceOrDismiss() }
         }
         .onChange(of: model?.errorMessage) { _, message in
@@ -199,6 +200,7 @@ struct PlayerView: View {
 
     private func monitorLiveAdaptive() async {
         guard model != nil else { return }
+        if model?.plan.isLive == true { return }
         var tracker = LiveAdaptiveTracker(startedAt: Date())
         while !Task.isCancelled {
             do {
@@ -264,7 +266,7 @@ struct PlayerView: View {
 
     private func retuneAdaptiveBitrate() async {
         guard PlaybackPreferences.adaptiveBitrateEnabled else { return }
-        guard model != nil else { return }
+        guard model != nil, model?.plan.isLive != true else { return }
         guard model?.plan.streamURL.isFileURL != true else { return }
         let launch = session.launchOptions(for: activeItem.id)
         if let override = launch.quality, override != .auto { return }
@@ -302,6 +304,7 @@ struct PlayerView: View {
         await Task.yield()
         do {
             if skipSegments == nil,
+               created.plan.isLive != true,
                OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
                let client = session.client {
                 let skipper = IntroSkipperClient(client: client)

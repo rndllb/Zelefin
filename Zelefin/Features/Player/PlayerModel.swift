@@ -523,7 +523,8 @@ final class PlayerModel {
             )
         } else if DirectPlayLoadPolicy.shouldOpenAsHTTPURL(
             method: plan.method,
-            isHLS: PlaybackPipelineResolver.isHLS(url)
+            isHLS: PlaybackPipelineResolver.isHLS(url),
+            isLive: plan.isLive
         ) {
             try await created.load(
                 source: .url(url),
@@ -711,7 +712,9 @@ final class PlayerModel {
                         self?.isPaused = false
                     }
                     if case .ended = state {
-                        self?.isFinished = true
+                        if self?.plan.isLive != true {
+                            self?.isFinished = true
+                        }
                     }
                     if case .error(let message) = state {
                         self?.errorMessage = message
@@ -783,6 +786,7 @@ final class PlayerModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                guard self?.plan.isLive != true else { return }
                 self?.isFinished = true
             }
         }

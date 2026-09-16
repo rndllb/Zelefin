@@ -30,15 +30,15 @@ enum DirectPlayLoadPolicy {
         isAudioOnlyBackend && expectsVideo
     }
 
-    /// Remux/transcode HLS has no file to range-request; open the playlist URL instead.
-    static func shouldOpenAsHTTPURL(method: PlaybackMethod, isHLS: Bool) -> Bool {
-        method != .directPlay || isHLS
+    /// Remux/transcode HLS has no file to range-request; live MPEG-TS is an infinite pipe.
+    static func shouldOpenAsHTTPURL(method: PlaybackMethod, isHLS: Bool, isLive: Bool = false) -> Bool {
+        method != .directPlay || isHLS || isLive
     }
 
     /// On-device files have no HTTP ranges. Open through a file reader so libavformat
     /// never has to parse a path with spaces, and AVPlayer never gets gateway headers.
-    static func shouldOpenAsURL(url: URL, method: PlaybackMethod, isHLS: Bool) -> Bool {
-        url.isFileURL || shouldOpenAsHTTPURL(method: method, isHLS: isHLS)
+    static func shouldOpenAsURL(url: URL, method: PlaybackMethod, isHLS: Bool, isLive: Bool = false) -> Bool {
+        url.isFileURL || shouldOpenAsHTTPURL(method: method, isHLS: isHLS, isLive: isLive)
     }
 }
 
@@ -111,15 +111,17 @@ enum DirectPlayLoadOptions {
         }
         let selectedAudioLanguage = plan.audioTracks.first(where: \.isSelected)?.language
         let selectedSubtitleLanguage = plan.subtitleTracks.first(where: \.isSelected)?.language
-        let duration = plan.item.runtime.flatMap { seconds in
+        let duration = plan.isLive ? nil : plan.item.runtime.flatMap { seconds in
             seconds > 0 ? seconds : nil
         }
         return LoadOptions(
             httpHeaders: headers,
             matchContentEnabled: true,
             panelIsInHDRMode: isPanelInHDRMode,
+            isLive: plan.isLive,
             prepareNativeSubtitles: false,
             eagerNativeSubtitleReaders: false,
+            sequentialOrigin: plan.isLive,
             maxConcurrentSourceRequests: 2,
             declaredDurationSeconds: duration,
             preferredAudioLanguages: languageList(selectedAudioLanguage),

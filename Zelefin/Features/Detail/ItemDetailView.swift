@@ -29,7 +29,6 @@ struct ItemDetailView: View {
     @State private var playingItem: MediaItem?
     @State private var playingWebTrailer: TitleTrailer?
     @State private var showsCollectionEditor = false
-    @State private var showsPlaylistEditor = false
     @State private var showsPlayOnDevice = false
     @State private var showsSyncPlay = false
     @State private var showsRemoteImages = false
@@ -85,13 +84,6 @@ struct ItemDetailView: View {
                 if let item {
                     PlayOnDeviceSheet(item: item) {
                         showsPlayOnDevice = false
-                    }
-                }
-            }
-            .sheet(isPresented: $showsPlaylistEditor) {
-                if let item {
-                    PlaylistPickerSheet(item: item) {
-                        showsPlaylistEditor = false
                     }
                 }
             }
@@ -263,9 +255,6 @@ struct ItemDetailView: View {
                                 item: item,
                                 onChange: { self.item = $0 },
                                 onCollections: { showsCollectionEditor = true },
-                                onPlaylists: item.kind == .playlist || item.kind == .photo || item.kind == .book
-                                    ? nil
-                                    : { showsPlaylistEditor = true },
                                 onPlayElsewhere: { showsPlayOnDevice = true },
                                 onSyncPlay: item.kind.usesVideoPlayer ? { showsSyncPlay = true } : nil,
                                 onRefreshMetadata: session.isAdministrator

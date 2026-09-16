@@ -1257,6 +1257,42 @@ struct ZelefinGlassPillDivider: View {
     }
 }
 
+struct InteractivePopGestureEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context: Context) {}
+
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .clear
+            view.isUserInteractionEnabled = false
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            enablePopGesture()
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            enablePopGesture()
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigationController?.viewControllers.count ?? 0) > 1
+        }
+
+        private func enablePopGesture() {
+            guard let navigationController, let pop = navigationController.interactivePopGestureRecognizer else { return }
+            pop.isEnabled = navigationController.viewControllers.count > 1
+            pop.delegate = self
+        }
+    }
+}
+
 enum RootPageChrome {
     static let hideAfter: CGFloat = 20
     static let headerRowHeight: CGFloat = 59
@@ -1390,6 +1426,45 @@ enum PosterGridLayout {
         let count = columnCount(expandedWidth: width)
         return Array(repeating: GridItem(.flexible(), spacing: PosterMetrics.rowSpacing), count: count)
     }
+
+    static func landscapeColumnCount(expandedWidth: CGFloat) -> Int {
+        let inner = max(expandedWidth - horizontalInset * 2, PosterMetrics.landscapeSize.width)
+        let cell = PosterMetrics.landscapeSize.width + PosterMetrics.rowSpacing
+        return max(1, Int((inner + PosterMetrics.rowSpacing) / cell))
+    }
+
+    static func landscapeColumns(for layout: ZelefinSidebarLayout) -> [GridItem] {
+        let width: CGFloat
+        if layout.expandedWidth > 1 {
+            width = layout.expandedWidth
+        } else if layout.contentWidth > 1 {
+            width = layout.contentWidth
+        } else {
+            width = 390
+        }
+        let count = landscapeColumnCount(expandedWidth: width)
+        return Array(repeating: GridItem(.flexible(), spacing: PosterMetrics.rowSpacing), count: count)
+    }
+
+    static func squareColumnCount(expandedWidth: CGFloat) -> Int {
+        let size: CGFloat = 152
+        let inner = max(expandedWidth - horizontalInset * 2, size)
+        let cell = size + PosterMetrics.rowSpacing
+        return max(2, Int((inner + PosterMetrics.rowSpacing) / cell))
+    }
+
+    static func squareColumns(for layout: ZelefinSidebarLayout) -> [GridItem] {
+        let width: CGFloat
+        if layout.expandedWidth > 1 {
+            width = layout.expandedWidth
+        } else if layout.contentWidth > 1 {
+            width = layout.contentWidth
+        } else {
+            width = 390
+        }
+        let count = squareColumnCount(expandedWidth: width)
+        return Array(repeating: GridItem(.flexible(), spacing: 18), count: count)
+    }
 }
 
 private struct ZelefinSidebarLayoutKey: EnvironmentKey {
@@ -1476,25 +1551,28 @@ struct FillingPosterCell<Content: View>: View {
 }
 
 /// Trailing profile control for root tabs. iPhone also shows the tab title on this row.
-struct FloatingPageHeader<Accessory: View>: View {
+struct FloatingPageHeader<Accessory: View, Center: View>: View {
     var title: String = ""
     var isVisible: Bool = true
     /// Home draws from the screen top. Other tabs sit in the content safe area and
     /// need this lift so the profile lands in the iPad top tab bar row.
     var liftsIntoPadTabBar: Bool = false
     var accessory: Accessory
+    var center: Center
     @Environment(\.tabBarPlacement) private var tabBarPlacement
 
     init(
         title: String = "",
         isVisible: Bool = true,
         liftsIntoPadTabBar: Bool = false,
-        @ViewBuilder accessory: () -> Accessory
+        @ViewBuilder accessory: () -> Accessory,
+        @ViewBuilder center: () -> Center
     ) {
         self.title = title
         self.isVisible = isVisible
         self.liftsIntoPadTabBar = liftsIntoPadTabBar
         self.accessory = accessory()
+        self.center = center()
     }
 
     private var showsTitle: Bool {
@@ -1505,6 +1583,10 @@ struct FloatingPageHeader<Accessory: View>: View {
         tabBarPlacement != .sidebar
     }
 
+    private var showsCenter: Bool {
+        Center.self != EmptyView.self
+    }
+
     private var padTabBarLift: CGFloat {
         RootPageChrome.padTabBarLift(
             usesPadTopChrome: liftsIntoPadTabBar && UIDevice.current.userInterfaceIdiom == .pad,
@@ -1513,7 +1595,7 @@ struct FloatingPageHeader<Accessory: View>: View {
     }
 
     var body: some View {
-        if showsTitle || showsProfile || Accessory.self != EmptyView.self {
+        if showsTitle || showsProfile || Accessory.self != EmptyView.self || showsCenter {
             HStack(spacing: 12) {
                 if showsTitle {
                     Text(title)
@@ -1529,6 +1611,10 @@ struct FloatingPageHeader<Accessory: View>: View {
                     ProfileMenu(diameter: 45)
                 }
             }
+            .frame(minHeight: showsCenter ? 45 : nil)
+            .overlay {
+                center
+            }
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 10)
@@ -1542,7 +1628,24 @@ struct FloatingPageHeader<Accessory: View>: View {
     }
 }
 
-extension FloatingPageHeader where Accessory == EmptyView {
+extension FloatingPageHeader where Center == EmptyView {
+    init(
+        title: String = "",
+        isVisible: Bool = true,
+        liftsIntoPadTabBar: Bool = false,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.init(
+            title: title,
+            isVisible: isVisible,
+            liftsIntoPadTabBar: liftsIntoPadTabBar,
+            accessory: accessory,
+            center: { EmptyView() }
+        )
+    }
+}
+
+extension FloatingPageHeader where Accessory == EmptyView, Center == EmptyView {
     init(title: String = "", isVisible: Bool = true, liftsIntoPadTabBar: Bool = false) {
         self.init(title: title, isVisible: isVisible, liftsIntoPadTabBar: liftsIntoPadTabBar) {
             EmptyView()

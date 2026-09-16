@@ -36,14 +36,15 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func authorizationStatus() async -> UNAuthorizationStatus {
-        await center.notificationSettings().authorizationStatus
+        let settings = await center.notificationSettings()
+        return settings.authorizationStatus
     }
 
     func requestAuthorization() async -> Bool {
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
             if granted {
-                await PushNotificationCenter.registerForRemoteNotifications()
+                PushNotificationCenter.registerForRemoteNotifications()
             }
             return granted
         } catch {
@@ -63,9 +64,7 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
                 content: content,
                 trigger: nil
             )
-            Task {
-                try? await center.add(request)
-            }
+            center.add(request)
         }
     }
 

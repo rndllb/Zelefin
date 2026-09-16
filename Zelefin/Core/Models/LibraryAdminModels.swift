@@ -72,6 +72,8 @@ enum DisplayPreferencesSync {
     static let preferenceID = "zelefin"
     static let tabOrderKey = "tabOrder"
     static let mergeContinueKey = "mergeContinueNextUp"
+    static let homeRowOrderKey = "homeRowOrder"
+    static let homeRowHiddenKey = "homeRowHidden"
 
     static func apply(_ prefs: [String: String]) {
         if let order = prefs[tabOrderKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
@@ -81,12 +83,23 @@ enum DisplayPreferencesSync {
             let enabled = merge == "true" || merge == "1"
             UserDefaults.standard.set(enabled, forKey: HomeLayoutPreferences.mergeContinueAndNextUpKey)
         }
+        if let order = prefs[homeRowOrderKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
+            UserDefaults.standard.set(HomeRowKind.raw(from: HomeRowKind.ordered(from: order)), forKey: HomeRowKind.orderStorageKey)
+        }
+        if let hidden = prefs[homeRowHiddenKey] {
+            UserDefaults.standard.set(
+                HomeRowKind.hiddenRaw(from: HomeRowKind.hidden(from: hidden)),
+                forKey: HomeRowKind.hiddenStorageKey
+            )
+        }
     }
 
     static func customPrefs() -> [String: String] {
         [
             tabOrderKey: UserDefaults.standard.string(forKey: AppTab.orderStorageKey) ?? AppTab.defaultOrderRaw,
-            mergeContinueKey: HomeLayoutPreferences.mergeContinueAndNextUp ? "true" : "false"
+            mergeContinueKey: HomeLayoutPreferences.mergeContinueAndNextUp ? "true" : "false",
+            homeRowOrderKey: UserDefaults.standard.string(forKey: HomeRowKind.orderStorageKey) ?? HomeRowKind.defaultOrderRaw,
+            homeRowHiddenKey: UserDefaults.standard.string(forKey: HomeRowKind.hiddenStorageKey) ?? ""
         ]
     }
 }

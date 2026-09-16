@@ -5,6 +5,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case home
     case movies
     case shows
+    case liveTV
     case collections
     case library
     case favorites
@@ -13,8 +14,9 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     static let customizationStorageKey = "zelefin.tab-customization"
     static let hiddenDefaultsAppliedKey = "zelefin.tab-hidden-defaults-v1"
     static let favoritesHiddenDefaultKey = "zelefin.tab-hidden-defaults-favorites"
-    static let defaultOrderRaw = "home,movies,shows,collections,library,favorites"
-    static let hiddenByDefault: Set<AppTab> = [.collections, .favorites]
+    static let liveTVHiddenDefaultKey = "zelefin.tab-hidden-defaults-livetv"
+    static let defaultOrderRaw = "home,movies,shows,liveTV,collections,library,favorites"
+    static let hiddenByDefault: Set<AppTab> = [.liveTV, .collections, .favorites]
 
     var id: String { rawValue }
 
@@ -23,6 +25,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .home: "Home"
         case .movies: "Movies"
         case .shows: "Shows"
+        case .liveTV: "Live TV"
         case .collections: "Collections"
         case .library: "Library"
         case .favorites: "Favorites"
@@ -34,6 +37,7 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .home: "house.fill"
         case .movies: "film"
         case .shows: "tv"
+        case .liveTV: "dot.radiowaves.left.and.right"
         case .collections: "square.grid.2x2.fill"
         case .library: "rectangle.stack.fill"
         case .favorites: "heart.fill"

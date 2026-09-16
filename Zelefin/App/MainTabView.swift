@@ -7,6 +7,7 @@ struct MainTabView: View {
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
     @AppStorage(AppTab.favoritesHiddenDefaultKey) private var favoritesHiddenDefaultApplied = false
+    @AppStorage(AppTab.liveTVHiddenDefaultKey) private var liveTVHiddenDefaultApplied = false
 
     var body: some View {
         tabView
@@ -52,11 +53,17 @@ struct MainTabView: View {
             AppTab.applyHiddenDefaults(to: &tabCustomization)
             hiddenDefaultsApplied = true
             favoritesHiddenDefaultApplied = true
+            liveTVHiddenDefaultApplied = true
             return
         }
-        guard !favoritesHiddenDefaultApplied else { return }
-        AppTab.hide([.favorites], in: &tabCustomization)
-        favoritesHiddenDefaultApplied = true
+        if !favoritesHiddenDefaultApplied {
+            AppTab.hide([.favorites], in: &tabCustomization)
+            favoritesHiddenDefaultApplied = true
+        }
+        if !liveTVHiddenDefaultApplied {
+            AppTab.hide([.liveTV], in: &tabCustomization)
+            liveTVHiddenDefaultApplied = true
+        }
     }
 
     private var visibleTabs: [AppTab] {
@@ -78,6 +85,8 @@ struct MainTabView: View {
             CatalogBrowseView(title: "Movies", libraryKind: .movies)
         case .shows:
             CatalogBrowseView(title: "Shows", libraryKind: .shows)
+        case .liveTV:
+            LiveTVView()
         case .collections:
             CatalogBrowseView(title: "Collections", libraryKind: .collections)
         case .library:

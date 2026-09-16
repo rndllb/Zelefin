@@ -27,6 +27,23 @@ struct CatalogFilterSortButtons: View {
     }
 }
 
+struct CatalogFilterButton: View {
+    var filterCount: Int
+    var onFilter: () -> Void
+
+    var body: some View {
+        ZelefinGlassPillCluster {
+            ZelefinPillIconSegment(
+                systemImage: "line.3.horizontal.decrease",
+                accessibilityLabel: "Filters",
+                accessibilityValue: filterCount == 0 ? "Off" : "\(filterCount) selected",
+                badge: filterCount,
+                action: onFilter
+            )
+        }
+    }
+}
+
 struct ZelefinPillIconSegment<Icon: View>: View {
     var accessibilityLabel: String
     var accessibilityValue: String = ""

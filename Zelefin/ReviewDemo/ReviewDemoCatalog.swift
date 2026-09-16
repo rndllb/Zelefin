@@ -542,4 +542,135 @@ enum ReviewDemoCatalog {
         case .unknown: .movie
         }
     }
+
+    static func liveTVChannels() -> [LiveChannel] {
+        liveTVPrograms().reduce(into: [String: LiveChannel]()) { result, program in
+            if result[program.channel.id] == nil {
+                result[program.channel.id] = LiveChannel(
+                    item: program.channel,
+                    number: program.channelNumber,
+                    currentProgram: program
+                )
+            }
+        }
+        .values
+        .sorted { $0.name < $1.name }
+    }
+
+    static func liveTVPrograms(filter: LiveTVProgramFilter? = nil) -> [LiveProgram] {
+        let now = Date()
+        let one = channel("demo-ch-1", name: "Harbor", number: "4")
+        let sports = channel("demo-ch-2", name: "Kickoff", number: "8")
+        let news = channel("demo-ch-3", name: "Bulletin", number: "11")
+        let programs = [
+            program(
+                id: "demo-prog-1",
+                name: "Night Watch",
+                overview: "A deep-space patrol is called home after a distress signal from the outer colonies.",
+                genres: ["Sci-Fi & Fantasy"],
+                rating: "PG",
+                channel: one,
+                number: "4",
+                start: now.addingTimeInterval(-20 * 60),
+                end: now.addingTimeInterval(55 * 60),
+                isSeries: true
+            ),
+            program(
+                id: "demo-prog-2",
+                name: "Night Watch: After Hours",
+                overview: "The crew traces the signal to an abandoned station.",
+                genres: ["Sci-Fi & Fantasy"],
+                rating: "PG",
+                channel: one,
+                number: "4",
+                start: now.addingTimeInterval(55 * 60),
+                end: now.addingTimeInterval(115 * 60),
+                isSeries: true
+            ),
+            program(
+                id: "demo-prog-3",
+                name: "Friday Night Kickoff",
+                overview: "Live from the championship, with pregame from the sideline.",
+                genres: ["Sports"],
+                rating: "TV-PG",
+                channel: sports,
+                number: "8",
+                start: now.addingTimeInterval(-8 * 60),
+                end: now.addingTimeInterval(110 * 60),
+                isSports: true
+            ),
+            program(
+                id: "demo-prog-4",
+                name: "City Desk",
+                overview: "The day’s headlines, weather, and the stories behind them.",
+                genres: ["News"],
+                rating: "TV-PG",
+                channel: news,
+                number: "11",
+                start: now.addingTimeInterval(-12 * 60),
+                end: now.addingTimeInterval(18 * 60),
+                isNews: true
+            )
+        ]
+        guard let filter else { return programs }
+        return programs.filter { $0.matches(filter) }
+    }
+
+    static func liveTVRecordings(isInProgress: Bool? = nil) -> [LiveTVRecording] {
+        let programs = liveTVPrograms()
+        guard let airing = programs.first, let sports = programs.first(where: { $0.isSports }) else { return [] }
+        let active = LiveTVRecording(item: airing.item, isInProgress: true, timerID: "demo-timer-1")
+        let completed = LiveTVRecording(item: sports.item, isInProgress: false, timerID: nil)
+        switch isInProgress {
+        case true: return [active]
+        case false: return [completed]
+        case nil: return [active, completed]
+        }
+    }
+
+    private static func channel(_ id: String, name: String, number: String) -> MediaItem {
+        item(id: id, name: name, kind: .liveTV, photo: id)
+    }
+
+    private static func program(
+        id: String,
+        name: String,
+        overview: String,
+        genres: [String],
+        rating: String,
+        channel: MediaItem,
+        number: String,
+        start: Date,
+        end: Date,
+        isMovie: Bool = false,
+        isSeries: Bool = false,
+        isNews: Bool = false,
+        isKids: Bool = false,
+        isSports: Bool = false
+    ) -> LiveProgram {
+        LiveProgram(
+            item: item(
+                id: id,
+                name: name,
+                kind: .liveTV,
+                overview: overview,
+                runtime: end.timeIntervalSince(start),
+                rating: rating,
+                genres: genres,
+                photo: id
+            ),
+            channel: channel,
+            channelNumber: number,
+            startDate: start,
+            endDate: end,
+            episodeTitle: nil,
+            isMovie: isMovie,
+            isSeries: isSeries,
+            isNews: isNews,
+            isKids: isKids,
+            isSports: isSports,
+            timerID: nil,
+            seriesTimerID: nil
+        )
+    }
 }

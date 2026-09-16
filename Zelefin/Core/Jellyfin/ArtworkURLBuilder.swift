@@ -23,7 +23,7 @@ struct ArtworkURLBuilder: Sendable {
     /// Movies and shows without a Primary tag have no poster. Collections still request
     /// untagged covers because Jellyfin often serves collages without a tag.
     static func requestsPrimary(kind: MediaKind, tag: String?) -> Bool {
-        tag != nil || kind == .collection || kind == .photo || kind == .playlist
+        tag != nil || kind == .collection || kind == .photo || kind == .playlist || kind == .liveTV
     }
 
     func splashscreenURL() -> URL? {
@@ -39,6 +39,11 @@ struct ArtworkURLBuilder: Sendable {
         }
         if let seriesID = item.seriesID, let tag = item.seriesThumbImageTag {
             return image(itemID: seriesID, type: "Thumb", tag: tag, maxWidth: maxWidth, format: "jpg")
+        }
+        // Live TV programs almost never have a Thumb; requesting one 404s and
+        // hides the Primary still that the guide actually shipped.
+        if item.kind == .liveTV {
+            return nil
         }
         return image(itemID: item.artworkItemID, type: "Thumb", tag: nil, maxWidth: maxWidth, format: "jpg")
     }

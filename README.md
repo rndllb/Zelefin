@@ -23,6 +23,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 - Featured hero of latest movies and shows
 - Continue Watching and Next Up, or one combined Continue Watching row (Interface settings)
+- Reorder or hide Home rows in Interface settings, including Featured, recommendations, recently added, collections, and genres
 - Because You Watched and Because You Liked rows when Jellyfin returns them
 - Upcoming Episodes
 - Recently added rows per library, collections, and genres
@@ -33,15 +34,14 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Browse
 
-- Tabs for Home, Movies, Shows, Collections, Library, and Favorites (Collections and Favorites hidden by default)
+- Tabs for Home, Movies, Shows, Live TV, Collections, Library, and Favorites (Live TV, Collections, and Favorites hidden by default)
 - Reorder or hide tabs in Interface settings; iPad can also Edit the sidebar
 - Favorites is movies and series marked favorite on the server; it is also listed under Library
 - Movies and Shows load the full catalog, not the first page
 - Sort by name, date added, date played, release date, runtime, play count, ratings, parental rating, or random
 - Filter by played, unplayed, favorite, continue watching, genres, years, studios, tags, languages, ratings, subtitles, trailers, extras, and video kind (SD / HD / 4K, DVD, Blu-ray, ISO)
-- Library lists movies, shows, Live TV, books, photos, playlists, and home videos on the server, plus Collections, Favorites, Downloaded, and Genres. Music libraries stay off this list
-- Live TV opens channels and DVR recordings from that library
-- Playlists open as a list of entries; photos open in a viewer; books open on the title page
+- Library lists movies, shows, and Live TV on the server, plus Collections, Favorites, Downloaded, and Genres. Music, playlists, books, photos, home videos, and other Jellyfin libraries stay off this list
+- Live TV opens On Now, Guide, Channels, and Recordings
 - Indexing status sits under the header while the catalog is still catching up
 
 ### Title details
@@ -57,7 +57,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - MORE on the About card opens the full description; MORE on the hero opens the info sheet
 - Information, Languages, and File lists on the title page (studio, runtime, audio, subtitles, container, bitrate)
 - Download and share from the same pill
-- More: favorite, like or dislike, add to a collection or playlist, play on another device, and Play in SyncPlay
+- More: favorite, like or dislike, add to a collection, play on another device, and Play in SyncPlay
 - Administrators can refresh metadata, choose a remote image, and delete the title from the library (with confirmation)
 - Add Subtitles on movies and episodes when this account can edit subtitles (administrator or Edit Subtitles) and Open Subtitles is on the server
 - Share a `zelefin://` link plus the Jellyfin web URL so another install or a browser can open the title
@@ -109,7 +109,7 @@ Settings → Plugins shows what this Jellyfin server actually has installed. Zel
 
 ### Search and requests
 
-- Search the Jellyfin library (movies, shows, people, collections, playlists, Live TV, books, and photos; not music)
+- Search the Jellyfin library (movies, shows, people, collections, and Live TV)
 - Discover and request through Seerr or Jellyseerr (sign in under Plugins)
 - Trending, popular, upcoming, genres, studios, and networks
 - Request movies and shows with Radarr / Sonarr server, quality, folder, and season picks
@@ -136,14 +136,13 @@ Settings → Plugins shows what this Jellyfin server actually has installed. Zel
 
 ### Live TV
 
-- Channels and DVR recordings from a Live TV library
-- Play a channel or recording like any other video title
-
-### Playlists
-
-- Playlists show in Library when the server has them
-- Open a playlist to browse and play its entries
-- Add a title to an existing playlist, or create one, from More on the title page
+- Library → Live TV opens a guide, not a poster grid
+- On Now: channel logos, the program that is airing, its still, time left, and a progress bar. Filter by movies, sports, news, kids, and series the same way Movies and Shows filter
+- Channels: a grid of channel logos with the number, name, what’s on, and air times. Tap a card to watch live. Filter the same way On Now does
+- Program page: Watch Live and Watch List. Restart when a recording of that title is already in progress on the server
+- Up Next on that channel lists the programs that follow, without opening another page
+- Guide: listings sized by how long each program runs, with a live progress fill on what is airing. Filter by movies, sports, news, kids, and series the same way On Now does
+- Recordings already saved on the server, including titles that are still recording. Play from the card; More matches Home. This app does not schedule new recordings
 
 ### Scheduled tasks
 
@@ -182,8 +181,9 @@ Administrators also get these from Settings:
 
 - Accent color for buttons, highlights, and icons. Cyan (the login button) is the default; presets and a custom hex are in Interface settings
 - Combine Continue Watching and Next Up
+- Drag to reorder Home rows and turn any row off, including Featured
 - Drag to reorder tabs, hide any tab except Home, reset to defaults
-- Tab order and the combined Continue Watching row sync to this Jellyfin user as display preferences, so another Zelefin install on the same account can pick them up
+- Tab order, Home row layout, and the combined Continue Watching row sync to this Jellyfin user as display preferences, so another Zelefin install on the same account can pick them up
 
 ## Open in Xcode
 
@@ -205,4 +205,4 @@ Requires iOS 18. This build is iPhone and iPad only.
 
 ## Not in this build
 
-Music is not a first-class experience. Albums, artists, lyrics, Instant Mix, and theme songs are out. A music library on the server does not appear in Library.
+This app is movies, shows, and Live TV. Music, playlists, books, photos, home videos, and other Jellyfin library types do not appear in Library, Home, or Search.

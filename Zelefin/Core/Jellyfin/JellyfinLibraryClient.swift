@@ -33,16 +33,35 @@ class JellyfinLibraryClient: @unchecked Sendable {
     func artworkURL(for item: MediaItem, style: HomeSection.Style) -> URL? {
         switch style {
         case .landscape, .replayLandscape:
-            artwork.thumb(for: item, maxWidth: 640)
+            if item.kind == .liveTV {
+                return programStillURL(for: item)
+            }
+            return artwork.thumb(for: item, maxWidth: 640)
         case .portrait, .ranked:
-            artwork.primary(for: item, maxHeight: ArtworkURLBuilder.posterMaxHeight)
+            return artwork.primary(for: item, maxHeight: ArtworkURLBuilder.posterMaxHeight)
         case .labeledPortrait:
             if item.kind == .genre {
-                artwork.genreCover(for: item, maxWidth: 480)
-            } else {
-                artwork.primary(for: item, maxHeight: ArtworkURLBuilder.posterMaxHeight)
+                return artwork.genreCover(for: item, maxWidth: 480)
             }
+            return artwork.primary(for: item, maxHeight: ArtworkURLBuilder.posterMaxHeight)
         }
+    }
+
+    /// Guide stills live on Primary (and sometimes the series), not Thumb.
+    func programStillURL(for item: MediaItem, channel: MediaItem? = nil) -> URL? {
+        if let url = primaryURL(for: item) {
+            return url
+        }
+        if item.thumbImageTag != nil, let url = artwork.thumb(for: item, maxWidth: 640) {
+            return url
+        }
+        if let url = artwork.backdrop(for: item, maxWidth: 640, allowPosterFallback: false) {
+            return url
+        }
+        if let channel {
+            return primaryURL(for: channel)
+        }
+        return nil
     }
 
     func primaryURL(for item: MediaItem, maxHeight: Int = ArtworkURLBuilder.posterMaxHeight) -> URL? {
@@ -808,10 +827,11 @@ class JellyfinLibraryClient: @unchecked Sendable {
         }
 
         let method = ItemMapper.playbackMethod(from: source)
+        let isLive = item.kind == .liveTV || source.isInfiniteStream == true
         let url = StreamResumeURL.ensuringStartTimeTicks(
             try streams.url(itemID: item.id, source: source),
             method: method,
-            startTime: resume
+            startTime: isLive ? 0 : resume
         )
         let streams = source.mediaStreams ?? []
 
@@ -825,19 +845,22 @@ class JellyfinLibraryClient: @unchecked Sendable {
             videoCodec: ItemMapper.videoCodec(from: streams),
             videoRange: ItemMapper.videoRange(from: streams),
             audioFormat: ItemMapper.audioFormat(from: streams),
-            startTime: resume,
-            byteSize: source.size.map(Int64.init),
+            startTime: isLive ? 0 : resume,
+            byteSize: isLive ? nil : source.size.map(Int64.init),
             extraHTTPHeaders: source.requiredHTTPHeaders ?? [:],
             audioTracks: ItemMapper.tracks(from: streams, kind: .audio),
             subtitleTracks: ItemMapper.tracks(from: streams, kind: .subtitle),
             externalSubtitles: self.streams.externalSubtitles(itemID: item.id, source: source),
-            chapters: dto.map(ItemMapper.chapters(from:)) ?? [],
-            trickplay: dto.flatMap { ItemMapper.trickplay(from: $0, sourceID: source.id) },
-            versions: ItemMapper.versions(from: sources)
+            chapters: isLive ? [] : (dto.map(ItemMapper.chapters(from:)) ?? []),
+            trickplay: isLive ? nil : dto.flatMap { ItemMapper.trickplay(from: $0, sourceID: source.id) },
+            versions: ItemMapper.versions(from: sources),
+            isLive: isLive,
+            liveStreamID: source.liveStreamID
         )
     }
 
     private func resolvedResumePosition(requested: TimeInterval?, item: MediaItem) async -> TimeInterval {
+        if item.kind == .liveTV { return 0 }
         let local = requested ?? item.playbackPosition
         if local > PlaybackResumePolicy.threshold { return local }
         guard let fresh = try? await self.item(id: item.id).0.playbackPosition else { return local }
@@ -1197,7 +1220,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
     func mixedCatalogFilterTypes() -> [BaseItemKind] { [.movie, .series] }
 
-    func collectionFilterTypes() -> [BaseItemKind] { [.movie, .series, .boxSet, .video] }
+    func collectionFilterTypes() -> [BaseItemKind] { [.movie, .series, .boxSet] }
 
     private func includeTypes(for library: MediaLibrary) -> [BaseItemKind] {
         switch library.libraryKind {
@@ -1465,7 +1488,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
                     searchTerm: trimmed,
                     includeItemTypes: [
                         .movie, .series, .episode, .boxSet, .person, .genre, .studio,
-                        .playlist, .tvChannel, .book, .photo, .video
+                        .tvChannel
                     ],
                     isIncludePeople: true,
                     isIncludeMedia: true,
@@ -1752,54 +1775,171 @@ class JellyfinLibraryClient: @unchecked Sendable {
         )
     }
 
-    func liveTVChannels() async throws -> [MediaItem] {
+    func liveTVInfoEnabled() async throws -> Bool {
+        let info = try await client.send(Paths.getLiveTvInfo).value
+        return info.isEnabled ?? true
+    }
+
+    func liveTVChannels() async throws -> [LiveChannel] {
         let result = try await client.send(
             Paths.getLiveTvChannels(
                 parameters: .init(
                     userID: userID,
                     enableImages: true,
-                    enableImageTypes: ItemMapper.listImageTypes,
-                    fields: ItemMapper.listFields,
+                    enableImageTypes: ItemMapper.liveTVImageTypes,
+                    fields: ItemMapper.liveTVFields,
                     enableUserData: true,
                     sortBy: [.sortName],
+                    enableFavoriteSorting: true,
                     isAddCurrentProgram: true
                 )
             )
         ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        return (result.items ?? []).compactMap(ItemMapper.liveChannel(from:))
     }
 
-    func liveTVRecordings() async throws -> [MediaItem] {
+    func liveTVRecordings(isInProgress: Bool? = nil, limit: Int = 80) async throws -> [LiveTVRecording] {
+        if let isInProgress {
+            return try await fetchLiveTVRecordings(isInProgress: isInProgress, limit: limit)
+        }
+        async let active = fetchLiveTVRecordings(isInProgress: true, limit: limit)
+        async let completed = fetchLiveTVRecordings(isInProgress: false, limit: limit)
+        let inProgress = (try? await active) ?? []
+        let finished = (try? await completed) ?? []
+        if inProgress.isEmpty && finished.isEmpty {
+            return try await fetchLiveTVRecordings(isInProgress: nil, limit: limit)
+        }
+        return LiveTVRecording.merging(inProgress: inProgress, completed: finished)
+    }
+
+    private func fetchLiveTVRecordings(isInProgress: Bool?, limit: Int) async throws -> [LiveTVRecording] {
         let result = try await client.send(
             Paths.getRecordings(
                 parameters: .init(
                     userID: userID,
-                    limit: 40,
+                    limit: limit,
+                    isInProgress: isInProgress,
                     enableImages: true,
                     enableImageTypes: ItemMapper.listImageTypes,
-                    fields: ItemMapper.listFields,
+                    fields: ItemMapper.liveTVFields,
                     enableUserData: true
                 )
             )
         ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        return (result.items ?? []).compactMap {
+            ItemMapper.recordingItem(from: $0, treatAsInProgress: isInProgress == true)
+        }
     }
 
-    func airingPrograms() async throws -> [MediaItem] {
+    func deleteLiveTVRecording(id: String) async throws {
+        _ = try await client.send(Paths.deleteRecording(recordingID: id))
+    }
+
+    func liveTVPrograms(
+        channelIDs: [String]? = nil,
+        isAiring: Bool? = nil,
+        hasAired: Bool? = nil,
+        minStartDate: Date? = nil,
+        maxStartDate: Date? = nil,
+        filter: LiveTVProgramFilter? = nil,
+        limit: Int = 80
+    ) async throws -> [LiveProgram] {
+        let flags = liveTVProgramFlags(filter)
         let result = try await client.send(
             Paths.getLiveTvPrograms(
                 parameters: .init(
+                    channelIDs: channelIDs,
                     userID: userID,
-                    isAiring: true,
-                    limit: 40,
+                    minStartDate: minStartDate,
+                    hasAired: hasAired,
+                    isAiring: isAiring,
+                    maxStartDate: maxStartDate,
+                    isMovie: flags.movie,
+                    isSeries: flags.series,
+                    isNews: flags.news,
+                    isKids: flags.kids,
+                    isSports: flags.sports,
+                    limit: limit,
+                    sortBy: [.startDate],
                     enableImages: true,
-                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableImageTypes: ItemMapper.liveTVImageTypes,
                     enableUserData: true,
-                    fields: ItemMapper.listFields
+                    fields: ItemMapper.liveTVFields
                 )
             )
         ).value
-        return (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        return (result.items ?? []).compactMap { ItemMapper.liveProgram(from: $0) }
+    }
+
+    func liveTVRecommendedPrograms(filter: LiveTVProgramFilter? = nil, isAiring: Bool = true, limit: Int = 40) async throws -> [LiveProgram] {
+        let flags = liveTVProgramFlags(filter)
+        let result = try await client.send(
+            Paths.getRecommendedPrograms(
+                parameters: .init(
+                    userID: userID,
+                    limit: limit,
+                    isAiring: isAiring,
+                    isSeries: flags.series,
+                    isMovie: flags.movie,
+                    isNews: flags.news,
+                    isKids: flags.kids,
+                    isSports: flags.sports,
+                    enableImages: true,
+                    enableImageTypes: ItemMapper.liveTVImageTypes,
+                    fields: ItemMapper.liveTVFields,
+                    enableUserData: true
+                )
+            )
+        ).value
+        return (result.items ?? []).compactMap { ItemMapper.liveProgram(from: $0) }
+    }
+
+    func liveTVProgram(id: String) async throws -> LiveProgram {
+        let dto = try await client.send(Paths.getProgram(programID: id, userID: userID)).value
+        guard let program = ItemMapper.liveProgram(from: dto) else {
+            throw ZelefinError.server("This program is no longer in the guide.")
+        }
+        return program
+    }
+
+    func liveTVGuide(channelIDs: [String], from start: Date, to end: Date) async throws -> [LiveProgram] {
+        guard !channelIDs.isEmpty else { return [] }
+        var programs: [LiveProgram] = []
+        for chunk in stride(from: 0, to: channelIDs.count, by: 24) {
+            let slice = Array(channelIDs[chunk..<min(chunk + 24, channelIDs.count)])
+            let body = GetProgramsDto(
+                channelIDs: slice,
+                enableImageTypes: ItemMapper.liveTVImageTypes,
+                enableImages: true,
+                enableTotalRecordCount: false,
+                enableUserData: true,
+                fields: ItemMapper.liveTVFields,
+                maxStartDate: end,
+                minStartDate: start.addingTimeInterval(-6 * 3600),
+                sortBy: [.startDate],
+                userID: userID
+            )
+            let result = try await client.send(Paths.getPrograms(body)).value
+            programs.append(contentsOf: (result.items ?? []).compactMap { ItemMapper.liveProgram(from: $0) })
+        }
+        return programs
+    }
+
+    private func liveTVProgramFlags(_ filter: LiveTVProgramFilter?) -> (
+        movie: Bool?,
+        series: Bool?,
+        news: Bool?,
+        kids: Bool?,
+        sports: Bool?
+    ) {
+        switch filter {
+        case .movies: (true, nil, nil, nil, nil)
+        case .series: (nil, true, nil, nil, nil)
+        case .news: (nil, nil, true, nil, nil)
+        case .kids: (nil, nil, nil, true, nil)
+        case .sports: (nil, nil, nil, nil, true)
+        case nil: (nil, nil, nil, nil, nil)
+        }
     }
 
     func syncPlayGroups() async throws -> [SyncPlayGroupInfo] {

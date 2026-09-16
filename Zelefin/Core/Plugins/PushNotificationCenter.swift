@@ -20,7 +20,9 @@ enum PushNotificationCenter {
         let settings = await center.notificationSettings()
         switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
-            await registerForRemoteNotifications()
+            await MainActor.run {
+                registerForRemoteNotifications()
+            }
             return true
         case .denied:
             return false
@@ -28,7 +30,9 @@ enum PushNotificationCenter {
             do {
                 let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
                 if granted {
-                    await registerForRemoteNotifications()
+                    await MainActor.run {
+                        registerForRemoteNotifications()
+                    }
                 }
                 return granted
             } catch {

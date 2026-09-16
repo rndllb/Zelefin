@@ -1,5 +1,110 @@
 import Foundation
 
+enum HomeRowKind: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case featured
+    case continueWatching
+    case nextUp
+    case upcoming
+    case recommendations
+    case recentlyAddedMovies
+    case recentlyAddedShows
+    case collections
+    case genres
+    case recentlyWatched
+
+    static let orderStorageKey = "zelefin.home-row-order"
+    static let hiddenStorageKey = "zelefin.home-row-hidden"
+    static let defaultOrderRaw = allCases.map(\.rawValue).joined(separator: ",")
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .featured: "Featured"
+        case .continueWatching: "Continue Watching"
+        case .nextUp: "Next Up"
+        case .upcoming: "Upcoming Episodes"
+        case .recommendations: "Recommendations"
+        case .recentlyAddedMovies: "Recently Added Movies"
+        case .recentlyAddedShows: "Recently Added Shows"
+        case .collections: "Collections"
+        case .genres: "Genres"
+        case .recentlyWatched: "Recently Watched"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .featured: "sparkles.tv"
+        case .continueWatching: "play.circle"
+        case .nextUp: "forward.end"
+        case .upcoming: "calendar"
+        case .recommendations: "star"
+        case .recentlyAddedMovies: "film"
+        case .recentlyAddedShows: "tv"
+        case .collections: "square.grid.2x2.fill"
+        case .genres: "square.grid.2x2"
+        case .recentlyWatched: "clock.arrow.circlepath"
+        }
+    }
+
+    static func ordered(from raw: String) -> [HomeRowKind] {
+        var seen = Set<HomeRowKind>()
+        var order: [HomeRowKind] = []
+        for token in raw.split(separator: ",") {
+            guard let kind = HomeRowKind(rawValue: String(token)), seen.insert(kind).inserted else { continue }
+            order.append(kind)
+        }
+        for kind in allCases where seen.insert(kind).inserted {
+            order.append(kind)
+        }
+        return order
+    }
+
+    static func raw(from order: [HomeRowKind]) -> String {
+        var seen = Set<HomeRowKind>()
+        return order.compactMap { kind in
+            seen.insert(kind).inserted ? kind.rawValue : nil
+        }.joined(separator: ",")
+    }
+
+    static func hidden(from raw: String) -> Set<HomeRowKind> {
+        Set(raw.split(separator: ",").compactMap { HomeRowKind(rawValue: String($0)) })
+    }
+
+    static func hiddenRaw(from hidden: Set<HomeRowKind>) -> String {
+        hidden.map(\.rawValue).sorted().joined(separator: ",")
+    }
+
+    static func kind(forSectionID id: String) -> HomeRowKind? {
+        switch id {
+        case "continue": return HomeRowKind.continueWatching
+        case "next-up": return HomeRowKind.nextUp
+        case "upcoming": return HomeRowKind.upcoming
+        case "collections": return HomeRowKind.collections
+        case "genres": return HomeRowKind.genres
+        case "recently-watched": return HomeRowKind.recentlyWatched
+        case "library-shows": return HomeRowKind.recentlyAddedShows
+        default:
+            if id.hasPrefix("recommend-") { return HomeRowKind.recommendations }
+            if id.hasPrefix("library-") { return HomeRowKind.recentlyAddedMovies }
+            return nil
+        }
+    }
+}
+
+enum HomeFeedItem: Identifiable, Hashable, Sendable {
+    case featured([MediaItem])
+    case section(HomeSection)
+
+    var id: String {
+        switch self {
+        case .featured: HomeRowKind.featured.rawValue
+        case .section(let section): section.id
+        }
+    }
+}
+
 enum HomeLayoutPreferences {
     static let mergeContinueAndNextUpKey = "zelefin.merge-continue-next-up"
 
@@ -56,6 +161,36 @@ enum HomeLayoutPreferences {
             )
         }
         return sections
+    }
+
+    static func feed(
+        featured: [MediaItem],
+        sections: [HomeSection],
+        order: [HomeRowKind],
+        hidden: Set<HomeRowKind>
+    ) -> [HomeFeedItem] {
+        var buckets: [HomeRowKind: [HomeSection]] = [:]
+        var leftovers: [HomeSection] = []
+        for section in sections {
+            if let kind = HomeRowKind.kind(forSectionID: section.id) {
+                buckets[kind, default: []].append(section)
+            } else {
+                leftovers.append(section)
+            }
+        }
+
+        var feed: [HomeFeedItem] = []
+        for kind in HomeRowKind.ordered(from: HomeRowKind.raw(from: order)) where !hidden.contains(kind) {
+            if kind == .featured {
+                if !featured.isEmpty {
+                    feed.append(.featured(featured))
+                }
+                continue
+            }
+            feed.append(contentsOf: (buckets[kind] ?? []).map(HomeFeedItem.section))
+        }
+        feed.append(contentsOf: leftovers.map(HomeFeedItem.section))
+        return feed
     }
 
     static func orderedHomeLibraries(_ libraries: [MediaLibrary]) -> [MediaLibrary] {

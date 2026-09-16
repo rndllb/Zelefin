@@ -3,46 +3,69 @@ import SwiftUI
 struct HomeView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.tabBarPlacement) private var tabBarPlacement
+    @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
+    @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = ""
     @State private var headerVisible = true
+
+    private var homeFeed: [HomeFeedItem] {
+        HomeLayoutPreferences.feed(
+            featured: session.homeLayout.featured,
+            sections: session.homeLayout.sections,
+            order: HomeRowKind.ordered(from: homeRowOrder),
+            hidden: HomeRowKind.hidden(from: homeRowHidden)
+        )
+    }
+
+    private var hasHomeCatalog: Bool {
+        !session.homeLayout.featured.isEmpty || !session.homeLayout.sections.isEmpty
+    }
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
                 Group {
-                    if session.isLoadingHome && session.homeLayout.sections.isEmpty {
+                    if session.isLoadingHome && !hasHomeCatalog {
                         ProgressView()
                             .tint(.white)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if let errorMessage = session.homeError, session.homeLayout.sections.isEmpty {
+                    } else if let errorMessage = session.homeError, !hasHomeCatalog {
                         ContentUnavailableView(
                             "Couldn’t Load Home",
                             systemImage: "wifi.exclamationmark",
                             description: Text(errorMessage)
                         )
-                    } else if session.homeLayout.sections.isEmpty {
+                    } else if !hasHomeCatalog {
                         ContentUnavailableView(
                             "No Titles Yet",
                             systemImage: "play.rectangle.on.rectangle",
                             description: Text("Movies and shows from this server will show up here.")
                         )
+                    } else if homeFeed.isEmpty {
+                        ContentUnavailableView(
+                            "Home Rows Hidden",
+                            systemImage: "rectangle.3.group",
+                            description: Text("Turn rows back on in Interface settings.")
+                        )
                     } else {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 28) {
-                                if !session.homeLayout.featured.isEmpty {
-                                    let heroSize = CGSize(
-                                        width: geo.size.width,
-                                        height: PosterMetrics.heroHeight(for: geo.size)
-                                    )
-                                    FeaturedHero(items: session.homeLayout.featured, size: heroSize) { item in
-                                        session.library?.backdropURL(for: item)
+                                ForEach(homeFeed) { item in
+                                    switch item {
+                                    case let .featured(items):
+                                        let heroSize = CGSize(
+                                            width: geo.size.width,
+                                            height: PosterMetrics.heroHeight(for: geo.size)
+                                        )
+                                        FeaturedHero(items: items, size: heroSize) { title in
+                                            session.library?.backdropURL(for: title)
+                                        }
+                                        .frame(width: heroSize.width, height: heroSize.height)
+                                    case let .section(section):
+                                        MediaRow(section: section)
                                     }
-                                    .frame(width: heroSize.width, height: heroSize.height)
-                                }
-
-                                ForEach(session.homeLayout.sections) { section in
-                                    MediaRow(section: section)
                                 }
                             }
+                            .padding(.top, feedTopPadding)
                             .padding(.bottom, 32)
                         }
                         .refreshable { await session.refreshHome() }
@@ -61,6 +84,11 @@ struct HomeView: View {
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
+    }
+
+    private var feedTopPadding: CGFloat {
+        if case .featured = homeFeed.first { return 0 }
+        return ScreenInsets.top + (RootPageChrome.showsTitle ? RootPageChrome.headerRowHeight : 8)
     }
 }
 
@@ -505,11 +533,10 @@ struct CatalogGridView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .zelefinScrollEdgeBlur()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .navigationBarBackButtonHidden(false)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .catalogFilterSortToolbar(
             filterCount: browseQuery.activeFilterCount,

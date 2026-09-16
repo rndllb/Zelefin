@@ -6,22 +6,38 @@ final class LibraryAdminTests: XCTestCase {
         let defaults = UserDefaults.standard
         let previousOrder = defaults.string(forKey: AppTab.orderStorageKey)
         let previousMerge = defaults.object(forKey: HomeLayoutPreferences.mergeContinueAndNextUpKey)
+        let previousHomeOrder = defaults.string(forKey: HomeRowKind.orderStorageKey)
+        let previousHomeHidden = defaults.string(forKey: HomeRowKind.hiddenStorageKey)
         defer {
             defaults.set(previousOrder, forKey: AppTab.orderStorageKey)
             defaults.set(previousMerge, forKey: HomeLayoutPreferences.mergeContinueAndNextUpKey)
+            defaults.set(previousHomeOrder, forKey: HomeRowKind.orderStorageKey)
+            defaults.set(previousHomeHidden, forKey: HomeRowKind.hiddenStorageKey)
         }
 
         defaults.set(AppTab.defaultOrderRaw, forKey: AppTab.orderStorageKey)
         defaults.set(false, forKey: HomeLayoutPreferences.mergeContinueAndNextUpKey)
+        defaults.set(HomeRowKind.defaultOrderRaw, forKey: HomeRowKind.orderStorageKey)
+        defaults.set("", forKey: HomeRowKind.hiddenStorageKey)
 
         DisplayPreferencesSync.apply([
             DisplayPreferencesSync.tabOrderKey: "home,library,movies",
-            DisplayPreferencesSync.mergeContinueKey: "true"
+            DisplayPreferencesSync.mergeContinueKey: "true",
+            DisplayPreferencesSync.homeRowOrderKey: "genres,featured",
+            DisplayPreferencesSync.homeRowHiddenKey: "upcoming,collections"
         ])
 
         XCTAssertEqual(defaults.string(forKey: AppTab.orderStorageKey), "home,library,movies")
         XCTAssertTrue(HomeLayoutPreferences.mergeContinueAndNextUp)
         XCTAssertEqual(DisplayPreferencesSync.customPrefs()[DisplayPreferencesSync.mergeContinueKey], "true")
+        XCTAssertEqual(
+            HomeRowKind.ordered(from: defaults.string(forKey: HomeRowKind.orderStorageKey) ?? "").prefix(2).map(\.rawValue),
+            ["genres", "featured"]
+        )
+        XCTAssertEqual(
+            HomeRowKind.hidden(from: defaults.string(forKey: HomeRowKind.hiddenStorageKey) ?? ""),
+            [.upcoming, .collections]
+        )
     }
 
     func testKindLabelsCoverLibraryTypes() {

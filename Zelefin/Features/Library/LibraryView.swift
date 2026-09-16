@@ -29,13 +29,13 @@ struct LibraryView: View {
                             .zelefinLibraryListRow()
                         }
                         NavigationLink {
-                            CatalogBrowseView(title: "Collections", libraryKind: .collections)
+                            CatalogBrowseView(title: "Collections", libraryKind: .collections, showsBackButton: true)
                         } label: {
                             Label("Collections", systemImage: "square.grid.2x2.fill")
                         }
                         .zelefinLibraryListRow()
                         NavigationLink {
-                            CatalogBrowseView(title: "Favorites", libraryKind: .favorites)
+                            CatalogBrowseView(title: "Favorites", libraryKind: .favorites, showsBackButton: true)
                         } label: {
                             Label("Favorites", systemImage: "heart.fill")
                         }
@@ -178,42 +178,44 @@ struct LibraryGenresView: View {
     @State private var isLoading = true
 
     var body: some View {
-        Group {
+        List {
             if isLoading {
                 ProgressView()
                     .tint(.white)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.black)
+                    .listRowSeparator(.hidden)
             } else if genres.isEmpty {
                 ContentUnavailableView(
                     "No Genres",
                     systemImage: "square.grid.2x2",
                     description: Text("Genres from your libraries will show up here.")
                 )
+                .listRowBackground(Color.black)
+                .listRowSeparator(.hidden)
             } else {
-                List {
-                    ForEach(genres) { genre in
-                        NavigationLink {
-                            CatalogGridView(title: genre.name, query: .genre(genre.id))
-                        } label: {
-                            Label {
-                                Text(genre.name)
-                            } icon: {
-                                Image(systemName: GenreSymbol.systemImage(for: genre.name))
-                                    .foregroundStyle(.tint)
-                            }
+                ForEach(genres) { genre in
+                    NavigationLink {
+                        CatalogGridView(title: genre.name, query: .genre(genre.id))
+                    } label: {
+                        Label {
+                            Text(genre.name)
+                        } icon: {
+                            Image(systemName: GenreSymbol.systemImage(for: genre.name))
+                                .foregroundStyle(.tint)
                         }
-                        .zelefinLibraryListRow()
                     }
+                    .zelefinLibraryListRow()
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(Color.black.ignoresSafeArea())
+        .zelefinScrollEdgeBlur()
         .navigationTitle("Genres")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(false)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await load() }
     }
@@ -246,43 +248,46 @@ struct LibraryItemsView: View {
     }
 
     var body: some View {
-        Group {
-            if library.libraryKind == .liveTV {
-                LiveTVView()
+        if library.libraryKind == .liveTV {
+            LiveTVView(showsBackButton: true)
+        } else {
+            catalogBody
+        }
+    }
+
+    private var catalogBody: some View {
+        ScrollView {
+            if isLoading && items.isEmpty {
+                ProgressView().tint(.white).padding(.top, 80)
+            } else if items.isEmpty {
+                ContentUnavailableView(
+                    query.isDefault ? "No Titles Yet" : "No Matches",
+                    systemImage: "rectangle.stack",
+                    description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
+                )
+                .padding(.top, 40)
             } else {
-                ScrollView {
-                    if isLoading && items.isEmpty {
-                        ProgressView().tint(.white).padding(.top, 80)
-                    } else if items.isEmpty {
-                        ContentUnavailableView(
-                            query.isDefault ? "No Titles Yet" : "No Matches",
-                            systemImage: "rectangle.stack",
-                            description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
-                        )
-                        .padding(.top, 40)
-                    } else {
-                        VStack(alignment: .leading, spacing: 0) {
-                            CatalogIndexBar(progress: indexProgress)
-                            LazyVGrid(columns: columns, spacing: 20) {
-                                ForEach(items) { item in
-                                    NavigationLink {
-                                        LibraryItemRoute(item: item)
-                                    } label: {
-                                        FillingPortraitPoster(
-                                            item: item,
-                                            imageURL: session.library?.primaryURL(for: item)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                VStack(alignment: .leading, spacing: 0) {
+                    CatalogIndexBar(progress: indexProgress)
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(items) { item in
+                            NavigationLink {
+                                LibraryItemRoute(item: item)
+                            } label: {
+                                FillingPortraitPoster(
+                                    item: item,
+                                    imageURL: session.library?.primaryURL(for: item)
+                                )
                             }
-                            .padding(16)
+                            .buttonStyle(.plain)
                         }
                     }
+                    .padding(16)
                 }
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .zelefinScrollEdgeBlur()
         .navigationTitle(library.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)

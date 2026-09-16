@@ -6,6 +6,7 @@ struct CatalogBrowseView: View {
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: String
     let libraryKind: LibraryKind
+    var showsBackButton = false
 
     @State private var items: [MediaItem] = []
     @State private var isLoading = true
@@ -43,64 +44,61 @@ struct CatalogBrowseView: View {
     }
 
     private var gridTopPadding: CGFloat {
+        if showsBackButton { return 0 }
         if RootPageChrome.showsTitle { return RootPageChrome.headerRowHeight }
         if tabBarPlacement == .sidebar { return RootPageChrome.headerRowHeight }
         return 0
     }
 
     var body: some View {
-        Group {
+        ScrollView {
             if isLoading && items.isEmpty {
-                ProgressView().tint(.white)
+                ProgressView()
+                    .tint(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
             } else if items.isEmpty {
                 ContentUnavailableView(
                     query.isDefault ? "No Titles Yet" : "No Matches",
                     systemImage: emptySymbol,
                     description: Text(emptyMessage)
                 )
+                .padding(.top, 40)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        CatalogIndexBar(progress: indexProgress)
-                        LazyVGrid(columns: columns, spacing: 20) {
-                            ForEach(items) { item in
+                VStack(alignment: .leading, spacing: 0) {
+                    CatalogIndexBar(progress: indexProgress)
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(items) { item in
                             NavigationLink {
                                 LibraryItemRoute(item: item)
                             } label: {
-                                    FillingPortraitPoster(
-                                        item: item,
-                                        imageURL: session.library?.primaryURL(for: item)
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                                FillingPortraitPoster(
+                                    item: item,
+                                    imageURL: session.library?.primaryURL(for: item)
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
-                        .padding(16)
-                        .padding(.bottom, 32)
                     }
-                    .padding(.top, gridTopPadding)
+                    .padding(16)
+                    .padding(.bottom, 32)
                 }
-                .zelefinScrollEdgeBlur()
-                .zelefinHeaderScrollVisibility($headerVisible)
+                .padding(.top, gridTopPadding)
             }
         }
+        .zelefinScrollEdgeBlur()
+        .zelefinHeaderScrollVisibility($headerVisible)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
-        .overlay(alignment: .top) {
-            FloatingPageHeader(
-                title: title,
-                isVisible: RootPageChrome.showsTitle ? headerVisible : true,
-                liftsIntoPadTabBar: true
-            ) {
-                CatalogFilterSortButtons(
-                    filterCount: query.activeFilterCount,
-                    sortTitle: query.sort.title,
-                    onSort: { showSort = true },
-                    onFilter: { showFilters = true }
-                )
-            }
-        }
+        .catalogBrowsePageChrome(
+            isPushed: showsBackButton,
+            title: title,
+            headerVisible: headerVisible,
+            filterCount: query.activeFilterCount,
+            sortTitle: query.sort.title,
+            showFilters: $showFilters,
+            showSort: $showSort
+        )
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         .catalogFilterSheets(
             query: $query,
@@ -184,5 +182,51 @@ struct CatalogBrowseView: View {
             }
         }
         indexProgress = nil
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func catalogBrowsePageChrome(
+        isPushed: Bool,
+        title: String,
+        headerVisible: Bool,
+        filterCount: Int,
+        sortTitle: String,
+        showFilters: Binding<Bool>,
+        showSort: Binding<Bool>
+    ) -> some View {
+        if isPushed {
+            self
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(false)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .zelefinScrollEdgeBlur()
+                .catalogFilterSortToolbar(
+                    filterCount: filterCount,
+                    sortTitle: sortTitle,
+                    showFilters: showFilters,
+                    showSort: showSort
+                )
+                .background(InteractivePopGestureEnabler())
+        } else {
+            self
+                .toolbar(.hidden, for: .navigationBar)
+                .overlay(alignment: .top) {
+                    FloatingPageHeader(
+                        title: title,
+                        isVisible: RootPageChrome.showsTitle ? headerVisible : true,
+                        liftsIntoPadTabBar: true
+                    ) {
+                        CatalogFilterSortButtons(
+                            filterCount: filterCount,
+                            sortTitle: sortTitle,
+                            onSort: { showSort.wrappedValue = true },
+                            onFilter: { showFilters.wrappedValue = true }
+                        )
+                    }
+                }
+        }
     }
 }

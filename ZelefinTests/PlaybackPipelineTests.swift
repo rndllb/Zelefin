@@ -327,6 +327,13 @@ final class DirectPlayEngineTests: XCTestCase {
         XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .transcode, isHLS: true))
         XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: true))
         XCTAssertFalse(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: false))
+        XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: false, isLive: true))
+        XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsURL(
+            url: URL(string: "https://jellyfin.example.com/Videos/1/stream.ts")!,
+            method: .directPlay,
+            isHLS: false,
+            isLive: true
+        ))
     }
 
     func testMKVDirectPlayUsesSampleBufferDecode() {
@@ -751,5 +758,16 @@ final class ExternalSubtitleSidecarTests: XCTestCase {
         XCTAssertTrue(StreamURLBuilder.isExternalSubtitle(remote))
         XCTAssertFalse(StreamURLBuilder.isExternalSubtitle(embedded))
         XCTAssertFalse(StreamURLBuilder.isExternalSubtitle(video))
+    }
+
+    func testDirectPlayQueryCarriesLiveStreamId() {
+        XCTAssertEqual(
+            StreamURLBuilder.directPlayQuery(sourceID: "src", token: "tok", liveStreamID: nil),
+            "static=true&mediaSourceId=src&api_key=tok"
+        )
+        XCTAssertEqual(
+            StreamURLBuilder.directPlayQuery(sourceID: "src", token: nil, liveStreamID: "live+1"),
+            "static=true&mediaSourceId=src&liveStreamId=live+1"
+        )
     }
 }

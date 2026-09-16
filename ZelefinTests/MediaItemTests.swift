@@ -947,6 +947,74 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         )
     }
 
+    func testHomeFeedHidesAndReordersRows() {
+        let featured = [Self.item(id: "f1", queueKind: .resume)]
+        let continueRow = HomeSection(
+            id: "continue",
+            title: "Continue Watching",
+            style: .landscape,
+            items: [Self.item(id: "r1", queueKind: .resume)]
+        )
+        let movies = HomeSection(
+            id: "library-abc",
+            title: "Recently Added Movies",
+            style: .portrait,
+            items: [Self.item(id: "m1", queueKind: .resume)]
+        )
+        let shows = HomeSection(
+            id: "library-shows",
+            title: "Recently Added Shows",
+            style: .portrait,
+            items: [Self.item(id: "s1", queueKind: .resume)]
+        )
+        let recommended = HomeSection(
+            id: "recommend-1",
+            title: "Because You Watched Dune",
+            style: .portrait,
+            items: [Self.item(id: "x1", queueKind: .resume)]
+        )
+        let feed = HomeLayoutPreferences.feed(
+            featured: featured,
+            sections: [continueRow, movies, shows, recommended],
+            order: [.recentlyAddedShows, .featured, .recommendations, .continueWatching],
+            hidden: [.recentlyAddedMovies]
+        )
+        XCTAssertEqual(feed.map(\.id), ["library-shows", "featured", "recommend-1", "continue"])
+    }
+
+    func testHomeFeedSkipsEmptyFeaturedAndKeepsUnknownRowsLast() {
+        let extra = HomeSection(
+            id: "custom-row",
+            title: "Custom",
+            style: .portrait,
+            items: [Self.item(id: "c1", queueKind: .resume)]
+        )
+        let continueRow = HomeSection(
+            id: "continue",
+            title: "Continue Watching",
+            style: .landscape,
+            items: [Self.item(id: "r1", queueKind: .resume)]
+        )
+        let feed = HomeLayoutPreferences.feed(
+            featured: [],
+            sections: [continueRow, extra],
+            order: HomeRowKind.allCases,
+            hidden: [.featured, .continueWatching]
+        )
+        XCTAssertEqual(feed.map(\.id), ["custom-row"])
+    }
+
+    func testHomeRowKindParsesLegacyOrderAndHiddenLists() {
+        XCTAssertEqual(
+            HomeRowKind.ordered(from: "genres,continueWatching").map(\.rawValue).prefix(3),
+            ["genres", "continueWatching", "featured"]
+        )
+        XCTAssertEqual(
+            HomeRowKind.hidden(from: "featured,unknown,genres"),
+            [.featured, .genres]
+        )
+    }
+
     func testCollapseRecentlyWatchedKeepsOneEpisodePerShow() {
         let first = Self.item(id: "e1", queueKind: .resume)
         let second = Self.item(id: "e2", queueKind: .resume)
@@ -999,7 +1067,7 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         ]
         XCTAssertEqual(
             HomeLayoutPreferences.orderedHomeLibraries(libraries).map(\.id),
-            ["m", "s", "home", "mix"]
+            ["m", "s"]
         )
         XCTAssertEqual(LibraryKind.movies.recentlyAddedTitle(libraryName: "Movies"), "Recently Added Movies")
         XCTAssertEqual(LibraryKind.shows.recentlyAddedTitle(libraryName: "TV"), "Recently Added Shows")
@@ -1008,7 +1076,7 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertFalse(LibraryKind.favorites.appearsOnHome)
         XCTAssertEqual(
             HomeLayoutPreferences.libraryTabLibraries(libraries).map(\.id),
-            ["m", "books", "s", "home", "tv", "mix"]
+            ["m", "s", "tv"]
         )
         XCTAssertEqual(
             HomeLayoutPreferences.libraries(libraries, matching: .movies).map(\.id),
@@ -1019,14 +1087,20 @@ final class HomeLayoutPreferencesTests: XCTestCase {
             ["s"]
         )
         XCTAssertTrue(LibraryKind.liveTV.appearsInLibrary)
-        XCTAssertTrue(LibraryKind.other.appearsInLibrary)
-        XCTAssertTrue(LibraryKind.books.appearsInLibrary)
-        XCTAssertTrue(LibraryKind.photos.appearsInLibrary)
-        XCTAssertTrue(LibraryKind.playlists.appearsInLibrary)
-        XCTAssertTrue(LibraryKind.homeVideos.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.movies.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.shows.appearsInLibrary)
+        XCTAssertFalse(LibraryKind.other.appearsInLibrary)
+        XCTAssertFalse(LibraryKind.books.appearsInLibrary)
+        XCTAssertFalse(LibraryKind.photos.appearsInLibrary)
+        XCTAssertFalse(LibraryKind.homeVideos.appearsInLibrary)
         XCTAssertFalse(LibraryKind.music.appearsInLibrary)
+        XCTAssertFalse(LibraryKind.playlists.appearsInLibrary)
         XCTAssertFalse(LibraryKind.collections.appearsInLibrary)
         XCTAssertFalse(LibraryKind.favorites.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.movies.appearsOnHome)
+        XCTAssertTrue(LibraryKind.shows.appearsOnHome)
+        XCTAssertFalse(LibraryKind.homeVideos.appearsOnHome)
+        XCTAssertFalse(LibraryKind.other.appearsOnHome)
 
         let collectionRow = HomeSection(
             id: "library-cols",
@@ -1460,6 +1534,9 @@ final class LibraryDiscoveryMappingTests: XCTestCase {
         XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "a1", name: "Song", type: .audio)))
         XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "a2", name: "Artist", type: .musicArtist)))
         XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "a3", name: "Album", type: .musicAlbum)))
+        XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "pl1", name: "Mix", type: .playlist)))
+        XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "b1", name: "Novel", type: .book)))
+        XCTAssertNil(ItemMapper.searchHit(from: SearchHint(id: "ph1", name: "Sunset", type: .photo)))
     }
 
     func testRecommendationTitles() {
@@ -1537,23 +1614,26 @@ final class LibraryDiscoveryMappingTests: XCTestCase {
 
 final class AppTabTests: XCTestCase {
     func testOrderedKeepsKnownTabsAndFillsMissing() {
-        XCTAssertEqual(AppTab.ordered(from: "library,movies"), [.library, .movies, .home, .shows, .collections, .favorites])
-        XCTAssertEqual(AppTab.ordered(from: "nope,home"), [.home, .movies, .shows, .collections, .library, .favorites])
+        XCTAssertEqual(AppTab.ordered(from: "library,movies"), [.library, .movies, .home, .shows, .liveTV, .collections, .favorites])
+        XCTAssertEqual(AppTab.ordered(from: "nope,home"), [.home, .movies, .shows, .liveTV, .collections, .library, .favorites])
         XCTAssertEqual(AppTab.raw(from: [.shows, .home, .shows]), "shows,home")
-        XCTAssertEqual(AppTab.defaultOrderRaw, "home,movies,shows,collections,library,favorites")
+        XCTAssertEqual(AppTab.defaultOrderRaw, "home,movies,shows,liveTV,collections,library,favorites")
     }
 
     func testHomeCannotBeHidden() {
         XCTAssertFalse(AppTab.home.canHide)
         XCTAssertTrue(AppTab.movies.canHide)
+        XCTAssertTrue(AppTab.liveTV.canHide)
         XCTAssertTrue(AppTab.collections.canHide)
         XCTAssertTrue(AppTab.favorites.canHide)
+        XCTAssertEqual(AppTab.liveTV.title, "Live TV")
         XCTAssertEqual(AppTab.favorites.title, "Favorites")
         XCTAssertEqual(AppTab.collections.title, "Collections")
+        XCTAssertEqual(AppTab.liveTV.customizationID, "app.zelefin.tab.liveTV")
         XCTAssertEqual(AppTab.collections.customizationID, "app.zelefin.tab.collections")
         XCTAssertEqual(AppTab.library.customizationID, "app.zelefin.tab.library")
         XCTAssertEqual(AppTab.favorites.customizationID, "app.zelefin.tab.favorites")
-        XCTAssertEqual(AppTab.hiddenByDefault, [.collections, .favorites])
+        XCTAssertEqual(AppTab.hiddenByDefault, [.liveTV, .collections, .favorites])
         XCTAssertFalse(AppTab.hiddenByDefault.contains(.movies))
     }
 }

@@ -163,6 +163,9 @@
 		A33B44C55D66E77F88990011 /* SyncPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B33C44D55E66F77A88990012 /* SyncPlayView.swift */; };
 		A44B55C66D77E88F99001122 /* LibraryMediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B44C55D66E77F88A99001123 /* LibraryMediaViews.swift */; };
 		A55B66C77D88E99F00112233 /* LibraryAdminTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B55C66D77E88F99A00112234 /* LibraryAdminTests.swift */; };
+		A66C77D88F00112233445566 /* LiveTVModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66D77E88A00112233445567 /* LiveTVModels.swift */; };
+		A77D88E99011223344556677 /* LiveTVView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77E88F99011223344556678 /* LiveTVView.swift */; };
+		A88E99F00122334455667788 /* LiveTVTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88F99001122334455667789 /* LiveTVTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -334,6 +337,9 @@
 		B33C44D55E66F77A88990012 /* SyncPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPlayView.swift; sourceTree = "<group>"; };
 		B44C55D66E77F88A99001123 /* LibraryMediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryMediaViews.swift; sourceTree = "<group>"; };
 		B55C66D77E88F99A00112234 /* LibraryAdminTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAdminTests.swift; sourceTree = "<group>"; };
+		B66D77E88A00112233445567 /* LiveTVModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVModels.swift; sourceTree = "<group>"; };
+		B77E88F99011223344556678 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
+		B88F99001122334455667789 /* LiveTVTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -370,6 +376,7 @@
 			isa = PBXGroup;
 			children = (
 				B11C22D33E44F55A66778890 /* LibraryAdminModels.swift */,
+				B66D77E88A00112233445567 /* LiveTVModels.swift */,
 				DF605DE82AE378D8A40E1763 /* MediaModels.swift */,
 				452DDDB5A1A7276E7F56BF00 /* PosterQualityBadges.swift */,
 				52F6473A39AADF9EEFBB2882 /* TickClock.swift */,
@@ -450,6 +457,7 @@
 				B59BE005E89E43A1FDAC551F /* JellyfinServerCapabilitiesTests.swift */,
 				895DB472FEB9A4088EA96244 /* LibraryAlertTests.swift */,
 				B55C66D77E88F99A00112234 /* LibraryAdminTests.swift */,
+				B88F99001122334455667789 /* LiveTVTests.swift */,
 				BD5FA036EDA5443231414E95 /* MediaItemTests.swift */,
 				1046D5D2E1462B7C9A995DE7 /* PlaybackPipelineTests.swift */,
 				41477F1EAFB8BA14BF0DAA87 /* PlaybackSessionTests.swift */,
@@ -633,6 +641,7 @@
 				AC796E8C0A14B604A4384875 /* DownloadControls.swift */,
 				5FA44AD1DF2E3D8CBCFA598B /* DownloadedItemsView.swift */,
 				B44C55D66E77F88A99001123 /* LibraryMediaViews.swift */,
+				B77E88F99011223344556678 /* LiveTVView.swift */,
 				367E0E143CAAF64A02812E01 /* LibraryView.swift */,
 			);
 			path = Library;
@@ -932,6 +941,8 @@
 				A33B44C55D66E77F88990011 /* SyncPlayView.swift in Sources */,
 				A22B33C44D55E66F77889900 /* AdminToolsViews.swift in Sources */,
 				A11B22C33D44E55F66778899 /* LibraryAdminModels.swift in Sources */,
+				A66C77D88F00112233445566 /* LiveTVModels.swift in Sources */,
+				A77D88E99011223344556677 /* LiveTVView.swift in Sources */,
 				C36FFEE459624B513B9FBE24 /* TitleMoreInfo.swift in Sources */,
 				C9B27DCBF87BCD02CACB6626 /* TitleMoreInfoView.swift in Sources */,
 				709653A45D3F39F6166C8AE4 /* TitleReviewsSection.swift in Sources */,
@@ -963,6 +974,7 @@
 				D4E18538C606F896F7F34E23 /* JellyfinServerCapabilitiesTests.swift in Sources */,
 				88882B2A8BC60119C3D248C0 /* LibraryAlertTests.swift in Sources */,
 				A55B66C77D88E99F00112233 /* LibraryAdminTests.swift in Sources */,
+				A88E99F00122334455667788 /* LiveTVTests.swift in Sources */,
 				45C113C7E80AD1EE7CDFD344 /* MediaItemTests.swift in Sources */,
 				81558868807FFC142C1B9E86 /* PlaybackPipelineTests.swift in Sources */,
 				F0FA53750E0A13FDBA614936 /* PlaybackSessionTests.swift in Sources */,

@@ -428,11 +428,44 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
 
     override func removeFromPlaylist(playlistID: String, entryIDs: [String]) async throws {}
 
-    override func liveTVChannels() async throws -> [MediaItem] { [] }
+    override func liveTVInfoEnabled() async throws -> Bool { true }
 
-    override func liveTVRecordings() async throws -> [MediaItem] { [] }
+    override func liveTVChannels() async throws -> [LiveChannel] {
+        ReviewDemoCatalog.liveTVChannels()
+    }
 
-    override func airingPrograms() async throws -> [MediaItem] { [] }
+    override func liveTVRecordings(isInProgress: Bool? = nil, limit: Int = 80) async throws -> [LiveTVRecording] {
+        ReviewDemoCatalog.liveTVRecordings(isInProgress: isInProgress)
+    }
+
+    override func deleteLiveTVRecording(id: String) async throws {}
+
+    override func liveTVPrograms(
+        channelIDs: [String]? = nil,
+        isAiring: Bool? = nil,
+        hasAired: Bool? = nil,
+        minStartDate: Date? = nil,
+        maxStartDate: Date? = nil,
+        filter: LiveTVProgramFilter? = nil,
+        limit: Int = 80
+    ) async throws -> [LiveProgram] {
+        ReviewDemoCatalog.liveTVPrograms(filter: filter)
+    }
+
+    override func liveTVRecommendedPrograms(filter: LiveTVProgramFilter? = nil, isAiring: Bool = true, limit: Int = 40) async throws -> [LiveProgram] {
+        ReviewDemoCatalog.liveTVPrograms(filter: filter)
+    }
+
+    override func liveTVProgram(id: String) async throws -> LiveProgram {
+        guard let program = ReviewDemoCatalog.liveTVPrograms().first(where: { $0.id == id }) else {
+            throw ZelefinError.server("This program is no longer in the guide.")
+        }
+        return program
+    }
+
+    override func liveTVGuide(channelIDs: [String], from start: Date, to end: Date) async throws -> [LiveProgram] {
+        ReviewDemoCatalog.liveTVPrograms().filter { channelIDs.contains($0.channel.id) }
+    }
 
     override func syncPlayGroups() async throws -> [SyncPlayGroupInfo] { [] }
 

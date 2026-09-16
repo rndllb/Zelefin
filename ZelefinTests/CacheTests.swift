@@ -43,6 +43,7 @@ final class ArtworkCacheKeyTests: XCTestCase {
         XCTAssertFalse(ArtworkURLBuilder.requestsPrimary(kind: .series, tag: nil))
         XCTAssertTrue(ArtworkURLBuilder.requestsPrimary(kind: .movie, tag: "abc"))
         XCTAssertTrue(ArtworkURLBuilder.requestsPrimary(kind: .collection, tag: nil))
+        XCTAssertTrue(ArtworkURLBuilder.requestsPrimary(kind: .liveTV, tag: nil))
     }
 }
 

@@ -3,6 +3,7 @@ import JellyfinAPI
 
 enum ItemMapper {
     static let listImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo]
+    static let liveTVImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo, .screenshot, .banner]
 
     static let homeFields: [ItemFields] = [
         .primaryImageAspectRatio,
@@ -21,6 +22,8 @@ enum ItemMapper {
         .width,
         .height
     ]
+
+    static let liveTVFields: [ItemFields] = listFields + [.channelInfo, .airTime]
 
     static let alertFields: [ItemFields] = listFields + [.dateCreated]
 
@@ -101,6 +104,11 @@ enum ItemMapper {
     static func mediaItem(from dto: BaseItemDto, queueKind: PlaybackQueueKind) -> MediaItem? {
         guard let id = dto.id, let name = dto.name, let kind = kind(from: dto.type) else { return nil }
 
+        let ownPrimary = primaryTag(from: dto)
+        let borrowedStill = kind == .liveTV && ownPrimary == nil
+        let stillItemID = borrowedStill ? (dto.parentPrimaryImageItemID ?? dto.seriesID) : nil
+        let stillTag = ownPrimary ?? (borrowedStill ? (dto.parentPrimaryImageTag ?? dto.seriesPrimaryImageTag) : nil)
+
         return MediaItem(
             id: id,
             name: name,
@@ -116,8 +124,8 @@ enum ItemMapper {
             playbackPosition: TickClock.seconds(from: dto.userData?.playbackPositionTicks ?? 0),
             unplayedCount: dto.userData?.unplayedItemCount,
             isPlayed: dto.userData?.isPlayed ?? false,
-            primaryImageTag: primaryTag(from: dto),
-            thumbImageTag: imageTag(from: dto, named: "Thumb"),
+            primaryImageTag: stillTag,
+            thumbImageTag: imageTag(from: dto, named: "Thumb") ?? imageTag(from: dto, named: "Screenshot"),
             backdropImageTag: dto.backdropImageTags?.first,
             backdropImageTags: dto.backdropImageTags ?? [],
             logoImageTag: imageTag(from: dto, named: "Logo"),
@@ -128,7 +136,7 @@ enum ItemMapper {
             parentLogoImageTag: dto.parentLogoImageTag,
             seriesThumbImageTag: dto.seriesThumbImageTag,
             seriesID: dto.seriesID,
-            imageItemID: nil,
+            imageItemID: stillItemID,
             queueKind: queueKind,
             videoRange: videoRange(from: dto.mediaStreams),
             audioFormat: audioFormat(from: dto.mediaStreams),
@@ -321,7 +329,8 @@ enum ItemMapper {
         case .boxSet: .collection
         case .genre: .genre
         case .playlist: .playlist
-        case .tvChannel: .liveTV
+        case .tvChannel, .liveTvProgram, .tvProgram: .liveTV
+        case .recording, .video: .movie
         case .book: .book
         case .photo: .photo
         case .photoAlbum: .collection
@@ -437,23 +446,18 @@ enum ItemMapper {
     }
 
     static func searchHit(from hint: SearchHint) -> LibrarySearchHit? {
-        guard let id = hint.id ?? hint.itemID, let name = hint.name, !name.isEmpty else { return nil }
+        guard let id = hint.id, let name = hint.name, !name.isEmpty else { return nil }
         let kind: LibrarySearchHit.Kind
         switch hint.type {
         case .movie: kind = .title(.movie)
         case .series: kind = .title(.series)
         case .episode: kind = .title(.episode)
         case .boxSet: kind = .title(.collection)
-        case .playlist: kind = .title(.playlist)
-        case .tvChannel: kind = .title(.liveTV)
-        case .book: kind = .title(.book)
-        case .photo: kind = .title(.photo)
-        case .photoAlbum: kind = .title(.collection)
-        case .video: kind = .title(.unknown)
+        case .tvChannel, .liveTvProgram, .tvProgram: kind = .title(.liveTV)
         case .person: kind = .person
         case .genre: kind = .genre
         case .studio: kind = .studio
-        case .audio, .musicArtist, .musicAlbum, .musicGenre, .musicVideo, .audioBook:
+        case .audio, .musicArtist, .musicAlbum, .musicGenre, .musicVideo, .audioBook, .playlist, .book, .photo, .photoAlbum, .video:
             return nil
         default:
             return nil
@@ -484,6 +488,63 @@ enum ItemMapper {
             year: hint.productionYear,
             imageTag: hint.primaryImageTag
         )
+    }
+
+    static func liveChannel(from dto: BaseItemDto) -> LiveChannel? {
+        guard let item = mediaItem(from: dto) else { return nil }
+        let program = dto.currentProgram.flatMap { liveProgram(from: $0, channel: item, channelNumber: dto.number) }
+        return LiveChannel(item: item, number: dto.number, currentProgram: program)
+    }
+
+    static func liveProgram(from dto: BaseItemDto, channel: MediaItem? = nil, channelNumber: String? = nil) -> LiveProgram? {
+        guard let item = mediaItem(from: dto) else { return nil }
+        let channelID = dto.channelID ?? channel?.id
+        let channelName = dto.channelName ?? channel?.name ?? "Channel"
+        guard let channelID, !channelID.isEmpty else { return nil }
+        let playChannel = channel ?? MediaItem.liveChannelStub(
+            id: channelID,
+            name: channelName,
+            primaryImageTag: dto.channelPrimaryImageTag ?? channel?.primaryImageTag
+        )
+        return LiveProgram(
+            item: item,
+            channel: playChannel,
+            channelNumber: channelNumber ?? dto.number,
+            startDate: dto.startDate,
+            endDate: dto.endDate,
+            episodeTitle: dto.episodeTitle,
+            isMovie: dto.isMovie ?? false,
+            isSeries: dto.isSeries ?? false,
+            isNews: dto.isNews ?? false,
+            isKids: dto.isKids ?? false,
+            isSports: dto.isSports ?? false,
+            timerID: dto.timerID,
+            seriesTimerID: dto.seriesTimerID
+        )
+    }
+
+    static func recordingItem(from dto: BaseItemDto, treatAsInProgress: Bool = false) -> LiveTVRecording? {
+        if dto.isFolder == true { return nil }
+        var dto = dto
+        let name = dto.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if name.isEmpty {
+            let series = dto.seriesName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            dto.name = series.isEmpty ? "Recording" : series
+        }
+        if dto.type == nil {
+            dto.type = .recording
+        }
+        guard let item = mediaItem(from: dto) else { return nil }
+        return LiveTVRecording(
+            item: item,
+            isInProgress: treatAsInProgress || isInProgressRecordingStatus(dto.status),
+            timerID: dto.timerID
+        )
+    }
+
+    static func isInProgressRecordingStatus(_ status: String?) -> Bool {
+        let raw = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return raw.caseInsensitiveCompare(RecordingStatus.inProgress.rawValue) == .orderedSame
     }
 
     static func recommendationTitle(from dto: RecommendationDto) -> String {

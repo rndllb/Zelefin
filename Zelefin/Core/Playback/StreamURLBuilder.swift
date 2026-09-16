@@ -14,13 +14,11 @@ struct StreamURLBuilder: Sendable {
         }
 
         let container = StreamContainer.pathExtension(from: source)
-        var query = "static=true"
-        if let sourceID = source.id {
-            query += "&mediaSourceId=\(sourceID)"
-        }
-        if let token = client.accessToken {
-            query += "&api_key=\(token)"
-        }
+        let query = Self.directPlayQuery(
+            sourceID: source.id,
+            token: client.accessToken,
+            liveStreamID: source.liveStreamID
+        )
 
         guard let url = ServerURL.resolve(
             base: client.configuration.url,
@@ -29,6 +27,21 @@ struct StreamURLBuilder: Sendable {
             throw ZelefinError.missingStreamURL
         }
         return url
+    }
+
+    static func directPlayQuery(sourceID: String?, token: String?, liveStreamID: String?) -> String {
+        var query = "static=true"
+        if let sourceID, !sourceID.isEmpty {
+            query += "&mediaSourceId=\(sourceID)"
+        }
+        if let liveStreamID, !liveStreamID.isEmpty {
+            let encoded = liveStreamID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? liveStreamID
+            query += "&liveStreamId=\(encoded)"
+        }
+        if let token, !token.isEmpty {
+            query += "&api_key=\(token)"
+        }
+        return query
     }
 
     func externalSubtitles(itemID: String, source: MediaSourceInfo) -> [ExternalSubtitleSidecar] {
