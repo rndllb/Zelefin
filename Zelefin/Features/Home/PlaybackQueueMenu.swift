@@ -81,7 +81,9 @@ struct PlaybackQueueMenuContent: View {
 
     var body: some View {
         let actions = PlaybackQueueMenuLayout.actions(context: context, kind: item.kind)
-        let downloadState = downloads.control(for: item, account: session.session)
+        let downloadState: DownloadControlState = session.downloadsAvailable
+            ? downloads.control(for: item, account: session.session)
+            : .unavailable
 
         TitleUserActions(item: item, onChange: { _ in })
 
@@ -91,7 +93,7 @@ struct PlaybackQueueMenuContent: View {
             }
             .disabled(downloadState == .unavailable)
         }
-        if item.kind == .movie {
+        if item.kind == .movie || item.kind == .episode {
             TitlePlaybackMenus(item: item, onAddSubtitles: onAddSubtitles)
         } else if session.shouldShowAddSubtitles(for: item), let onAddSubtitles {
             Button("Add Subtitles", systemImage: "captions.bubble") {
@@ -175,13 +177,15 @@ struct TitlePlaybackMenus: View {
                     }
                 }
             }
-            Button {
-                session.updateLaunchOptions(for: item.id) { $0.skipCinemaIntros.toggle() }
-            } label: {
-                if options.skipCinemaIntros {
-                    Label("Skip Cinema Intros", systemImage: "checkmark")
-                } else {
-                    Text("Skip Cinema Intros")
+            if !session.usesSilo {
+                Button {
+                    session.updateLaunchOptions(for: item.id) { $0.skipCinemaIntros.toggle() }
+                } label: {
+                    if options.skipCinemaIntros {
+                        Label("Skip Cinema Intros", systemImage: "checkmark")
+                    } else {
+                        Text("Skip Cinema Intros")
+                    }
                 }
             }
             Menu("Quality") {

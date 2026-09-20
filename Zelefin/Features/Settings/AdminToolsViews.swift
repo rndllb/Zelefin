@@ -50,7 +50,7 @@ struct ActivityLogView: View {
     }
 
     private func load(showProgress: Bool = true) async {
-        guard let library = session.library else {
+        guard let library = session.jellyfinLibrary else {
             isLoading = false
             errorMessage = "Sign in to see the activity log."
             return
@@ -154,7 +154,7 @@ struct ServerBackupsView: View {
     }
 
     private func load(showProgress: Bool = true) async {
-        guard let library = session.library else {
+        guard let library = session.jellyfinLibrary else {
             isLoading = false
             errorMessage = "Sign in as an administrator to manage backups."
             return
@@ -172,7 +172,7 @@ struct ServerBackupsView: View {
     }
 
     private func create() async {
-        guard let library = session.library else { return }
+        guard let library = session.jellyfinLibrary else { return }
         isCreating = true
         defer { isCreating = false }
         do {
@@ -186,7 +186,7 @@ struct ServerBackupsView: View {
     private func restore(_ backup: ServerBackup) async {
         restoreTarget = nil
         do {
-            try await session.library?.restoreServerBackup(backup)
+            try await session.jellyfinLibrary?.restoreServerBackup(backup)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -244,7 +244,7 @@ struct ServerBrandingView: View {
     }
 
     private func load() async {
-        guard let library = session.library else {
+        guard let library = session.jellyfinLibrary else {
             isLoading = false
             errorMessage = "Sign in as an administrator to edit branding."
             return
@@ -259,7 +259,7 @@ struct ServerBrandingView: View {
     }
 
     private func save() async {
-        guard let library = session.library else { return }
+        guard let library = session.jellyfinLibrary else { return }
         isSaving = true
         defer { isSaving = false }
         do {
@@ -277,7 +277,7 @@ struct ServerBrandingView: View {
             return
         }
         do {
-            try await session.library?.uploadSplashscreen(data)
+            try await session.jellyfinLibrary?.uploadSplashscreen(data)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -286,7 +286,7 @@ struct ServerBrandingView: View {
 
     private func deleteSplash() async {
         do {
-            try await session.library?.deleteSplashscreen()
+            try await session.jellyfinLibrary?.deleteSplashscreen()
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

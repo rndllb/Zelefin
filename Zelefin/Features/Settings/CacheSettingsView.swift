@@ -108,7 +108,11 @@ struct CacheSettingsView: View {
         } header: {
             Text("Images")
         } footer: {
-            Text("Posters, backdrops, and logos live on this device. Auto-refresh retries artwork Jellyfin previously returned as missing.")
+            Text(
+                session.usesSilo
+                    ? "Posters, backdrops, and logos live on this device. Auto-refresh retries artwork Silo previously returned as missing."
+                    : "Posters, backdrops, and logos live on this device. Auto-refresh retries artwork Jellyfin previously returned as missing."
+            )
         }
     }
 

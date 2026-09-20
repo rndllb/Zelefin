@@ -491,7 +491,7 @@ struct EpisodeShowcaseCard: View {
                 }
                 .overlay(alignment: .topTrailing) {
                     if item.isWatched {
-                        watchedMark
+                        PosterWatchedMark(size: markSize)
                             .padding(markPadding)
                     }
                 }
@@ -551,15 +551,6 @@ struct EpisodeShowcaseCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityCaption)
         .accessibilityAddTraits(.isButton)
-    }
-
-    private var watchedMark: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.white, Color.black.opacity(0.78))
-            .font(.system(size: markSize, weight: .semibold))
-            .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
-            .accessibilityHidden(true)
     }
 
     private var markSize: CGFloat {
@@ -662,6 +653,55 @@ struct LabeledPortraitCard: View {
     }
 }
 
+/// The "watched" checkmark badge shown at the top-trailing corner of a poster.
+/// Shared across poster styles so the mark looks identical everywhere.
+struct PosterWatchedMark: View {
+    var size: CGFloat = 22
+
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, Color.black.opacity(0.78))
+            .font(.system(size: size, weight: .semibold))
+            .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A compact IMDb-style community-rating badge (★ 7.5) for a poster corner,
+/// shown only when a title carries a rating on the 0–10 scale. Same visual
+/// language as the quality badges.
+struct PosterRatingBadge: View {
+    let rating: Double
+
+    /// The rating is only meaningful as a star score on the 0–10 scale; RT-style
+    /// percentages (which can land in `communityRating`) are skipped rather than
+    /// shown as a misleading "85.0".
+    static func starScore(from rating: Double?) -> Double? {
+        guard let rating, rating > 0, rating <= 10 else { return nil }
+        return rating
+    }
+
+    private var text: String { String(format: "%.1f", rating) }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "star.fill")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.yellow)
+            Text(text)
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2.5)
+        .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+        .accessibilityElement()
+        .accessibilityLabel("Rated \(text) out of 10")
+    }
+}
+
 struct PortraitPoster: View {
     let item: MediaItem
     let imageURL: URL?
@@ -686,6 +726,18 @@ struct PortraitPoster: View {
                 .overlay(alignment: .bottomLeading) {
                     PosterQualityBadgeStack(item: item)
                 }
+                .overlay(alignment: .topTrailing) {
+                    if item.isWatched {
+                        PosterWatchedMark()
+                            .padding(6)
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if let score = PosterRatingBadge.starScore(from: item.communityRating) {
+                        PosterRatingBadge(rating: score)
+                            .padding(6)
+                    }
+                }
 
             if let rank {
                 Text("\(rank)")
@@ -701,6 +753,12 @@ struct PortraitPoster: View {
 
     private var accessibilityCaption: String {
         var parts = [item.name]
+        if item.isWatched {
+            parts.append("Watched")
+        }
+        if let score = PosterRatingBadge.starScore(from: item.communityRating) {
+            parts.append("Rated \(String(format: "%.1f", score)) out of 10")
+        }
         if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
             parts.append(download)
         }
@@ -1321,6 +1379,29 @@ enum RootPageChrome {
         guard usesPadTopChrome, !isSidebarVisible else { return 0 }
         return -padTopTabBarClearance
     }
+
+    /// iPad's floating tab bar and UINavigationBar wrap leading/trailing items onto a
+    /// second row when a pushed page shows the system bar. Overlay those controls instead.
+    @MainActor
+    static var usesOverlayPushedBar: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    static func pushedOverlayTopPadding(
+        contentIgnoresTopSafeArea: Bool,
+        statusBarHeight: CGFloat
+    ) -> CGFloat {
+        contentIgnoresTopSafeArea ? statusBarHeight + 4 : 4
+    }
+
+    static func pushedOverlayLift(
+        contentIgnoresTopSafeArea: Bool,
+        usesPadTopChrome: Bool,
+        isSidebarVisible: Bool
+    ) -> CGFloat {
+        guard !contentIgnoresTopSafeArea else { return 0 }
+        return padTabBarLift(usesPadTopChrome: usesPadTopChrome, isSidebarVisible: isSidebarVisible)
+    }
 }
 
 private struct HeaderScrollVisibilityModifier: ViewModifier {
@@ -1650,5 +1731,158 @@ extension FloatingPageHeader where Accessory == EmptyView, Center == EmptyView {
         self.init(title: title, isVisible: isVisible, liftsIntoPadTabBar: liftsIntoPadTabBar) {
             EmptyView()
         }
+    }
+}
+
+struct ZelefinPadBackButton: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Button(action: dismiss.callAsFunction) {
+            Image(systemName: "chevron.backward")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: ZelefinPillMetrics.height, height: ZelefinPillMetrics.height)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .zelefinLiquidGlassCircle()
+        .accessibilityLabel("Back")
+    }
+}
+
+struct ZelefinPadPushedChrome<Trailing: View>: View {
+    var contentIgnoresTopSafeArea: Bool
+    @ViewBuilder var trailing: Trailing
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            ZelefinPadBackButton()
+            Spacer(minLength: 0)
+                .allowsHitTesting(false)
+            trailing
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, RootPageChrome.pushedOverlayTopPadding(
+            contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
+            statusBarHeight: ScreenInsets.top
+        ))
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
+        .offset(y: RootPageChrome.pushedOverlayLift(
+            contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
+            usesPadTopChrome: RootPageChrome.usesOverlayPushedBar,
+            isSidebarVisible: tabBarPlacement == .sidebar
+        ))
+    }
+}
+
+private struct ZelefinPushedChromeModifier<Trailing: View>: ViewModifier {
+    var title: String
+    var contentIgnoresTopSafeArea: Bool
+    var hidesToolbarBackground: Bool
+    var trailing: Trailing
+
+    init(
+        title: String,
+        contentIgnoresTopSafeArea: Bool,
+        hidesToolbarBackground: Bool,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.contentIgnoresTopSafeArea = contentIgnoresTopSafeArea
+        self.hidesToolbarBackground = hidesToolbarBackground
+        self.trailing = trailing()
+    }
+
+    func body(content: Content) -> some View {
+        // Hero pages hide the system bar. Keep back and trailing pills on the
+        // same overlay as iPad so iPhone does not shrink More in the toolbar.
+        if RootPageChrome.usesOverlayPushedBar || hidesToolbarBackground {
+            padChrome(content)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarBackButtonHidden(true)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .background(InteractivePopGestureEnabler())
+        } else {
+            iphoneChrome(content)
+        }
+    }
+
+    @ViewBuilder
+    private func padChrome(_ content: Content) -> some View {
+        let chrome = ZelefinPadPushedChrome(contentIgnoresTopSafeArea: contentIgnoresTopSafeArea) {
+            trailing
+        }
+        if contentIgnoresTopSafeArea {
+            ZStack(alignment: .top) {
+                content
+                chrome
+            }
+            .ignoresSafeArea(edges: .top)
+        } else {
+            content.overlay(alignment: .top) {
+                chrome
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func iphoneChrome(_ content: Content) -> some View {
+        if hidesToolbarBackground {
+            content
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(false)
+                .toolbar(.visible, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    if Trailing.self != EmptyView.self {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            trailing
+                        }
+                        .catalogToolbarHidesSystemBackground()
+                    }
+                }
+        } else {
+            content
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(false)
+                .toolbar(.visible, for: .navigationBar)
+                .toolbarBackground(Color.black, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    if Trailing.self != EmptyView.self {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            trailing
+                        }
+                        .catalogToolbarHidesSystemBackground()
+                    }
+                }
+        }
+    }
+}
+
+extension View {
+    func zelefinPushedChrome<Trailing: View>(
+        title: String = "",
+        contentIgnoresTopSafeArea: Bool = false,
+        hidesToolbarBackground: Bool = false,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        modifier(
+            ZelefinPushedChromeModifier(
+                title: title,
+                contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
+                hidesToolbarBackground: hidesToolbarBackground,
+                trailing: trailing
+            )
+        )
     }
 }

@@ -84,7 +84,7 @@ struct ScheduledTasksView: View {
     }
 
     private func load(showProgress: Bool = true) async {
-        guard session.isAdministrator, let library = session.library else {
+        guard session.isAdministrator, let library = session.jellyfinLibrary else {
             isLoading = false
             errorMessage = "Sign in with an administrator to manage scheduled tasks."
             return
@@ -102,11 +102,11 @@ struct ScheduledTasksView: View {
     }
 
     private func run(_ task: ScheduledTask) async {
-        await perform(task.id) { try await session.library?.startScheduledTask(id: task.id) }
+        await perform(task.id) { try await session.jellyfinLibrary?.startScheduledTask(id: task.id) }
     }
 
     private func cancel(_ task: ScheduledTask) async {
-        await perform(task.id) { try await session.library?.stopScheduledTask(id: task.id) }
+        await perform(task.id) { try await session.jellyfinLibrary?.stopScheduledTask(id: task.id) }
     }
 
     private func perform(_ id: String, _ work: () async throws -> Void) async {
@@ -288,7 +288,7 @@ struct ScheduledTaskDetailView: View {
     }
 
     private func load() async {
-        guard let library = session.library else {
+        guard let library = session.jellyfinLibrary else {
             errorMessage = "Sign in with an administrator to manage scheduled tasks."
             return
         }
@@ -308,11 +308,11 @@ struct ScheduledTaskDetailView: View {
     }
 
     private func start() async {
-        await perform { try await session.library?.startScheduledTask(id: taskID) }
+        await perform { try await session.jellyfinLibrary?.startScheduledTask(id: taskID) }
     }
 
     private func cancel() async {
-        await perform { try await session.library?.stopScheduledTask(id: taskID) }
+        await perform { try await session.jellyfinLibrary?.stopScheduledTask(id: taskID) }
     }
 
     private func perform(_ work: () async throws -> Void) async {

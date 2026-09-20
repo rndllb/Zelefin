@@ -143,13 +143,16 @@ final class DownloadStore {
     func toggle(
         item: MediaItem,
         episodes: [MediaItem] = [],
-        library: JellyfinLibraryClient?,
+        library: (any LibraryServing)?,
         account: SavedSession?
     ) async throws {
         guard let target = DownloadEligibility.playableItem(from: item, episodes: episodes) else {
             return
         }
-        if scoped(account).contains(where: { $0.item.id == target.id }) {
+        if let existing = scoped(account).first(where: { $0.item.id == target.id }) {
+            if let serverDownloadID = existing.serverDownloadID, let library {
+                await library.deleteServerDownload(id: serverDownloadID)
+            }
             remove(id: target.id, account: account)
             return
         }
@@ -216,18 +219,23 @@ final class DownloadStore {
 
     private func performDownload(
         target: MediaItem,
-        library: JellyfinLibraryClient,
+        library: any LibraryServing,
         account: SavedSession
     ) async throws {
         let plan = try await library.playbackPlan(for: target)
         try Task.checkCancellation()
-        let downloadURL = try library.originalFileDownloadURL(for: target.id)
+        // Backends resolve the download differently: Jellyfin hands back a direct
+        // original-file URL, while Silo registers a managed download, waits for the
+        // server to prepare it, and returns the ready file URL plus its row id.
+        let asset = try await library.prepareDownloadAsset(for: target, plan: plan)
+        try Task.checkCancellation()
+        let downloadURL = asset.url
         let folder = itemDirectory(account: account, itemID: target.id)
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         excludeFromBackup(folder)
 
         let mediaURL = folder.appendingPathComponent("media.\(plan.container)")
-        let headers = PlaybackHTTPHeaders.fields(for: downloadURL)
+        let headers = asset.headers
         let itemID = target.id
         let host = SnapshotCoding.host(from: account.serverURL)
         let knownSize = plan.byteSize ?? 0
@@ -276,7 +284,8 @@ final class DownloadStore {
             byteSize: bytes > 0 ? bytes : (plan.byteSize ?? 0),
             userID: account.userID,
             serverHost: host,
-            downloadedAt: Date()
+            downloadedAt: Date(),
+            serverDownloadID: asset.serverDownloadID
         )
 
         records.removeAll {
@@ -284,6 +293,10 @@ final class DownloadStore {
         }
         records.append(record)
         persist()
+
+        if let serverDownloadID = asset.serverDownloadID {
+            await library.finalizeServerDownload(id: serverDownloadID)
+        }
     }
 
     private func saveArtwork(from url: URL?, headers: [String: String], to destination: URL) async -> String? {

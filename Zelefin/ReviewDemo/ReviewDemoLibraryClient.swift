@@ -165,15 +165,15 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
         await browseCatalog(kind: kind, libraries: libraries).count
     }
 
-    override func item(id: String) async throws -> (MediaItem, BaseItemDto) {
+    override func item(id: String) async throws -> MediaItem {
         guard let item = ReviewDemoCatalog.item(id: id) else {
             throw ZelefinError.missingItemID
         }
-        return (item, ReviewDemoCatalog.dto(for: item))
+        return item
     }
 
-    override func trailers(for dto: BaseItemDto) async -> [TitleTrailer] {
-        ReviewDemoCatalog.trailers(for: dto.id ?? "")
+    override func trailers(for item: MediaItem) async -> [TitleTrailer] {
+        ReviewDemoCatalog.trailers(for: item.id)
     }
 
     override func similarItems(for item: MediaItem) async -> [MediaItem] {
@@ -196,6 +196,14 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
         let items = ReviewDemoCatalog.items(matching: query, from: ReviewDemoCatalog.movies)
         await onPage?(CatalogPageUpdate(items: items, totalCount: items.count))
         return items
+    }
+
+    override func titleMoreInfo(for item: MediaItem) async -> TitleMoreInfo {
+        TitleMoreInfoMapper.info(from: item)
+    }
+
+    override func credits(for item: MediaItem) async -> [CreditPerson] {
+        ReviewDemoCatalog.credits
     }
 
     override func credits(for itemID: String, from dto: BaseItemDto) async -> [CreditPerson] {

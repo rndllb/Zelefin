@@ -4,6 +4,14 @@ import Combine
 import Observation
 import UIKit
 
+/// A client-side sleep timer: pause after a fixed duration, or stop when the
+/// current item finishes. Portable — no server involvement.
+enum SleepTimerMode: Equatable, Hashable, Sendable {
+    case off
+    case minutes(Int)
+    case endOfEpisode
+}
+
 @MainActor
 @Observable
 final class PlayerModel {
@@ -29,6 +37,11 @@ final class PlayerModel {
     private(set) var fillsScreen = false
     private(set) var showsPlaybackStats = false
     private(set) var playbackStats = PlaybackStatsSnapshot(sections: [])
+    private(set) var sleepTimer: SleepTimerMode = .off
+    /// Seconds left on a timed sleep timer, for the countdown label. Nil when the
+    /// timer is off or set to end-of-episode.
+    private(set) var sleepTimerRemaining: TimeInterval?
+    private var sleepTimerTask: Task<Void, Never>?
     /// Prefetch/retained window from the engine. The overlay only sees `subtitleCues` after a playhead filter.
     private var retainedSubtitleCues: [DirectPlaySubtitleCue] = []
 
@@ -38,7 +51,7 @@ final class PlayerModel {
     var skipSegments: [SkipSegment] = []
     var skipPrompt: SkipSegment?
 
-    private let reporter: PlaybackReporter?
+    private let reporter: (any PlaybackReporting)?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var cancellables: Set<AnyCancellable> = []
@@ -59,7 +72,7 @@ final class PlayerModel {
     private(set) var surfaceGeneration = 0
     private let pictureInPicture = DirectPlayPictureInPicture()
 
-    init(plan: PlaybackPlan, reporter: PlaybackReporter?) {
+    init(plan: PlaybackPlan, reporter: (any PlaybackReporting)?) {
         self.plan = plan
         self.reporter = reporter
         self.pipeline = PlaybackPipelineResolver.pipeline(for: plan)
@@ -72,7 +85,7 @@ final class PlayerModel {
 
         switch pipeline {
         case .appleNative:
-            player = Self.makeNativePlayer(url: plan.streamURL)
+            player = Self.makeNativePlayer(url: plan.streamURL, extraHeaders: plan.extraHTTPHeaders)
         case .directDecode:
             do {
                 let created = try DirectPlayEngine()
@@ -126,6 +139,8 @@ final class PlayerModel {
             self.endObserver = nil
         }
         cancellables.removeAll()
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
         retainedSubtitleCues = []
         subtitleCues = []
 
@@ -449,6 +464,38 @@ final class PlayerModel {
         }
     }
 
+    /// True when playback should stop (not auto-advance) once the current item ends.
+    var sleepAtEndOfEpisode: Bool { sleepTimer == .endOfEpisode }
+
+    func setSleepTimer(_ mode: SleepTimerMode) {
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
+        sleepTimerRemaining = nil
+        sleepTimer = mode
+        guard case let .minutes(minutes) = mode, minutes > 0 else { return }
+        let deadline = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        sleepTimerRemaining = deadline.timeIntervalSinceNow
+        sleepTimerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                let remaining = deadline.timeIntervalSinceNow
+                self?.sleepTimerRemaining = max(0, remaining)
+                if remaining <= 0 { break }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            guard !Task.isCancelled else { return }
+            self?.fireSleepTimer()
+        }
+    }
+
+    private func fireSleepTimer() {
+        sleepTimer = .off
+        sleepTimerRemaining = nil
+        sleepTimerTask = nil
+        if !isPaused {
+            pausePlayback()
+        }
+    }
+
     func noteSurfaceReady() {
         isSurfaceBound = true
     }
@@ -465,7 +512,8 @@ final class PlayerModel {
         guard let player,
               let resume = PlaybackResumePolicy.clientStartPosition(
                 method: plan.method,
-                startTime: plan.startTime
+                startTime: plan.startTime,
+                clientOwnsPlayhead: plan.clientOwnsPlayhead
               )
         else { return }
         let time = CMTime(seconds: resume, preferredTimescale: 600)
@@ -475,7 +523,11 @@ final class PlayerModel {
     }
 
     private var resumeStartPosition: TimeInterval? {
-        PlaybackResumePolicy.clientStartPosition(method: plan.method, startTime: plan.startTime)
+        PlaybackResumePolicy.clientStartPosition(
+            method: plan.method,
+            startTime: plan.startTime,
+            clientOwnsPlayhead: plan.clientOwnsPlayhead
+        )
     }
 
     private func noteResumePlayhead() {
@@ -491,7 +543,8 @@ final class PlayerModel {
         guard PlaybackResumePolicy.needsDeferredSeek(
             method: plan.method,
             playhead: trustedPlayhead,
-            plannedStart: plan.startTime
+            plannedStart: plan.startTime,
+            clientOwnsPlayhead: plan.clientOwnsPlayhead
         ) else { return }
         didAttemptDeferredResume = true
         let target = plan.startTime
@@ -1044,12 +1097,15 @@ final class PlayerModel {
         Task { await stop() }
     }
 
-    private static func makeNativePlayer(url: URL) -> AVPlayer {
+    private static func makeNativePlayer(url: URL, extraHeaders: [String: String] = [:]) -> AVPlayer {
         let item: AVPlayerItem
         if url.isFileURL {
             item = AVPlayerItem(url: url)
         } else {
-            let headers = PlaybackHTTPHeaders.fields(for: url)
+            var headers = PlaybackHTTPHeaders.fields(for: url)
+            for (name, value) in extraHeaders {
+                headers[name] = value
+            }
             if !headers.isEmpty || !(HTTPCookieStorage.shared.cookies(for: url) ?? []).isEmpty {
                 var options: [String: Any] = [:]
                 if !headers.isEmpty {

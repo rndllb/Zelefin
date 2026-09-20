@@ -72,7 +72,11 @@ struct PlaybackSettingsView: View {
             } header: {
                 Text("Connection Test")
             } footer: {
-                Text("Downloads a demo file from your Jellyfin server to measure this Wi-Fi or cellular connection. Adaptive bitrate uses that result, plus the title’s own bitrate, when you press Play.")
+                Text(
+                    session.usesSilo
+                        ? "Downloads a sample from your Silo server to measure this Wi-Fi or cellular connection. Adaptive bitrate sends that result to Silo when you press Play."
+                        : "Downloads a demo file from your Jellyfin server to measure this Wi-Fi or cellular connection. Adaptive bitrate uses that result, plus the title’s own bitrate, when you press Play."
+                )
             }
 
             Section {
@@ -112,9 +116,11 @@ struct PlaybackSettingsView: View {
                 .tint(AccentPreferences.current)
                 Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
                     .tint(AccentPreferences.current)
-                Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
-                    .tint(AccentPreferences.current)
-                    .disabled(!useNativeVideoPlayer)
+                if !session.usesSilo {
+                    Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
+                        .tint(AccentPreferences.current)
+                        .disabled(!useNativeVideoPlayer)
+                }
             } header: {
                 Text("Player")
             } footer: {
@@ -131,10 +137,13 @@ struct PlaybackSettingsView: View {
 
     private var qualityFooter: String {
         if adaptiveBitrate {
-            "Zelefin measures your connection and only transcodes when the file is too large for it. During playback it steps down after a stall and back up when the buffer stays healthy. Maximum Quality is the ceiling."
-        } else {
-            "Auto keeps Direct Play when the file fits this device. Lower rates ask Jellyfin to transcode."
+            return session.usesSilo
+                ? "Zelefin measures your connection and tells Silo the ceiling. During playback it steps down after a stall and back up when the buffer stays healthy. Maximum Quality is the cap."
+                : "Zelefin measures your connection and only transcodes when the file is too large for it. During playback it steps down after a stall and back up when the buffer stays healthy. Maximum Quality is the ceiling."
         }
+        return session.usesSilo
+            ? "Auto lets Silo pick Direct Play when the file fits this device. Lower rates ask Silo to transcode."
+            : "Auto keeps Direct Play when the file fits this device. Lower rates ask Jellyfin to transcode."
     }
 
     private var preferFMP4Binding: Binding<Bool> {
@@ -153,11 +162,16 @@ struct PlaybackSettingsView: View {
     }
 
     private var playerFooter: String {
-        if useNativeVideoPlayer {
-            "AVPlayer plays Apple-compatible Direct Play and remuxed HLS. MKV and other files remux on the server first. Turn off Prefer fMP4 to ask Jellyfin for MPEG-TS instead of fragmented MP4."
-        } else {
-            "Zelefin Direct Play opens every stream, including remuxed HLS. Fragmented MP4 packaging stays on."
+        if session.usesSilo {
+            if useNativeVideoPlayer {
+                return "AVPlayer plays Apple-compatible Direct Play and HLS from this Silo server."
+            }
+            return "Zelefin Direct Play opens the stream Silo returns for this device."
         }
+        if useNativeVideoPlayer {
+            return "AVPlayer plays Apple-compatible Direct Play and remuxed HLS. MKV and other files remux on the server first. Turn off Prefer fMP4 to ask Jellyfin for MPEG-TS instead of fragmented MP4."
+        }
+        return "Zelefin Direct Play opens every stream, including remuxed HLS. Fragmented MP4 packaging stays on."
     }
 
     private func recommendedTitle(for result: BitrateProbeResult) -> String {

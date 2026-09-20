@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OpenSubtitlesSearchView: View {
     let item: MediaItem
+    var mediaSourceID: String? = nil
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
 
@@ -21,10 +22,16 @@ struct OpenSubtitlesSearchView: View {
                         Text(choice.name).tag(choice)
                     }
                 }
-                Toggle("Perfect match only", isOn: $perfectMatch)
-                    .tint(AccentPreferences.current)
+                if !session.usesSilo {
+                    Toggle("Perfect match only", isOn: $perfectMatch)
+                        .tint(AccentPreferences.current)
+                }
             } footer: {
-                Text("Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash.")
+                Text(
+                    session.usesSilo
+                        ? "Downloads onto this Silo server from OpenSubtitles, SubDL, and Subsource."
+                        : "Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash."
+                )
             }
 
             Section {
@@ -85,17 +92,21 @@ struct OpenSubtitlesSearchView: View {
         .alert("Subtitles saved", isPresented: $didSave) {
             Button("OK") { dismiss() }
         } message: {
-            Text("Jellyfin stored the file on the server. The subtitle list on this title is updated.")
+            Text(
+                session.usesSilo
+                    ? "The subtitle file was saved on this Silo server. The subtitle list on this title is updated."
+                    : "Jellyfin stored the file on the server. The subtitle list on this title is updated."
+            )
         }
     }
 
     private var searchKey: String {
-        "\(item.id)|\(language.code)|\(perfectMatch)"
+        "\(item.id)|\(mediaSourceID ?? "")|\(language.code)|\(perfectMatch)"
     }
 
     private var emptyCopy: String {
         if isSearching {
-            "Searching Open Subtitles…"
+            session.usesSilo ? "Searching subtitle providers…" : "Searching Open Subtitles…"
         } else if perfectMatch {
             "No hash match for this file in \(language.name)."
         } else {
@@ -104,50 +115,71 @@ struct OpenSubtitlesSearchView: View {
     }
 
     private func search() async {
-        guard let client = session.client else {
-            errorMessage = ZelefinError.missingUser.localizedDescription
-            return
-        }
         isSearching = true
         matches = []
         defer { isSearching = false }
         do {
-            matches = try await OpenSubtitlesClient(client: client).search(
-                itemID: item.id,
-                language: language.code,
-                perfectMatch: perfectMatch
-            )
+            if session.usesSilo {
+                matches = try await searchSilo()
+            } else {
+                guard let client = session.client else {
+                    errorMessage = ZelefinError.missingUser.localizedDescription
+                    return
+                }
+                matches = try await OpenSubtitlesClient(client: client).search(
+                    itemID: item.id,
+                    language: language.code,
+                    perfectMatch: perfectMatch
+                )
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     private func download(_ match: RemoteSubtitleMatch) async {
-        guard let client = session.client else {
-            errorMessage = ZelefinError.missingUser.localizedDescription
-            return
-        }
         downloadingID = match.id
         defer { downloadingID = nil }
         do {
-            try await OpenSubtitlesClient(client: client).download(
-                itemID: item.id,
-                subtitleID: match.id,
-                userID: session.session?.userID ?? ""
-            )
+            if session.usesSilo {
+                guard let keys = match.silo, let api = session.siloAPI else {
+                    errorMessage = ZelefinError.missingUser.localizedDescription
+                    return
+                }
+                try await api.downloadSubtitle(keys)
+            } else {
+                guard let client = session.client else {
+                    errorMessage = ZelefinError.missingUser.localizedDescription
+                    return
+                }
+                try await OpenSubtitlesClient(client: client).download(
+                    itemID: item.id,
+                    subtitleID: match.id,
+                    userID: session.session?.userID ?? ""
+                )
+            }
             SubtitleCatalogRefresh.postSaved(itemID: item.id)
             didSave = true
         } catch {
             errorMessage = error.localizedDescription
         }
     }
+
+    private func searchSilo() async throws -> [RemoteSubtitleMatch] {
+        guard let library = session.library as? SiloLibraryClient else {
+            throw ZelefinError.missingUser
+        }
+        let preferred = mediaSourceID ?? session.launchOptions(for: item.id).mediaSourceID
+        let fileID = try await library.playbackFileID(for: item, mediaSourceID: preferred)
+        return try await library.api.searchSubtitles(mediaFileID: fileID, language: language.code)
+    }
 }
 
 extension View {
-    func openSubtitlesSearch(item: Binding<MediaItem?>) -> some View {
+    func openSubtitlesSearch(item: Binding<MediaItem?>, mediaSourceID: String? = nil) -> some View {
         sheet(item: item) { title in
             NavigationStack {
-                OpenSubtitlesSearchView(item: title)
+                OpenSubtitlesSearchView(item: title, mediaSourceID: mediaSourceID)
             }
         }
     }

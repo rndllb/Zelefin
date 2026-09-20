@@ -23,16 +23,18 @@ struct NotificationSettingsView: View {
                 Toggle("New titles", isOn: $libraryAdds)
                     .disabled(!isEnabled)
             } footer: {
-                Text("Zelefin checks this Jellyfin server for movies, shows, and episodes added after this device already knows the library. Signing out does not replay titles that were already there. Tapping a notification opens that title.")
+                Text("Zelefin checks this server for movies, shows, and episodes added after this device already knows the library. Signing out does not replay titles that were already there. Tapping a notification opens that title.")
             }
 
             if session.isAdministrator {
                 Section {
-                    Toggle("Streams started", isOn: $streams)
-                    Toggle("Users online", isOn: $online)
+                    if !session.usesSilo {
+                        Toggle("Streams started", isOn: $streams)
+                        Toggle("Users online", isOn: $online)
+                    }
                     Toggle("Scheduled tasks", isOn: $scheduledTasks)
-                    if PluginSettings.isSeerrConfigured {
-                        Toggle("Seerr requests", isOn: $requests)
+                    if session.isDiscoverAvailable {
+                        Toggle(session.usesSilo ? "Media requests" : "Seerr requests", isOn: $requests)
                     }
                 } header: {
                     Text("Administrators")
@@ -51,19 +53,34 @@ struct NotificationSettingsView: View {
     }
 
     private var permissionFooter: String {
+        if session.usesSilo {
+            switch authorization {
+            case .denied:
+                return "Notifications are off in iOS Settings. Turn them on for Zelefin to see banners on this device."
+            case .notDetermined:
+                return "Zelefin asks iOS for permission when you turn this on. This device checks Silo itself while the app can run."
+            default:
+                return "Zelefin checks this Silo server from this device. iOS may wait until you open the app."
+            }
+        }
         switch authorization {
         case .denied:
-            "Notifications are off in iOS Settings. Turn them on for Zelefin to see banners on this device."
+            return "Notifications are off in iOS Settings. Turn them on for Zelefin to see banners on this device."
         case .notDetermined:
-            "Zelefin asks iOS for permission when you turn this on. With the Zelefin Jellyfin plugin, alerts are push from your server. Without it, this device checks Jellyfin itself."
+            return "Zelefin asks iOS for permission when you turn this on. With the Zelefin Jellyfin plugin, alerts are push from your server. Without it, this device checks Jellyfin itself."
         case .authorized, .provisional, .ephemeral:
-            "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
+            return "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
         @unknown default:
-            "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
+            return "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
         }
     }
 
     private var adminFooter: String {
+        if session.usesSilo {
+            return session.isDiscoverAvailable
+                ? "You also see when a scheduled task starts, or someone requests a title."
+                : "You also see when a scheduled task starts on this Silo server."
+        }
         if PluginSettings.isSeerrConfigured {
             return "You also see when someone starts playback, comes online on another device, a scheduled task starts, or someone requests a title in Seerr."
         }

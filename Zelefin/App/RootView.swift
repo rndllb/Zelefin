@@ -58,6 +58,17 @@ struct RootView: View {
             } message: {
                 Text(deepLinks.errorMessage ?? "")
             }
+            .alert(
+                "Signed Out",
+                isPresented: Binding(
+                    get: { session.authNotice != nil },
+                    set: { if !$0 { session.authNotice = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(session.authNotice ?? "")
+            }
             .preferredColorScheme(.dark)
             .zelefinAccentTint()
             .task {

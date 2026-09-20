@@ -279,6 +279,20 @@ enum HomeLayoutPreferences {
         interleaveForHero(rankedForHero(latestMovies), rankedForHero(latestShows), limit: featuredLimit)
     }
 
+    /// Home-feed hero URLs are requested at `image_size=large`; catalog cards are not.
+    static func replacingHeroArtwork(on items: [MediaItem], with sources: [MediaItem]) -> [MediaItem] {
+        guard !sources.isEmpty else { return items }
+        let byID = Dictionary(sources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return items.map { item in
+            guard let source = byID[item.id] else { return item }
+            var copy = item
+            if source.backdropURL != nil { copy.backdropURL = source.backdropURL }
+            if source.logoURL != nil { copy.logoURL = source.logoURL }
+            if copy.posterURL == nil { copy.posterURL = source.posterURL }
+            return copy
+        }
+    }
+
     static func isPlaybackQueueSection(_ id: String) -> Bool {
         id == "continue" || id == "next-up"
     }

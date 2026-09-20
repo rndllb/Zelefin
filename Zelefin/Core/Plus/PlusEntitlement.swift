@@ -91,23 +91,39 @@ enum PlusFeature: String, CaseIterable, Identifiable, Hashable, Sendable {
         }
     }
 
-    var paywallMessage: String {
+    /// Live TV, Sessions, and SyncPlay are provided by the Jellyfin server, not
+    /// Zelefin, so the copy says so. A few features read differently between the
+    /// two backends, hence the `usesSilo` flag.
+    func paywallMessage(usesSilo: Bool) -> String {
         switch self {
         case .downloads:
             "Save titles on this iPhone or iPad to watch without a network. Titles already on this device still play."
         case .extraAccounts:
-            "Keep more than one Jellyfin user on this device."
+            usesSilo
+                ? "Keep more than one Silo account on this device."
+                : "Keep more than one Jellyfin user on this device."
         case .interface:
             "Reorder Home rows, turn extra rows on, and customize tabs. Without Plus, Home is Featured, Continue Watching, and recently added movies and shows."
         case .liveTV:
-            "Watch On Now, the guide, channels, and recordings."
+            "Watch the live TV from your Jellyfin server — On Now, the guide, channels, and recordings."
         case .sessions:
-            "See what’s playing and send playback to another device."
+            "See what’s playing on your Jellyfin server and send playback to another device."
         case .syncPlay:
-            "Watch in sync with other people on this server."
+            "Watch in sync with other people on your Jellyfin server."
         case .adminTools:
-            "Users, scheduled tasks, activity, backups, branding, and library scans."
+            usesSilo
+                ? "Users, invitations, sessions, libraries, transcode nodes, and server logs."
+                : "Users, scheduled tasks, activity, backups, branding, and library scans."
         }
+    }
+
+    /// Features worth advertising on the paywall for the active backend. Live TV,
+    /// Sessions, and SyncPlay are Jellyfin-only, so they are left off the Silo
+    /// paywall where they can't be used.
+    static func included(usesSilo: Bool) -> [PlusFeature] {
+        usesSilo
+            ? [.downloads, .extraAccounts, .interface, .adminTools]
+            : allCases
     }
 
     var systemImage: String {
@@ -291,7 +307,7 @@ final class PlusEntitlement {
                 lifetime = true
             case PlusProductID.annual.rawValue:
                 annual = true
-                if transaction.offerType == .introductory {
+                if transaction.offer?.type == .introductory {
                     trial = true
                 }
             default:

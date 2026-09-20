@@ -28,7 +28,11 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Jellyfin will look for new files and refresh metadata. This can take a while on a large server.")
+            Text(
+                session.usesSilo
+                    ? "Silo will refresh metadata for every library. This can take a while on a large server."
+                    : "Jellyfin will look for new files and refresh metadata. This can take a while on a large server."
+            )
         }
     }
 
@@ -50,16 +54,66 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
             .accessibilityLabel("\(accountDisplayName), Account info")
-            settingsRow("Sessions", systemImage: "play.tv", feature: .sessions) {
-                SessionsView()
-            }
-            settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle, feature: .syncPlay) {
-                SyncPlayView()
+            if !session.usesSilo {
+                settingsRow("Sessions", systemImage: "play.tv", feature: .sessions) {
+                    SessionsView()
+                }
+                settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle, feature: .syncPlay) {
+                    SyncPlayView()
+                }
             }
             settingsRow("Notifications", systemImage: "bell", subtitle: notificationsSubtitle) {
                 NotificationSettingsView()
             }
-            if session.isAdministrator {
+            if session.canAdministerSilo {
+                settingsRow("Accounts", systemImage: "person.2", subtitle: "Logins, roles, and passwords", feature: .adminTools) {
+                    SiloUsersView()
+                }
+                settingsRow("Invitations", systemImage: "envelope.badge", subtitle: "Invite people to this server", feature: .adminTools) {
+                    SiloInvitationsView()
+                }
+                settingsRow("Sessions", systemImage: "play.tv", subtitle: "Live playback on this server", feature: .adminTools) {
+                    SiloSessionsView()
+                }
+                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress", feature: .adminTools) {
+                    SiloTasksView()
+                }
+                settingsRow("Devices", systemImage: "iphone", subtitle: "Who signed in from which device", feature: .adminTools) {
+                    SiloDevicesView()
+                }
+                settingsRow("Libraries", systemImage: "rectangle.stack", subtitle: "Scan one library or all of them", feature: .adminTools) {
+                    SiloLibrariesAdminView()
+                }
+                settingsRow("Nodes", systemImage: "server.rack", subtitle: "Stream and transcode workers", feature: .adminTools) {
+                    SiloNodesView()
+                }
+                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Administrator audit trail", feature: .adminTools) {
+                    SiloAuditLogView()
+                }
+                settingsRow("Server Logs", systemImage: "scroll", subtitle: "Operational output from this server", feature: .adminTools) {
+                    SiloOperationalLogView()
+                }
+                Button {
+                    guard plus.require(.adminTools) else { return }
+                    showsLibraryScanConfirm = true
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.tint)
+                            .frame(width: 28, alignment: .center)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Scan Libraries")
+                            if let libraryScanMessage {
+                                Text(libraryScanMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } else if session.isAdministrator && !session.usesSilo {
                 settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls", feature: .adminTools) {
                     UserManagementView()
                 }
@@ -225,7 +279,7 @@ struct SettingsView: View {
             LibraryAlertSettings.libraryAdds ? "New titles" : nil,
             session.isAdministrator && LibraryAlertSettings.streams ? "Streams" : nil,
             session.isAdministrator && LibraryAlertSettings.online ? "Online" : nil,
-            session.isAdministrator && LibraryAlertSettings.requests && PluginSettings.isSeerrConfigured ? "Requests" : nil,
+            session.isAdministrator && LibraryAlertSettings.requests && session.isDiscoverAvailable ? "Requests" : nil,
             session.isAdministrator && LibraryAlertSettings.scheduledTasks ? "Tasks" : nil
         ].compactMap { $0 }
         return parts.isEmpty ? "On" : parts.joined(separator: " · ")
@@ -236,13 +290,16 @@ struct SettingsView: View {
         if session.introSkipperAvailable {
             parts.append("Intro Skipper")
         }
-        if session.openSubtitlesAvailable {
+        if session.openSubtitlesAvailable, !session.usesSilo {
             parts.append("Open Subtitles")
         }
         if session.jellyfinEnhancedAvailable {
             parts.append("Jellyfin Enhanced")
         }
-        if PluginSettings.isSeerrConfigured {
+        if session.usesSilo {
+            if session.siloSeerrPluginAvailable { parts.append("Seerr") }
+            if session.siloArrPluginAvailable { parts.append("Sonarr & Radarr") }
+        } else if PluginSettings.isSeerrConfigured {
             parts.append("Seerr")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
@@ -284,7 +341,7 @@ struct SettingsAboutView: View {
             Section {
                 LabeledContent("Zelefin", value: DeviceIdentity.version)
             } footer: {
-                Text("A native Jellyfin client for iPhone and iPad.")
+                Text("A native Jellyfin and Silo client for iPhone and iPad.")
             }
             #if DEBUG
             Section {

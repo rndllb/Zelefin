@@ -8,6 +8,7 @@ struct SeerrSession: Codable, Equatable, Sendable {
 
 enum PluginSettings {
     static let seerrURLKey = "zelefin.seerr.url"
+    static let siloRequestSourceKey = "zelefin.silo.request-source"
     private static let seerrSessionAccount = "seerr-session"
     private static let legacyAPIKeyAccount = "seerr-api-key"
     private static let secrets = SecretStore()
@@ -40,6 +41,11 @@ enum PluginSettings {
 
     static var isSeerrConfigured: Bool {
         seerrURL != nil && seerrSession != nil
+    }
+
+    static var siloRequestSource: SiloRequestSource {
+        get { SiloRequestSource(rawValue: UserDefaults.standard.string(forKey: siloRequestSourceKey) ?? "") ?? .seerr }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: siloRequestSourceKey) }
     }
 
     static var seerrClient: SeerrClient? {

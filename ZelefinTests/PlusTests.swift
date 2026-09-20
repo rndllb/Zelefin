@@ -116,10 +116,25 @@ final class PlusProductTests: XCTestCase {
     func testFeaturesHaveCopy() {
         for feature in PlusFeature.allCases {
             XCTAssertFalse(feature.paywallTitle.isEmpty, feature.rawValue)
-            XCTAssertFalse(feature.paywallMessage.isEmpty, feature.rawValue)
+            XCTAssertFalse(feature.paywallMessage(usesSilo: false).isEmpty, feature.rawValue)
+            XCTAssertFalse(feature.paywallMessage(usesSilo: true).isEmpty, feature.rawValue)
             XCTAssertFalse(feature.systemImage.isEmpty, feature.rawValue)
             XCTAssertTrue(feature.lockMessage.contains("Plus"), feature.rawValue)
         }
+    }
+
+    func testSiloPaywallOmitsJellyfinOnlyFeatures() {
+        let silo = PlusFeature.included(usesSilo: true)
+        XCTAssertFalse(silo.contains(.liveTV))
+        XCTAssertFalse(silo.contains(.sessions))
+        XCTAssertFalse(silo.contains(.syncPlay))
+        XCTAssertTrue(silo.contains(.downloads))
+        XCTAssertEqual(PlusFeature.included(usesSilo: false), PlusFeature.allCases)
+    }
+
+    func testLiveTVCopyCreditsTheJellyfinServer() {
+        XCTAssertTrue(PlusFeature.liveTV.paywallMessage(usesSilo: false).contains("Jellyfin"))
+        XCTAssertTrue(PlusFeature.extraAccounts.paywallMessage(usesSilo: true).contains("Silo"))
     }
 
     func testStatusLabels() {

@@ -15,7 +15,7 @@ struct AccessGatewaySection: View {
         } header: {
             Text("Access Gateway")
         } footer: {
-            Text("Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin. Use a Cloudflare Access service token, or a Pangolin share-link token ID and token. Zelefin sends these on every request, including artwork and playback.")
+            Text("Needed when this server sits behind Cloudflare Zero Trust or Pangolin. Use a Cloudflare Access service token, or a Pangolin share-link token ID and token. Zelefin sends these on every request, including artwork and playback.")
         }
         .onChange(of: clientID) { _, value in
             AccessGateway.clientID = value

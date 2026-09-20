@@ -143,6 +143,9 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var isFavorite: Bool = false
     var likes: Bool? = nil
     var premiereDate: Date? = nil
+    var posterURL: URL? = nil
+    var backdropURL: URL? = nil
+    var logoURL: URL? = nil
 
     var progress: Double {
         guard let runtime, runtime > 0 else { return 0 }
@@ -272,16 +275,19 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             tmdbID: tmdbID,
             isFavorite: isFavorite,
             likes: likes,
-            premiereDate: premiereDate
+            premiereDate: premiereDate,
+            posterURL: posterURL,
+            backdropURL: backdropURL
         )
     }
 
     var hasHeroBackdrop: Bool {
-        backdropImageTag != nil || !backdropImageTags.isEmpty || parentBackdropItemID != nil
+        backdropURL != nil || backdropImageTag != nil || !backdropImageTags.isEmpty || parentBackdropItemID != nil
     }
 
     var hasGenreCoverArt: Bool {
         hasHeroBackdrop
+            || posterURL != nil
             || thumbImageTag != nil
             || primaryImageTag != nil
     }
@@ -494,7 +500,10 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             tmdbID: tmdbID,
             isFavorite: isFavorite,
             likes: likes,
-            premiereDate: premiereDate
+            premiereDate: premiereDate,
+            posterURL: cover.posterURL,
+            backdropURL: cover.backdropURL,
+            logoURL: cover.logoURL
         )
     }
 
@@ -869,6 +878,7 @@ struct CreditPerson: Identifiable, Hashable, Sendable, Codable {
     let rank: Int
     var overview: String? = nil
     var birthYear: Int? = nil
+    var imageURL: URL? = nil
 }
 
 struct TitleExtra: Identifiable, Hashable, Sendable, Codable {
@@ -933,6 +943,25 @@ struct LibrarySearchHit: Identifiable, Hashable, Sendable {
     let subtitle: String?
     let year: Int?
     let imageTag: String?
+    let imageURL: URL?
+
+    init(
+        id: String,
+        name: String,
+        kind: Kind,
+        subtitle: String?,
+        year: Int?,
+        imageTag: String?,
+        imageURL: URL? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.subtitle = subtitle
+        self.year = year
+        self.imageTag = imageTag
+        self.imageURL = imageURL
+    }
 
     func recentItem(kind: MediaKind) -> MediaItem {
         MediaItem(
@@ -1012,6 +1041,8 @@ struct PlaybackPlan: Hashable, Sendable {
     var versions: [MediaVersion] = []
     var isLive: Bool = false
     var liveStreamID: String? = nil
+    /// Full-file remux (Silo `original_http`) keeps the playhead on the client.
+    var clientOwnsPlayhead: Bool = false
 }
 
 struct ExternalSubtitleSidecar: Hashable, Sendable {

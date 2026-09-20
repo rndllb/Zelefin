@@ -14,6 +14,7 @@ struct PlayerView: View {
     @State private var fallbackError: String?
     @State private var playerWasBackgrounded = false
     @State private var subtitleSearchItem: MediaItem?
+    @State private var subtitleSearchFileID: String?
     @State private var resumeOverride: TimeInterval?
     @State private var appliedBitrate: Int?
     @State private var liveBitrateOverride: Int?
@@ -42,6 +43,9 @@ struct PlayerView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .onAppear {
+            InterfaceOrientationLock.setPhoneLandscapeAllowed(true)
+        }
         .task {
             await prepareAndStart()
         }
@@ -49,6 +53,7 @@ struct PlayerView: View {
             await monitorLiveAdaptive()
         }
         .onDisappear {
+            InterfaceOrientationLock.setPhoneLandscapeAllowed(false)
             model?.markPlaybackViewDismissed()
         }
         .onChange(of: model?.isFinished) { _, finished in
@@ -79,7 +84,7 @@ struct PlayerView: View {
         .onReceive(NotificationCenter.default.publisher(for: .zelefinRemoteNextTrack)) { _ in
             Task { await advanceOrDismiss() }
         }
-        .openSubtitlesSearch(item: $subtitleSearchItem)
+        .openSubtitlesSearch(item: $subtitleSearchItem, mediaSourceID: subtitleSearchFileID)
     }
 
     private var isCinemaBumper: Bool {
@@ -161,7 +166,10 @@ struct PlayerView: View {
                 method: plan.method,
                 container: plan.container,
                 videoCodec: plan.videoCodec,
-                usesNativePlayer: PlaybackPreferences.useNativeVideoPlayer
+                usesNativePlayer: PlaybackPipelineResolver.prefersNativePlayer(
+                    preference: PlaybackPreferences.useNativeVideoPlayer,
+                    hasSidecarSubtitles: !plan.externalSubtitles.isEmpty
+                )
             ) {
                 plan = try await library.playbackPlan(
                     for: activeItem,
@@ -286,13 +294,7 @@ struct PlayerView: View {
     }
 
     private func startPlayback(_ plan: PlaybackPlan, skipSegments: [SkipSegment]? = nil) async {
-        let reporter: PlaybackReporter?
-        if OfflinePlaybackPolicy.shouldReportToServer(isLocalFile: plan.streamURL.isFileURL),
-           let client = session.client {
-            reporter = PlaybackReporter(client: client, plan: plan)
-        } else {
-            reporter = nil
-        }
+        let reporter = session.makePlaybackReporter(for: plan)
         let created = PlayerModel(plan: plan, reporter: reporter)
         created.onUserTransport = { action in
             Task { await session.forwardSyncPlay(action) }
@@ -306,7 +308,8 @@ struct PlayerView: View {
             if skipSegments == nil,
                created.plan.isLive != true,
                OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
-               let client = session.client {
+               let client = session.client,
+               !session.usesSilo {
                 let skipper = IntroSkipperClient(client: client)
                 if await skipper.isInstalled() {
                     try Task.checkCancellation()
@@ -345,6 +348,10 @@ struct PlayerView: View {
         }
         cinemaQueue = []
         cinemaIndex = 0
+        if model?.sleepAtEndOfEpisode == true {
+            dismiss()
+            return
+        }
         guard PlaybackPreferences.autoPlayNextEpisode else {
             dismiss()
             return
@@ -446,6 +453,7 @@ struct PlayerView: View {
                         Task { await changeQuality(quality) }
                     },
                     onAddSubtitles: {
+                        subtitleSearchFileID = model.plan.mediaSourceID
                         subtitleSearchItem = activeItem
                     },
                     onAudioChange: { id in

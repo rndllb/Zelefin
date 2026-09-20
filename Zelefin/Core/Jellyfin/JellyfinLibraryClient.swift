@@ -97,18 +97,6 @@ class JellyfinLibraryClient: @unchecked Sendable {
         return urls
     }
 
-    enum HomeChunk: Sendable {
-        case continueWatching([MediaItem])
-        case nextUp([MediaItem])
-        case recentlyWatched([MediaItem])
-        case featured([MediaItem])
-        case collections(HomeSection?)
-        case genres(HomeSection?)
-        case libraryHome(libraries: [MediaLibrary], sections: [HomeSection])
-        case recommendations([HomeSection])
-        case upcoming([MediaItem])
-    }
-
     func resumeItemsIgnoringErrors() async -> [MediaItem] {
         await ignoringErrors { try await resumeItems() } ?? []
     }
@@ -388,7 +376,11 @@ class JellyfinLibraryClient: @unchecked Sendable {
         return result?.totalRecordCount ?? result?.items?.count ?? 0
     }
 
-    func item(id: String) async throws -> (MediaItem, BaseItemDto) {
+    func item(id: String) async throws -> MediaItem {
+        try await itemDTO(id: id).item
+    }
+
+    func itemDTO(id: String) async throws -> (item: MediaItem, dto: BaseItemDto) {
         let dto = try await client.send(Paths.getItem(itemID: id, userID: userID)).value
         guard let item = ItemMapper.mediaItem(from: dto) else {
             throw ZelefinError.missingItemID
@@ -396,8 +388,22 @@ class JellyfinLibraryClient: @unchecked Sendable {
         return (item, dto)
     }
 
+    func titleMoreInfo(for item: MediaItem) async -> TitleMoreInfo {
+        if let dto = try? await itemDTO(id: item.id).dto {
+            return TitleMoreInfoMapper.info(from: dto, item: item)
+        }
+        return TitleMoreInfoMapper.info(from: item)
+    }
+
     /// Jellyfin 12 trailers: local extras (`-trailer` / `trailers/` / `.trailer`) first,
     /// then the item's `RemoteTrailers` (usually TMDb/NFO YouTube) if none exist on disk.
+    func trailers(for item: MediaItem) async -> [TitleTrailer] {
+        if let dto = try? await itemDTO(id: item.id).dto {
+            return await trailers(for: dto)
+        }
+        return []
+    }
+
     func trailers(for dto: BaseItemDto) async -> [TitleTrailer] {
         guard let itemID = dto.id else { return [] }
 
@@ -611,6 +617,13 @@ class JellyfinLibraryClient: @unchecked Sendable {
         }
     }
 
+    func credits(for item: MediaItem) async -> [CreditPerson] {
+        if let dto = try? await itemDTO(id: item.id).dto {
+            return await credits(for: item.id, from: dto)
+        }
+        return []
+    }
+
     func credits(for itemID: String, from dto: BaseItemDto) async -> [CreditPerson] {
         let fromDTO = ItemMapper.credits(from: dto.people)
         if !fromDTO.isEmpty { return fromDTO }
@@ -629,6 +642,22 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
     func personImageURL(id: String, tag: String?, maxHeight: Int = 360) -> URL? {
         artwork.image(itemID: id, type: "Primary", tag: tag, maxHeight: maxHeight)
+    }
+
+    func searchHitImageURL(_ hit: LibrarySearchHit) -> URL? {
+        if let imageURL = hit.imageURL { return imageURL }
+        switch hit.kind {
+        case .person:
+            return personImageURL(id: hit.id, tag: hit.imageTag)
+        default:
+            return artwork.image(
+                itemID: hit.id,
+                type: "Primary",
+                tag: hit.imageTag,
+                maxHeight: ArtworkURLBuilder.posterMaxHeight,
+                format: "jpg"
+            )
+        }
     }
 
     func seasons(seriesID: String) async throws -> [MediaItem] {
@@ -863,7 +892,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         if item.kind == .liveTV { return 0 }
         let local = requested ?? item.playbackPosition
         if local > PlaybackResumePolicy.threshold { return local }
-        guard let fresh = try? await self.item(id: item.id).0.playbackPosition else { return local }
+        guard let fresh = try? await self.item(id: item.id).playbackPosition else { return local }
         return max(local, fresh)
     }
 
@@ -2035,6 +2064,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
         _ = try await client.send(Paths.stopTask(taskID: id))
     }
 }
+
+extension JellyfinLibraryClient: LibraryServing {}
 
 struct CatalogPageUpdate: Sendable {
     var items: [MediaItem]

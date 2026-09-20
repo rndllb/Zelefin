@@ -146,6 +146,20 @@ final class PlaybackPipelineTests: XCTestCase {
             .directDecode
         )
     }
+
+    func testSidecarSubtitlesDisableNativePlayer() {
+        XCTAssertTrue(PlaybackPipelineResolver.prefersNativePlayer(preference: true, hasSidecarSubtitles: false))
+        XCTAssertFalse(PlaybackPipelineResolver.prefersNativePlayer(preference: true, hasSidecarSubtitles: true))
+        XCTAssertFalse(PlaybackPipelineResolver.prefersNativePlayer(preference: false, hasSidecarSubtitles: false))
+        let url = URL(string: "https://silo.example/api/v1/stream/abc")
+        guard let url else {
+            return XCTFail("URL")
+        }
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(url: url, method: .remux, usesNativePlayer: false),
+            .directDecode
+        )
+    }
 }
 
 final class PlaybackSettingsPolicyTests: XCTestCase {
@@ -371,6 +385,21 @@ final class DirectPlayEngineTests: XCTestCase {
         XCTAssertNil(PlaybackResumePolicy.clientStartPosition(method: .directPlay, startTime: 4))
         XCTAssertNil(PlaybackResumePolicy.clientStartPosition(method: .remux, startTime: 600))
         XCTAssertNil(PlaybackResumePolicy.clientStartPosition(method: .transcode, startTime: 600))
+        XCTAssertEqual(
+            PlaybackResumePolicy.clientStartPosition(
+                method: .remux,
+                startTime: 600,
+                clientOwnsPlayhead: true
+            ),
+            600
+        )
+        XCTAssertNil(
+            PlaybackResumePolicy.clientStartPosition(
+                method: .remux,
+                startTime: 4,
+                clientOwnsPlayhead: true
+            )
+        )
     }
 
     func testDeferredSeekOnlyWhenDirectPlayStuckAtHead() {
@@ -382,6 +411,22 @@ final class DirectPlayEngineTests: XCTestCase {
         )
         XCTAssertFalse(
             PlaybackResumePolicy.needsDeferredSeek(method: .remux, playhead: 0, plannedStart: 600)
+        )
+        XCTAssertTrue(
+            PlaybackResumePolicy.needsDeferredSeek(
+                method: .remux,
+                playhead: 0,
+                plannedStart: 600,
+                clientOwnsPlayhead: true
+            )
+        )
+        XCTAssertFalse(
+            PlaybackResumePolicy.needsDeferredSeek(
+                method: .remux,
+                playhead: 600,
+                plannedStart: 600,
+                clientOwnsPlayhead: true
+            )
         )
     }
 

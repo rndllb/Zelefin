@@ -333,6 +333,7 @@ private enum AVKitPlaybackSettingsPage: Equatable {
     case audio
     case subtitles
     case chapters
+    case sleepTimer
 }
 
 private struct AVKitPlaybackSettingsMenuButton: View {
@@ -378,6 +379,7 @@ private struct AVKitPlaybackSettingsPanel: View {
                     case .audio: audioRows
                     case .subtitles: subtitleRows
                     case .chapters: chapterRows
+                    case .sleepTimer: sleepTimerRows
                     }
                 }
                 .padding(.vertical, 6)
@@ -426,6 +428,7 @@ private struct AVKitPlaybackSettingsPanel: View {
         case .audio: "Select Audio"
         case .subtitles: "Select Subtitles"
         case .chapters: "Chapters"
+        case .sleepTimer: "Sleep Timer"
         }
     }
 
@@ -466,6 +469,15 @@ private struct AVKitPlaybackSettingsPanel: View {
                 systemImage: "list.bullet"
             ) {
                 page = .chapters
+            }
+        }
+        if !model.plan.isLive {
+            settingsRow(
+                title: "Sleep Timer",
+                value: sleepTimerValue,
+                systemImage: "moon.zzz"
+            ) {
+                page = .sleepTimer
             }
         }
         if canAddSubtitles {
@@ -509,6 +521,41 @@ private struct AVKitPlaybackSettingsPanel: View {
                 model.seek(to: chapter.startTime)
                 onClose()
             }
+        }
+    }
+
+    private static let sleepTimerOptions: [SleepTimerMode] = [
+        .off, .minutes(15), .minutes(30), .minutes(45), .minutes(60), .endOfEpisode
+    ]
+
+    private var sleepTimerRows: some View {
+        ForEach(Self.sleepTimerOptions, id: \.self) { option in
+            choiceRow(sleepTimerLabel(option), selected: model.sleepTimer == option) {
+                model.setSleepTimer(option)
+                onClose()
+            }
+        }
+    }
+
+    private var sleepTimerValue: String {
+        switch model.sleepTimer {
+        case .off:
+            return "Off"
+        case .endOfEpisode:
+            return "End of Episode"
+        case .minutes:
+            if let remaining = model.sleepTimerRemaining {
+                return PlaybackTimeFormatting.elapsed(remaining)
+            }
+            return "On"
+        }
+    }
+
+    private func sleepTimerLabel(_ mode: SleepTimerMode) -> String {
+        switch mode {
+        case .off: return "Off"
+        case .endOfEpisode: return "End of Episode"
+        case let .minutes(minutes): return "\(minutes) minutes"
         }
     }
 

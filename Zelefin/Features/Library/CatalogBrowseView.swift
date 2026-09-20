@@ -168,7 +168,7 @@ struct CatalogBrowseView: View {
         isLoading = false
     }
 
-    private func finishArtwork(for items: [MediaItem], library: JellyfinLibraryClient) async {
+    private func finishArtwork(for items: [MediaItem], library: any LibraryServing) async {
         guard PosterPrefetcher.prefetchesPosters(for: libraryKind), !items.isEmpty else {
             indexProgress = nil
             return
@@ -198,18 +198,15 @@ private extension View {
     ) -> some View {
         if isPushed {
             self
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .navigationBarBackButtonHidden(false)
-                .toolbarColorScheme(.dark, for: .navigationBar)
+                .zelefinPushedChrome(title: title, hidesToolbarBackground: false) {
+                    CatalogFilterSortButtons(
+                        filterCount: filterCount,
+                        sortTitle: sortTitle,
+                        onSort: { showSort.wrappedValue = true },
+                        onFilter: { showFilters.wrappedValue = true }
+                    )
+                }
                 .zelefinScrollEdgeBlur()
-                .catalogFilterSortToolbar(
-                    filterCount: filterCount,
-                    sortTitle: sortTitle,
-                    showFilters: showFilters,
-                    showSort: showSort
-                )
-                .background(InteractivePopGestureEnabler())
         } else {
             self
                 .toolbar(.hidden, for: .navigationBar)

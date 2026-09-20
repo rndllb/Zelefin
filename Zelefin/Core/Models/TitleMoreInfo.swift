@@ -42,6 +42,10 @@ struct TitleMoreInfo: Equatable, Sendable {
         }
         return copy
     }
+
+    func mergingMedia(from item: MediaItem) -> TitleMoreInfo {
+        TitleMoreInfoMapper.info(from: item)
+    }
 }
 
 enum TitleMoreInfoMapper {
@@ -53,6 +57,25 @@ enum TitleMoreInfoMapper {
         info.file = media.file
         info.accessibilityNote = media.accessibilityNote
         info.links = links(from: dto)
+        return info
+    }
+
+    static func info(from item: MediaItem) -> TitleMoreInfo {
+        var info = TitleMoreInfo()
+        var rows: [TitleMoreRow] = []
+        if let year = item.year {
+            rows.append(.init(label: "Released", value: String(year)))
+        }
+        if let runtime = item.runtime, let label = MediaItem.moreInfoRuntimeLabel(runtime) {
+            rows.append(.init(label: "Run Time", value: label))
+        }
+        if let rating = item.officialRating?.trimmedNonEmpty {
+            rows.append(.init(label: "Rated", value: rating))
+        }
+        if !item.genres.isEmpty {
+            rows.append(.init(label: "Genres", value: item.genres.joined(separator: ", ")))
+        }
+        info.information = rows
         return info
     }
 

@@ -72,7 +72,7 @@ struct SessionsView: View {
     }
 
     private func load(showProgress: Bool = true) async {
-        guard let library = session.library else {
+        guard let library = session.jellyfinLibrary else {
             isLoading = false
             errorMessage = "Sign in to see sessions."
             return
@@ -302,7 +302,7 @@ struct SessionDetailView: View {
     }
 
     private func refresh() async {
-        guard let library = session.library else { return }
+        guard let library = session.jellyfinLibrary else { return }
         do {
             let latest = try await library.playbackSessions()
             if let match = latest.first(where: { $0.id == sessionID }) {
@@ -319,7 +319,7 @@ struct SessionDetailView: View {
     }
 
     private func send(_ action: SessionControlAction) async {
-        guard let library = session.library, let current = item else { return }
+        guard let library = session.jellyfinLibrary, let current = item else { return }
         isBusy = true
         defer { isBusy = false }
         do {

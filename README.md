@@ -1,6 +1,6 @@
 # Zelefin
 
-Native Jellyfin client for iPhone and iPad. The interface follows the Apple TV app: black ground, large titles, Continue Watching landscape cards, poster rows, and the system tab bar. iPad uses a sidebar.
+Native Jellyfin client for iPhone and iPad, compatible with Silo. The interface follows the Apple TV app: black ground, large titles, Continue Watching landscape cards, poster rows, and the system tab bar. iPad uses a sidebar.
 
 Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s decoder. MKV and other containers AVPlayer will not open are Direct Played on device (FFmpeg demux, VideoToolbox decode, sample-buffer presentation). The server transcodes only when the codec itself is outside that set.
 
@@ -8,15 +8,16 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Sign in
 
-- Branded sign-in with the Zelefin mark
+- Branded sign-in with the Zelefin mark; pick Jellyfin or Silo before you enter the server
 - Login disclaimer and splashscreen from this Jellyfin server’s branding, when they are set
-- Jellyfin server URL, username, and password
-- Try Review Demo on the sign-in screen: a sample library for App Review (Home, Movies, Shows, title pages, and Play) with no Jellyfin server. Hide the button with `ReviewDemo.isEnabled`, or delete `Zelefin/ReviewDemo` after approval.
-- Quick Connect from another signed-in device
-- Test connection before login
+- Jellyfin or Silo server URL, username (or email on Silo), and password
+- Test Connection reports whether the URL is Jellyfin or Silo
+- Household profiles and PIN on Silo after login (Who’s watching)
+- Try Review Demo on the sign-in screen: a sample library for App Review (Home, Movies, Shows, title pages, and Play) with no server. Hide the button with `ReviewDemo.isEnabled`, or delete `Zelefin/ReviewDemo` after approval.
+- Quick Connect from another signed-in Jellyfin device
 - Access Gateway tokens for Cloudflare Zero Trust or Pangolin, sent on every request including artwork and playback
-- Multiple saved accounts on this device, with switch-user and Add User from Profile (one account is free; extra users are Zelefin Plus)
-- Profile photo (camera or photo library) and password change
+- Multiple saved accounts on this device, with switch-user and Add User / Add Account from Profile (one account is free; extra logins are Zelefin Plus)
+- Profile photo (camera or photo library) and password change. On Silo, avatars are presets or a photo when the server stores them
 - Access token on Profile, hidden until you reveal it, with copy
 
 ### Home
@@ -58,9 +59,12 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Information, Languages, and File lists on the title page (studio, runtime, audio, subtitles, container, bitrate)
 - Download and share from the same pill
 - More: favorite, like or dislike, add to a collection, play on another device, and Play in SyncPlay
-- Administrators can refresh metadata, choose a remote image, and delete the title from the library (with confirmation)
-- Add Subtitles on movies and episodes when this account can edit subtitles (administrator or Edit Subtitles) and Open Subtitles is on the server
+- Select Audio and Select Subtitles from the file’s tracks (Jellyfin streams, or Silo watch/catalog `audio_tracks` / `subtitle_tracks`)
+- Version picker when a title has more than one file
+- Administrators can refresh metadata, choose a remote image, and delete the title from the library (with confirmation). Delete and remote images stay Jellyfin-only
+- Add Subtitles on movies and episodes when this account can edit subtitles (administrator or Edit Subtitles) and Open Subtitles is on the Jellyfin server. Silo does not offer Add Subtitles from this app
 - Share a `zelefin://` link plus the Jellyfin web URL so another install or a browser can open the title
+- On iPhone, title and Live TV program pages use the same 45 pt glass Back and More pills as iPad. The rest of the iPhone UI stays portrait; the video player can rotate to landscape
 
 ### Notifications
 
@@ -72,6 +76,7 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 - Settings → Notifications to turn each kind on or off
 - Stream and online alerts follow Jellyfin session updates while the app is open; library adds also fire when Jellyfin reports a library change
 - With the plugin, those events are Apple Push from your Jellyfin. You do not paste an Apple key on the server. Without the plugin, iOS only lets this device check in the background occasionally, and opening the app always checks right away
+- Silo has no Zelefin plugin. This device checks that server itself; lock-screen delivery depends on iOS background time
 - Privacy and support: [zelefin.app/privacy](https://zelefin.app/privacy), [zelefin.app/support](https://zelefin.app/support)
 
 ### Playback
@@ -81,7 +86,7 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 - Optional native video player (AVPlayer only; MKV remuxes on the server)
 - Prefer fMP4 or MPEG-TS when using the native player
 - Audio and subtitle track selection, including sidecar files and on-device cues for Direct Play
-- Version picker when a title has more than one file
+- On Silo, playback uses protocol v3. Adaptive bitrate measures this connection and sends the ceiling when you press Play
 - Chapters and trickplay thumbnails when Jellyfin has them
 - Cinema intros before the title when the server queues them
 - Skip intro and credits when Intro Skipper is installed (manual buttons, optional auto-skip)
@@ -94,8 +99,9 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 - Movies and episodes resume from the saved playhead (including transcoded streams)
 - Picture in Picture and AirPlay
 - Playback stats overlay
-- Progress reported back to Jellyfin
+- Progress reported back to Jellyfin or Silo
 - Background audio
+- iPhone stays portrait outside playback. Opening the player unlocks landscape; closing it returns to portrait. iPad keeps every orientation
 
 ### Plugins
 
@@ -106,11 +112,12 @@ Settings → Plugins shows what this Jellyfin server actually has installed. Zel
 - **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Requires an administrator or a user with Edit Subtitles. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
 - **Jellyfin Enhanced** — Remove from Continue Watching or Next Up without changing watched state. TMDB reviews, household reviews, and awards on the title page. Detection uses the plugin list, or `/JellyfinEnhanced/version` when `/Plugins` is admin-only.
 - **Seerr / Jellyseerr** — Sign in here with your Jellyfin username and password, then discover and request titles from Search. Not a Jellyfin plugin; a separate request app that talks to Radarr and Sonarr.
+- **Silo requests** — Built into Silo, not installed as a Jellyfin plugin. Plugins settings pick this server’s Seerr plugin or its Sonarr & Radarr requests plugin. You do not sign in to Seerr separately. Open Subtitles search/download from this app needs public object storage on the Silo host and is not offered here.
 
 ### Search and requests
 
-- Search the Jellyfin library (movies, shows, people, collections, and Live TV)
-- Discover and request through Seerr or Jellyseerr (sign in under Plugins)
+- Search this server’s library (movies, shows, people, collections, and Live TV on Jellyfin)
+- Discover and request through Seerr or Jellyseerr on Jellyfin (sign in under Plugins), or through Silo’s request plugins from Search
 - Trending, popular, upcoming, genres, studios, and networks
 - Request movies and shows with Radarr / Sonarr server, quality, folder, and season picks
 
@@ -150,19 +157,30 @@ Settings → Plugins shows what this Jellyfin server actually has installed. Zel
 - Start or cancel a task, and watch progress while it runs
 - Tapping a “scheduled task started” notification opens this list
 
-### Users
+### Users and Silo accounts
 
-- Administrators can manage server users from Settings: photo, rename, password set/reset, administrator flag, Edit Subtitles, disable account, remote bitrate cap, parental max rating, block unrated types, and per-library access
+- On Jellyfin, administrators can manage server users from Settings: photo, rename, password set/reset, administrator flag, Edit Subtitles, disable account, remote bitrate cap, parental max rating, block unrated types, and per-library access
 - Edit Subtitles (`EnableSubtitleManagement`) lets a non-admin search and download subtitles the same way an administrator can
+- On Silo, Profile lists household profiles under Household and saved logins under Accounts. Switch profile from the avatar menu the same way you switch a Jellyfin user; a locked profile asks for a PIN, not a full-screen picker
+- Silo administrators can create accounts (a default household profile is created), invite by email, stop a session, run tasks, scan libraries, and read audit and operational logs
 
 ### Admin tools
 
-Administrators also get these from Settings:
+Administrators also get these from Settings. Jellyfin:
 
 - Activity Log: who signed in, what scanned, what failed
 - Backups: create an archive, restore one (Jellyfin restarts)
 - Branding: login disclaimer, custom CSS, splashscreen upload or delete
 - Scan Libraries: look for new files and refresh metadata (with confirmation)
+
+Silo (when this login can administer the server):
+
+- Accounts: create, rename, password, admin flag, disable, delete
+- Invitations: email invite, copy claim link, resend, revoke
+- Sessions: who is playing, stop playback
+- Scheduled Tasks: start, cancel, watch progress
+- Devices, Libraries (scan), stream/transcode nodes
+- Audit log and operational log
 
 ### Network
 
@@ -201,7 +219,7 @@ xcodegen generate
 open Zelefin.xcodeproj
 ```
 
-Select an iPhone or iPad destination and run. Sign in with your Jellyfin server URL, username, and password, or tap Try Review Demo to browse a sample library. Local HTTP servers are allowed.
+Select an iPhone or iPad destination and run. Sign in with your Jellyfin or Silo server URL, username, and password, or tap Try Review Demo to browse a sample library. Local HTTP servers are allowed.
 
 Requires iOS 18. This build is iPhone and iPad only.
 
@@ -213,4 +231,4 @@ Requires iOS 18. This build is iPhone and iPad only.
 
 ## Not in this build
 
-This app is movies, shows, and Live TV. Music, playlists, books, photos, home videos, and other Jellyfin library types do not appear in Library, Home, or Search.
+This app is movies and shows. On Jellyfin it also includes Live TV. Music, playlists, books, photos, home videos, and other library types do not appear in Library, Home, or Search. Silo sessions hide Live TV, SyncPlay, Jellyfin remote control, Jellyfin backups/branding, and Jellyfin plugins. Emby and Plex are not in this build.

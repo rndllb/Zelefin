@@ -80,17 +80,25 @@ struct LibraryView: View {
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         .task {
             if !session.libraries.isEmpty {
-                libraries = HomeLayoutPreferences.libraryTabLibraries(session.libraries)
+                libraries = visibleLibraries(from: session.libraries)
                 isLoading = false
             }
             await load()
         }
         .onChange(of: session.libraries) { _, catalog in
             guard !catalog.isEmpty else { return }
-            libraries = HomeLayoutPreferences.libraryTabLibraries(catalog)
+            libraries = visibleLibraries(from: catalog)
             isLoading = false
             errorMessage = nil
         }
+    }
+
+    private func visibleLibraries(from catalog: [MediaLibrary]) -> [MediaLibrary] {
+        var libraries = HomeLayoutPreferences.libraryTabLibraries(catalog)
+        if session.usesSilo {
+            libraries.removeAll { $0.libraryKind == .liveTV }
+        }
+        return libraries
     }
 
     private func icon(for library: MediaLibrary) -> String {
@@ -113,7 +121,7 @@ struct LibraryView: View {
             return
         }
         do {
-            libraries = HomeLayoutPreferences.libraryTabLibraries(try await client.libraries())
+            libraries = visibleLibraries(from: try await client.libraries())
             errorMessage = nil
         } catch is CancellationError {
             return
@@ -248,7 +256,7 @@ struct LibraryItemsView: View {
     }
 
     var body: some View {
-        if library.libraryKind == .liveTV {
+        if library.libraryKind == .liveTV, !session.usesSilo {
             LiveTVView(showsBackButton: true)
         } else {
             catalogBody
@@ -339,7 +347,7 @@ struct LibraryItemsView: View {
         await finishArtwork(for: items, client: client)
     }
 
-    private func finishArtwork(for items: [MediaItem], client: JellyfinLibraryClient) async {
+    private func finishArtwork(for items: [MediaItem], client: any LibraryServing) async {
         guard PosterPrefetcher.prefetchesPosters(for: library.libraryKind), !items.isEmpty else {
             indexProgress = nil
             return

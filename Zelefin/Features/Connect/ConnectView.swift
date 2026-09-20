@@ -1,15 +1,19 @@
 import SwiftUI
 
-/// Sign-in canvas. The isometric Z leads; credentials sit in a single column under it.
+/// Sign-in canvas. Pick Jellyfin or Silo, then Silo asks who is watching.
 struct ConnectView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @AppStorage("zelefin.last-server") private var address = ""
-    @AppStorage("zelefin.last-username") private var username = ""
+    @AppStorage("zelefin.last-server") private var storedAddress = ""
+    @AppStorage("zelefin.last-username") private var storedUsername = ""
+    @State private var address = ""
+    @State private var username = ""
     @State private var password = ""
+    @FocusState private var focusedField: ConnectField?
     @State private var gatewayClientID = AccessGateway.clientID
     @State private var gatewayClientSecret = AccessGateway.clientSecret
-    @State private var isConnecting = false
+    @State private var selectedBackend: MediaBackend = .jellyfin
+    @State private var connectingBackend: MediaBackend?
     @State private var isCheckingConnection = false
     @State private var signInError: String?
     @State private var testMessage: String?
@@ -21,50 +25,76 @@ struct ConnectView: View {
     @State private var quickConnectTask: Task<Void, Never>?
     @State private var loginDisclaimer: String?
     @State private var splashscreenURL: URL?
+    @State private var isPickingProfile = false
 
     var body: some View {
         ZStack {
-            LoginPalette.canvas
-                .ignoresSafeArea()
+            ConnectSignInBackdrop(
+                splashURL: session.pendingSiloSignIn == nil ? splashscreenURL : nil,
+                isRegularWidth: horizontalSizeClass == .regular
+            )
+            .equatable()
 
-            if let splashscreenURL {
-                PosterImage(
-                    url: splashscreenURL,
-                    aspectRatio: 1,
-                    contentMode: .fill,
-                    fill: .clear
+            if let pending = session.pendingSiloSignIn {
+                SiloWhoIsWatchingView(
+                    profiles: pending.profiles,
+                    footerTitle: "Use a different account",
+                    isBusy: isPickingProfile,
+                    errorMessage: signInError,
+                    onSelect: { profile, pin in
+                        await selectProfile(profile, pin: pin)
+                    },
+                    onFooter: {
+                        signInError = nil
+                        session.cancelSiloProfilePick()
+                    }
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .ignoresSafeArea()
-                .opacity(0.28)
+            } else {
+                signInScroll
             }
+        }
+        .zelefinAccentTint()
+        .onAppear {
+            if address.isEmpty { address = storedAddress }
+            if username.isEmpty { username = storedUsername }
+        }
+        .onDisappear {
+            persistCredentials()
+            cancelQuickConnect()
+        }
+        .task(id: address) { await loadBranding() }
+        .alert("Password help", isPresented: $showsPasswordHelp) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Reset your password on the server, or ask the person who runs it.")
+        }
+    }
 
-            LoginCanvasGlow(isRegularWidth: horizontalSizeClass == .regular)
+    private var signInScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                brandBlock
+                    .padding(.top, horizontalSizeClass == .regular ? 56 : 28)
+                    .padding(.bottom, 32)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    brandBlock
-                        .padding(.top, horizontalSizeClass == .regular ? 56 : 28)
-                        .padding(.bottom, 32)
+                credentialsCard
+                    .padding(.bottom, 22)
 
-                    credentialsCard
-                        .padding(.bottom, 22)
+                if let disclaimer = loginDisclaimer, !disclaimer.isEmpty {
+                    Text(disclaimer)
+                        .font(.footnote)
+                        .foregroundStyle(LoginPalette.secondaryText)
+                        .padding(.bottom, 18)
+                }
 
-                    if let disclaimer = loginDisclaimer, !disclaimer.isEmpty {
-                        Text(disclaimer)
-                            .font(.footnote)
-                            .foregroundStyle(LoginPalette.secondaryText)
-                            .padding(.bottom, 18)
-                    }
+                statusText
 
-                    statusText
+                VStack(spacing: 12) {
+                    signInButton
+                    testConnectionButton
+                }
 
-                    VStack(spacing: 12) {
-                        loginButton
-                        testConnectionButton
-                    }
-
+                if selectedBackend == .jellyfin {
                     if isUsingQuickConnect {
                         quickConnectPanel
                             .padding(.top, 22)
@@ -72,48 +102,46 @@ struct ConnectView: View {
                         quickConnectButton
                             .padding(.top, 16)
                     }
-
-                    if ReviewDemo.isEnabled {
-                        reviewDemoButton
-                            .padding(.top, 12)
-                    }
                 }
-                .frame(maxWidth: 440)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 26)
-                .padding(.bottom, 44)
+
+                if ReviewDemo.isEnabled {
+                    reviewDemoButton
+                        .padding(.top, 12)
+                }
             }
+            .frame(maxWidth: 440)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 26)
+            .padding(.bottom, 44)
         }
-        .tint(AccentPreferences.current)
-        .onDisappear { cancelQuickConnect() }
-        .task(id: address) { await loadBranding() }
-        .alert("Password help", isPresented: $showsPasswordHelp) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Reset your password in the Jellyfin web interface, or ask your server administrator.")
-        }
+        .scrollDismissesKeyboard(.interactively)
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private var brandBlock: some View {
-        VStack(spacing: 18) {
-            ConnectBrandMark(size: horizontalSizeClass == .regular ? 196 : 168)
-            VStack(spacing: 8) {
+        VStack(spacing: 22) {
+            VStack(spacing: 14) {
+                ConnectBrandMark(size: horizontalSizeClass == .regular ? 196 : 168)
                 Text("Zelefin")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(LoginPalette.primaryText)
                     .accessibilityAddTraits(.isHeader)
-                Text("Please sign in to continue.")
-                    .font(.subheadline)
-                    .foregroundStyle(LoginPalette.secondaryText)
-                    .multilineTextAlignment(.center)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Zelefin")
+
+            ConnectBackendPicker(
+                selection: $selectedBackend,
+                tileSize: horizontalSizeClass == .regular ? 96 : 86
+            )
         }
         .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Zelefin. Please sign in to continue.")
+        .onChange(of: selectedBackend) { _, backend in
+            if backend != .jellyfin {
+                cancelQuickConnect()
+            }
+        }
     }
-
-    // MARK: - Fields
 
     private var credentialsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -121,29 +149,43 @@ struct ConnectView: View {
                 TextField(
                     "",
                     text: $address,
-                    prompt: Text("https://jellyfin.example.com")
+                    prompt: Text("https://media.example.com")
                         .foregroundStyle(Color.white.opacity(0.55))
                 )
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
-                .tint(.white)
                 .keyboardType(.URL)
                 .textContentType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .submitLabel(.next)
+                .focused($focusedField, equals: .server)
+                .onSubmit { focusedField = .username }
                 .accessibilityLabel("Server URL")
             }
 
             cardDivider
 
-            labeledField(label: "USERNAME", systemImage: "person.fill") {
-                TextField("Username", text: $username)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(LoginPalette.fieldValue)
-                    .tint(AccentPreferences.current)
-                    .textContentType(.username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+            labeledField(
+                label: selectedBackend == .silo ? "USERNAME OR EMAIL" : "USERNAME",
+                systemImage: "person.fill"
+            ) {
+                TextField(
+                    "",
+                    text: $username,
+                    prompt: Text(selectedBackend == .silo ? "username or you@example.com" : "username")
+                        .foregroundStyle(Color.white.opacity(0.55))
+                )
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.fieldValue)
+                .textContentType(.username)
+                .keyboardType(selectedBackend == .silo ? .emailAddress : .default)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.next)
+                .focused($focusedField, equals: .username)
+                .onSubmit { focusedField = .password }
+                .accessibilityLabel(selectedBackend == .silo ? "Username or email" : "Username")
             }
 
             cardDivider
@@ -170,7 +212,6 @@ struct ConnectView: View {
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(LoginPalette.captionText)
-        .tint(AccentPreferences.current)
         .padding(.top, 8)
     }
 
@@ -180,10 +221,10 @@ struct ConnectView: View {
             TextField("Client ID or token ID", text: $gatewayClientID)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
-                .tint(AccentPreferences.current)
                 .textContentType(.username)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($focusedField, equals: .gatewayID)
         }
 
         cardDivider
@@ -192,8 +233,8 @@ struct ConnectView: View {
             SecureField("Client secret or access token", text: $gatewayClientSecret)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
-                .tint(AccentPreferences.current)
                 .textContentType(.password)
+                .focused($focusedField, equals: .gatewaySecret)
         }
 
         Text("Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin.")
@@ -217,7 +258,7 @@ struct ConnectView: View {
                     Text("FORGOT")
                         .font(.caption.weight(.bold))
                         .tracking(0.8)
-                        .foregroundStyle(AccentPreferences.current)
+                        .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
             }
@@ -232,8 +273,13 @@ struct ConnectView: View {
                 SecureField("Password", text: $password)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoginPalette.fieldValue)
-                    .tint(AccentPreferences.current)
                     .textContentType(.password)
+                    .submitLabel(.go)
+                    .focused($focusedField, equals: .password)
+                    .onSubmit {
+                        guard canSubmit, !isBusy else { return }
+                        Task { await connect(backend: selectedBackend) }
+                    }
 
                 Spacer(minLength: 0)
             }
@@ -276,8 +322,6 @@ struct ConnectView: View {
         .padding(.vertical, 12)
     }
 
-    // MARK: - Actions
-
     @ViewBuilder
     private var statusText: some View {
         if let signInError {
@@ -295,17 +339,18 @@ struct ConnectView: View {
         }
     }
 
-    private var loginButton: some View {
-        Button {
-            Task { await connect() }
+    private var signInButton: some View {
+        let signingIn = connectingBackend != nil
+        return Button {
+            Task { await connect(backend: selectedBackend) }
         } label: {
             HStack(spacing: 8) {
-                if isConnecting {
+                if signingIn {
                     ProgressView()
                         .controlSize(.small)
                         .tint(LoginPalette.actionLabel)
                 }
-                Text(isConnecting ? "SIGNING IN…" : "LOGIN")
+                Text(signingIn ? "SIGNING IN…" : "SIGN IN")
                     .font(.caption.weight(.bold))
                     .tracking(0.9)
             }
@@ -314,7 +359,7 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(!canSubmit || isBusy)
         .opacity((!canSubmit || isBusy) ? 0.42 : 1)
-        .accessibilityLabel("Log in")
+        .accessibilityLabel(selectedBackend == .silo ? "Sign in with Silo" : "Sign in with Jellyfin")
     }
 
     private var testConnectionButton: some View {
@@ -349,7 +394,7 @@ struct ConnectView: View {
                         .controlSize(.small)
                         .tint(.white)
                 }
-                Text(isStartingQuickConnect ? "STARTING…" : "QUICK CONNECT")
+                Text(isStartingQuickConnect ? "STARTING…" : "JELLYFIN QUICK CONNECT")
                     .font(.caption.weight(.bold))
                     .tracking(0.9)
             }
@@ -358,7 +403,7 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(trimmedAddress.isEmpty || isBusy)
         .opacity((trimmedAddress.isEmpty || isBusy && !isUsingQuickConnect) ? 0.42 : 1)
-        .accessibilityLabel("Quick Connect")
+        .accessibilityLabel("Jellyfin Quick Connect")
     }
 
     private var reviewDemoButton: some View {
@@ -374,7 +419,7 @@ struct ConnectView: View {
         .disabled(isBusy)
         .opacity(isBusy ? 0.42 : 1)
         .accessibilityLabel("Try Review Demo")
-        .accessibilityHint("Opens a sample library for App Review. No Jellyfin server required.")
+        .accessibilityHint("Opens a sample library for App Review. No server required.")
     }
 
     private var quickConnectPanel: some View {
@@ -417,7 +462,7 @@ struct ConnectView: View {
                 cancelQuickConnect()
             }
             .font(.caption.weight(.bold))
-            .foregroundStyle(AccentPreferences.current)
+            .foregroundStyle(Color.accentColor)
             .buttonStyle(.plain)
         }
         .padding(18)
@@ -439,25 +484,46 @@ struct ConnectView: View {
     }
 
     private var isBusy: Bool {
-        isConnecting || isCheckingConnection || isUsingQuickConnect
+        connectingBackend != nil || isCheckingConnection || isUsingQuickConnect
     }
 
-    /// Signs in to the Jellyfin server using the values on this screen.
-    private func connect() async {
-        guard !isConnecting else { return }
-        isConnecting = true
+    private func persistCredentials() {
+        storedAddress = address
+        storedUsername = username
+    }
+
+    private func connect(backend: MediaBackend) async {
+        guard connectingBackend == nil else { return }
+        persistCredentials()
+        connectingBackend = backend
         signInError = nil
         testMessage = nil
-        defer { isConnecting = false }
+        defer { connectingBackend = nil }
 
         do {
-            try await session.connect(serverAddress: address, username: username, password: password)
+            try await session.connect(
+                serverAddress: address,
+                username: username,
+                password: password,
+                backend: backend
+            )
         } catch {
             signInError = error.localizedDescription
         }
     }
 
-    /// Checks whether the typed address answers as a Jellyfin server.
+    private func selectProfile(_ profile: SiloHouseholdProfile, pin: String?) async {
+        guard !isPickingProfile else { return }
+        isPickingProfile = true
+        signInError = nil
+        defer { isPickingProfile = false }
+        do {
+            try await session.selectSiloProfile(profile, pin: pin)
+        } catch {
+            signInError = error.localizedDescription
+        }
+    }
+
     private func checkConnection() async {
         guard !isCheckingConnection else { return }
         signInError = nil
@@ -467,8 +533,15 @@ struct ConnectView: View {
 
         do {
             let url = try ServerURL.normalize(address)
+            let detected = await ServerProbe().detectBackend(at: url)
             let reachability = await ServerProbe().checkReachability(at: url)
-            testMessage = reachability.message
+            if reachability.isReachable {
+                testMessage = detected == .silo
+                    ? "Silo is reachable."
+                    : "Jellyfin is reachable."
+            } else {
+                testMessage = reachability.message
+            }
             testDidSucceed = reachability.isReachable
         } catch {
             testMessage = error.localizedDescription
@@ -476,7 +549,6 @@ struct ConnectView: View {
         }
     }
 
-    /// Starts Quick Connect and waits until another device authorizes the code.
     private func startQuickConnect() {
         guard !isUsingQuickConnect, !trimmedAddress.isEmpty else { return }
         signInError = nil
@@ -484,6 +556,7 @@ struct ConnectView: View {
         isStartingQuickConnect = true
         quickConnectCode = nil
 
+        persistCredentials()
         let serverAddress = address
         quickConnectTask = Task {
             do {
@@ -506,7 +579,14 @@ struct ConnectView: View {
 
     private func loadBranding() async {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let url = try? ServerURL.normalize(trimmed) else {
+        guard !trimmed.isEmpty else {
+            loginDisclaimer = nil
+            splashscreenURL = nil
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(450))
+        guard !Task.isCancelled else { return }
+        guard let url = try? ServerURL.normalize(trimmed) else {
             loginDisclaimer = nil
             splashscreenURL = nil
             return
@@ -528,5 +608,34 @@ struct ConnectView: View {
         quickConnectTask = nil
         isStartingQuickConnect = false
         quickConnectCode = nil
+    }
+}
+
+private enum ConnectField: Hashable {
+    case server, username, password, gatewayID, gatewaySecret
+}
+
+private struct ConnectSignInBackdrop: View, Equatable {
+    let splashURL: URL?
+    let isRegularWidth: Bool
+
+    var body: some View {
+        ZStack {
+            LoginPalette.canvas
+            if let splashURL {
+                PosterImage(
+                    url: splashURL,
+                    aspectRatio: 1,
+                    contentMode: .fill,
+                    fill: .clear
+                )
+                .clipped()
+                .opacity(0.28)
+            }
+            LoginCanvasGlow(isRegularWidth: isRegularWidth)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

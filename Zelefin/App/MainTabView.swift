@@ -78,7 +78,10 @@ struct MainTabView: View {
     }
 
     private var visibleTabs: [AppTab] {
-        let ordered = AppTab.ordered(from: tabOrderRaw)
+        var ordered = AppTab.ordered(from: tabOrderRaw)
+        if session.usesSilo {
+            ordered.removeAll { $0 == .liveTV }
+        }
         if UIDevice.current.userInterfaceIdiom == .pad {
             return ordered
         }
@@ -143,6 +146,54 @@ enum ProfilePresentation {
         show(destination)
     }
 
+    static func promptPIN(named name: String) async -> String? {
+        await waitUntilNoModal()
+        guard let presenter = topViewController() else { return nil }
+        return await withCheckedContinuation { continuation in
+            let alert = UIAlertController(
+                title: "PIN for \(name)",
+                message: "This profile is locked.",
+                preferredStyle: .alert
+            )
+            alert.addTextField { field in
+                field.isSecureTextEntry = true
+                field.keyboardType = .numberPad
+                field.placeholder = "PIN"
+            }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+                continuation.resume(returning: nil)
+            })
+            alert.addAction(UIAlertAction(title: "Switch", style: .default) { _ in
+                continuation.resume(returning: alert.textFields?.first?.text)
+            })
+            presenter.present(alert, animated: true)
+        }
+    }
+
+    static func showMessage(_ message: String) async {
+        await waitUntilNoModal()
+        guard let presenter = topViewController() else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                continuation.resume()
+            })
+            presenter.present(alert, animated: true)
+        }
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+        let window = windows.first { $0.isKeyWindow } ?? windows.first { !$0.isHidden }
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
+        return controller
+    }
+
     private static func waitUntilNoModal() async {
         for _ in 0..<40 {
             try? await Task.sleep(for: .milliseconds(50))
@@ -189,11 +240,16 @@ struct ProfileMenu: View {
                 ProfileSystemMenuButton(
                     accessibilityLabel: showsName ? displayName : "Profile",
                     otherAccounts: session.otherAccounts,
+                    householdProfiles: session.householdProfiles,
+                    currentProfileID: session.session?.profileID,
+                    usesSilo: session.usesSilo,
                     onProfile: { ProfilePresentation.show(.profile) },
-                    onSessions: {
-                        guard plus.require(.sessions) else { return }
-                        ProfilePresentation.show(.sessions)
-                    },
+                    onSessions: session.usesSilo
+                        ? nil
+                        : {
+                            guard plus.require(.sessions) else { return }
+                            ProfilePresentation.show(.sessions)
+                        },
                     onScheduledTasks: session.isAdministrator
                         ? {
                             guard plus.require(.adminTools) else { return }
@@ -208,6 +264,9 @@ struct ProfileMenu: View {
                     onSignOut: { Task { await session.signOut() } },
                     onSwitchTo: { account in
                         Task { await session.switchTo(account) }
+                    },
+                    onSwitchToProfile: { profile in
+                        Task { await switchHouseholdProfile(profile) }
                     }
                 )
             }
@@ -236,6 +295,21 @@ struct ProfileMenu: View {
             .zelefinLiquidGlassCircle(interactive: false)
             .contentShape(Circle())
     }
+
+    private func switchHouseholdProfile(_ profile: SiloHouseholdProfile) async {
+        var pin: String?
+        if profile.hasPin {
+            pin = await ProfilePresentation.promptPIN(named: profile.name)
+            let trimmed = pin?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else { return }
+            pin = trimmed
+        }
+        do {
+            try await session.applySiloProfile(profile, pin: pin)
+        } catch {
+            await ProfilePresentation.showMessage(error.localizedDescription)
+        }
+    }
 }
 
 /// SwiftUI `Menu` over Liquid Glass / toolbar avatars merges every row into one
@@ -244,13 +318,17 @@ struct ProfileMenu: View {
 private struct ProfileSystemMenuButton: UIViewRepresentable {
     var accessibilityLabel: String
     var otherAccounts: [SavedSession]
+    var householdProfiles: [SiloHouseholdProfile]
+    var currentProfileID: String?
+    var usesSilo: Bool
     var onProfile: () -> Void
-    var onSessions: () -> Void
+    var onSessions: (() -> Void)?
     var onScheduledTasks: (() -> Void)?
     var onAddUser: () -> Void
     var onSettings: () -> Void
     var onSignOut: () -> Void
     var onSwitchTo: (SavedSession) -> Void
+    var onSwitchToProfile: (SiloHouseholdProfile) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -289,11 +367,42 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
             var rows: [UIMenuElement] = [
                 Self.action("Profile", "person.crop.circle") { [parent] in
                     parent.onProfile()
-                },
-                Self.action("Sessions", "play.tv") { [parent] in
-                    parent.onSessions()
                 }
             ]
+            if parent.usesSilo {
+                let switchProfile = parent.onSwitchToProfile
+                let others = parent.householdProfiles.filter { $0.id != parent.currentProfileID }
+                if !others.isEmpty {
+                    let items = others.map { profile in
+                        var parts: [String] = []
+                        if profile.isChild { parts.append("Kids") }
+                        if profile.hasPin { parts.append("PIN") }
+                        let work = ProfileMenuAction { switchProfile(profile) }
+                        nonisolated(unsafe) let handler: (UIAction) -> Void = { _ in
+                            work.run()
+                        }
+                        return UIAction(
+                            title: profile.name,
+                            subtitle: parts.isEmpty ? nil : parts.joined(separator: " · "),
+                            handler: handler
+                        )
+                    }
+                    rows.append(
+                        UIMenu(
+                            title: "Switch Profile",
+                            image: UIImage(systemName: "person.crop.rectangle.stack"),
+                            children: items
+                        )
+                    )
+                }
+            }
+            if let onSessions = parent.onSessions {
+                rows.append(
+                    Self.action("Sessions", "play.tv") {
+                        onSessions()
+                    }
+                )
+            }
             if let onScheduledTasks = parent.onScheduledTasks {
                 rows.append(
                     Self.action("Scheduled Tasks", "clock.arrow.2.circlepath") {
@@ -311,11 +420,15 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                     return UIAction(title: account.userName, subtitle: account.displayServer, handler: handler)
                 }
                 rows.append(
-                    UIMenu(title: "Switch User", image: UIImage(systemName: "person.2"), children: users)
+                    UIMenu(
+                        title: parent.usesSilo ? "Switch Account" : "Switch User",
+                        image: UIImage(systemName: "person.2"),
+                        children: users
+                    )
                 )
             }
             rows.append(contentsOf: [
-                Self.action("Add User", "person.badge.plus") { [parent] in
+                Self.action(parent.usesSilo ? "Add Account" : "Add User", "person.badge.plus") { [parent] in
                     parent.onAddUser()
                 },
                 Self.action("Settings", "gearshape") { [parent] in
@@ -388,8 +501,13 @@ struct ProfileSheetContainer: View {
                 SessionsView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .scheduledTasks:
-                ScheduledTasksView()
-                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                if session.usesSilo {
+                    SiloTasksView()
+                        .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                } else {
+                    ScheduledTasksView()
+                        .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                }
             case .settings:
                 SettingsView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }

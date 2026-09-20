@@ -88,8 +88,10 @@
             ReferencedContainer = "container:Zelefin.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+      </CommandLineArguments>
       <StoreKitConfigurationFileReference
-         identifier = "../../../Zelefin/Zelefin.storekit">
+         identifier = "../../Zelefin/Zelefin.storekit">
       </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction

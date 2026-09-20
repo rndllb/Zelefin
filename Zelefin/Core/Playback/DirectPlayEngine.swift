@@ -126,14 +126,20 @@ enum DirectPlayLoadOptions {
             declaredDurationSeconds: duration,
             preferredAudioLanguages: languageList(selectedAudioLanguage),
             preferredSubtitleLanguages: languageList(selectedSubtitleLanguage),
-            externalSubtitles: aetherSidecars(from: plan.externalSubtitles),
+            externalSubtitles: aetherSidecars(from: plan.externalSubtitles, extraHeaders: headers),
             preferredDecodePath: usesSampleBufferDecode(for: .directDecode) ? .software : .automatic
         )
     }
 
-    private static func aetherSidecars(from sidecars: [ExternalSubtitleSidecar]) -> [ExternalSubtitleTrack] {
+    private static func aetherSidecars(
+        from sidecars: [ExternalSubtitleSidecar],
+        extraHeaders: [String: String]
+    ) -> [ExternalSubtitleTrack] {
         sidecars.map { sidecar in
-            let headers = PlaybackHTTPHeaders.fields(for: sidecar.url)
+            var headers = PlaybackHTTPHeaders.fields(for: sidecar.url)
+            for (name, value) in extraHeaders {
+                headers[name] = value
+            }
             return ExternalSubtitleTrack(
                 url: sidecar.url,
                 name: sidecar.name,

@@ -27,11 +27,11 @@ enum PosterPrefetcher {
         }
     }
 
-    static func posterURLs(for items: [MediaItem], library: JellyfinLibraryClient) -> [URL] {
+    static func posterURLs(for items: [MediaItem], library: any LibraryServing) -> [URL] {
         artworkURLs(for: items, library: library)
     }
 
-    static func artworkURLs(for items: [MediaItem], library: JellyfinLibraryClient) -> [URL] {
+    static func artworkURLs(for items: [MediaItem], library: any LibraryServing) -> [URL] {
         var urls: [URL] = []
         var seen = Set<String>()
         for item in items {
@@ -43,7 +43,7 @@ enum PosterPrefetcher {
     }
 
     static func run(
-        library: JellyfinLibraryClient,
+        library: any LibraryServing,
         libraries: [MediaLibrary],
         userID: String,
         serverURL: URL,

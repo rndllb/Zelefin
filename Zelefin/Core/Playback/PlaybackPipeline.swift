@@ -221,8 +221,16 @@ enum PlaybackPipelineResolver {
             method: plan.method,
             container: plan.container,
             videoCodec: plan.videoCodec,
-            usesNativePlayer: PlaybackPreferences.useNativeVideoPlayer
+            usesNativePlayer: prefersNativePlayer(
+                preference: PlaybackPreferences.useNativeVideoPlayer,
+                hasSidecarSubtitles: !plan.externalSubtitles.isEmpty
+            )
         )
+    }
+
+    /// AVPlayer cannot overlay Silo/Jellyfin sidecar SRT/VTT files.
+    static func prefersNativePlayer(preference: Bool, hasSidecarSubtitles: Bool) -> Bool {
+        preference && !hasSidecarSubtitles
     }
 
     static func pipeline(
@@ -304,11 +312,18 @@ enum DirectPlaySeekPolicy {
 /// Where playback should begin. Direct Play files start at t=0 on the byte stream,
 /// so the client must open at the saved playhead. Remux / transcode HLS already
 /// includes `StartTimeTicks` on the server URL — seeking again would skip twice.
+/// Silo `original_http` is remux but the byte stream is the full file, so the client
+/// still owns the playhead.
 enum PlaybackResumePolicy {
     static let threshold: TimeInterval = 5
 
-    static func clientStartPosition(method: PlaybackMethod, startTime: TimeInterval) -> TimeInterval? {
-        guard startTime > threshold, method == .directPlay else { return nil }
+    static func clientStartPosition(
+        method: PlaybackMethod,
+        startTime: TimeInterval,
+        clientOwnsPlayhead: Bool = false
+    ) -> TimeInterval? {
+        guard startTime > threshold else { return nil }
+        guard method == .directPlay || clientOwnsPlayhead else { return nil }
         return startTime
     }
 
@@ -321,9 +336,12 @@ enum PlaybackResumePolicy {
     static func needsDeferredSeek(
         method: PlaybackMethod,
         playhead: TimeInterval,
-        plannedStart: TimeInterval
+        plannedStart: TimeInterval,
+        clientOwnsPlayhead: Bool = false
     ) -> Bool {
-        method == .directPlay && plannedStart > threshold && playhead <= threshold
+        (method == .directPlay || clientOwnsPlayhead)
+            && plannedStart > threshold
+            && playhead <= threshold
     }
 }
 

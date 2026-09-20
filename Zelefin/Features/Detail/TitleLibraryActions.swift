@@ -4,6 +4,7 @@ struct PersonDetailView: View {
     let personID: String
     let name: String
     let imageTag: String?
+    var imageURL: URL? = nil
 
     @Environment(SessionStore.self) private var session
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
@@ -55,7 +56,7 @@ struct PersonDetailView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            PosterImage(url: session.library?.personImageURL(id: personID, tag: profile?.imageTag ?? imageTag))
+            PosterImage(url: profile?.imageURL ?? imageURL ?? session.library?.personImageURL(id: personID, tag: profile?.imageTag ?? imageTag))
                 .frame(width: 110, height: 110)
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 6) {
@@ -78,7 +79,14 @@ struct PersonDetailView: View {
         let library = session.library
         async let fetched = library?.person(id: personID)
         let titles = (try? await library?.items(personID: personID)) ?? []
-        profile = await fetched ?? CreditPerson(id: personID, name: name, roleLabel: "Cast & Crew", imageTag: imageTag, rank: 0)
+        profile = await fetched ?? CreditPerson(
+            id: personID,
+            name: name,
+            roleLabel: "Cast & Crew",
+            imageTag: imageTag,
+            rank: 0,
+            imageURL: imageURL
+        )
         items = titles
         isLoading = false
     }
@@ -221,13 +229,13 @@ struct TitleUserActions: View {
         if let onPlaylists {
             Button("Add to Playlist…", systemImage: "list.bullet.rectangle", action: onPlaylists)
         }
-        if let onPlayElsewhere {
+        if let onPlayElsewhere, !session.usesSilo {
             Button("Play on Another Device…", systemImage: "tv.badge.wifi") {
                 guard plus.require(.sessions) else { return }
                 onPlayElsewhere()
             }
         }
-        if let onSyncPlay {
+        if let onSyncPlay, !session.usesSilo {
             Button("Play in SyncPlay…", systemImage: "person.2.wave.2") {
                 guard plus.require(.syncPlay) else { return }
                 onSyncPlay()
@@ -315,7 +323,7 @@ struct PlayOnDeviceSheet: View {
     }
 
     private func load() async {
-        sessions = (try? await session.library?.playbackSessions()) ?? []
+        sessions = (try? await session.jellyfinLibrary?.playbackSessions()) ?? []
     }
 
     private func play(on target: PlaybackSession) async {

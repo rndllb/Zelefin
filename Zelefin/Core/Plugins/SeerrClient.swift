@@ -51,7 +51,7 @@ struct SeerrTitle: Identifiable, Hashable, Sendable {
 
         var buttonTitle: String {
             switch self {
-            case .available: "On Jellyfin"
+            case .available: "In Library"
             case .pending, .processing: "Requested"
             case .partial: "Request More"
             case .unknown, .missing: "Request"

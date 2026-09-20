@@ -11,6 +11,20 @@ final class TickClockTests: XCTestCase {
     }
 }
 
+final class PosterRatingBadgeTests: XCTestCase {
+    func testStarScoreAcceptsTenPointScale() {
+        XCTAssertEqual(PosterRatingBadge.starScore(from: 7.5), 7.5)
+        XCTAssertEqual(PosterRatingBadge.starScore(from: 10), 10)
+    }
+
+    func testStarScoreRejectsMissingZeroOrPercentage() {
+        XCTAssertNil(PosterRatingBadge.starScore(from: nil))
+        XCTAssertNil(PosterRatingBadge.starScore(from: 0))
+        // RT-style percentages can land in communityRating; never shown as "/10".
+        XCTAssertNil(PosterRatingBadge.starScore(from: 85))
+    }
+}
+
 final class MediaItemProgressTests: XCTestCase {
     func testProgressClamps() {
         let item = MediaItem(
@@ -913,6 +927,17 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(featured.map(\.id), ["m1", "s1", "m2", "s2", "m3", "s3", "m4", "s4"])
     }
 
+    func testFeaturedKeepsHomeFeedHeroArtwork() {
+        var catalog = Self.title(id: "m1", kind: .movie)
+        catalog.backdropURL = URL(string: "https://example.com/card.jpg")
+        var home = Self.title(id: "m1", kind: .movie)
+        home.backdropURL = URL(string: "https://example.com/hero.jpg")
+        home.logoURL = URL(string: "https://example.com/logo.png")
+        let merged = HomeLayoutPreferences.replacingHeroArtwork(on: [catalog], with: [home])
+        XCTAssertEqual(merged.first?.backdropURL?.absoluteString, "https://example.com/hero.jpg")
+        XCTAssertEqual(merged.first?.logoURL?.absoluteString, "https://example.com/logo.png")
+    }
+
     func testHeroSwipeTurnsThePageWithoutOpeningDetails() {
         XCTAssertEqual(FeaturedHeroPaging.selectionDelta(translation: CGSize(width: -80, height: 6)), 1)
         XCTAssertEqual(FeaturedHeroPaging.selectionDelta(translation: CGSize(width: 80, height: -4)), -1)
@@ -1777,6 +1802,42 @@ final class RootPageChromeTests: XCTestCase {
         XCTAssertEqual(
             RootPageChrome.padTabBarLift(usesPadTopChrome: false, isSidebarVisible: false),
             0
+        )
+    }
+
+    func testPushedOverlaySitsInThePadTabRowWhenContentGoesUnderTheStatusBar() {
+        XCTAssertEqual(
+            RootPageChrome.pushedOverlayTopPadding(
+                contentIgnoresTopSafeArea: true,
+                statusBarHeight: 24
+            ),
+            28
+        )
+        XCTAssertEqual(
+            RootPageChrome.pushedOverlayLift(
+                contentIgnoresTopSafeArea: true,
+                usesPadTopChrome: true,
+                isSidebarVisible: false
+            ),
+            0
+        )
+    }
+
+    func testPushedOverlayLiftsIntoThePadTabRowWhenContentUsesTheSafeArea() {
+        XCTAssertEqual(
+            RootPageChrome.pushedOverlayTopPadding(
+                contentIgnoresTopSafeArea: false,
+                statusBarHeight: 24
+            ),
+            4
+        )
+        XCTAssertEqual(
+            RootPageChrome.pushedOverlayLift(
+                contentIgnoresTopSafeArea: false,
+                usesPadTopChrome: true,
+                isSidebarVisible: false
+            ),
+            -RootPageChrome.padTopTabBarClearance
         )
     }
 }

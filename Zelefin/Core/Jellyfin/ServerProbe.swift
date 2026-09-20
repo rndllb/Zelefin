@@ -21,10 +21,17 @@ struct ServerProbe: Sendable {
         )
     }
 
-    /// Checks whether `url` answers as a Jellyfin server.
+    /// Checks whether `url` answers as a Silo or Jellyfin server.
     ///
-    /// Sends the public system-info request, including any configured access-gateway headers.
+    /// Silo `/api/v1/health` is tried first so a host that also exposes Jellyfin
+    /// compatibility on another port is still recognized as Silo.
     func checkReachability(at url: URL) async -> ServerReachability {
+        if let health = try? await siloHealth(at: url), health.isReady {
+            return .reachable(
+                serverName: health.displayName,
+                version: health.version ?? "Silo"
+            )
+        }
         do {
             let info = try await publicInfo(at: url)
             let trimmedName = info.serverName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -35,5 +42,20 @@ struct ServerProbe: Sendable {
         } catch {
             return ServerReachability(error: error)
         }
+    }
+
+    func siloHealth(at url: URL) async throws -> SiloHealth {
+        let client = SiloAPIClient(baseURL: url)
+        return try await client.health()
+    }
+
+    func detectBackend(at url: URL) async -> MediaBackend? {
+        if let health = try? await siloHealth(at: url), health.isReady {
+            return .silo
+        }
+        if (try? await publicInfo(at: url)) != nil {
+            return .jellyfin
+        }
+        return nil
     }
 }

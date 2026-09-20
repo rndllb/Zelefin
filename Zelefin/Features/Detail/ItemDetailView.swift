@@ -39,6 +39,8 @@ struct ItemDetailView: View {
     @State private var downloadRemovalItem: MediaItem?
     @State private var subtitleSearchItem: MediaItem?
     @State private var mediaStreamRevision = 0
+    @State private var audioTracks: [MediaTrack]?
+    @State private var subtitleTracks: [MediaTrack]?
 
     init(itemID: String, preview: MediaItem? = nil, focusEpisodeID: String? = nil) {
         self.itemID = itemID
@@ -241,56 +243,58 @@ struct ItemDetailView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let item {
-                    HStack(spacing: 8) {
-                        Menu {
-                            TitleUserActions(
-                                item: item,
-                                onChange: { self.item = $0 },
-                                onCollections: { showsCollectionEditor = true },
-                                onPlayElsewhere: { showsPlayOnDevice = true },
-                                onSyncPlay: item.kind.usesVideoPlayer ? { showsSyncPlay = true } : nil,
-                                onRefreshMetadata: session.isAdministrator
-                                    ? { Task { await refreshMetadata() } }
-                                    : nil,
-                                onRemoteImage: session.isAdministrator
-                                    ? { showsRemoteImages = true }
-                                    : nil,
-                                onDelete: session.isAdministrator
-                                    ? { showsDeleteConfirm = true }
-                                    : nil
-                            )
-                            if item.kind == .movie {
-                                Divider()
-                                TitlePlaybackMenus(
-                                    item: item,
-                                    streamRevision: mediaStreamRevision,
-                                    onAddSubtitles: { subtitleSearchItem = item }
-                                )
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.body.weight(.bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 36, height: 36)
-                                .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel("More")
-                        DetailDownloadSharePill(item: item, episodes: episodes)
-                    }
-                }
+        .zelefinPushedChrome(contentIgnoresTopSafeArea: true, hidesToolbarBackground: true) {
+            if let item {
+                detailTrailingChrome(for: item)
             }
-            .catalogToolbarHidesSystemBackground()
         }
         .tint(.white)
         .task { await load() }
+    }
+
+    private func detailTrailingChrome(for item: MediaItem) -> some View {
+        HStack(spacing: 8) {
+            Menu {
+                TitleUserActions(
+                    item: item,
+                    onChange: { self.item = $0 },
+                    onCollections: session.usesSilo ? nil : { showsCollectionEditor = true },
+                    onPlayElsewhere: session.usesSilo ? nil : { showsPlayOnDevice = true },
+                    onSyncPlay: session.usesSilo || !item.kind.usesVideoPlayer
+                        ? nil
+                        : { showsSyncPlay = true },
+                    onRefreshMetadata: session.isAdministrator
+                        ? { Task { await refreshMetadata() } }
+                        : nil,
+                    onRemoteImage: session.isAdministrator && !session.usesSilo
+                        ? { showsRemoteImages = true }
+                        : nil,
+                    onDelete: session.isAdministrator && !session.usesSilo
+                        ? { showsDeleteConfirm = true }
+                        : nil
+                )
+                if item.kind == .movie || item.kind == .episode {
+                    Divider()
+                    TitlePlaybackMenus(
+                        item: item,
+                        audioTracks: audioTracks,
+                        subtitleTracks: subtitleTracks,
+                        streamRevision: mediaStreamRevision,
+                        onAddSubtitles: { subtitleSearchItem = item }
+                    )
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: ZelefinPillMetrics.height, height: ZelefinPillMetrics.height)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .zelefinLiquidGlassCircle()
+            .accessibilityLabel("More")
+            DetailDownloadSharePill(item: item, episodes: episodes)
+        }
     }
 
     private func hero(for item: MediaItem, width: CGFloat, height: CGFloat) -> some View {
@@ -517,56 +521,58 @@ struct ItemDetailView: View {
             .accessibilityLabel(selectedSeasonTitle)
             .accessibilityHint("Choose a season")
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
-                    ForEach(episodeStrip) { card in
-                        ZStack(alignment: .bottomTrailing) {
-                            Button {
-                                play(card.episode)
-                            } label: {
-                                EpisodeShowcaseCard(
-                                    item: card.episode,
-                                    imageURL: session.library?.primaryURL(for: card.episode, maxHeight: 480),
-                                    showsOverflowIcon: false
-                                )
-                            }
-                            .buttonStyle(.plain)
+            if !episodeStrip.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
+                        ForEach(episodeStrip) { card in
+                            ZStack(alignment: .bottomTrailing) {
+                                Button {
+                                    play(card.episode)
+                                } label: {
+                                    EpisodeShowcaseCard(
+                                        item: card.episode,
+                                        imageURL: session.library?.primaryURL(for: card.episode, maxHeight: 480),
+                                        showsOverflowIcon: false
+                                    )
+                                }
+                                .buttonStyle(.plain)
 
-                            PlaybackQueueOverflowButton(
-                                item: card.episode,
-                                context: .episode,
-                                onPlay: { play(card.episode) },
-                                onDidChange: { Task { await refreshPlaybackProgress() } },
-                                labelOpacity: 0.72,
-                                usesCardChrome: false
+                                PlaybackQueueOverflowButton(
+                                    item: card.episode,
+                                    context: .episode,
+                                    onPlay: { play(card.episode) },
+                                    onDidChange: { Task { await refreshPlaybackProgress() } },
+                                    labelOpacity: 0.72,
+                                    usesCardChrome: false
+                                )
+                                .padding(.trailing, 2)
+                                .padding(.bottom, 2)
+                            }
+                            .frame(
+                                width: PosterMetrics.episodeCardSize.width * sidebarLayout.scale,
+                                height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale
                             )
-                            .padding(.trailing, 2)
-                            .padding(.bottom, 2)
+                            .accessibilityHidden(card.copy != EpisodeCarousel.homeCopy)
                         }
-                        .frame(
-                            width: PosterMetrics.episodeCardSize.width * sidebarLayout.scale,
-                            height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale
-                        )
-                        .accessibilityHidden(card.copy != EpisodeCarousel.homeCopy)
                     }
+                    .scrollTargetLayout()
                 }
-                .scrollTargetLayout()
-            }
-            .frame(height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale)
-            .contentMargins(.horizontal, 16, for: .scrollContent)
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $scrolledEpisodeID)
-            .onChange(of: scrolledEpisodeID) { _, newValue in
-                handleEpisodeScroll(newValue)
-            }
-            .onScrollPhaseChange { _, phase in
-                guard phase == .idle else { return }
-                isJumpingSeason = false
-                recenterLoopIfNeeded()
-            }
-            .onAppear {
-                if scrolledEpisodeID == nil, !episodeStrip.isEmpty {
-                    syncCarouselPosition(forceSeasonStart: true)
+                .frame(height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale)
+                .contentMargins(.horizontal, 16, for: .scrollContent)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $scrolledEpisodeID)
+                .onChange(of: scrolledEpisodeID) { _, newValue in
+                    handleEpisodeScroll(newValue)
+                }
+                .onScrollPhaseChange { _, phase in
+                    guard phase == .idle else { return }
+                    isJumpingSeason = false
+                    recenterLoopIfNeeded()
+                }
+                .onAppear {
+                    if scrolledEpisodeID == nil {
+                        syncCarouselPosition(forceSeasonStart: true)
+                    }
                 }
             }
         }
@@ -660,11 +666,16 @@ struct ItemDetailView: View {
                 LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
                     ForEach(credits) { person in
                         NavigationLink {
-                            PersonDetailView(personID: person.id, name: person.name, imageTag: person.imageTag)
+                            PersonDetailView(
+                                personID: person.id,
+                                name: person.name,
+                                imageTag: person.imageTag,
+                                imageURL: person.imageURL
+                            )
                         } label: {
                             CastMemberCard(
                                 person: person,
-                                imageURL: session.library?.personImageURL(id: person.id, tag: person.imageTag)
+                                imageURL: person.imageURL ?? session.library?.personImageURL(id: person.id, tag: person.imageTag)
                             )
                         }
                         .buttonStyle(.plain)
@@ -731,6 +742,12 @@ struct ItemDetailView: View {
         playingWebTrailer = trailer
     }
 
+    private func loadStreamTracks(for item: MediaItem) async {
+        let fetched = await session.library?.streamTracks(for: item.id)
+        audioTracks = fetched?.audio ?? []
+        subtitleTracks = fetched?.subtitles ?? []
+    }
+
     private func load() async {
         guard session.library != nil else { return }
         if hasLoadedDetail { return }
@@ -783,28 +800,31 @@ struct ItemDetailView: View {
     private func refreshFromServer() async {
         guard let library = session.library else { return }
         do {
-            let (loaded, dto) = try await library.item(id: itemID)
+            let loaded = try await library.item(id: itemID)
             item = loaded
-            moreInfo = TitleMoreInfoMapper.info(from: dto, item: loaded)
+            moreInfo = await library.titleMoreInfo(for: loaded)
             isLoading = false
+            await loadStreamTracks(for: loaded)
 
-            async let fetchedTrailers = library.trailers(for: dto)
+            async let fetchedTrailers = library.trailers(for: loaded)
             async let fetchedExtras = library.specialFeatures(for: loaded.id)
             async let fetchedThemes = library.themeVideos(for: loaded.id)
             async let fetchedRelated = library.similarItems(for: loaded)
-            async let fetchedCredits = library.credits(for: loaded.id, from: dto)
+            async let fetchedCredits = library.credits(for: loaded)
 
             if loaded.kind == .series {
                 async let fetchedSeasons = library.seasons(seriesID: loaded.id)
                 async let fetchedEpisodes = library.episodes(seriesID: loaded.id)
-                seasons = MediaItem.orderedSeasons((try? await fetchedSeasons) ?? [])
-                if selectedSeasonID == nil || !seasons.contains(where: { $0.id == selectedSeasonID }) {
-                    selectedSeasonID = seasons.first?.id
-                }
-                episodes = MediaItem.orderedShowEpisodes(
+                let loadedSeasons = MediaItem.orderedSeasons((try? await fetchedSeasons) ?? [])
+                let loadedEpisodes = MediaItem.orderedShowEpisodes(
                     (try? await fetchedEpisodes) ?? [],
-                    seasons: seasons
+                    seasons: loadedSeasons
                 )
+                seasons = loadedSeasons
+                if selectedSeasonID == nil || !loadedSeasons.contains(where: { $0.id == selectedSeasonID }) {
+                    selectedSeasonID = loadedSeasons.first?.id
+                }
+                episodes = loadedEpisodes
                 applyFocusedEpisode()
                 syncCarouselPosition(forceSeasonStart: scrolledEpisodeID == nil)
                 persistSnapshot()
@@ -840,17 +860,17 @@ struct ItemDetailView: View {
         isLoading = false
     }
 
-    private func fillSeriesMedia(library: JellyfinLibraryClient, title: MediaItem) async {
+    private func fillSeriesMedia(library: any LibraryServing, title: MediaItem) async {
         guard moreInfo.needsEpisodeMedia else { return }
         let hero = MediaItem.heroPlaybackItem(title: title, episodes: episodes)
         guard hero.kind == .episode, hero.id != title.id else { return }
-        guard let (_, dto) = try? await library.item(id: hero.id) else { return }
-        moreInfo = moreInfo.mergingMedia(from: dto)
+        guard let episode = try? await library.item(id: hero.id) else { return }
+        moreInfo = moreInfo.mergingMedia(from: episode)
     }
 
     private func refreshPlaybackProgress() async {
         guard let library = session.library else { return }
-        guard let (loaded, _) = try? await library.item(id: itemID) else { return }
+        guard let loaded = try? await library.item(id: itemID) else { return }
         item = loaded
         if loaded.kind == .series {
             let fetched = (try? await library.episodes(seriesID: loaded.id)) ?? []
@@ -874,11 +894,11 @@ struct ItemDetailView: View {
         guard let library = session.library else { return }
 
         if savedItemID == itemID {
-            if let (loaded, _) = try? await library.item(id: itemID) {
+            if let loaded = try? await library.item(id: itemID) {
                 item = loaded
             }
         } else if let index = episodes.firstIndex(where: { $0.id == savedItemID }) {
-            if let (loaded, _) = try? await library.item(id: savedItemID) {
+            if let loaded = try? await library.item(id: savedItemID) {
                 episodes[index] = loaded
             }
         }
@@ -1045,11 +1065,16 @@ private struct CastCrewListView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 ForEach(people) { person in
                     NavigationLink {
-                        PersonDetailView(personID: person.id, name: person.name, imageTag: person.imageTag)
+                        PersonDetailView(
+                            personID: person.id,
+                            name: person.name,
+                            imageTag: person.imageTag,
+                            imageURL: person.imageURL
+                        )
                     } label: {
                         HStack(spacing: 14) {
                             PosterImage(
-                                url: session.library?.personImageURL(id: person.id, tag: person.imageTag),
+                                url: person.imageURL ?? session.library?.personImageURL(id: person.id, tag: person.imageTag),
                                 aspectRatio: 1
                             )
                             .frame(width: 56, height: 56)

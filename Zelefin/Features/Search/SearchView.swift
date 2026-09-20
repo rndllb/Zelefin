@@ -351,6 +351,7 @@ private struct SearchPage: View {
     @State private var genres: [MediaItem] = []
     @State private var isLoadingResults = false
     @State private var requestTitle: SeerrTitle?
+    @State private var requestError: String?
     @State private var discoverHome = SeerrDiscoverHome()
     @State private var isLoadingDiscover = false
     @State private var discoverError: String?
@@ -389,13 +390,17 @@ private struct SearchPage: View {
                     .animation(ZelefinMotion.sidebarChrome, value: reservedHeaderHeight)
                 Group {
                     if scope == .discover {
-                        if PluginSettings.isSeerrConfigured {
+                        if session.isDiscoverAvailable {
                             discoverContent
                         } else {
                             ContentUnavailableView(
-                                "Sign In to Seerr",
+                                session.usesSilo ? "Requests Are Off" : "Sign In to Seerr",
                                 systemImage: "sparkles.rectangle.stack",
-                                description: Text("Add Seerr in Settings to request movies and shows.")
+                                description: Text(
+                                    session.usesSilo
+                                        ? "Install the Seerr plugin or Sonarr & Radarr requests on this Silo server, then open Plugins in Settings."
+                                        : "Add Seerr in Settings to request movies and shows."
+                                )
                             )
                             .padding(.top, 24)
                         }
@@ -457,12 +462,17 @@ private struct SearchPage: View {
         .sheet(item: $requestTitle) { title in
             NavigationStack {
                 SeerrRequestView(title: title) {
-                    if let index = seerrResults.firstIndex(where: { $0.id == title.id }) {
-                        seerrResults[index].availability = .pending
-                    }
-                    discoverHome.markRequested(title)
+                    markRequested(title)
                 }
             }
+        }
+        .alert("Request", isPresented: Binding(
+            get: { requestError != nil },
+            set: { if !$0 { requestError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(requestError ?? "")
         }
         .fullScreenCover(item: $playingItem) { item in
             PlayerView(item: item)
@@ -503,7 +513,7 @@ private struct SearchPage: View {
     private var discoverContent: some View {
         if trimmedTerm.isEmpty {
             SeerrDiscoverHomeView(home: $discoverHome, isLoading: isLoadingDiscover) { title in
-                requestTitle = title
+                handleRequest(title)
             }
         } else if isLoadingResults && seerrResults.isEmpty {
             ProgressView()
@@ -512,7 +522,7 @@ private struct SearchPage: View {
                 .padding(.top, 40)
         } else if let discoverError {
             ContentUnavailableView(
-                "Couldn’t Search Seerr",
+                "Couldn’t Search",
                 systemImage: "exclamationmark.triangle",
                 description: Text(discoverError)
             )
@@ -524,7 +534,7 @@ private struct SearchPage: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(seerrResults) { title in
                     SeerrRequestRow(title: title) {
-                        requestTitle = title
+                        handleRequest(title)
                     }
                 }
             }
@@ -615,7 +625,7 @@ private struct SearchPage: View {
                 NavigationLink("View Details") {
                     ItemDetailView(item: item)
                 }
-                if item.kind == .movie {
+                if item.kind == .movie || item.kind == .episode {
                     TitlePlaybackMenus(
                         item: item,
                         onAddSubtitles: { subtitleSearchItem = item }
@@ -713,12 +723,7 @@ private struct SearchPage: View {
     }
 
     private func searchImageURL(_ hit: LibrarySearchHit) -> URL? {
-        switch hit.kind {
-        case .person:
-            return session.library?.personImageURL(id: hit.id, tag: hit.imageTag)
-        default:
-            return session.library?.artwork.image(itemID: hit.id, type: "Primary", tag: hit.imageTag, maxHeight: ArtworkURLBuilder.posterMaxHeight, format: "jpg")
-        }
+        session.library?.searchHitImageURL(hit)
     }
 
     private func loadGenres() async {
@@ -730,6 +735,13 @@ private struct SearchPage: View {
     }
 
     private func loadDiscover() async {
+        if session.usesSilo, let client = session.requestCatalog {
+            if !discoverHome.isEmpty { return }
+            isLoadingDiscover = true
+            defer { isLoadingDiscover = false }
+            discoverHome = await client.discoverHome()
+            return
+        }
         guard let client = PluginSettings.seerrClient else { return }
         if !discoverHome.isEmpty { return }
         isLoadingDiscover = true
@@ -747,10 +759,16 @@ private struct SearchPage: View {
             return
         }
         isLoadingResults = true
-        if scope == .discover, let client = PluginSettings.seerrClient {
+        if scope == .discover {
             hits = []
             do {
-                seerrResults = try await client.search(term: trimmed)
+                if session.usesSilo, let client = session.requestCatalog {
+                    seerrResults = try await client.search(term: trimmed)
+                } else if let client = PluginSettings.seerrClient {
+                    seerrResults = try await client.search(term: trimmed)
+                } else {
+                    seerrResults = []
+                }
                 discoverError = nil
             } catch {
                 seerrResults = []
@@ -762,6 +780,34 @@ private struct SearchPage: View {
             hits = (try? await session.library?.searchLibrary(trimmed)) ?? []
         }
         isLoadingResults = false
+    }
+
+    private func handleRequest(_ title: SeerrTitle) {
+        if session.usesSilo {
+            Task { await submitSiloRequest(title) }
+        } else {
+            requestTitle = title
+        }
+    }
+
+    private func submitSiloRequest(_ title: SeerrTitle) async {
+        guard let client = session.requestCatalog else {
+            requestError = "Requests are not available on this Silo server."
+            return
+        }
+        do {
+            try await client.request(title)
+            markRequested(title)
+        } catch {
+            requestError = error.localizedDescription
+        }
+    }
+
+    private func markRequested(_ title: SeerrTitle) {
+        if let index = seerrResults.firstIndex(where: { $0.id == title.id }) {
+            seerrResults[index].availability = .pending
+        }
+        discoverHome.markRequested(title)
     }
 
     private func recordRecent(_ item: MediaItem) {
@@ -818,7 +864,7 @@ struct SeerrRequestRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(isFullyOnServer ? "On Jellyfin" : title.availability.buttonTitle)
+                Text(isFullyOnServer ? "In Library" : title.availability.buttonTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(canRequestNow ? .black : .white.opacity(0.7))
                     .padding(.horizontal, 12)

@@ -2,7 +2,7 @@ import Foundation
 import JellyfinAPI
 
 @MainActor
-final class PlaybackReporter {
+final class PlaybackReporter: PlaybackReporting {
     private let client: JellyfinClient
     private let plan: PlaybackPlan
     private var lastReport: TimeInterval = 0

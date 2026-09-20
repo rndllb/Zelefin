@@ -4,6 +4,9 @@ import Foundation
 enum DeviceIdentity {
     static let clientName = "Zelefin"
     static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    static var clientFamily: String {
+        hardwareIdentifier.hasPrefix("iPad") ? "tablet" : "mobile"
+    }
 
     /// Marketing name Jellyfin shows in Sessions, such as "iPhone 17 Pro".
     static var deviceName: String {

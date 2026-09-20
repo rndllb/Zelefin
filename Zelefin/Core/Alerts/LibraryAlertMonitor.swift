@@ -252,12 +252,12 @@ final class LibraryAlertMonitor {
                 accountID: saved.accountID,
                 preferences: preferences
             )
-            async let fetchedSessions = fetchSessions(library: library, preferences: preferences)
+            async let fetchedSessions = fetchSessions(library: session.jellyfinLibrary, preferences: preferences)
             slice = await fetchedSlice
             playbackSessions = await fetchedSessions
         } else {
             slice = nil
-            playbackSessions = await fetchSessions(library: library, preferences: preferences)
+            playbackSessions = await fetchSessions(library: session.jellyfinLibrary, preferences: preferences)
         }
 
         await evaluate(
@@ -272,7 +272,7 @@ final class LibraryAlertMonitor {
     }
 
     private func fetchLibrarySlice(
-        library: JellyfinLibraryClient,
+        library: any LibraryServing,
         accountID: String,
         preferences: LibraryAlertPreferences
     ) async -> LibraryPollSlice {
@@ -290,11 +290,14 @@ final class LibraryAlertMonitor {
                 previousIDs: previous.seenRequestIDSet,
                 primed: previous.primedAdmin
             )
+        } else if preferences.requests, let silo = library as? SiloLibraryClient {
+            slice.requests = await Self.namedSiloRequests(from: SiloRequestClient(api: silo.api))
         } else {
             slice.requests = []
         }
 
-        if let scheduled = try? await library.scheduledTasks() {
+        if let jellyfin = library as? JellyfinLibraryClient,
+           let scheduled = try? await jellyfin.scheduledTasks() {
             slice.tasks = scheduled.filter(\.isActive).map {
                 LibraryAlertTask(id: $0.id, name: $0.name)
             }
@@ -305,12 +308,12 @@ final class LibraryAlertMonitor {
     }
 
     private func fetchSessions(
-        library: JellyfinLibraryClient,
+        library: JellyfinLibraryClient?,
         preferences: LibraryAlertPreferences
     ) async -> [PlaybackSession]? {
         guard preferences.streams || preferences.online else { return nil }
         guard preferences.isAdministrator || LibraryAlertSettings.lastKnownAdministrator else { return nil }
-        return try? await library.playbackSessions()
+        return try? await library?.playbackSessions()
     }
 
     private func evaluate(
@@ -399,6 +402,10 @@ final class LibraryAlertMonitor {
             requests.append(LibraryAlertRequest(id: id, title: title, requester: requester))
         }
         return requests
+    }
+
+    private static func namedSiloRequests(from client: SiloRequestClient) async -> [LibraryAlertRequest] {
+        (try? await client.listedAlerts()) ?? []
     }
 }
 

@@ -61,7 +61,7 @@ struct SeerrDiscoverHomeView: View {
     }
 
     @ViewBuilder
-    private func genreRow(_ title: String, genres: [SeerrGenreSliderItem], kind: SeerrTitle.Kind) -> some View {
+    private func genreRow(_ title: String, genres: [SeerrGenreSliderItem], kind _: SeerrTitle.Kind) -> some View {
         if !genres.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: title, showsChevron: false)
@@ -69,11 +69,7 @@ struct SeerrDiscoverHomeView: View {
                     LazyHStack(spacing: PosterMetrics.rowSpacing) {
                         ForEach(genres) { genre in
                             NavigationLink {
-                                SeerrDiscoverGridView(
-                                    query: kind == .movie
-                                        ? .movieGenre(id: genre.id, name: genre.name)
-                                        : .tvGenre(id: genre.id, name: genre.name)
-                                ) { title in
+                                SeerrDiscoverGridView(query: genre.discoverQuery) { title in
                                     home.markRequested(title)
                                 }
                             } label: {
@@ -121,6 +117,7 @@ struct SeerrDiscoverHomeView: View {
 struct SeerrDiscoverGridView: View {
     let query: SeerrDiscoverQuery
     var onRequested: (SeerrTitle) -> Void = { _ in }
+    @Environment(SessionStore.self) private var session
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
     @State private var titles: [SeerrTitle] = []
@@ -129,6 +126,7 @@ struct SeerrDiscoverGridView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var requestTitle: SeerrTitle?
+    @State private var requestError: String?
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -152,7 +150,7 @@ struct SeerrDiscoverGridView: View {
                 LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(Array(titles.enumerated()), id: \.element.id) { index, title in
                         Button {
-                            requestTitle = title
+                            handleRequest(title)
                         } label: {
                             FillingPosterCell { size in
                                 SeerrPoster(title: title, size: size)
@@ -178,12 +176,18 @@ struct SeerrDiscoverGridView: View {
         .sheet(item: $requestTitle) { title in
             NavigationStack {
                 SeerrRequestView(title: title) {
-                    if let index = titles.firstIndex(where: { $0.id == title.id }) {
-                        titles[index].availability = .pending
-                    }
+                    markRequested(title)
                     onRequested(title)
                 }
             }
+        }
+        .alert("Request", isPresented: Binding(
+            get: { requestError != nil },
+            set: { if !$0 { requestError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(requestError ?? "")
         }
     }
 
@@ -193,15 +197,20 @@ struct SeerrDiscoverGridView: View {
     }
 
     private func load(page nextPage: Int, replace: Bool) async {
-        guard let client = PluginSettings.seerrClient else {
-            errorMessage = "Sign in to Seerr in Settings."
-            isLoading = false
-            return
-        }
         isLoading = true
         defer { isLoading = false }
         do {
-            let payload = try await client.discover(query, page: nextPage)
+            let payload: SeerrDiscoverPage
+            if session.usesSilo, let client = session.requestCatalog {
+                payload = try await client.discover(query, page: nextPage)
+            } else if let client = PluginSettings.seerrClient {
+                payload = try await client.discover(query, page: nextPage)
+            } else {
+                errorMessage = session.usesSilo
+                    ? "Requests are not available on this Silo server."
+                    : "Sign in to Seerr in Settings."
+                return
+            }
             if replace {
                 titles = payload.titles
             } else {
@@ -213,6 +222,34 @@ struct SeerrDiscoverGridView: View {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func handleRequest(_ title: SeerrTitle) {
+        if session.usesSilo {
+            Task { await submitSiloRequest(title) }
+        } else {
+            requestTitle = title
+        }
+    }
+
+    private func submitSiloRequest(_ title: SeerrTitle) async {
+        guard let client = session.requestCatalog else {
+            requestError = "Requests are not available on this Silo server."
+            return
+        }
+        do {
+            try await client.request(title)
+            markRequested(title)
+            onRequested(title)
+        } catch {
+            requestError = error.localizedDescription
+        }
+    }
+
+    private func markRequested(_ title: SeerrTitle) {
+        if let index = titles.firstIndex(where: { $0.id == title.id }) {
+            titles[index].availability = .pending
         }
     }
 }

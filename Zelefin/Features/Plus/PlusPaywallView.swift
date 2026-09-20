@@ -3,6 +3,7 @@ import SwiftUI
 /// Plus purchase canvas. Same black field, Z mark, card, and cyan LOGIN button as sign-in.
 struct PlusPaywallView: View {
     var feature: PlusFeature?
+    var usesSilo: Bool = false
     @Environment(PlusEntitlement.self) private var plus
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -93,7 +94,7 @@ struct PlusPaywallView: View {
                     .accessibilityAddTraits(.isHeader)
                     .minimumScaleFactor(0.8)
                     .lineLimit(1)
-                Text(feature?.paywallMessage ?? plusSummary)
+                Text(feature?.paywallMessage(usesSilo: usesSilo) ?? plusSummary)
                     .font(.subheadline)
                     .foregroundStyle(LoginPalette.secondaryText)
                     .multilineTextAlignment(.center)
@@ -209,7 +210,7 @@ struct PlusPaywallView: View {
 
     private var includedCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(PlusFeature.allCases.enumerated()), id: \.element.id) { index, item in
+            ForEach(Array(PlusFeature.included(usesSilo: usesSilo).enumerated()), id: \.element.id) { index, item in
                 if index > 0 {
                     Divider()
                         .background(LoginPalette.divider)
@@ -248,7 +249,9 @@ struct PlusPaywallView: View {
     }
 
     private var plusSummary: String {
-        "Unlock downloads, Live TV, extra accounts, Home and tab layout, and the rest of the client. Jellyfin plugins and Seerr stay free."
+        usesSilo
+            ? "Unlock downloads, extra accounts, Home and tab layout, and admin tools. Sign in, browse, and Play stay free."
+            : "Unlock downloads, Live TV, extra accounts, Home and tab layout, and the rest of the client. Jellyfin plugins and Seerr stay free."
     }
 }
 
@@ -298,11 +301,13 @@ struct PlusLockedPage: View {
 }
 
 private struct PlusPaywallPresenter: ViewModifier {
+    @Environment(SessionStore.self) private var session
+
     func body(content: Content) -> some View {
         @Bindable var plus = PlusEntitlement.shared
         content
             .fullScreenCover(item: $plus.requestedFeature) { feature in
-                PlusPaywallView(feature: feature)
+                PlusPaywallView(feature: feature, usesSilo: session.usesSilo)
                     .environment(plus)
             }
     }

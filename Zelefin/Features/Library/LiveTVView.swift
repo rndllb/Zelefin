@@ -163,7 +163,7 @@ struct LiveTVView: View {
                             LiveTVChannelCard(
                                 channel: channel,
                                 now: context.date,
-                                artwork: session.library,
+                                artwork: session.jellyfinLibrary,
                                 onPlay: { playingItem = channel.playItem }
                             )
                         }
@@ -195,7 +195,7 @@ struct LiveTVView: View {
                         LiveTVNowRow(
                             channel: channel,
                             now: context.date,
-                            artwork: session.library
+                            artwork: session.jellyfinLibrary
                         )
                         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                         .listRowSeparator(.hidden)
@@ -251,7 +251,7 @@ struct LiveTVView: View {
                     rows: filteredGuide,
                     rangeStart: guideRangeStart,
                     rangeEnd: guideRangeEnd,
-                    artwork: session.library,
+                    artwork: session.jellyfinLibrary,
                     onPlay: { playingItem = $0 }
                 )
             }
@@ -288,8 +288,8 @@ struct LiveTVView: View {
     }
 
     private func recordingCard(_ recording: LiveTVRecording) -> some View {
-        let imageURL = session.library?.artworkURL(for: recording.item, style: .landscape)
-            ?? session.library?.primaryURL(for: recording.item)
+        let imageURL = session.jellyfinLibrary?.artworkURL(for: recording.item, style: .landscape)
+            ?? session.jellyfinLibrary?.primaryURL(for: recording.item)
         return ZStack(alignment: .bottomTrailing) {
             Button {
                 playingItem = recording.item
@@ -320,7 +320,7 @@ struct LiveTVView: View {
     }
 
     private func load() async {
-        guard let library = session.library else {
+        guard let library = session.jellyfinLibrary else {
             isLoading = false
             errorMessage = "Sign in to watch Live TV."
             return
@@ -354,7 +354,7 @@ struct LiveTVView: View {
     }
 
     private func loadGuide() async {
-        guard let library = session.library, !channels.isEmpty else { return }
+        guard let library = session.jellyfinLibrary, !channels.isEmpty else { return }
         isLoadingGuide = true
         defer { isLoadingGuide = false }
         let start = LiveTVGuideTimeline.slotStart(containing: Date())
@@ -387,12 +387,12 @@ struct LiveTVView: View {
     }
 
     private func reloadRecordings() async {
-        guard let library = session.library else { return }
+        guard let library = session.jellyfinLibrary else { return }
         recordings = (try? await library.liveTVRecordings()) ?? recordings
     }
 
     private func deleteRecording(_ recording: LiveTVRecording) async {
-        guard let library = session.library else { return }
+        guard let library = session.jellyfinLibrary else { return }
         do {
             try await library.deleteLiveTVRecording(id: recording.id)
             recordings.removeAll { $0.id == recording.id }
@@ -412,20 +412,12 @@ private extension View {
     ) -> some View {
         if isPushed {
             self
-                .navigationTitle(RootPageChrome.showsTitle ? "Live TV" : "")
-                .navigationBarTitleDisplayMode(.inline)
-                .navigationBarBackButtonHidden(false)
-                .toolbarColorScheme(.dark, for: .navigationBar)
-                .toolbar {
+                .zelefinPushedChrome(title: RootPageChrome.showsTitle ? "Live TV" : "") {
                     if showsFilter {
-                        ToolbarItem(placement: .primaryAction) {
-                            filterButton()
-                        }
-                        .catalogToolbarHidesSystemBackground()
+                        filterButton()
                     }
                 }
                 .zelefinScrollEdgeBlur()
-                .background(InteractivePopGestureEnabler())
         } else {
             self
                 .toolbar(.hidden, for: .navigationBar)
@@ -1293,36 +1285,30 @@ struct LiveTVProgramDetailView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    if restartItem != nil {
-                        Button("Restart", systemImage: "gobackward") {
-                            playingItem = restartItem
-                        }
+        .zelefinPushedChrome(contentIgnoresTopSafeArea: true, hidesToolbarBackground: true) {
+            Menu {
+                if restartItem != nil {
+                    Button("Restart", systemImage: "gobackward") {
+                        playingItem = restartItem
                     }
-                    Button(
-                        isFavorite ? "Remove from Watch List" : "Add to Watch List",
-                        systemImage: isFavorite ? "checkmark" : "plus"
-                    ) {
-                        Task { await toggleFavorite() }
-                    }
-                    .disabled(isWorking)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
                 }
-                .accessibilityLabel("More")
+                Button(
+                    isFavorite ? "Remove from Watch List" : "Add to Watch List",
+                    systemImage: isFavorite ? "checkmark" : "plus"
+                ) {
+                    Task { await toggleFavorite() }
+                }
+                .disabled(isWorking)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: ZelefinPillMetrics.height, height: ZelefinPillMetrics.height)
+                    .contentShape(Circle())
             }
-            .catalogToolbarHidesSystemBackground()
+            .buttonStyle(.plain)
+            .zelefinLiquidGlassCircle()
+            .accessibilityLabel("More")
         }
         .tint(.white)
         .fullScreenCover(item: $playingItem) { item in
@@ -1387,9 +1373,9 @@ struct LiveTVProgramDetailView: View {
         .background {
             ZStack {
                 HeroArtwork(
-                    url: session.library?.programStillURL(for: program.item, channel: playItem)
-                        ?? session.library?.backdropURL(for: program.item),
-                    placeholderURL: session.library?.primaryURL(for: playItem),
+                    url: session.jellyfinLibrary?.programStillURL(for: program.item, channel: playItem)
+                        ?? session.jellyfinLibrary?.backdropURL(for: program.item),
+                    placeholderURL: session.jellyfinLibrary?.primaryURL(for: playItem),
                     size: CGSize(width: width, height: height)
                 )
 
@@ -1513,7 +1499,7 @@ struct LiveTVProgramDetailView: View {
             SectionHeader(title: "Up Next on \(program.channel.name)", showsChevron: false)
 
             ForEach(Array(upcoming.prefix(8))) { item in
-                LiveTVUpcomingRow(program: item, now: now, artwork: session.library)
+                LiveTVUpcomingRow(program: item, now: now, artwork: session.jellyfinLibrary)
                     .padding(.horizontal, 16)
             }
         }
@@ -1532,7 +1518,7 @@ struct LiveTVProgramDetailView: View {
     }
 
     private func loadDetail() async {
-        guard let library = session.library else { return }
+        guard let library = session.jellyfinLibrary else { return }
         let start = program.startDate ?? .now
         let end = start.addingTimeInterval(24 * 3600)
         upcoming = ((try? await library.liveTVGuide(channelIDs: [program.channel.id], from: start, to: end)) ?? [])

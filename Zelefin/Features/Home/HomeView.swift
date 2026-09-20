@@ -280,12 +280,7 @@ struct SectionGridView: View {
             .padding(16)
         }
         .background(Color.black.ignoresSafeArea())
-        .navigationTitle(section.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .zelefinPushedChrome(title: section.title) { EmptyView() }
     }
 }
 
@@ -360,12 +355,7 @@ struct ContinueWatchingListView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .zelefinPushedChrome(title: title) { EmptyView() }
         .fullScreenCover(item: $playingItem) { item in
             PlayerView(item: item)
         }
@@ -470,8 +460,7 @@ struct CatalogCardGridView: View {
             .padding(16)
         }
         .background(Color.black.ignoresSafeArea())
-        .navigationTitle(section.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .zelefinPushedChrome(title: section.title) { EmptyView() }
     }
 }
 
@@ -536,16 +525,14 @@ struct CatalogGridView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(false)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .catalogFilterSortToolbar(
-            filterCount: browseQuery.activeFilterCount,
-            sortTitle: browseQuery.sort.title,
-            showFilters: $showFilters,
-            showSort: $showSort
-        )
+        .zelefinPushedChrome(title: title) {
+            CatalogFilterSortButtons(
+                filterCount: browseQuery.activeFilterCount,
+                sortTitle: browseQuery.sort.title,
+                onSort: { showSort = true },
+                onFilter: { showFilters = true }
+            )
+        }
         .catalogFilterSheets(
             query: $browseQuery,
             options: options,
@@ -608,7 +595,7 @@ struct CatalogGridView: View {
         await finishArtwork(for: items, library: library)
     }
 
-    private func finishArtwork(for items: [MediaItem], library: JellyfinLibraryClient) async {
+    private func finishArtwork(for items: [MediaItem], library: any LibraryServing) async {
         guard !items.isEmpty else {
             indexProgress = nil
             return

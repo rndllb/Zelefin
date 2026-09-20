@@ -16,7 +16,7 @@ enum LoginPalette {
     static let failure = Color(red: 1, green: 0.38, blue: 0.38)
 }
 
-struct LoginCanvasGlow: View {
+struct LoginCanvasGlow: View, Equatable {
     var isRegularWidth: Bool
 
     var body: some View {
@@ -51,7 +51,7 @@ struct LoginActionButtonStyle: ViewModifier {
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(AccentPreferences.current)
+                    .fill(Color.accentColor)
             )
     }
 }

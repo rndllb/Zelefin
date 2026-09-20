@@ -33,7 +33,7 @@ final class AdaptiveBitrateStore {
         return AdaptiveBitratePolicy.budgetBitsPerSecond(measured: measured, path: path)
     }
 
-    func refreshIfNeeded(library: JellyfinLibraryClient?) async {
+    func refreshIfNeeded(library: (any LibraryServing)?) async {
         guard PlaybackPreferences.adaptiveBitrateEnabled else { return }
         guard let library else { return }
         if AdaptiveBitratePolicy.isCacheValid(result: lastProbe, path: path) { return }
@@ -44,7 +44,7 @@ final class AdaptiveBitrateStore {
         )
     }
 
-    func runDemoTest(library: JellyfinLibraryClient) async throws -> BitrateProbeResult {
+    func runDemoTest(library: any LibraryServing) async throws -> BitrateProbeResult {
         guard let result = await library.measureStreamingBitrate(
             size: AdaptiveBitratePolicy.settingsSampleBytes,
             timeout: 20,

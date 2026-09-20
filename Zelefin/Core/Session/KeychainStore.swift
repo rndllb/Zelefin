@@ -10,6 +10,13 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
     var userImageTag: String?
     var serverVersion: String?
     var serverName: String?
+    var backend: MediaBackend
+    var refreshToken: String?
+    var profileID: String?
+    var profileToken: String?
+    var profileName: String?
+    var userRole: String?
+    var isPrimaryProfile: Bool
 
     var id: String { accountID }
 
@@ -22,6 +29,61 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         let name = serverName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !name.isEmpty { return name }
         return serverURL.host ?? serverURL.absoluteString
+    }
+
+    var usesSilo: Bool { backend == .silo }
+
+    init(
+        serverURL: URL,
+        accessToken: String,
+        userID: String,
+        userName: String,
+        deviceID: String,
+        userImageTag: String? = nil,
+        serverVersion: String? = nil,
+        serverName: String? = nil,
+        backend: MediaBackend = .jellyfin,
+        refreshToken: String? = nil,
+        profileID: String? = nil,
+        profileToken: String? = nil,
+        profileName: String? = nil,
+        userRole: String? = nil,
+        isPrimaryProfile: Bool = false
+    ) {
+        self.serverURL = serverURL
+        self.accessToken = accessToken
+        self.userID = userID
+        self.userName = userName
+        self.deviceID = deviceID
+        self.userImageTag = userImageTag
+        self.serverVersion = serverVersion
+        self.serverName = serverName
+        self.backend = backend
+        self.refreshToken = refreshToken
+        self.profileID = profileID
+        self.profileToken = profileToken
+        self.profileName = profileName
+        self.userRole = userRole
+        self.isPrimaryProfile = isPrimaryProfile
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        serverURL = try container.decode(URL.self, forKey: .serverURL)
+        accessToken = try container.decode(String.self, forKey: .accessToken)
+        userID = try container.decode(String.self, forKey: .userID)
+        userName = try container.decode(String.self, forKey: .userName)
+        deviceID = try container.decode(String.self, forKey: .deviceID)
+        userImageTag = try container.decodeIfPresent(String.self, forKey: .userImageTag)
+        serverVersion = try container.decodeIfPresent(String.self, forKey: .serverVersion)
+        serverName = try container.decodeIfPresent(String.self, forKey: .serverName)
+        backend = try container.decodeIfPresent(MediaBackend.self, forKey: .backend) ?? .jellyfin
+        refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
+        profileID = try container.decodeIfPresent(String.self, forKey: .profileID)
+        profileToken = try container.decodeIfPresent(String.self, forKey: .profileToken)
+        profileName = try container.decodeIfPresent(String.self, forKey: .profileName)
+        userRole = try container.decodeIfPresent(String.self, forKey: .userRole)
+        isPrimaryProfile = try container.decodeIfPresent(Bool.self, forKey: .isPrimaryProfile) ?? false
     }
 }
 

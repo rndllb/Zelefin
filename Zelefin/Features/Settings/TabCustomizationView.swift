@@ -60,7 +60,9 @@ struct TabCustomizationView: View {
             .environment(\.editMode, .constant(plus.isUnlocked ? .active : .inactive))
 
             Section {
-                ForEach(AppTab.ordered(from: tabOrderRaw)) { tab in
+                ForEach(AppTab.ordered(from: tabOrderRaw).filter { tab in
+                    !(session.usesSilo && tab == .liveTV)
+                }) { tab in
                     HStack(spacing: 12) {
                         Label(tab.title, systemImage: tab.systemImage)
                         Spacer(minLength: 8)

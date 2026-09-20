@@ -101,9 +101,9 @@ enum TitleAboutCards {
 
     static func audienceMeaning(score: Double) -> String {
         if score <= 10 {
-            return "Community score stored on this Jellyfin item, usually from TMDB user votes."
+            return "Community score stored on this title, usually from IMDb or TMDB user votes."
         }
-        return "Community score stored on this Jellyfin item."
+        return "Audience score stored on this title."
     }
 
     private static func audienceCard(for item: MediaItem) -> TitleAboutCard? {

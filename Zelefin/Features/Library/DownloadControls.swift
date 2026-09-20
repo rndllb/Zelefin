@@ -173,7 +173,9 @@ struct DetailDownloadSharePill: View {
     @State private var removalPrompt: DownloadRemovalPrompt?
 
     var body: some View {
-        let state = downloads.control(for: item, episodes: episodes, account: session.session)
+        let state: DownloadControlState = (session.usesSilo && !session.downloadsAvailable)
+            ? .unavailable
+            : downloads.control(for: item, episodes: episodes, account: session.session)
         let transfer = downloads.transfer(for: item, account: session.session)
         ZelefinGlassPillCluster {
             ZelefinPillIconSegment(
