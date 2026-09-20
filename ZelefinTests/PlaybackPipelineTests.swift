@@ -72,7 +72,7 @@ final class PlaybackPipelineTests: XCTestCase {
                 container: "mkv"
             )
         )
-        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .appleNative)
+        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .directDecode)
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, usesNativePlayer: false),
             .directDecode
@@ -125,6 +125,47 @@ final class PlaybackPipelineTests: XCTestCase {
                 method: .directPlay,
                 container: "mp4",
                 videoCodec: "h264"
+            )
+        )
+    }
+
+    func testSiloOriginalMKVKeepsDirectPlayWhenNativePlayerIsOn() {
+        let url = URL(string: "https://silo.example/api/v1/stream/abc")
+        guard let url else {
+            return XCTFail("URL")
+        }
+        XCTAssertFalse(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mkv",
+                videoCodec: "hevc",
+                keepOriginalFile: true
+            )
+        )
+        XCTAssertEqual(
+            PlaybackPipelineResolver.pipeline(
+                url: url,
+                method: .directPlay,
+                container: "mkv",
+                videoCodec: "hevc"
+            ),
+            .directDecode
+        )
+        XCTAssertTrue(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .directPlay,
+                container: "mkv",
+                videoCodec: "hevc"
+            )
+        )
+        XCTAssertFalse(
+            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+                url: url,
+                method: .remux,
+                container: "hls",
+                videoCodec: "hevc"
             )
         )
     }
@@ -342,6 +383,13 @@ final class DirectPlayEngineTests: XCTestCase {
         XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: true))
         XCTAssertFalse(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: false))
         XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsHTTPURL(method: .directPlay, isHLS: false, isLive: true))
+        XCTAssertTrue(
+            DirectPlayLoadPolicy.shouldOpenAsHTTPURL(
+                method: .directPlay,
+                isHLS: false,
+                hasKnownSize: false
+            )
+        )
         XCTAssertTrue(DirectPlayLoadPolicy.shouldOpenAsURL(
             url: URL(string: "https://jellyfin.example.com/Videos/1/stream.ts")!,
             method: .directPlay,
@@ -353,6 +401,47 @@ final class DirectPlayEngineTests: XCTestCase {
     func testMKVDirectPlayUsesSampleBufferDecode() {
         XCTAssertTrue(DirectPlayLoadOptions.usesSampleBufferDecode(for: .directDecode))
         XCTAssertFalse(DirectPlayLoadOptions.usesSampleBufferDecode(for: .appleNative))
+    }
+
+    func testServerHLSUsesNativeRemotePlaylist() {
+        XCTAssertTrue(
+            DirectPlayLoadOptions.shouldUseNativeRemoteHLS(
+                url: URL(string: "https://silo.example/api/v1/stream/abc/master.m3u8")!,
+                container: "mp4"
+            )
+        )
+        XCTAssertTrue(
+            DirectPlayLoadOptions.shouldUseNativeRemoteHLS(
+                url: URL(string: "https://silo.example/api/v1/stream/abc")!,
+                container: "hls"
+            )
+        )
+        XCTAssertFalse(
+            DirectPlayLoadOptions.shouldUseNativeRemoteHLS(
+                url: URL(string: "https://silo.example/api/v1/stream/abc")!,
+                container: "mkv"
+            )
+        )
+    }
+
+    func testSubtitleSelectionMapsPlanIDsOntoEngineTracks() {
+        let plan = [
+            MediaTrack(id: 0, kind: .subtitle, language: "eng", title: "English", codec: "srt", isSelected: true, isDefault: true),
+            MediaTrack(id: 2, kind: .subtitle, language: "spa", title: "Spanish", codec: "srt", isSelected: false, isDefault: false)
+        ]
+        let engine = [
+            DirectPlayTrack(id: 100_000, name: "English", codec: "srt", language: "eng", isDefault: true, isExternal: true),
+            DirectPlayTrack(id: 100_001, name: "Spanish", codec: "srt", language: "spa", isDefault: false, isExternal: true)
+        ]
+        XCTAssertEqual(
+            PlaybackSubtitleSelection.engineIndex(requested: 0, planTracks: plan, engineTracks: engine),
+            100_000
+        )
+        XCTAssertEqual(
+            PlaybackSubtitleSelection.engineIndex(requested: 100_001, planTracks: plan, engineTracks: engine),
+            100_001
+        )
+        XCTAssertNil(PlaybackSubtitleSelection.engineIndex(requested: nil, planTracks: plan, engineTracks: engine))
     }
 
     func testForegroundRestoreRunsAfterBackgroundNotControlCenter() {

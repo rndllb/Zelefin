@@ -240,29 +240,28 @@ enum PlaybackPipelineResolver {
         videoCodec: String? = nil,
         usesNativePlayer: Bool = true
     ) -> PlaybackPipeline {
-        if url.isFileURL {
-            if usesNativePlayer, canNativePlayerOpen(
-                url: url,
-                method: method,
-                container: container,
-                videoCodec: videoCodec
-            ) {
-                return .appleNative
-            }
-            return .directDecode
+        if usesNativePlayer, canNativePlayerOpen(
+            url: url,
+            method: method,
+            container: container,
+            videoCodec: videoCodec
+        ) {
+            return .appleNative
         }
-        return usesNativePlayer ? .appleNative : .directDecode
+        return .directDecode
     }
 
-    /// AVPlayer cannot demux MKV or MPEG-4 ASP. Native-on asks Jellyfin for HLS first.
+    /// AVPlayer cannot demux MKV or MPEG-4 ASP. Native-on asks Jellyfin for HLS
+    /// first. Silo keeps the original file — remuxing HDR there becomes a transcode.
     static func needsServerRemuxForNativePlayer(
         url: URL,
         method: PlaybackMethod,
         container: String? = nil,
         videoCodec: String? = nil,
-        usesNativePlayer: Bool = true
+        usesNativePlayer: Bool = true,
+        keepOriginalFile: Bool = false
     ) -> Bool {
-        guard usesNativePlayer else { return false }
+        guard usesNativePlayer, !keepOriginalFile else { return false }
         if url.isFileURL { return false }
         return !canNativePlayerOpen(url: url, method: method, container: container, videoCodec: videoCodec)
     }
@@ -276,10 +275,10 @@ enum PlaybackPipelineResolver {
         if isHLS(url) {
             return true
         }
-        if method != .directPlay {
+        let ext = (container ?? url.pathExtension).lowercased()
+        if ext.contains("hls") {
             return true
         }
-        let ext = (container ?? url.pathExtension).lowercased()
         guard ["mp4", "m4v", "mov"].contains(ext) else {
             return false
         }
@@ -312,8 +311,7 @@ enum DirectPlaySeekPolicy {
 /// Where playback should begin. Direct Play files start at t=0 on the byte stream,
 /// so the client must open at the saved playhead. Remux / transcode HLS already
 /// includes `StartTimeTicks` on the server URL — seeking again would skip twice.
-/// Silo `original_http` is remux but the byte stream is the full file, so the client
-/// still owns the playhead.
+/// Silo `original_http` is Direct Play of the full file, so the client owns the playhead.
 enum PlaybackResumePolicy {
     static let threshold: TimeInterval = 5
 

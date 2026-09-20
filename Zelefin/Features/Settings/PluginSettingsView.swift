@@ -22,13 +22,11 @@ struct PluginSettingsView: View {
 
     var body: some View {
         Form {
-            if !session.usesSilo {
-                jellyfinPluginSections
-                openSubtitlesSection
-            }
             if session.usesSilo {
                 siloRequestSection
             } else {
+                jellyfinPluginSections
+                openSubtitlesSection
                 seerrSignInSection
             }
         }

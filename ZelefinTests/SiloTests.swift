@@ -473,7 +473,7 @@ final class SiloDecodeTests: XCTestCase {
         XCTAssertEqual(object?["protocol_version"] as? Int, 3)
         XCTAssertEqual(object?["file_id"] as? Int, 42)
         XCTAssertEqual(object?["profile_id"] as? String, "p1")
-        XCTAssertEqual(object?["quality_preference"] as? String, "auto")
+        XCTAssertEqual(object?["quality_preference"] as? String, "original")
         XCTAssertEqual(object?["subtitle_fidelity_preference"] as? String, "preserve")
         XCTAssertEqual(object?["metered"] as? Bool, false)
         XCTAssertNil(object?["bandwidth_cap_kbps"])
@@ -498,12 +498,30 @@ final class SiloDecodeTests: XCTestCase {
         let output = context?["output"] as? [String: Any]
         XCTAssertNotNil(output?["output_context_id"])
         let deliveries = context?["deliveries"] as? [String: Any]
-        XCTAssertNotNil(deliveries?["original_http"])
-        XCTAssertNotNil(deliveries?["hls"])
+        let originalHTTP = deliveries?["original_http"] as? [String: Any]
+        XCTAssertEqual(originalHTTP?["enabled"] as? Bool, true)
+        XCTAssertEqual(originalHTTP?["supported_on_device"] as? Bool, true)
+        let originalClaims = originalHTTP?["validated_claims"] as? [String]
+        XCTAssertTrue(originalClaims?.contains("client_managed_dynamic_range_v1") == true)
+        XCTAssertTrue(originalClaims?.contains("client_selected_audio_track_v1") == true)
+        XCTAssertTrue(originalClaims?.contains("client_dv8_base_layer_fallback_v1") == true)
+        let defaultHLS = deliveries?["hls"] as? [String: Any]
+        XCTAssertEqual(defaultHLS?["containers"] as? [String], ["hls", "fmp4", "mp4"])
         XCTAssertEqual(
             SiloPlaybackStart.playbackMethod(protocolKind: "http_progressive", delivery: "original_http"),
+            .directPlay
+        )
+        XCTAssertEqual(
+            SiloPlaybackStart.playbackMethod(protocolKind: "hls", delivery: "hls_copy"),
             .remux
         )
+        XCTAssertEqual(SiloPlaybackStart.qualityPreference(allowDirectPlay: true, capKbps: nil), "original")
+        XCTAssertEqual(SiloPlaybackStart.qualityPreference(allowDirectPlay: true, capKbps: 8_000), "auto")
+        XCTAssertEqual(SiloPlaybackStart.qualityPreference(allowDirectPlay: false, capKbps: nil), "auto")
+        XCTAssertEqual(SiloPlaybackStart.hlsContainers(preferFMP4: true), ["hls", "fmp4", "mp4"])
+        XCTAssertEqual(SiloPlaybackStart.hlsContainers(preferFMP4: false), ["hls", "mpegts"])
+        XCTAssertNil(SiloPlaybackStart.startBitrate(selected: .auto))
+        XCTAssertEqual(SiloPlaybackStart.startBitrate(selected: .mbps8), PlaybackQuality.mbps8.bitsPerSecond)
         XCTAssertTrue(
             SiloPlaybackStart.clientOwnsPlayhead(
                 protocolKind: "http_progressive",
@@ -558,6 +576,30 @@ final class SiloDecodeTests: XCTestCase {
         XCTAssertEqual(object?["bandwidth_cap_kbps"] as? Int, 8_000)
         XCTAssertEqual(object?["bandwidth_estimate_kbps"] as? Int, 8_000)
         XCTAssertEqual(object?["audio_track_index"] as? Int, nil)
+
+        let withSubtitle = SiloPlaybackStart.v3Request(
+            fileID: 42,
+            profileID: "p1",
+            startPosition: 0,
+            subtitleIndex: 2
+        )
+        let subtitleBody = try JSONSerialization.jsonObject(with: try SiloJSON.encoder.encode(withSubtitle)) as? [String: Any]
+        XCTAssertEqual(subtitleBody?["subtitle_track_index"] as? Int, 2)
+
+        let remux = SiloPlaybackStart.v3Request(
+            fileID: 42,
+            profileID: "p1",
+            startPosition: 0,
+            allowDirectPlay: false,
+            preferFMP4InHLS: false
+        )
+        let remuxBody = try JSONSerialization.jsonObject(with: try SiloJSON.encoder.encode(remux)) as? [String: Any]
+        XCTAssertEqual(remuxBody?["quality_preference"] as? String, "auto")
+        let remuxDeliveries = (remuxBody?["client_playback_context"] as? [String: Any])?["deliveries"] as? [String: Any]
+        let original = remuxDeliveries?["original_http"] as? [String: Any]
+        XCTAssertEqual(original?["enabled"] as? Bool, false)
+        let hls = remuxDeliveries?["hls"] as? [String: Any]
+        XCTAssertEqual(hls?["containers"] as? [String], ["hls", "mpegts"])
     }
 
     func testOpenSubtitlesIsBuiltIntoSilo() throws {
@@ -683,9 +725,21 @@ final class SiloDecodeTests: XCTestCase {
                   "track_id": "file:42:subtitle:1",
                   "combined_index": 1,
                   "source": "embedded",
-                  "codec": "dvd_subtitle",
+                  "codec": "subrip",
                   "language": "fre",
                   "label": "French",
+                  "forced": false,
+                  "default": false,
+                  "hearing_impaired": false,
+                  "delivery": "embedded"
+                },
+                {
+                  "track_id": "file:42:subtitle:3",
+                  "combined_index": 3,
+                  "source": "embedded",
+                  "codec": "dvd_subtitle",
+                  "language": "deu",
+                  "label": "German",
                   "forced": false,
                   "default": false,
                   "hearing_impaired": false,
@@ -711,23 +765,28 @@ final class SiloDecodeTests: XCTestCase {
         """#.utf8)
         let decision = try SiloJSON.decoder.decode(SiloPlaybackDecision.self, from: data)
         let inventory = try XCTUnwrap(decision.playbackPlan?.subtitle?.inventory)
-        XCTAssertEqual(inventory.count, 3)
+        XCTAssertEqual(inventory.count, 4)
         let base = URL(string: "https://silo.example")!
         let overlay = await SiloPlaybackStart.subtitleOverlay(
             inventory: inventory,
             subtitlesOff: false,
             resolve: { SiloAPIClient.mediaURL(baseURL: base, raw: $0) }
         )
-        XCTAssertEqual(overlay.tracks.map(\.title), ["English", "Spanish (downloaded)"])
+        XCTAssertEqual(overlay.tracks.map(\.title), ["English", "French", "Spanish (downloaded)"])
+        XCTAssertEqual(overlay.tracks.map(\.id), [0, 1, 2])
         XCTAssertEqual(overlay.sidecars.count, 2)
         XCTAssertEqual(overlay.sidecars[0].formatHint, "vtt")
-        XCTAssertTrue(overlay.tracks[1].isSelected)
+        XCTAssertTrue(overlay.tracks[2].isSelected)
         XCTAssertTrue(
             overlay.sidecars[1].url.absoluteString.contains("/api/v1/stream/11111111-1111-4111-8111-111111111111/subtitles/2.vtt")
         )
-        XCTAssertEqual(SiloPlaybackStart.subtitleStartIndex(3), nil)
+        XCTAssertEqual(SiloPlaybackStart.subtitleStartIndex(3), 3)
         XCTAssertEqual(SiloPlaybackStart.subtitleStartIndex(-1), -1)
+        XCTAssertNil(SiloPlaybackStart.subtitleStartIndex(nil))
         XCTAssertEqual(SiloPlaybackStart.subtitleFormatHint(codec: "subrip", url: "/stream/x/subtitles/4.vtt?file_id=1"), "vtt")
+        let marked = SiloPlaybackStart.applyingSubtitleSelection(overlay.tracks, requested: 1)
+        XCTAssertTrue(marked[1].isSelected)
+        XCTAssertFalse(marked[2].isSelected)
     }
 
     func testOpenSubtitlesSearchResultsDecodeStringIDs() throws {

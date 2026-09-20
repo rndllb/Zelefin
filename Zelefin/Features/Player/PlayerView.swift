@@ -169,7 +169,8 @@ struct PlayerView: View {
                 usesNativePlayer: PlaybackPipelineResolver.prefersNativePlayer(
                     preference: PlaybackPreferences.useNativeVideoPlayer,
                     hasSidecarSubtitles: !plan.externalSubtitles.isEmpty
-                )
+                ),
+                keepOriginalFile: session.usesSilo
             ) {
                 plan = try await library.playbackPlan(
                     for: activeItem,

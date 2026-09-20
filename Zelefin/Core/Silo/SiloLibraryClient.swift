@@ -551,7 +551,11 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
                     profileID: profile,
                     startPosition: start,
                     authorizedMediaOrigins: await api.allowsAuthorizedMediaOrigins(capability),
-                    maxBitrate: maxBitrate,
+                    allowDirectPlay: allowDirectPlay,
+                    preferFMP4InHLS: PlaybackPreferences.effectivePreferFMP4InHLS,
+                    maxBitrate: SiloPlaybackStart.startBitrate(
+                        selected: PlaybackPreferences.selectedQuality
+                    ),
                     audioIndex: audioIndex,
                     subtitleIndex: SiloPlaybackStart.subtitleStartIndex(subtitleIndex)
                 )
@@ -576,10 +580,15 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
             let headers = await api.streamHeaders().merging(stream?.headers ?? [:]) { _, incoming in incoming }
             let overlay = await SiloPlaybackStart.subtitleOverlay(
                 inventory: plan?.subtitle?.inventory ?? [],
+                selectedCombinedIndex: plan?.subtitle?.selectedCombinedIndex,
                 subtitlesOff: subtitleIndex == -1,
                 resolve: { await api.resolveURL($0) }
             )
             let fileTracks = await tracks(for: item, mediaSourceID: String(fileID), seeded: [])
+            let subtitleTracks = SiloPlaybackStart.applyingSubtitleSelection(
+                overlay.tracks.isEmpty ? fileTracks.subtitles : overlay.tracks,
+                requested: subtitleIndex
+            )
             return PlaybackPlan(
                 item: item,
                 streamURL: url,
@@ -594,7 +603,7 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
                 byteSize: nil,
                 extraHTTPHeaders: headers,
                 audioTracks: fileTracks.audio,
-                subtitleTracks: overlay.tracks.isEmpty ? fileTracks.subtitles : overlay.tracks,
+                subtitleTracks: subtitleTracks,
                 externalSubtitles: overlay.sidecars,
                 isLive: false,
                 clientOwnsPlayhead: SiloPlaybackStart.clientOwnsPlayhead(

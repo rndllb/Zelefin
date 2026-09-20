@@ -17,117 +17,11 @@ struct PlaybackSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
-                    .tint(AccentPreferences.current)
-                Picker(adaptiveBitrate ? "Maximum Quality" : "Default Quality", selection: $maxBitrate) {
-                    ForEach(PlaybackQuality.allCases) { quality in
-                        Text(quality.title).tag(quality.rawValue)
-                    }
-                }
-                .tint(AccentPreferences.current)
-            } header: {
-                Text("Quality")
-            } footer: {
-                Text(qualityFooter)
-            }
-
-            Section {
-                LabeledContent("Connection") {
-                    Text(session.adaptiveBitrate.path.transport.title)
-                        .foregroundStyle(.secondary)
-                }
-                if let testResult {
-                    LabeledContent("Measured") {
-                        Text(PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
-                            .foregroundStyle(.secondary)
-                    }
-                    LabeledContent("Recommended") {
-                        Text(recommendedTitle(for: testResult))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(recommendationDetail(for: testResult))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                if let testError {
-                    Text(testError)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-                Button {
-                    Task { await runDemoTest() }
-                } label: {
-                    if isTesting {
-                        HStack {
-                            Text("Testing…")
-                            Spacer()
-                            ProgressView()
-                        }
-                    } else {
-                        Text("Test with Demo File")
-                    }
-                }
-                .disabled(isTesting || session.library == nil)
-            } header: {
-                Text("Connection Test")
-            } footer: {
-                Text(
-                    session.usesSilo
-                        ? "Downloads a sample from your Silo server to measure this Wi-Fi or cellular connection. Adaptive bitrate sends that result to Silo when you press Play."
-                        : "Downloads a demo file from your Jellyfin server to measure this Wi-Fi or cellular connection. Adaptive bitrate uses that result, plus the title’s own bitrate, when you press Play."
-                )
-            }
-
-            Section {
-                Picker("Skip Backward", selection: $skipBackward) {
-                    ForEach(PlaybackSkipInterval.allCases) { interval in
-                        Text(interval.title).tag(interval.rawValue)
-                    }
-                }
-                .tint(AccentPreferences.current)
-                Picker("Skip Forward", selection: $skipForward) {
-                    ForEach(PlaybackSkipInterval.allCases) { interval in
-                        Text(interval.title).tag(interval.rawValue)
-                    }
-                }
-                .tint(AccentPreferences.current)
-            } header: {
-                Text("Controls")
-            } footer: {
-                Text("How far the skip buttons jump during playback.")
-            }
-
-            Section {
-                Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
-                    .tint(AccentPreferences.current)
-            } header: {
-                Text("Episodes")
-            } footer: {
-                Text("Starts the next episode when this one ends.")
-            }
-
-            Section {
-                Picker("Playback Speed", selection: $defaultRate) {
-                    ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
-                        Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
-                    }
-                }
-                .tint(AccentPreferences.current)
-                Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
-                    .tint(AccentPreferences.current)
-                if !session.usesSilo {
-                    Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
-                        .tint(AccentPreferences.current)
-                        .disabled(!useNativeVideoPlayer)
-                }
-            } header: {
-                Text("Player")
-            } footer: {
-                Text(playerFooter)
-            }
+            qualitySection
+            watchingSection
+            playerSection
         }
-        .zelefinSettingsChrome(title: "Playback and Controls")
+        .zelefinSettingsChrome(title: "Playback")
         .onChange(of: useNativeVideoPlayer) {
             if !useNativeVideoPlayer {
                 preferFMP4InHLS = true
@@ -135,15 +29,110 @@ struct PlaybackSettingsView: View {
         }
     }
 
+    private var qualitySection: some View {
+        Section {
+            Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
+                .tint(AccentPreferences.current)
+            Picker(adaptiveBitrate ? "Maximum Quality" : "Quality", selection: $maxBitrate) {
+                ForEach(PlaybackQuality.allCases) { quality in
+                    Text(quality.title).tag(quality.rawValue)
+                }
+            }
+            .tint(AccentPreferences.current)
+
+            LabeledContent("Connection") {
+                Text(session.adaptiveBitrate.path.transport.title)
+                    .foregroundStyle(.secondary)
+            }
+            if let testResult {
+                LabeledContent("Measured") {
+                    Text(PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Recommended") {
+                    Text(recommendedTitle(for: testResult))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let testError {
+                Text(testError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+            Button {
+                Task { await runDemoTest() }
+            } label: {
+                if isTesting {
+                    HStack {
+                        Text("Test Connection")
+                        Spacer()
+                        ProgressView()
+                    }
+                } else {
+                    Text("Test Connection")
+                }
+            }
+            .disabled(isTesting || session.library == nil)
+        } header: {
+            Text("Quality")
+        } footer: {
+            Text(qualityFooter)
+        }
+    }
+
+    private var watchingSection: some View {
+        Section {
+            Picker("Playback Speed", selection: $defaultRate) {
+                ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
+                    Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
+                }
+            }
+            .tint(AccentPreferences.current)
+            Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
+                .tint(AccentPreferences.current)
+            Picker("Skip Backward", selection: $skipBackward) {
+                ForEach(PlaybackSkipInterval.allCases) { interval in
+                    Text(interval.title).tag(interval.rawValue)
+                }
+            }
+            .tint(AccentPreferences.current)
+            Picker("Skip Forward", selection: $skipForward) {
+                ForEach(PlaybackSkipInterval.allCases) { interval in
+                    Text(interval.title).tag(interval.rawValue)
+                }
+            }
+            .tint(AccentPreferences.current)
+        } header: {
+            Text("Watching")
+        } footer: {
+            Text("Speed, skip distance, and whether the next episode starts when this one ends.")
+        }
+    }
+
+    private var playerSection: some View {
+        Section {
+            Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
+                .tint(AccentPreferences.current)
+            if useNativeVideoPlayer {
+                Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
+                    .tint(AccentPreferences.current)
+            }
+        } header: {
+            Text("Player")
+        } footer: {
+            Text(playerFooter)
+        }
+    }
+
     private var qualityFooter: String {
         if adaptiveBitrate {
             return session.usesSilo
-                ? "Zelefin measures your connection and tells Silo the ceiling. During playback it steps down after a stall and back up when the buffer stays healthy. Maximum Quality is the cap."
-                : "Zelefin measures your connection and only transcodes when the file is too large for it. During playback it steps down after a stall and back up when the buffer stays healthy. Maximum Quality is the ceiling."
+                ? "Auto Direct Plays the original file. A lower Maximum Quality is the only start cap. Test Connection measures this path if playback later stalls."
+                : "Auto Direct Plays when the file fits this connection. Jellyfin transcodes when it does not. Test Connection measures this path."
         }
         return session.usesSilo
-            ? "Auto lets Silo pick Direct Play when the file fits this device. Lower rates ask Silo to transcode."
-            : "Auto keeps Direct Play when the file fits this device. Lower rates ask Jellyfin to transcode."
+            ? "Auto Direct Plays when the file fits this device. Lower quality asks Silo to transcode."
+            : "Auto Direct Plays when the file fits this device. Lower quality asks Jellyfin to transcode."
     }
 
     private var preferFMP4Binding: Binding<Bool> {
@@ -164,24 +153,18 @@ struct PlaybackSettingsView: View {
     private var playerFooter: String {
         if session.usesSilo {
             if useNativeVideoPlayer {
-                return "AVPlayer plays Apple-compatible Direct Play and HLS from this Silo server."
+                return "Apple’s player opens MP4 and HLS. MKV still Direct Plays on this device. Turn off Prefer fMP4 to ask Silo for MPEG-TS when HLS is required."
             }
-            return "Zelefin Direct Play opens the stream Silo returns for this device."
+            return "Zelefin Direct Plays the original Silo file on this device, including HDR."
         }
         if useNativeVideoPlayer {
-            return "AVPlayer plays Apple-compatible Direct Play and remuxed HLS. MKV and other files remux on the server first. Turn off Prefer fMP4 to ask Jellyfin for MPEG-TS instead of fragmented MP4."
+            return "Apple’s player opens MP4 and remuxed HLS. MKV remuxes on Jellyfin first. Turn off Prefer fMP4 to ask for MPEG-TS."
         }
-        return "Zelefin Direct Play opens every stream, including remuxed HLS. Fragmented MP4 packaging stays on."
+        return "Zelefin Direct Plays every stream on this device, including remuxed HLS."
     }
 
     private func recommendedTitle(for result: BitrateProbeResult) -> String {
         quality(for: result, sourceBitrate: nil).title
-    }
-
-    private func recommendationDetail(for result: BitrateProbeResult) -> String {
-        let hd = quality(for: result, sourceBitrate: 8_000_000)
-        let uhd = quality(for: result, sourceBitrate: 40_000_000)
-        return "A typical 1080p file would use \(hd.title). A typical 4K file would use \(uhd.title)."
     }
 
     private func quality(for result: BitrateProbeResult, sourceBitrate: Int?) -> PlaybackQuality {

@@ -23,7 +23,7 @@ struct NotificationSettingsView: View {
                 Toggle("New titles", isOn: $libraryAdds)
                     .disabled(!isEnabled)
             } footer: {
-                Text("Zelefin checks this server for movies, shows, and episodes added after this device already knows the library. Signing out does not replay titles that were already there. Tapping a notification opens that title.")
+                Text("Alerts for movies and episodes added after this device already knows the library. Tapping one opens that title.")
             }
 
             if session.isAdministrator {
@@ -78,13 +78,13 @@ struct NotificationSettingsView: View {
     private var adminFooter: String {
         if session.usesSilo {
             return session.isDiscoverAvailable
-                ? "You also see when a scheduled task starts, or someone requests a title."
-                : "You also see when a scheduled task starts on this Silo server."
+                ? "Task starts and media requests from this Silo server."
+                : "Scheduled task starts on this Silo server."
         }
         if PluginSettings.isSeerrConfigured {
-            return "You also see when someone starts playback, comes online on another device, a scheduled task starts, or someone requests a title in Seerr."
+            return "Playback, who is online, scheduled tasks, and Seerr requests."
         }
-        return "You also see when someone starts playback, comes online on another device, or a scheduled task starts. Sign in to Seerr under Plugins to be notified about requests."
+        return "Playback, who is online, and scheduled tasks. Sign in to Seerr under Plugins for request alerts."
     }
 
     private func refreshAuthorization() async {

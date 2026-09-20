@@ -10,40 +10,7 @@ struct NetworkSettingsView: View {
             Section {
                 labeledURL("Remote URL", session.session?.serverURL)
                 labeledURL("Active URL", session.activeServerURL)
-            } header: {
-                Text("Current Server")
-            }
-
-            Section {
-                Toggle(isOn: autoSwitchBinding) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Auto-switch when at home")
-                        Text(autoSwitchDescription)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .tint(AccentPreferences.current)
-            } header: {
-                Text("Local Network")
-            }
-
-            Section {
-                TextField("http://192.168.1.100:8096", text: $localURLText)
-                    .textContentType(.URL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            } header: {
-                Text("Local URL")
-            } footer: {
-                Text("Enter your local server address (e.g., http://192.168.1.100:8096)")
-            }
-
-            homeWiFiSection
-
-            Section {
-                LabeledContent("Current WiFi") {
+                LabeledContent("Wi-Fi") {
                     Text(session.currentSSID ?? unavailableWiFi)
                         .foregroundStyle(.secondary)
                 }
@@ -51,7 +18,25 @@ struct NetworkSettingsView: View {
                     Text(session.activeRoute.title)
                         .foregroundStyle(AccentPreferences.current)
                 }
+            } header: {
+                Text("This Connection")
             }
+
+            Section {
+                Toggle("Auto-switch on home Wi-Fi", isOn: autoSwitchBinding)
+                    .tint(AccentPreferences.current)
+                TextField(localURLPlaceholder, text: $localURLText)
+                    .textContentType(.URL)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("Home Network")
+            } footer: {
+                Text("When you join a saved home network, Zelefin uses the local URL instead of the remote one.")
+            }
+
+            homeWiFiSection
 
             AccessGatewaySection()
         }
@@ -71,7 +56,7 @@ struct NetworkSettingsView: View {
             if profile.homeSSIDs.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No networks configured")
-                    Text("Add your home WiFi network to enable auto-switching.")
+                    Text("Add a network so auto-switch can use the local URL.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -105,14 +90,16 @@ struct NetworkSettingsView: View {
                 .disabled(manualSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         } header: {
-            Text("Home WiFi Networks")
+            Text("Home Wi-Fi")
+        } footer: {
+            Text("Add the networks that should use the local URL.")
         }
     }
 
     private var profile: HomeNetworkProfile { session.homeNetworkProfile }
 
-    private var autoSwitchDescription: String {
-        "Automatically switch to local URL when connected to home WiFi."
+    private var localURLPlaceholder: String {
+        session.usesSilo ? "http://192.168.1.100" : "http://192.168.1.100:8096"
     }
 
     private var unavailableWiFi: String {

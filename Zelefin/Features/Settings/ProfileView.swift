@@ -27,89 +27,41 @@ struct ProfileView: View {
     @State private var newProfileName = ""
     @State private var newProfilePIN = ""
     @State private var newProfileIsChild = false
+    @FocusState private var passwordField: PasswordField?
 
     var body: some View {
         Form {
             Section {
                 identityHero
-                    .listRowInsets(EdgeInsets(top: 20, leading: 16, bottom: 16, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 20, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
 
-            if session.session != nil {
-                Section {
-                    LabeledContent(session.usesSilo ? "Profile" : "User", value: displayName)
-                    LabeledContent("Server", value: session.session?.serverURL.absoluteString ?? serverLabel)
-                    accessTokenRow
-                } header: {
-                    Text("Account")
-                } footer: {
-                    Text(session.usesSilo
-                         ? "Your access token authenticates this device to this Silo server. Copy it only into apps you trust."
-                         : "Your access token authenticates this device to Jellyfin. Copy it only into apps you trust.")
-                }
-            }
-
             if session.usesSilo {
                 Section {
-                    ForEach(session.householdProfiles) { profile in
-                        householdRow(profile)
-                    }
-                    if session.canChangeSiloPassword {
-                        Button {
-                            householdError = nil
-                            newProfileName = ""
-                            newProfilePIN = ""
-                            newProfileIsChild = false
-                            showsAddProfile = true
-                        } label: {
-                            Label("Add Profile", systemImage: "person.crop.circle.badge.plus")
-                        }
-                        .disabled(isSwitchingProfile)
-                    }
+                    householdStrip
                     if let householdError, !showsAddProfile {
                         Text(householdError)
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
                 } header: {
-                    Text("Household")
+                    Text("Who’s watching")
                 } footer: {
                     Text("Continue Watching, recommendations, and watched flags follow the selected profile — not the account password.")
                 }
             }
 
             Section {
-                SecureField("Current password", text: $currentPassword)
-                    .textContentType(.password)
-                SecureField("New password", text: $newPassword)
-                    .textContentType(.newPassword)
-                SecureField("Confirm new password", text: $confirmPassword)
-                    .textContentType(.newPassword)
-                Button {
-                    Task { await savePassword() }
-                } label: {
-                    HStack {
-                        Spacer(minLength: 0)
-                        if isSavingPassword {
-                            ProgressView()
-                        } else {
-                            Text("Update Password")
-                                .fontWeight(.semibold)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                }
-                .disabled(!canUpdatePassword || isSavingPassword || (session.usesSilo && !session.canChangeSiloPassword))
+                passwordCard
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 10, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             } header: {
                 Text("Password")
             } footer: {
-                if session.usesSilo, !session.canChangeSiloPassword {
-                    Text("Switch to the primary household profile to change this account password.")
-                } else {
-                    Text("Saved on \(serverLabel).")
-                }
+                Text(passwordFooter)
             }
 
             Section {
@@ -198,17 +150,162 @@ struct ProfileView: View {
         return name.isEmpty ? "this server" : name
     }
 
+    private enum PasswordField: Hashable {
+        case current, newPassword, confirm
+    }
+
+    private var canChangePassword: Bool {
+        !(session.usesSilo && !session.canChangeSiloPassword)
+    }
+
     private var canUpdatePassword: Bool {
-        !currentPassword.isEmpty && !newPassword.isEmpty && newPassword == confirmPassword
+        canChangePassword
+            && !currentPassword.isEmpty
+            && !newPassword.isEmpty
+            && newPassword == confirmPassword
+    }
+
+    private var passwordMismatch: Bool {
+        !confirmPassword.isEmpty && newPassword != confirmPassword
+    }
+
+    private var passwordFooter: String {
+        if !canChangePassword {
+            return "Switch to the primary household profile to change this account password."
+        }
+        return "Updates the password for this login on \(serverLabel)."
+    }
+
+    private var passwordCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if canChangePassword {
+                passwordFieldRow(
+                    label: "Current",
+                    text: $currentPassword,
+                    contentType: .password,
+                    field: .current,
+                    submit: .next
+                )
+                passwordDivider
+                passwordFieldRow(
+                    label: "New",
+                    text: $newPassword,
+                    contentType: .newPassword,
+                    field: .newPassword,
+                    submit: .next
+                )
+                passwordDivider
+                passwordFieldRow(
+                    label: "Confirm",
+                    text: $confirmPassword,
+                    contentType: .newPassword,
+                    field: .confirm,
+                    submit: .go
+                )
+                if passwordMismatch {
+                    Text("The new passwords do not match.")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(LoginPalette.failure)
+                        .padding(.top, 12)
+                }
+                Button {
+                    Task { await savePassword() }
+                } label: {
+                    HStack {
+                        Spacer(minLength: 0)
+                        if isSavingPassword {
+                            ProgressView()
+                                .tint(LoginPalette.actionLabel)
+                        } else {
+                            Text("Update Password")
+                                .font(.caption.weight(.bold))
+                                .tracking(0.8)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .modifier(LoginActionButtonStyle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canUpdatePassword || isSavingPassword)
+                .opacity(!canUpdatePassword || isSavingPassword ? 0.42 : 1)
+                .padding(.top, 16)
+                .accessibilityLabel("Update Password")
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "lock.fill")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(LoginPalette.iconTint)
+                        .frame(width: 22, alignment: .center)
+                    Text("This household profile cannot change the account password.")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(LoginPalette.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(LoginCardBackground())
+    }
+
+    private var passwordDivider: some View {
+        Rectangle()
+            .fill(LoginPalette.divider)
+            .frame(height: 1)
+            .padding(.vertical, 12)
+    }
+
+    private func passwordFieldRow(
+        label: String,
+        text: Binding<String>,
+        contentType: UITextContentType,
+        field: PasswordField,
+        submit: SubmitLabel
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(label.uppercased())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(LoginPalette.captionText)
+                .tracking(0.6)
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(LoginPalette.iconTint)
+                    .frame(width: 22, alignment: .center)
+                    .accessibilityHidden(true)
+                SecureField(label, text: text)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoginPalette.fieldValue)
+                    .textContentType(contentType)
+                    .submitLabel(submit)
+                    .focused($passwordField, equals: field)
+                    .onSubmit { advancePasswordField(from: field) }
+                    .accessibilityLabel(label)
+            }
+        }
+    }
+
+    private func advancePasswordField(from field: PasswordField) {
+        switch field {
+        case .current:
+            passwordField = .newPassword
+        case .newPassword:
+            passwordField = .confirm
+        case .confirm:
+            guard canUpdatePassword, !isSavingPassword else { return }
+            Task { await savePassword() }
+        }
     }
 
     private var accessToken: String {
         session.session?.accessToken ?? ""
     }
 
-    private var accessTokenRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Token")
+    private var accessTokenCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Device token")
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 10) {
                 Group {
@@ -219,10 +316,10 @@ struct ProfileView: View {
                         Text(maskedToken)
                     }
                 }
-                    .font(.footnote.monospaced())
-                    .lineLimit(tokenVisible ? 6 : 1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel(tokenVisible ? "Access token" : "Hidden access token")
+                .font(.footnote.monospaced())
+                .lineLimit(tokenVisible ? 6 : 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(tokenVisible ? "Access token" : "Hidden access token")
                 Button {
                     tokenVisible.toggle()
                 } label: {
@@ -240,7 +337,10 @@ struct ProfileView: View {
                 .accessibilityLabel(tokenCopied ? "Copied" : "Copy token")
             }
         }
-        .padding(.vertical, 2)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(LoginCardBackground())
+        .accessibilityHint("This token signs this device into \(serverLabel). Copy it only into apps you trust.")
     }
 
     private var maskedToken: String {
@@ -266,7 +366,7 @@ struct ProfileView: View {
     }
 
     private var identityHero: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 18) {
             if session.usesSilo {
                 Button {
                     showsSiloAvatarPicker = true
@@ -292,17 +392,14 @@ struct ProfileView: View {
                 }
             }
 
-            VStack(spacing: 5) {
+            VStack(spacing: 10) {
                 Text(displayName)
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(serverLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                serverChip
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(displayName), \(serverLabel)")
+            .accessibilityLabel("\(displayName), \(serverKindLabel), \(serverLabel)")
 
             if canRemovePhoto, !session.usesSilo {
                 Button("Remove Photo", role: .destructive) {
@@ -312,80 +409,126 @@ struct ProfileView: View {
                 .disabled(isUpdatingPhoto)
             }
 
+            if session.session != nil, !accessToken.isEmpty {
+                accessTokenCard
+            }
+
             if let status {
                 Text(status)
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(statusIsError ? Color.red : .secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)
     }
 
+    private var serverChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: session.usesSilo ? "square.stack.3d.forward.dottedline.fill" : "play.tv.fill")
+                .font(.caption2.weight(.bold))
+            Text(serverKindLabel)
+                .font(.caption.weight(.bold))
+            Text(serverLabel)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .zelefinLiquidGlassCapsule(interactive: false)
+    }
+
+    private var serverKindLabel: String {
+        session.usesSilo ? "Silo" : "Jellyfin"
+    }
+
     private var profileAvatar: some View {
         ZStack {
-            UserAvatarView(url: session.avatarURL, localImage: localAvatar, diameter: 118)
+            UserAvatarView(url: session.avatarURL, localImage: localAvatar, diameter: 132)
                 .id(session.avatarRevision)
-                .padding(5)
+                .padding(6)
                 .zelefinLiquidGlassCircle(interactive: false)
             if isUpdatingPhoto {
                 Circle()
                     .fill(.black.opacity(0.48))
-                    .frame(width: 128, height: 128)
+                    .frame(width: 144, height: 144)
                 ProgressView()
                     .tint(.white)
             }
         }
-        .frame(width: 128, height: 128)
+        .frame(width: 144, height: 144)
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder
-    private func householdRow(_ profile: SiloHouseholdProfile) -> some View {
-        let isCurrent = profile.id == session.session?.profileID
-        Button {
-            selectHouseholdProfile(profile)
-        } label: {
-            HStack(spacing: 12) {
-                HouseholdProfileAvatar(profile: profile, size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(profile.name)
-                        .font(.body.weight(.semibold))
-                    Text(householdSubtitle(profile, isCurrent: isCurrent))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+    private var householdStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 18) {
+                ForEach(session.householdProfiles) { profile in
+                    let isCurrent = profile.id == session.session?.profileID
+                    Button {
+                        selectHouseholdProfile(profile)
+                    } label: {
+                        ZStack {
+                            HouseholdProfileTile(
+                                profile: profile,
+                                isCurrent: isCurrent,
+                                isSelected: switchingProfileID == profile.id,
+                                size: 76
+                            )
+                            if switchingProfileID == profile.id {
+                                Circle()
+                                    .fill(.black.opacity(0.45))
+                                    .frame(width: 76, height: 76)
+                                    .offset(y: -16)
+                                ProgressView()
+                                    .tint(.white)
+                                    .offset(y: -16)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSwitchingProfile || isCurrent)
+                    .accessibilityLabel(householdAccessibility(profile, isCurrent: isCurrent))
+                    .accessibilityAddTraits(isCurrent ? [.isSelected] : [.isButton])
                 }
-                Spacer(minLength: 8)
-                if switchingProfileID == profile.id {
-                    ProgressView()
-                } else if isCurrent {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(AccentPreferences.current)
-                } else if profile.hasPin {
-                    Image(systemName: "lock.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                if session.canChangeSiloPassword {
+                    Button {
+                        householdError = nil
+                        newProfileName = ""
+                        newProfilePIN = ""
+                        newProfileIsChild = false
+                        showsAddProfile = true
+                    } label: {
+                        addProfileTile
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSwitchingProfile)
+                    .accessibilityLabel("Add Profile")
                 }
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            .padding(.vertical, 8)
         }
-        .buttonStyle(.plain)
-        .disabled(isSwitchingProfile || isCurrent)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(householdAccessibility(profile, isCurrent: isCurrent))
-        .accessibilityAddTraits(isCurrent ? [.isStaticText] : [.isButton])
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .listRowBackground(Color.clear)
     }
 
-    private func householdSubtitle(_ profile: SiloHouseholdProfile, isCurrent: Bool) -> String {
-        var parts: [String] = []
-        if isCurrent { parts.append("Watching") }
-        if profile.isPrimary { parts.append("Primary") }
-        if profile.isChild { parts.append("Kids") }
-        if parts.isEmpty { return "On this login" }
-        return parts.joined(separator: " · ")
+    private var addProfileTile: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .frame(width: 76, height: 76)
+                .background(Circle().fill(Color.white.opacity(0.08)))
+                .overlay {
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+                }
+            Text("Add")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(LoginPalette.primaryText)
+        }
+        .frame(width: 84)
     }
 
     private func householdAccessibility(_ profile: SiloHouseholdProfile, isCurrent: Bool) -> String {
@@ -480,13 +623,17 @@ struct ProfileView: View {
     }
 
     private func accountRow(_ account: SavedSession, isCurrent: Bool) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             UserAvatarView(
                 url: session.avatarURL(for: account),
                 localImage: isCurrent ? localAvatar : nil,
-                diameter: 40
+                diameter: 48
             )
-            VStack(alignment: .leading, spacing: 2) {
+            .overlay {
+                Circle()
+                    .strokeBorder(isCurrent ? Color.white : Color.clear, lineWidth: 2)
+            }
+            VStack(alignment: .leading, spacing: 3) {
                 Text(account.userName)
                     .font(.body.weight(.semibold))
                 Text(isCurrent ? "Signed in" : accountSubtitle(account))
@@ -500,7 +647,7 @@ struct ProfileView: View {
                     .foregroundStyle(AccentPreferences.current)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(isCurrent ? "\(account.userName), signed in" : "Switch to \(account.userName)")

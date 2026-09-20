@@ -86,7 +86,8 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 - Optional native video player (AVPlayer only; MKV remuxes on the server)
 - Prefer fMP4 or MPEG-TS when using the native player
 - Audio and subtitle track selection, including sidecar files and on-device cues for Direct Play
-- On Silo, playback uses protocol v3. Adaptive bitrate measures this connection and sends the ceiling when you press Play
+- On Silo, playback uses protocol v3. Auto Direct Plays the original file on this device (same as Jellyfin), including HDR — Zelefin maps it on device instead of asking Silo to tone-map. Native Video Player still uses AVPlayer for MP4 and HLS; MKV stays on the built-in engine so Silo does not remux HDR into a transcode. Prefer fMP4 in HLS applies when a remux is required, and MPEG-TS is used when fMP4 is off
+- Adaptive bitrate still measures this connection. On Silo it does not cap Direct Play; a lower Maximum Quality is the only start cap. If Silo still has to re-encode HDR (incompatible codec, subtitle burn-in, or a quality cap), enable **Software HDR Tone Mapping** in Silo → Settings → Playback. Hardware HDR Tone Mapping only permits a GPU recipe after Silo smoke-tests it (VA-API `tonemap_vaapi` or similar). With software off and no validated GPU executor, playback stops with “no validated HDR-preserving or tone-map recipe is installed.” The chapter-thumbnail HDR rows on that page do not apply to playback. Transcoded HDR becomes SDR. Restart Silo if those toggles still show a restart badge.
 - Chapters and trickplay thumbnails when Jellyfin has them
 - Cinema intros before the title when the server queues them
 - Skip intro and credits when Intro Skipper is installed (manual buttons, optional auto-skip)

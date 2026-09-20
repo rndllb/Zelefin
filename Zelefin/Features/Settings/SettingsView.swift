@@ -9,8 +9,10 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            identitySection
             accountSection
             playbackSection
+            serverSection
             deviceSection
             aboutSection
         }
@@ -36,7 +38,7 @@ struct SettingsView: View {
         }
     }
 
-    private var accountSection: some View {
+    private var identitySection: some View {
         Section {
             NavigationLink {
                 ProfileView()
@@ -46,7 +48,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountDisplayName)
                             .font(.body.weight(.semibold))
-                        Text("Account info")
+                        Text(session.usesSilo ? "Silo account" : "Jellyfin account")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -54,6 +56,14 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
             .accessibilityLabel("\(accountDisplayName), Account info")
+        }
+    }
+
+    private var accountSection: some View {
+        Section {
+            settingsRow("Notifications", systemImage: "bell", subtitle: notificationsSubtitle) {
+                NotificationSettingsView()
+            }
             if !session.usesSilo {
                 settingsRow("Sessions", systemImage: "play.tv", feature: .sessions) {
                     SessionsView()
@@ -62,23 +72,38 @@ struct SettingsView: View {
                     SyncPlayView()
                 }
             }
-            settingsRow("Notifications", systemImage: "bell", subtitle: notificationsSubtitle) {
-                NotificationSettingsView()
+        } header: {
+            Text("Account")
+        }
+    }
+
+    private var playbackSection: some View {
+        Section {
+            settingsRow("Playback", systemImage: "play.rectangle.on.rectangle") {
+                PlaybackSettingsView()
             }
-            if session.canAdministerSilo {
+            settingsRow("Plugins", systemImage: "puzzlepiece.extension", subtitle: pluginsSubtitle) {
+                PluginSettingsView()
+            }
+        } header: {
+            Text("Playback")
+        }
+    }
+
+    @ViewBuilder
+    private var serverSection: some View {
+        if session.canAdministerSilo {
+            Section {
                 settingsRow("Accounts", systemImage: "person.2", subtitle: "Logins, roles, and passwords", feature: .adminTools) {
                     SiloUsersView()
                 }
                 settingsRow("Invitations", systemImage: "envelope.badge", subtitle: "Invite people to this server", feature: .adminTools) {
                     SiloInvitationsView()
                 }
-                settingsRow("Sessions", systemImage: "play.tv", subtitle: "Live playback on this server", feature: .adminTools) {
+                settingsRow("Sessions", systemImage: "play.tv", subtitle: "Who is playing right now", feature: .adminTools) {
                     SiloSessionsView()
                 }
-                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress", feature: .adminTools) {
-                    SiloTasksView()
-                }
-                settingsRow("Devices", systemImage: "iphone", subtitle: "Who signed in from which device", feature: .adminTools) {
+                settingsRow("Devices", systemImage: "iphone", subtitle: "Signed-in devices", feature: .adminTools) {
                     SiloDevicesView()
                 }
                 settingsRow("Libraries", systemImage: "rectangle.stack", subtitle: "Scan one library or all of them", feature: .adminTools) {
@@ -87,40 +112,30 @@ struct SettingsView: View {
                 settingsRow("Nodes", systemImage: "server.rack", subtitle: "Stream and transcode workers", feature: .adminTools) {
                     SiloNodesView()
                 }
+                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress", feature: .adminTools) {
+                    SiloTasksView()
+                }
                 settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Administrator audit trail", feature: .adminTools) {
                     SiloAuditLogView()
                 }
-                settingsRow("Server Logs", systemImage: "scroll", subtitle: "Operational output from this server", feature: .adminTools) {
+                settingsRow("Server Logs", systemImage: "scroll", subtitle: "Operational output", feature: .adminTools) {
                     SiloOperationalLogView()
                 }
-                Button {
-                    guard plus.require(.adminTools) else { return }
-                    showsLibraryScanConfirm = true
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.tint)
-                            .frame(width: 28, alignment: .center)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Scan Libraries")
-                            if let libraryScanMessage {
-                                Text(libraryScanMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            } else if session.isAdministrator && !session.usesSilo {
+                scanLibrariesRow
+            } header: {
+                Text("Server")
+            } footer: {
+                Text("Administer this Silo server.")
+            }
+        } else if session.isAdministrator, !session.usesSilo {
+            Section {
                 settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls", feature: .adminTools) {
                     UserManagementView()
                 }
                 settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress", feature: .adminTools) {
                     ScheduledTasksView()
                 }
-                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Who signed in, what scanned, what failed", feature: .adminTools) {
+                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Sign-ins, scans, and failures", feature: .adminTools) {
                     ActivityLogView()
                 }
                 settingsRow("Backups", systemImage: "externaldrive.badge.timemachine", subtitle: "Archive and restore this server", feature: .adminTools) {
@@ -129,38 +144,35 @@ struct SettingsView: View {
                 settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen", feature: .adminTools) {
                     ServerBrandingView()
                 }
-                Button {
-                    guard plus.require(.adminTools) else { return }
-                    showsLibraryScanConfirm = true
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.tint)
-                            .frame(width: 28, alignment: .center)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Scan Libraries")
-                            if let libraryScanMessage {
-                                Text(libraryScanMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
+                scanLibrariesRow
+            } header: {
+                Text("Server")
+            } footer: {
+                Text("Administer this Jellyfin server.")
             }
         }
     }
 
-    private var playbackSection: some View {
-        Section {
-            settingsRow("Playback and Controls", systemImage: "play.rectangle.on.rectangle") {
-                PlaybackSettingsView()
+    private var scanLibrariesRow: some View {
+        Button {
+            guard plus.require(.adminTools) else { return }
+            showsLibraryScanConfirm = true
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.tint)
+                    .frame(width: 28, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Scan Libraries")
+                    if let libraryScanMessage {
+                        Text(libraryScanMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            settingsRow("Plugins", systemImage: "puzzlepiece.extension", subtitle: pluginsSubtitle) {
-                PluginSettingsView()
-            }
+            .padding(.vertical, 2)
         }
     }
 
@@ -175,6 +187,8 @@ struct SettingsView: View {
             settingsRow("Interface", systemImage: "rectangle.3.group") {
                 TabCustomizationView()
             }
+        } header: {
+            Text("This Device")
         }
     }
 
@@ -184,6 +198,8 @@ struct SettingsView: View {
             settingsRow("About", systemImage: "info.circle", subtitle: DeviceIdentity.version) {
                 SettingsAboutView()
             }
+        } header: {
+            Text("Zelefin")
         }
     }
 

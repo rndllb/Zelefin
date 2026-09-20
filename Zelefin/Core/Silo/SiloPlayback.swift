@@ -161,19 +161,38 @@ struct SiloPlaybackSource: Decodable, Sendable {
     }
 }
 
+struct SiloPlaybackEmbeddedSubtitle: Decodable, Sendable {
+    var streamIndex: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case streamIndex = "stream_index"
+    }
+}
+
 struct SiloPlaybackSubtitleDecision: Decodable, Sendable {
+    var mode: String?
     var trackID: String?
+    var embedded: SiloPlaybackEmbeddedSubtitle?
     var inventory: [SiloPlaybackSubtitleTrack]?
 
     enum CodingKeys: String, CodingKey {
-        case inventory
+        case mode, inventory, embedded
         case trackID = "track_id"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = container.decodeFlexibleString(.mode)
         trackID = container.decodeFlexibleString(.trackID)
+        embedded = try? container.decode(SiloPlaybackEmbeddedSubtitle.self, forKey: .embedded)
         inventory = container.decodeLossyArray(.inventory)
+    }
+
+    var selectedCombinedIndex: Int? {
+        if let trackID, let match = inventory?.first(where: { $0.trackID == trackID }) {
+            return match.combinedIndex
+        }
+        return nil
     }
 }
 
@@ -215,6 +234,18 @@ struct SiloPlaybackSubtitleTrack: Decodable, Sendable {
 
     var isSidecar: Bool {
         (delivery ?? "").lowercased() == "sidecar" && !(url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Tracks this client can render without a server burn-in / transcode.
+    var isClientRenderable: Bool {
+        if isSidecar { return true }
+        let delivery = (delivery ?? "").lowercased()
+        if delivery.contains("burn") { return false }
+        let source = (source ?? "").lowercased()
+        return source == "embedded"
+            || delivery == "embedded"
+            || delivery == "overlay"
+            || delivery == "copy"
     }
 
     var displayTitle: String {
@@ -391,20 +422,32 @@ enum SiloPlaybackStart {
     private static let packagedVideo = ["h264", "hevc"]
     private static let packagedAudio = ["aac", "ac3", "eac3", "alac", "mp3"]
     private static let progressiveContainers = ["mp4", "mov", "m4v"]
-    private static let hlsContainers = ["hls", "mpegts", "fmp4", "mp4"]
     private static let commonClaims = ["authenticated_stream_headers"]
+    /// Silo will not Direct Play HDR unless original_http owns presentation.
+    /// VideoToolbox / Aether tone-maps onto whatever sink is active.
+    private static let originalHTTPClaims = commonClaims + [
+        "client_subtitle_overlay",
+        "client_managed_dynamic_range_v1",
+        "client_selected_audio_track_v1",
+        "client_dv8_base_layer_fallback_v1"
+    ]
 
     static func v3Request(
         fileID: Int,
         profileID: String,
         startPosition: TimeInterval,
         authorizedMediaOrigins: Bool = false,
+        allowDirectPlay: Bool = true,
+        preferFMP4InHLS: Bool = true,
         maxBitrate: Int? = nil,
         audioIndex: Int? = nil,
         subtitleIndex: Int? = nil,
         metered: Bool = false
     ) -> SiloPlaybackV3StartRequest {
-        let snapshot = iOSSnapshot()
+        let snapshot = iOSSnapshot(
+            allowDirectPlay: allowDirectPlay,
+            preferFMP4InHLS: preferFMP4InHLS
+        )
         var features = clientFeatures
         if authorizedMediaOrigins {
             features.append("authorized_media_origins_v1")
@@ -416,7 +459,7 @@ enum SiloPlaybackStart {
             fileID: fileID,
             profileID: profileID,
             playbackAttemptID: "zelefin:\(UUID().uuidString.lowercased())",
-            qualityPreference: "auto",
+            qualityPreference: qualityPreference(allowDirectPlay: allowDirectPlay, capKbps: cap),
             subtitleFidelityPreference: "preserve",
             startPosition: startPosition,
             audioTrackIndex: audioIndex,
@@ -427,6 +470,23 @@ enum SiloPlaybackStart {
             clientCapabilities: snapshot.capabilities,
             clientPlaybackContext: snapshot.context
         )
+    }
+
+    /// Auto + Direct Play asks for the original file. A bitrate cap is a
+    /// user-picked rung and must not silently become "original".
+    static func qualityPreference(allowDirectPlay: Bool, capKbps: Int?) -> String {
+        allowDirectPlay && capKbps == nil ? "original" : "auto"
+    }
+
+    /// HLS packaging this device asked for. Native MPEG-TS drops fMP4.
+    static func hlsContainers(preferFMP4: Bool) -> [String] {
+        preferFMP4 ? ["hls", "fmp4", "mp4"] : ["hls", "mpegts"]
+    }
+
+    /// Adaptive measurements must not force a Silo encode. Only a quality the
+    /// user picked below Auto is a start cap.
+    static func startBitrate(selected: PlaybackQuality) -> Int? {
+        selected == .auto ? nil : selected.bitsPerSecond
     }
 
     /// Silo validates 100...1_000_000 kbps. The Auto sentinel is 200 Mbps and must not cap the plan.
@@ -465,7 +525,9 @@ enum SiloPlaybackStart {
         if kind.contains("hls") || route.contains("hls") {
             return route.contains("transcode") ? .transcode : .remux
         }
-        // original_http / progressive must open as an authenticated URL, same as Silo's iOS client.
+        if route.contains("original") {
+            return .directPlay
+        }
         return .remux
     }
 
@@ -494,54 +556,88 @@ enum SiloPlaybackStart {
 
     static func subtitleOverlay(
         inventory: [SiloPlaybackSubtitleTrack],
+        selectedCombinedIndex: Int? = nil,
         subtitlesOff: Bool,
         resolve: (String) async -> URL?
     ) async -> SiloPlaybackSubtitleOverlay {
-        let sidecars = inventory.filter(\.isSidecar)
-        let selected = subtitlesOff ? nil : selectedSidecar(in: sidecars)
+        let renderable = inventory.filter(\.isClientRenderable)
+        let selected = subtitlesOff ? nil : selectedRenderable(
+            in: renderable,
+            preferredCombinedIndex: selectedCombinedIndex
+        )
         var tracks: [MediaTrack] = []
         var overlays: [ExternalSubtitleSidecar] = []
-        for (index, item) in sidecars.enumerated() {
-            guard let raw = item.url, let url = await resolve(raw) else { continue }
-            let isSelected = !subtitlesOff && item.combinedIndex == selected?.combinedIndex
+        for item in renderable {
+            var resolved: URL?
+            if item.isSidecar {
+                guard let raw = item.url, let url = await resolve(raw) else { continue }
+                resolved = url
+            }
+            let id = item.combinedIndex ?? tracks.count
             tracks.append(
                 MediaTrack(
-                    id: index,
+                    id: id,
                     kind: .subtitle,
                     language: item.language,
                     title: item.displayTitle,
                     codec: item.codec,
-                    isSelected: isSelected,
+                    isSelected: !subtitlesOff && item.combinedIndex == selected?.combinedIndex,
                     isDefault: item.isDefault == true
                 )
             )
-            overlays.append(
-                ExternalSubtitleSidecar(
-                    url: url,
-                    name: item.displayTitle,
-                    language: item.language,
-                    formatHint: subtitleFormatHint(codec: item.codec, url: item.url),
-                    isForced: item.forced == true,
-                    isHearingImpaired: item.hearingImpaired == true
+            if let url = resolved {
+                overlays.append(
+                    ExternalSubtitleSidecar(
+                        url: url,
+                        name: item.displayTitle,
+                        language: item.language,
+                        formatHint: subtitleFormatHint(codec: item.codec, url: item.url),
+                        isForced: item.forced == true,
+                        isHearingImpaired: item.hearingImpaired == true
+                    )
                 )
-            )
+            }
         }
         return SiloPlaybackSubtitleOverlay(tracks: tracks, sidecars: overlays)
     }
 
+    /// Echo the combined index Silo assigned. `-1` is off; `nil` leaves Auto.
     static func subtitleStartIndex(_ requested: Int?) -> Int? {
-        requested == -1 ? -1 : nil
+        requested
     }
 
-    private static func selectedSidecar(in sidecars: [SiloPlaybackSubtitleTrack]) -> SiloPlaybackSubtitleTrack? {
-        let downloaded = sidecars.filter { ($0.source ?? "").lowercased() == "downloaded" }
+    static func applyingSubtitleSelection(_ tracks: [MediaTrack], requested: Int?) -> [MediaTrack] {
+        guard let requested else { return tracks }
+        return tracks.map { track in
+            MediaTrack(
+                id: track.id,
+                kind: track.kind,
+                language: track.language,
+                title: track.title,
+                codec: track.codec,
+                isSelected: requested == -1 ? false : track.id == requested,
+                isDefault: track.isDefault
+            )
+        }
+    }
+
+    private static func selectedRenderable(
+        in tracks: [SiloPlaybackSubtitleTrack],
+        preferredCombinedIndex: Int?
+    ) -> SiloPlaybackSubtitleTrack? {
+        if let preferredCombinedIndex,
+           let exact = tracks.first(where: { $0.combinedIndex == preferredCombinedIndex })
+        {
+            return exact
+        }
+        let downloaded = tracks.filter { ($0.source ?? "").lowercased() == "downloaded" }
         if let match = downloaded.last(where: { languageMatchesPreferred($0.language) }) ?? downloaded.last {
             return match
         }
-        if let flagged = sidecars.first(where: { $0.isDefault == true }) {
+        if let flagged = tracks.first(where: { $0.isDefault == true }) {
             return flagged
         }
-        return sidecars.first(where: { $0.forced != true }) ?? sidecars.first
+        return tracks.first(where: { $0.forced != true }) ?? tracks.first
     }
 
     private static func languageMatchesPreferred(_ language: String?) -> Bool {
@@ -595,8 +691,12 @@ enum SiloPlaybackStart {
 
     /// iOS Silo uses platform-attested VideoToolbox facts, not the Apple TV 4K
     /// empty `declared` Aether snapshot.
-    private static func iOSSnapshot() -> Snapshot {
-        let hdr = hdrDetails()
+    private static func iOSSnapshot(
+        allowDirectPlay: Bool = true,
+        preferFMP4InHLS: Bool = true
+    ) -> Snapshot {
+        let displayHDR = displayHDRDetails()
+        let decodeHDR = decodeHDRDetails()
         let decode = videoDecodeAttestation()
         var seen = Set<String>()
         let videoCodecs = decode.map(\.codec).filter { seen.insert($0).inserted }
@@ -642,8 +742,8 @@ enum SiloPlaybackStart {
             details["simulator"] = "true"
         }
         let hdrIdentity =
-            "\(hdr.hdr10)|\(hdr.hdr10Plus)|\(hdr.hlg)|" +
-            hdr.dolbyVisionProfiles.map(String.init).joined(separator: ",")
+            "\(displayHDR.hdr10)|\(displayHDR.hdr10Plus)|\(displayHDR.hlg)|" +
+            displayHDR.dolbyVisionProfiles.map(String.init).joined(separator: ",")
         let identity = ["ios", formFactor, sink.sink, sink.type, hdrIdentity].joined(separator: "|")
         let capabilities = SiloCodecCapabilities(
             videoEvidence: "platform_attested",
@@ -653,8 +753,9 @@ enum SiloPlaybackStart {
             codecsAudio: audioCodecs,
             containers: containers,
             maxResolution: maxHeight >= 2_160 ? "2160p" : "1080p",
-            hdr: hdr.hdr10 || hdr.hlg || !hdr.dolbyVisionProfiles.isEmpty,
-            hdrDetails: hdr,
+            hdr: displayHDR.hdr10 || decodeHDR.hdr10 || displayHDR.hlg || decodeHDR.hlg
+                || !displayHDR.dolbyVisionProfiles.isEmpty || !decodeHDR.dolbyVisionProfiles.isEmpty,
+            hdrDetails: displayHDR,
             videoDecode: decode
         )
         let context = SiloClientPlaybackContext(
@@ -671,25 +772,25 @@ enum SiloPlaybackStart {
                 platformDetails: details
             ),
             output: SiloOutputContext(
-                hdrDetails: hdr,
+                hdrDetails: displayHDR,
                 currentSink: String(sink.sink.prefix(128)),
                 sinkType: String(sink.type.prefix(128)),
                 outputContextId: hashedOutputContextID(identity)
             ),
             deliveries: [
                 "original_http": SiloDeliveryCapability(
-                    enabled: true,
-                    supportedOnDevice: true,
+                    enabled: allowDirectPlay,
+                    supportedOnDevice: allowDirectPlay,
                     containers: containers,
                     videoCodecs: videoCodecs,
                     audioDecodeCodecs: audioCodecs,
                     audioPassthroughCodecs: [],
                     maxChannels: 8,
-                    hdrDetails: hdr,
+                    hdrDetails: decodeHDR,
                     subtitles: originalSubtitles,
                     features: [],
                     authHeaderRefresh: false,
-                    validatedClaims: commonClaims + ["client_subtitle_overlay"],
+                    validatedClaims: originalHTTPClaims,
                     transformations: deviceClientTransformations
                 ),
                 "progressive": SiloDeliveryCapability(
@@ -700,26 +801,26 @@ enum SiloPlaybackStart {
                     audioDecodeCodecs: packagedAudio,
                     audioPassthroughCodecs: [],
                     maxChannels: 8,
-                    hdrDetails: hdr,
+                    hdrDetails: displayHDR,
                     subtitles: packagedSubtitles,
                     features: [],
                     authHeaderRefresh: false,
-                    validatedClaims: commonClaims,
+                    validatedClaims: commonClaims + ["client_subtitle_overlay"],
                     transformations: []
                 ),
                 "hls": SiloDeliveryCapability(
                     enabled: true,
                     supportedOnDevice: true,
-                    containers: hlsContainers,
+                    containers: hlsContainers(preferFMP4: preferFMP4InHLS),
                     videoCodecs: packagedVideo.filter { hardwareVideo.contains($0) || $0 == "h264" },
                     audioDecodeCodecs: ["aac", "ac3", "eac3"],
                     audioPassthroughCodecs: [],
                     maxChannels: 8,
-                    hdrDetails: hdr,
+                    hdrDetails: displayHDR,
                     subtitles: packagedSubtitles,
                     features: [],
                     authHeaderRefresh: false,
-                    validatedClaims: commonClaims,
+                    validatedClaims: commonClaims + ["client_subtitle_overlay"],
                     transformations: []
                 )
             ]
@@ -851,7 +952,8 @@ enum SiloPlaybackStart {
         #endif
     }
 
-    private static func hdrDetails() -> SiloHDRDetails {
+    /// What the current sink can show. Packaged HLS/progressive stay output-gated.
+    private static func displayHDRDetails() -> SiloHDRDetails {
         #if targetEnvironment(simulator)
         return SiloHDRDetails(hdr10: false, hdr10Plus: false, hlg: false, dolbyVisionProfiles: [])
         #else
@@ -864,6 +966,20 @@ enum SiloPlaybackStart {
             dolbyVisionProfiles: eligible && modes.contains(.dolbyVision) ? [5, 8] : []
         )
         #endif
+    }
+
+    /// Ranges the Direct Play engine can map onto any sink. Required for
+    /// `client_managed_dynamic_range_v1` so Silo does not tone-map HDR to SDR.
+    private static func decodeHDRDetails() -> SiloHDRDetails {
+        if simulator {
+            return SiloHDRDetails(hdr10: false, hdr10Plus: false, hlg: false, dolbyVisionProfiles: [])
+        }
+        return SiloHDRDetails(
+            hdr10: true,
+            hdr10Plus: false,
+            hlg: true,
+            dolbyVisionProfiles: [5, 8]
+        )
     }
 
     private static func currentSink() -> (sink: String, type: String) {

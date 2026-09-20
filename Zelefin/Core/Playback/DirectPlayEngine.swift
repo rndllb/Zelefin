@@ -31,14 +31,31 @@ enum DirectPlayLoadPolicy {
     }
 
     /// Remux/transcode HLS has no file to range-request; live MPEG-TS is an infinite pipe.
-    static func shouldOpenAsHTTPURL(method: PlaybackMethod, isHLS: Bool, isLive: Bool = false) -> Bool {
-        method != .directPlay || isHLS || isLive
+    /// Silo `original_http` is Direct Play with no known size — open the session URL.
+    static func shouldOpenAsHTTPURL(
+        method: PlaybackMethod,
+        isHLS: Bool,
+        isLive: Bool = false,
+        hasKnownSize: Bool = true
+    ) -> Bool {
+        method != .directPlay || isHLS || isLive || !hasKnownSize
     }
 
     /// On-device files have no HTTP ranges. Open through a file reader so libavformat
     /// never has to parse a path with spaces, and AVPlayer never gets gateway headers.
-    static func shouldOpenAsURL(url: URL, method: PlaybackMethod, isHLS: Bool, isLive: Bool = false) -> Bool {
-        url.isFileURL || shouldOpenAsHTTPURL(method: method, isHLS: isHLS, isLive: isLive)
+    static func shouldOpenAsURL(
+        url: URL,
+        method: PlaybackMethod,
+        isHLS: Bool,
+        isLive: Bool = false,
+        hasKnownSize: Bool = true
+    ) -> Bool {
+        url.isFileURL || shouldOpenAsHTTPURL(
+            method: method,
+            isHLS: isHLS,
+            isLive: isLive,
+            hasKnownSize: hasKnownSize
+        )
     }
 }
 
@@ -119,8 +136,13 @@ enum DirectPlayLoadOptions {
             matchContentEnabled: true,
             panelIsInHDRMode: isPanelInHDRMode,
             isLive: plan.isLive,
-            prepareNativeSubtitles: false,
-            eagerNativeSubtitleReaders: false,
+            nativeRemoteHLS: shouldUseNativeRemoteHLS(
+                url: plan.streamURL,
+                container: plan.container
+            ),
+            preserveASSMarkup: true,
+            prepareNativeSubtitles: true,
+            eagerNativeSubtitleReaders: true,
             sequentialOrigin: plan.isLive,
             maxConcurrentSourceRequests: 2,
             declaredDurationSeconds: duration,
@@ -129,6 +151,14 @@ enum DirectPlayLoadOptions {
             externalSubtitles: aetherSidecars(from: plan.externalSubtitles, extraHeaders: headers),
             preferredDecodePath: usesSampleBufferDecode(for: .directDecode) ? .software : .automatic
         )
+    }
+
+    /// Server HLS remux/transcode has subtitle renditions on the playlist, not
+    /// demuxable packets. Open that playlist with AVPlayer the same way Silo's
+    /// iOS client does (`nativeRemoteHLS`).
+    static func shouldUseNativeRemoteHLS(url: URL, container: String?) -> Bool {
+        if PlaybackPipelineResolver.isHLS(url) { return true }
+        return (container ?? "").lowercased().contains("hls")
     }
 
     private static func aetherSidecars(
@@ -162,6 +192,47 @@ enum DirectPlayLoadOptions {
     @MainActor
     private static var isPanelInHDRMode: Bool {
         UIScreen.main.currentEDRHeadroom > 1
+    }
+}
+
+/// Plan track IDs are Silo combined indexes or catalog ordinals. Aether uses
+/// AVStream indexes for embedded cues and `100_000 + n` for sidecars.
+enum PlaybackSubtitleSelection {
+    static func engineIndex(
+        requested: Int?,
+        planTracks: [MediaTrack],
+        engineTracks: [DirectPlayTrack]
+    ) -> Int? {
+        guard let requested else { return nil }
+        if engineTracks.contains(where: { $0.id == requested }) {
+            return requested
+        }
+        guard let plan = planTracks.first(where: { $0.id == requested }) else {
+            return nil
+        }
+        if let language = plan.language {
+            let code = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !code.isEmpty,
+               let match = engineTracks.first(where: { languageMatches($0.language, code) })
+            {
+                return match.id
+            }
+        }
+        let title = plan.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !title.isEmpty,
+           let match = engineTracks.first(where: {
+               $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == title
+           })
+        {
+            return match.id
+        }
+        return nil
+    }
+
+    private static func languageMatches(_ engine: String?, _ preferred: String) -> Bool {
+        let code = engine?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        guard !code.isEmpty else { return false }
+        return code == preferred || code.hasPrefix(preferred) || preferred.hasPrefix(code)
     }
 }
 

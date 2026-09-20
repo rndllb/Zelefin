@@ -432,10 +432,27 @@ final class PlayerModel {
 
     func selectSubtitle(id: Int?) {
         selectedSubtitleID = id
+        applySubtitleSelection(id)
+    }
+
+    private func applySubtitleSelection(_ id: Int?) {
+        guard let engine else { return }
         if let id {
-            engine?.selectSubtitleTrack(index: id)
+            let resolved = PlaybackSubtitleSelection.engineIndex(
+                requested: id,
+                planTracks: plan.subtitleTracks,
+                engineTracks: engine.subtitleTracks
+            )
+            if let resolved {
+                if selectedSubtitleID != resolved {
+                    selectedSubtitleID = resolved
+                }
+                if engine.activeSubtitleTrackIndex != resolved {
+                    engine.selectSubtitleTrack(index: resolved)
+                }
+            }
         } else {
-            engine?.clearSubtitle()
+            engine.clearSubtitle()
         }
     }
 
@@ -577,7 +594,8 @@ final class PlayerModel {
         } else if DirectPlayLoadPolicy.shouldOpenAsHTTPURL(
             method: plan.method,
             isHLS: PlaybackPipelineResolver.isHLS(url),
-            isLive: plan.isLive
+            isLive: plan.isLive,
+            hasKnownSize: plan.byteSize != nil
         ) {
             try await created.load(
                 source: .url(url),
@@ -701,6 +719,9 @@ final class PlayerModel {
                     if self.subtitleOptions != options {
                         self.subtitleOptions = options
                     }
+                    if let wanted = self.selectedSubtitleID {
+                        self.applySubtitleSelection(wanted)
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -720,7 +741,7 @@ final class PlayerModel {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] index in
                 Task { @MainActor in
-                    if self?.selectedSubtitleID != index {
+                    if let index, self?.selectedSubtitleID != index {
                         self?.selectedSubtitleID = index
                     }
                 }
