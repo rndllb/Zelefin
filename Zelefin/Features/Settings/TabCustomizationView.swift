@@ -28,7 +28,8 @@ struct TabCustomizationView: View {
                         )
                     }
                 }
-                .padding(.vertical, 8)
+                .settingsLoginCard()
+                .settingsCardRow()
             } header: {
                 Text("Accent Color")
             } footer: {
@@ -37,6 +38,10 @@ struct TabCustomizationView: View {
 
             Section {
                 Toggle("Combine Continue Watching and Next Up", isOn: gatedMergeBinding)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                    .settingsLoginCard()
+                    .settingsCardRow()
             } footer: {
                 Text(homeFooterCopy)
             }
@@ -45,11 +50,16 @@ struct TabCustomizationView: View {
                 ForEach(displayedHomeRows) { row in
                     HStack(spacing: 12) {
                         Label(row.title, systemImage: row.systemImage)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(LoginPalette.primaryText)
                         Spacer(minLength: 8)
                         Toggle("Show \(row.title)", isOn: homeRowVisibilityBinding(for: row))
                             .labelsHidden()
+                            .tint(AccentPreferences.current)
                     }
                     .accessibilityElement(children: .combine)
+                    .settingsLoginCard()
+                    .settingsCardRow()
                 }
                 .onMove(perform: moveHomeRows)
             } header: {
@@ -65,13 +75,18 @@ struct TabCustomizationView: View {
                 }) { tab in
                     HStack(spacing: 12) {
                         Label(tab.title, systemImage: tab.systemImage)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(LoginPalette.primaryText)
                         Spacer(minLength: 8)
                         if tab.canHide {
                             Toggle("Show \(tab.title)", isOn: visibilityBinding(for: tab))
                                 .labelsHidden()
+                                .tint(AccentPreferences.current)
                         }
                     }
                     .accessibilityElement(children: .combine)
+                    .settingsLoginCard()
+                    .settingsCardRow()
                 }
                 .onMove(perform: moveTabs)
             } header: {
@@ -84,16 +99,21 @@ struct TabCustomizationView: View {
             .environment(\.editMode, .constant(.active))
 
             Section {
-                Button("Reset Home Rows") {
-                    guard plus.require(.interface) else { return }
-                    homeRowOrder = HomeRowKind.defaultOrderRaw
-                    homeRowHidden = ""
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsSecondaryButton(title: "Reset Home Rows") {
+                        guard plus.require(.interface) else { return }
+                        homeRowOrder = HomeRowKind.defaultOrderRaw
+                        homeRowHidden = ""
+                    }
+                    SettingsSecondaryButton(title: "Reset Tabs") {
+                        guard plus.require(.interface) else { return }
+                        tabOrderRaw = AppTab.defaultOrderRaw
+                        tabCustomization = AppTab.defaultCustomization()
+                    }
+                    .padding(.top, 10)
                 }
-                Button("Reset Tabs") {
-                    guard plus.require(.interface) else { return }
-                    tabOrderRaw = AppTab.defaultOrderRaw
-                    tabCustomization = AppTab.defaultCustomization()
-                }
+                .settingsLoginCard()
+                .settingsCardRow()
             }
         }
         .zelefinSettingsChrome(title: "Interface")

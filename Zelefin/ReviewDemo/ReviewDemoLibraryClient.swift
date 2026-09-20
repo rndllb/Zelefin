@@ -408,9 +408,9 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
 
     override func deleteLibraryItem(itemID: String) async throws {}
 
-    override func remoteArtwork(for itemID: String) async throws -> [RemoteImageChoice] { [] }
+    override func remoteArtwork(for itemID: String, kind: RemoteArtworkKind) async throws -> [RemoteImageChoice] { [] }
 
-    override func downloadRemoteArtwork(itemID: String, imageURL: URL) async throws {}
+    override func downloadRemoteArtwork(itemID: String, kind: RemoteArtworkKind, imageURL: URL) async throws {}
 
     override func serverBranding() async throws -> ServerBranding {
         ServerBranding(loginDisclaimer: "", customCSS: "", splashscreenEnabled: false)

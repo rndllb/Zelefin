@@ -114,8 +114,8 @@ protocol LibraryServing: AnyObject, Sendable {
     func updateDisplayPreferenceCustomPrefs(_ prefs: [String: String]) async throws
     func refreshItemMetadata(itemID: String, replaceImages: Bool) async throws
     func deleteLibraryItem(itemID: String) async throws
-    func remoteArtwork(for itemID: String) async throws -> [RemoteImageChoice]
-    func downloadRemoteArtwork(itemID: String, imageURL: URL) async throws
+    func remoteArtwork(for itemID: String, kind: RemoteArtworkKind) async throws -> [RemoteImageChoice]
+    func downloadRemoteArtwork(itemID: String, kind: RemoteArtworkKind, imageURL: URL) async throws
     func scanLibraries() async throws
     func playOnSession(sessionID: String, itemIDs: [String], startPosition: TimeInterval?) async throws
     func syncPlayReady(isPlaying: Bool, playlistItemID: String?, position: TimeInterval) async throws
@@ -336,9 +336,9 @@ extension LibraryServing {
         throw LibraryServingDefaults.unavailable
     }
 
-    func remoteArtwork(for itemID: String) async throws -> [RemoteImageChoice] { [] }
+    func remoteArtwork(for itemID: String, kind: RemoteArtworkKind) async throws -> [RemoteImageChoice] { [] }
 
-    func downloadRemoteArtwork(itemID: String, imageURL: URL) async throws {
+    func downloadRemoteArtwork(itemID: String, kind: RemoteArtworkKind, imageURL: URL) async throws {
         throw LibraryServingDefaults.unavailable
     }
 

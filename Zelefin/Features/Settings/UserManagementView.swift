@@ -24,11 +24,12 @@ struct UserManagementView: View {
                 List {
                     if let errorMessage {
                         Section {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
+                            SettingsStatusText(text: errorMessage, isError: true)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     }
+
                     Section {
                         ForEach(users) { account in
                             NavigationLink {
@@ -36,8 +37,18 @@ struct UserManagementView: View {
                                     await reload()
                                 }
                             } label: {
-                                userRow(account)
+                                SettingsPersonRow(
+                                    name: account.name,
+                                    subtitle: account.statusSubtitle,
+                                    avatarURL: session.library?.userAvatarURL(
+                                        userID: account.id,
+                                        tag: account.primaryImageTag
+                                    ),
+                                    showsChevron: true
+                                )
+                                .settingsLoginCard()
                             }
+                            .settingsCardRow()
                         }
                     } footer: {
                         Text("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.")
@@ -48,22 +59,6 @@ struct UserManagementView: View {
         .zelefinSettingsChrome(title: "Users")
         .task { await reload() }
         .refreshable { await reload() }
-    }
-
-    private func userRow(_ account: ServerUserAccount) -> some View {
-        HStack(spacing: 14) {
-            UserAvatarView(
-                url: session.library?.userAvatarURL(userID: account.id, tag: account.primaryImageTag),
-                diameter: 40
-            )
-            VStack(alignment: .leading, spacing: 2) {
-                Text(account.name)
-                Text(account.statusSubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
     }
 
     private func reload() async {
@@ -101,6 +96,7 @@ struct UserAccountEditorView: View {
     @State private var localAvatar: UIImage?
     @State private var pickerItem: PhotosPickerItem?
     @State private var isUpdatingPhoto = false
+    @FocusState private var passwordField: PasswordField?
 
     private var isCurrentUser: Bool {
         session.session?.userID == account.id
@@ -128,6 +124,7 @@ struct UserAccountEditorView: View {
     var body: some View {
         List {
             identitySection
+            usernameSection
             permissionsSection
             bitrateSection
             passwordSection
@@ -135,8 +132,9 @@ struct UserAccountEditorView: View {
             librarySection
             if let status {
                 Section {
-                    Text(status)
-                        .foregroundStyle(statusIsError ? .red : .secondary)
+                    SettingsStatusText(text: status, isError: statusIsError)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
             }
         }
@@ -197,73 +195,105 @@ struct UserAccountEditorView: View {
         }
     }
 
+    private enum PasswordField: Hashable {
+        case newPassword, confirm
+    }
+
     private var identitySection: some View {
         Section {
-            HStack(spacing: 14) {
-                photoControl
-                VStack(alignment: .leading, spacing: 2) {
-                    TextField("Username", text: $username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Text(account.statusSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 18) {
+                ZStack(alignment: .bottomTrailing) {
+                    ZStack {
+                        UserAvatarView(
+                            url: session.library?.userAvatarURL(userID: account.id, tag: account.primaryImageTag),
+                            localImage: localAvatar,
+                            diameter: 132
+                        )
+                        .padding(6)
+                        .zelefinLiquidGlassCircle(interactive: false)
+                        if isUpdatingPhoto {
+                            Circle()
+                                .fill(.black.opacity(0.48))
+                                .frame(width: 144, height: 144)
+                            ProgressView()
+                                .tint(.white)
+                        }
+                    }
+                    .frame(width: 144, height: 144)
+                    .accessibilityHidden(true)
+
+                    PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
+                        SettingsCameraBadge()
+                    }
+                    .disabled(isUpdatingPhoto)
+                    .offset(x: -2, y: -2)
+                    .accessibilityLabel("Change Profile Picture")
+                }
+
+                VStack(spacing: 10) {
+                    Text(account.name)
+                        .font(.title2.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                    SettingsChip(
+                        icon: account.isAdministrator ? "checkmark.shield.fill" : "person.fill",
+                        leading: account.isDisabled ? "Disabled" : account.statusSubtitle
+                    )
+                }
+
+                if account.primaryImageTag != nil || localAvatar != nil {
+                    Button("Remove Photo", role: .destructive) {
+                        Task { await removePhoto() }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .disabled(isSaving || isUpdatingPhoto)
                 }
             }
-            .padding(.vertical, 4)
-            Button("Save Username") {
-                Task { await saveUsername() }
-            }
-            .disabled(!canSaveUsername || isSaving || isUpdatingPhoto)
-            if account.primaryImageTag != nil || localAvatar != nil {
-                Button("Remove Photo", role: .destructive) {
-                    Task { await removePhoto() }
-                }
-                .disabled(isSaving || isUpdatingPhoto)
-            }
+            .frame(maxWidth: .infinity)
+            .settingsHeroRow()
         } footer: {
             Text("Administrators can change this user's profile picture on the server.")
         }
     }
 
-    private var photoControl: some View {
-        ZStack(alignment: .bottomTrailing) {
-            ZStack {
-                UserAvatarView(
-                    url: session.library?.userAvatarURL(userID: account.id, tag: account.primaryImageTag),
-                    localImage: localAvatar,
-                    diameter: 56
-                )
-                if isUpdatingPhoto {
-                    Circle()
-                        .fill(.black.opacity(0.48))
-                        .frame(width: 56, height: 56)
-                    ProgressView()
+    private var usernameSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsLabeledField(label: "Username", systemImage: "person.fill") {
+                    TextField("Username", text: $username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
+                SettingsPrimaryButton(
+                    title: "Save Username",
+                    isBusy: isSaving,
+                    enabled: canSaveUsername && !isUpdatingPhoto
+                ) {
+                    Task { await saveUsername() }
+                }
+                .padding(.top, 16)
             }
-            .accessibilityHidden(true)
-
-            PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.black)
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(.white))
-            }
-            .disabled(isUpdatingPhoto)
-            .offset(x: 2, y: 2)
-            .accessibilityLabel("Change Profile Picture")
+            .settingsLoginCard()
+            .settingsCardRow()
         }
     }
 
     private var permissionsSection: some View {
         Section {
-            Toggle("Administrator", isOn: administratorBinding)
-                .tint(AccentPreferences.current)
-            Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
-                .tint(AccentPreferences.current)
-            Toggle("Disable Account", isOn: disabledBinding)
-                .tint(AccentPreferences.current)
+            VStack(alignment: .leading, spacing: 0) {
+                Toggle("Administrator", isOn: administratorBinding)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                SettingsCardDivider()
+                Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                SettingsCardDivider()
+                Toggle("Disable Account", isOn: disabledBinding)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+            }
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Permissions")
         } footer: {
@@ -273,15 +303,21 @@ struct UserAccountEditorView: View {
 
     private var bitrateSection: some View {
         Section {
-            Picker("Remote bitrate", selection: $draft.remoteClientBitrateLimit) {
-                ForEach(bitrateOptions, id: \.self) { limit in
-                    Text(bitrateTitle(limit)).tag(limit)
+            VStack(alignment: .leading, spacing: 10) {
+                SettingsFieldLabel(title: "Remote bitrate")
+                Picker("Remote bitrate", selection: $draft.remoteClientBitrateLimit) {
+                    ForEach(bitrateOptions, id: \.self) { limit in
+                        Text(bitrateTitle(limit)).tag(limit)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+                .onChange(of: draft.remoteClientBitrateLimit) { _, _ in
+                    Task { await savePolicy() }
                 }
             }
-            .tint(AccentPreferences.current)
-            .onChange(of: draft.remoteClientBitrateLimit) { _, _ in
-                Task { await savePolicy() }
-            }
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Streaming")
         } footer: {
@@ -291,18 +327,50 @@ struct UserAccountEditorView: View {
 
     private var passwordSection: some View {
         Section {
-            SecureField("New password", text: $newPassword)
-                .textContentType(.newPassword)
-            SecureField("Confirm password", text: $confirmPassword)
-                .textContentType(.newPassword)
-            Button("Set Password") {
-                Task { await setPassword() }
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsLabeledField(label: "New", systemImage: "lock.fill") {
+                    SecureField("New", text: $newPassword)
+                        .textContentType(.newPassword)
+                        .focused($passwordField, equals: .newPassword)
+                        .submitLabel(.next)
+                        .onSubmit { passwordField = .confirm }
+                }
+                SettingsCardDivider()
+                SettingsLabeledField(label: "Confirm", systemImage: "lock.fill") {
+                    SecureField("Confirm", text: $confirmPassword)
+                        .textContentType(.newPassword)
+                        .focused($passwordField, equals: .confirm)
+                        .submitLabel(.go)
+                        .onSubmit {
+                            guard canSetPassword, !isSaving else { return }
+                            Task { await setPassword() }
+                        }
+                }
+                if !confirmPassword.isEmpty && newPassword != confirmPassword {
+                    Text("The new passwords do not match.")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(LoginPalette.failure)
+                        .padding(.top, 12)
+                }
+                SettingsPrimaryButton(
+                    title: "Set Password",
+                    isBusy: isSaving,
+                    enabled: canSetPassword
+                ) {
+                    Task { await setPassword() }
+                }
+                .padding(.top, 16)
+                SettingsSecondaryButton(
+                    title: "Reset Password",
+                    role: .destructive,
+                    enabled: !isSaving
+                ) {
+                    confirmResetPassword = true
+                }
+                .padding(.top, 10)
             }
-            .disabled(!canSetPassword || isSaving)
-            Button("Reset Password", role: .destructive) {
-                confirmResetPassword = true
-            }
-            .disabled(isSaving)
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Password")
         } footer: {
@@ -312,17 +380,26 @@ struct UserAccountEditorView: View {
 
     private var parentalSection: some View {
         Section {
-            Picker("Maximum rating", selection: $ratingID) {
-                Text("None").tag("none")
-                ForEach(ratings) { rating in
-                    Text(rating.name).tag(rating.id)
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsFieldLabel(title: "Maximum rating")
+                    .padding(.bottom, 8)
+                Picker("Maximum rating", selection: $ratingID) {
+                    Text("None").tag("none")
+                    ForEach(ratings) { rating in
+                        Text(rating.name).tag(rating.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+                ForEach(UnratedItem.allCases, id: \.self) { item in
+                    SettingsCardDivider()
+                    Toggle(item.settingsTitle, isOn: unratedBinding(item))
+                        .tint(AccentPreferences.current)
+                        .font(.body.weight(.semibold))
                 }
             }
-            .tint(AccentPreferences.current)
-            ForEach(UnratedItem.allCases, id: \.self) { item in
-                Toggle(item.settingsTitle, isOn: unratedBinding(item))
-                    .tint(AccentPreferences.current)
-            }
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Parental Controls")
         } footer: {
@@ -332,14 +409,21 @@ struct UserAccountEditorView: View {
 
     private var librarySection: some View {
         Section {
-            Toggle("All libraries", isOn: allFoldersBinding)
-                .tint(AccentPreferences.current)
-            if !draft.enableAllFolders {
-                ForEach(folders) { folder in
-                    Toggle(folder.name, isOn: folderBinding(folder.id))
-                        .tint(AccentPreferences.current)
+            VStack(alignment: .leading, spacing: 0) {
+                Toggle("All libraries", isOn: allFoldersBinding)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                if !draft.enableAllFolders {
+                    ForEach(folders) { folder in
+                        SettingsCardDivider()
+                        Toggle(folder.name, isOn: folderBinding(folder.id))
+                            .tint(AccentPreferences.current)
+                            .font(.body.weight(.semibold))
+                    }
                 }
             }
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Library Access")
         } footer: {

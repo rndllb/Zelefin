@@ -7,6 +7,31 @@ extension CGSize {
     }
 }
 
+/// Horizontal pill that keeps circular end caps. Scaling a capsule in X flattens the
+/// leading radius, so the fill is sized by width instead.
+struct CapsuleProgressBar: View {
+    var progress: Double
+    var width: CGFloat
+    var height: CGFloat
+    var track: Color = Color.black.opacity(0.28)
+    var fill: Color = Color.black.opacity(0.82)
+
+    var body: some View {
+        let clamped = min(1, max(0, progress))
+        Capsule()
+            .fill(track)
+            .overlay(alignment: .leading) {
+                if clamped > 0 {
+                    Capsule()
+                        .fill(fill)
+                        .frame(width: max(height, width * clamped), height: height)
+                }
+            }
+            .clipShape(Capsule())
+            .frame(width: width, height: height)
+    }
+}
+
 enum PosterMetrics {
     static var landscapeSize: CGSize {
         CGSize(width: 280, height: 158)
@@ -99,6 +124,7 @@ struct PosterImage: View {
     var contentMode: ContentMode = .fill
     var fill: Color = Color.white.opacity(0.08)
     var progressTint: Color = Color.white.opacity(0.6)
+    @Environment(\.libraryArtworkRevision) private var artworkRevision
     @State private var image: UIImage?
     @State private var isLoading = true
 
@@ -118,7 +144,7 @@ struct PosterImage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .task(id: url) { await load() }
+        .task(id: "\(url?.absoluteString ?? "")-\(artworkRevision)") { await load() }
     }
 
     private func load() async {
@@ -306,17 +332,13 @@ struct LandscapeCard: View {
     }
 
     private var resumeBar: some View {
-        let width: CGFloat = 22
-        return Capsule()
-            .fill(.white.opacity(0.32))
-            .frame(width: width, height: 3.5)
-            .overlay(alignment: .leading) {
-                Capsule()
-                    .fill(.white.opacity(0.75))
-                    .frame(width: max(2, width * item.progress), height: 3.5)
-            }
-            .frame(width: width, height: 3.5)
-            .clipped()
+        CapsuleProgressBar(
+            progress: item.progress,
+            width: 22,
+            height: 3.5,
+            track: .white.opacity(0.32),
+            fill: .white.opacity(0.75)
+        )
     }
 
     private var accessibilityCaption: String {
@@ -840,7 +862,7 @@ struct TitleLogo: View {
         }
         .frame(maxWidth: .infinity, alignment: alignment)
         .accessibilityLabel(item.name)
-        .task(id: item.id) { await load() }
+        .task(id: "\(item.id)-\(item.logoImageTag ?? "")-\(session.artworkRevision)") { await load() }
     }
 
     private func load() async {
@@ -885,6 +907,7 @@ struct HeroArtwork: View {
     let url: URL?
     var placeholderURL: URL? = nil
     var size: CGSize? = nil
+    @Environment(\.libraryArtworkRevision) private var artworkRevision
     @State private var image: UIImage?
 
     var body: some View {
@@ -897,7 +920,7 @@ struct HeroArtwork: View {
                 }
             }
         }
-        .task(id: url) { await load() }
+        .task(id: "\(url?.absoluteString ?? "")-\(placeholderURL?.absoluteString ?? "")-\(artworkRevision)") { await load() }
     }
 
     @ViewBuilder
@@ -932,12 +955,21 @@ struct HeroArtwork: View {
 
 extension View {
     /// Mirrors the hero under the sidebar frost — Apple's split-view / Liquid Glass treatment.
-    @ViewBuilder
+    /// iPhone has no sidebar; applying this there pulls the backdrop out of layout and
+    /// stacks the Play control on the Home title.
     func zelefinHeroBackgroundExtension() -> some View {
-        if #available(iOS 26, *) {
-            backgroundExtensionEffect()
+        modifier(HeroBackgroundExtensionModifier())
+    }
+}
+
+private struct HeroBackgroundExtensionModifier: ViewModifier {
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *), tabBarPlacement == .sidebar {
+            content.backgroundExtensionEffect()
         } else {
-            self
+            content
         }
     }
 }
@@ -1552,10 +1584,19 @@ private struct ZelefinSidebarLayoutKey: EnvironmentKey {
     static let defaultValue = ZelefinSidebarLayout.identity
 }
 
+private struct LibraryArtworkRevisionKey: EnvironmentKey {
+    static let defaultValue = 0
+}
+
 extension EnvironmentValues {
     var zelefinSidebarLayout: ZelefinSidebarLayout {
         get { self[ZelefinSidebarLayoutKey.self] }
         set { self[ZelefinSidebarLayoutKey.self] = newValue }
+    }
+
+    var libraryArtworkRevision: Int {
+        get { self[LibraryArtworkRevisionKey.self] }
+        set { self[LibraryArtworkRevisionKey.self] = newValue }
     }
 }
 

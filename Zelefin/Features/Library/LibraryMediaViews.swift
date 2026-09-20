@@ -171,75 +171,177 @@ struct RemoteImagePickerView: View {
     var onClose: () -> Void
 
     @Environment(SessionStore.self) private var session
+    @State private var kind: RemoteArtworkKind = .poster
     @State private var images: [RemoteImageChoice] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var busyID: String?
 
-    private let columns = [GridItem(.adaptive(minimum: 110), spacing: 10)]
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: CGFloat(kind.gridMinimum)), spacing: 10)]
+    }
 
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading && images.isEmpty {
-                    ProgressView()
-                } else if images.isEmpty {
-                    ContentUnavailableView(
-                        "No Remote Art",
-                        systemImage: "photo.on.rectangle",
-                        description: Text(errorMessage ?? "Jellyfin did not return any poster options.")
-                    )
-                } else {
-                    ScrollView {
-                        if let errorMessage {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
-                                .padding()
-                        }
-                        LazyVGrid(columns: columns, spacing: 10) {
-                            ForEach(images) { image in
-                                Button {
-                                    Task { await choose(image) }
-                                } label: {
-                                    VStack(spacing: 6) {
-                                        PosterImage(url: image.previewURL, aspectRatio: 2 / 3, contentMode: .fill)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                            .overlay {
-                                                if busyID == image.id {
-                                                    Color.black.opacity(0.45)
-                                                    ProgressView().tint(.white)
-                                                }
-                                            }
-                                        Text(image.provider)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                .disabled(busyID != nil)
-                            }
-                        }
-                        .padding(16)
-                    }
-                }
+            List {
+                heroSection
+                kindSection
+                artworkSection
             }
-            .navigationTitle("Remote Image")
+            .zelefinSettingsChrome(title: "Edit Images")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onClose)
+                        .disabled(busyID != nil)
                 }
             }
-            .task { await load() }
+            .task(id: kind) { await load() }
         }
-        .preferredColorScheme(.dark)
+    }
+
+    private var heroSection: some View {
+        Section {
+            VStack(spacing: 14) {
+                SettingsHeroGlyph(systemImage: "photo.on.rectangle")
+                Text(item.name)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(LoginPalette.primaryText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                SettingsChip(icon: kind.systemImage, leading: kind.title)
+            }
+            .frame(maxWidth: .infinity)
+            .settingsHeroRow()
+        }
+    }
+
+    private var kindSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsFieldLabel(title: "Artwork")
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(RemoteArtworkKind.allCases) { option in
+                        Button {
+                            kind = option
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: option.systemImage)
+                                    .font(.caption.weight(.bold))
+                                Text(option.title)
+                                    .font(.caption.weight(.bold))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(kind == option ? LoginPalette.actionLabel : LoginPalette.primaryText)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(kind == option ? Color.accentColor : Color.white.opacity(0.08))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(busyID != nil)
+                        .accessibilityAddTraits(kind == option ? .isSelected : [])
+                    }
+                }
+            }
+            .settingsLoginCard()
+            .settingsCardRow()
+        } header: {
+            Text("Type")
+        }
+    }
+
+    @ViewBuilder
+    private var artworkSection: some View {
+        Section {
+            if isLoading && images.isEmpty {
+                VStack(spacing: 16) {
+                    ConnectBrandMark(size: 72)
+                    Text("Loading \(kind.title.lowercased())s")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(LoginPalette.secondaryText)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 28)
+                .settingsLoginCard()
+                .settingsCardRow()
+            } else if images.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    SettingsFieldLabel(title: kind.emptyTitle)
+                    SettingsStatusText(
+                        text: errorMessage ?? "Jellyfin did not return any \(kind.title.lowercased()) options.",
+                        isError: errorMessage != nil
+                    )
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
+            } else {
+                if let errorMessage {
+                    SettingsStatusText(text: errorMessage, isError: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
+                }
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(images) { image in
+                        artworkTile(image)
+                    }
+                }
+                .listRowInsets(SettingsChrome.cardInsets)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+        } header: {
+            Text(kind.title)
+        }
+    }
+
+    private func artworkTile(_ image: RemoteImageChoice) -> some View {
+        Button {
+            Task { await choose(image) }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                PosterImage(
+                    url: image.previewURL,
+                    aspectRatio: kind.previewAspectRatio,
+                    contentMode: kind == .logo ? .fit : .fill
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    if busyID == image.id {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.black.opacity(0.45))
+                        ProgressView()
+                            .tint(.white)
+                    }
+                }
+                Text(image.provider)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(LoginPalette.primaryText)
+                    .lineLimit(1)
+                if let size = image.sizeLabel {
+                    Text(size)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(LoginPalette.captionText)
+                }
+            }
+            .padding(10)
+            .modifier(LoginCardBackground())
+        }
+        .buttonStyle(.plain)
+        .disabled(busyID != nil)
+        .accessibilityLabel(image.sizeLabel.map { "\(image.provider), \($0)" } ?? image.provider)
     }
 
     private func load() async {
+        isLoading = true
+        busyID = nil
+        images = []
         do {
-            images = try await session.library?.remoteArtwork(for: item.id) ?? []
+            images = try await session.library?.remoteArtwork(for: item.id, kind: kind) ?? []
             errorMessage = nil
         } catch {
+            images = []
             errorMessage = error.localizedDescription
         }
         isLoading = false
@@ -249,7 +351,9 @@ struct RemoteImagePickerView: View {
         busyID = image.id
         defer { busyID = nil }
         do {
-            try await session.library?.downloadRemoteArtwork(itemID: item.id, imageURL: image.imageURL)
+            try await session.library?.downloadRemoteArtwork(itemID: item.id, kind: kind, imageURL: image.imageURL)
+            let refreshed = try? await session.library?.item(id: item.id)
+            session.noteLibraryArtworkChanged(for: item, refreshed: refreshed)
             onClose()
         } catch {
             errorMessage = error.localizedDescription

@@ -623,3 +623,55 @@ final class SeerrSessionPersistenceTests: XCTestCase {
         XCTAssertTrue(PluginSettings.shouldClearSession(switchingFrom: "ada", to: "bob"))
     }
 }
+
+final class PlaybackLanguageTests: XCTestCase {
+    func testMatchesEnglishVariants() {
+        XCTAssertTrue(PlaybackLanguage.matches("eng", preference: "en"))
+        XCTAssertTrue(PlaybackLanguage.matches("en-US", preference: "en"))
+        XCTAssertTrue(PlaybackLanguage.matches("en", preference: "eng"))
+        XCTAssertFalse(PlaybackLanguage.matches("ja", preference: "en"))
+    }
+
+    func testSubtitleOffUsesDisabledIndex() {
+        let tracks = [
+            MediaTrack(id: 2, kind: .subtitle, language: "en", title: "English", codec: "srt", isSelected: true, isDefault: true)
+        ]
+        XCTAssertEqual(PlaybackLanguage.subtitleIndex(in: tracks, preference: PlaybackLanguage.offCode), -1)
+        XCTAssertEqual(PlaybackLanguage.subtitleIndex(in: tracks, preference: "en"), 2)
+    }
+
+    func testAudioPrefersMatchingLanguage() {
+        let tracks = [
+            MediaTrack(id: 1, kind: .audio, language: "ja", title: "Japanese", codec: "aac", isSelected: true, isDefault: true),
+            MediaTrack(id: 2, kind: .audio, language: "en", title: "English", codec: "aac", isSelected: false, isDefault: false)
+        ]
+        XCTAssertEqual(PlaybackLanguage.audioIndex(in: tracks, preference: "en"), 2)
+        XCTAssertEqual(PlaybackLanguage.audioIndex(in: tracks, preference: PlaybackLanguage.automaticCode), 1)
+    }
+}
+
+final class ZelefinPluginCatalogTests: XCTestCase {
+    func testInsertsRepositoryOnce() {
+        let first = ZelefinPluginCatalog.insertingCatalog(into: [])
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(first.first?.url, ZelefinPluginCatalog.repositoryURL)
+        XCTAssertEqual(ZelefinPluginCatalog.insertingCatalog(into: first).count, 1)
+    }
+
+    func testRepositoryURLMatchIgnoresTrailingSlash() {
+        XCTAssertTrue(ZelefinPluginCatalog.urlsMatch(
+            ZelefinPluginCatalog.repositoryURL + "/",
+            ZelefinPluginCatalog.repositoryURL
+        ))
+    }
+}
+
+final class FirstRunSetupStoreTests: XCTestCase {
+    func testMarksAccountComplete() {
+        let id = "test.example|\(UUID().uuidString)"
+        XCTAssertFalse(FirstRunSetupStore.hasCompleted(accountID: id))
+        FirstRunSetupStore.markCompleted(accountID: id)
+        XCTAssertTrue(FirstRunSetupStore.hasCompleted(accountID: id))
+        UserDefaults.standard.removeObject(forKey: "zelefin.setup.completed." + id)
+    }
+}

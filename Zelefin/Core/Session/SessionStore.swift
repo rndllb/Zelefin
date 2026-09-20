@@ -23,6 +23,7 @@ final class SessionStore {
     private(set) var householdProfiles: [SiloHouseholdProfile] = []
     private(set) var siloAvatarUploadEnabled = false
     private(set) var isRestoring = true
+    private(set) var needsFirstRunSetup = false
     private(set) var serverName: String?
     private(set) var homeLayout = HomeLayout(featured: [], sections: [])
     private(set) var libraries: [MediaLibrary] = []
@@ -158,6 +159,7 @@ final class SessionStore {
     }
 
     private(set) var avatarRevision = 0
+    private(set) var artworkRevision = 0
 
     var avatarURL: URL? {
         guard let session else { return nil }
@@ -363,6 +365,7 @@ final class SessionStore {
         householdProfiles = pending.profiles
         apply(saved, siloAPI: api, serverVersion: pending.serverVersion)
         persist(saved)
+        beginFirstRunSetupIfNeeded(for: saved)
     }
 
     func connectReviewDemo() {
@@ -428,6 +431,7 @@ final class SessionStore {
         serverName = info.serverName
         apply(saved, client: jellyfin, serverVersion: info.version)
         persist(saved)
+        beginFirstRunSetupIfNeeded(for: saved)
     }
 
     func switchTo(_ account: SavedSession) async {
@@ -817,6 +821,7 @@ final class SessionStore {
         syncPlayGroupName = nil
         syncPlayPlaylistItemID = nil
         pendingPlayerItem = nil
+        needsFirstRunSetup = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
         playbackLaunchOptions = [:]
@@ -1130,6 +1135,54 @@ final class SessionStore {
         persist(saved)
     }
 
+    func beginFirstRunSetupIfNeeded(for saved: SavedSession) {
+        guard !ReviewDemo.isSession(saved) else {
+            needsFirstRunSetup = false
+            return
+        }
+        needsFirstRunSetup = !FirstRunSetupStore.hasCompleted(accountID: saved.accountID)
+    }
+
+    func completeFirstRunSetup() {
+        if let id = session?.accountID {
+            FirstRunSetupStore.markCompleted(accountID: id)
+        }
+        needsFirstRunSetup = false
+    }
+
+    func applyPlaybackLanguages(audioCode: String, subtitleCode: String) async {
+        PlaybackPreferences.audioLanguageCode = audioCode
+        PlaybackPreferences.subtitleLanguageCode = subtitleCode
+        guard !usesSilo, let client, let userID = session?.userID else { return }
+        var config = (try? await client.send(Paths.getCurrentUser).value.configuration) ?? UserConfiguration()
+        let audio = audioCode == PlaybackLanguage.automaticCode ? "" : audioCode
+        let subtitle = (subtitleCode == PlaybackLanguage.automaticCode || subtitleCode == PlaybackLanguage.offCode)
+            ? ""
+            : subtitleCode
+        config.audioLanguagePreference = audio
+        config.isPlayDefaultAudioTrack = audio.isEmpty
+        config.subtitleLanguagePreference = subtitle
+        config.subtitleMode = subtitleCode == PlaybackLanguage.offCode
+            ? SubtitlePlaybackMode.none
+            : subtitle.isEmpty ? .default : .smart
+        _ = try? await client.send(Paths.updateUserConfiguration(userID: userID, config))
+    }
+
+    func installZelefinPlugin() async throws {
+        guard isAdministrator, let client, !usesSilo else {
+            throw ZelefinError.server("Sign in as a Jellyfin administrator to install the Zelefin plugin.")
+        }
+        try await ZelefinPluginInstaller(client: client).install()
+        await detectPlugins()
+    }
+
+    func restartJellyfinAfterPluginInstall() async throws {
+        guard isAdministrator, let client, !usesSilo else {
+            throw ZelefinError.server("Sign in as a Jellyfin administrator to restart this server.")
+        }
+        try await ZelefinPluginInstaller(client: client).restartServer()
+    }
+
     func detectPlugins() async {
         if usesSilo {
             await detectSiloPlugins()
@@ -1304,6 +1357,33 @@ final class SessionStore {
         } else {
             ArtworkCache.shared.removeAll()
         }
+        artworkRevision += 1
+    }
+
+    /// Jellyfin keeps the same image URL after a replace until tags change, so
+    /// evict the cached bytes and ask on-screen posters to load again.
+    func noteLibraryArtworkChanged(for item: MediaItem, refreshed: MediaItem? = nil) {
+        evictArtwork(for: item)
+        if let refreshed {
+            evictArtwork(for: refreshed)
+            homeLayout = homeLayout.replacing(refreshed)
+            if var snapshot = itemDetailMemory[refreshed.id] {
+                snapshot.item = refreshed
+                itemDetailMemory[refreshed.id] = snapshot
+            }
+        }
+        artworkRevision += 1
+    }
+
+    private func evictArtwork(for item: MediaItem) {
+        guard let library else { return }
+        var urls = library.cacheableArtworkURLs(for: item)
+        for height in [480, 900] {
+            if let url = library.primaryURL(for: item, maxHeight: height) {
+                urls.append(url)
+            }
+        }
+        ArtworkCache.shared.remove(urls: urls)
     }
 
     func purgeMetadataCache(_ folder: MetadataCacheFolder?) {

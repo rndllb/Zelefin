@@ -27,6 +27,58 @@ struct ServerBackup: Identifiable, Hashable, Sendable {
     }
 }
 
+enum RemoteArtworkKind: String, CaseIterable, Identifiable, Sendable {
+    case poster
+    case thumbnail
+    case logo
+    case backdrop
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .poster: "Poster"
+        case .thumbnail: "Thumbnail"
+        case .logo: "Logo"
+        case .backdrop: "Backdrop"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .poster: "rectangle.portrait.fill"
+        case .thumbnail: "rectangle.fill"
+        case .logo: "signature"
+        case .backdrop: "pano.fill"
+        }
+    }
+
+    var emptyTitle: String {
+        "No \(title.lowercased())s"
+    }
+
+    var jellyfinTypeName: String {
+        switch self {
+        case .poster: "Primary"
+        case .thumbnail: "Thumb"
+        case .logo: "Logo"
+        case .backdrop: "Backdrop"
+        }
+    }
+
+    var previewAspectRatio: Double {
+        switch self {
+        case .poster: 2 / 3
+        case .thumbnail, .backdrop: 16 / 9
+        case .logo: 8 / 3
+        }
+    }
+
+    var gridMinimum: Double {
+        self == .poster ? 110 : 160
+    }
+}
+
 struct RemoteImageChoice: Identifiable, Hashable, Sendable {
     let id: String
     let imageURL: URL

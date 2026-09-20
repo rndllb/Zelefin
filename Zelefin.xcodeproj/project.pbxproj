@@ -53,6 +53,7 @@
 		38F108752DB25265F5ED6563 /* PluginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35520B035EA3BB6DD34F49EE /* PluginTests.swift */; };
 		3B4EDF3BE2F12232FE6E586F /* SiloLibraryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E044A37F3F5832959D681A8C /* SiloLibraryClient.swift */; };
 		3B83FD9055C5FC124A00F94B /* ZelefinCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAE3CF5DB0C1D55FAA66726B /* ZelefinCompanion.swift */; };
+		3F74FF77D3F4B662F926839A /* ZelefinPluginInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925F536FD5F4690C5DB9CBFF /* ZelefinPluginInstaller.swift */; };
 		3F84C46412246D084F528F93 /* JellyfinLibraryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7753376297B77BE467E0F6 /* JellyfinLibraryClient.swift */; };
 		40D1D42CE546482596FA337F /* StreamURLBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56AA28FBDD57FE579C318883 /* StreamURLBuilder.swift */; };
 		40FA69DBA1FDD94D5400596D /* StreamContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41D3F4A07A3015F197B467F /* StreamContainer.swift */; };
@@ -73,9 +74,11 @@
 		5B3486B548374FC4DD573D8A /* ScheduledTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F106C6492A4DC94C84E4680 /* ScheduledTask.swift */; };
 		5B5D9F463FB3E09EE5E9A695 /* ArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D8AB5759D7649C01476168 /* ArtworkCache.swift */; };
 		5C260C643C1EB87FC04E8EB5 /* CacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D5715C9C8329E2D253C199A /* CacheTests.swift */; };
+		5D1F934E4ADEF5608F97D299 /* FirstRunSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A1654B5B98C27D30471577 /* FirstRunSetupView.swift */; };
 		5DE524EF7F17A92A6F0F75D7 /* UserAdminTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8E1B72F3076BFF5FB5AEF9 /* UserAdminTests.swift */; };
 		613BDB97CB144EDCFE01CBE9 /* TitleAboutCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 176FE00937DB22A24CE1C30D /* TitleAboutCards.swift */; };
 		634D87457DB72C0557C31ECA /* QuickConnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A90307D5A735115F2D523BC /* QuickConnectTests.swift */; };
+		646410A9FC8AA1CABDFF5AEA /* PlaybackLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D30B8F9F1066E9609DB972B /* PlaybackLanguage.swift */; };
 		65C09316AD058E76072CFA6D /* ServerReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA94D8320FAEB7BA7DB72AC0 /* ServerReachability.swift */; };
 		66754E8B244BA62D33F5B47F /* PlaybackReporting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3902BD7A1D804EF4A1AA4A1D /* PlaybackReporting.swift */; };
 		674F8B89B1E38845443E95F3 /* SiloAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 282E708AA97174988DDA13B3 /* SiloAPIClient.swift */; };
@@ -269,7 +272,7 @@
 		4EB149618554E68DACFC0809 /* Zelefin.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = Zelefin.icon; sourceTree = "<group>"; };
 		4EFFB00A3412B2338103E08D /* PushNotificationCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationCenter.swift; sourceTree = "<group>"; };
 		4FCFE829D2A73C6F62712BCC /* PlusPaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusPaywallView.swift; sourceTree = "<group>"; };
-		50A15815C057CE45878100BC /* Zelefin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zelefin.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		50A15815C057CE45878100BC /* Zelefin.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Zelefin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		51D4B85B6B89D4CCF6A65D35 /* SiloQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloQuality.swift; sourceTree = "<group>"; };
 		52F6473A39AADF9EEFBB2882 /* TickClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickClock.swift; sourceTree = "<group>"; };
 		533892AF69D1B7A279174A72 /* SeerrDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeerrDiscoverView.swift; sourceTree = "<group>"; };
@@ -280,6 +283,7 @@
 		5AE8EFC401D03997CC27265A /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		5BF1D880FC511E84A138A487 /* AccessGatewaySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGatewaySection.swift; sourceTree = "<group>"; };
 		5C091BA2331F8DC32D4AABD5 /* ReviewDemoLibraryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewDemoLibraryClient.swift; sourceTree = "<group>"; };
+		5D30B8F9F1066E9609DB972B /* PlaybackLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackLanguage.swift; sourceTree = "<group>"; };
 		5FA44AD1DF2E3D8CBCFA598B /* DownloadedItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadedItemsView.swift; sourceTree = "<group>"; };
 		62279349820CAD268B2F4B21 /* ScheduledTaskTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTaskTests.swift; sourceTree = "<group>"; };
 		657C049FDD5D0C91B4B15322 /* SiloPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloPlayback.swift; sourceTree = "<group>"; };
@@ -301,6 +305,7 @@
 		768407D7FEFE84C273C70606 /* WiFiSSID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiSSID.swift; sourceTree = "<group>"; };
 		771117D10F521DABAE7167FC /* EpisodeCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpisodeCarouselTests.swift; sourceTree = "<group>"; };
 		7940008AB391DA5EF5BF3770 /* AccessGateway.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGateway.swift; sourceTree = "<group>"; };
+		79A1654B5B98C27D30471577 /* FirstRunSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstRunSetupView.swift; sourceTree = "<group>"; };
 		7DB0AE9BE6FD098B818186F5 /* TitleShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleShare.swift; sourceTree = "<group>"; };
 		80E4BF6587F8DDCA256247DB /* SiloModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloModels.swift; sourceTree = "<group>"; };
 		826DC48E20D50B21A0ACA8E1 /* LibraryMediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryMediaViews.swift; sourceTree = "<group>"; };
@@ -320,6 +325,7 @@
 		90D91D4A7ED63602813594AF /* ConnectBrandMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectBrandMark.swift; sourceTree = "<group>"; };
 		9100B448527FA035C7551F88 /* PlusEntitlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusEntitlement.swift; sourceTree = "<group>"; };
 		923BA489E02AD8CC7528F3DD /* SyncPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPlayView.swift; sourceTree = "<group>"; };
+		925F536FD5F4690C5DB9CBFF /* ZelefinPluginInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinPluginInstaller.swift; sourceTree = "<group>"; };
 		93AF7065390A48F0A3D61455 /* JellyfinEnhancedClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinEnhancedClient.swift; sourceTree = "<group>"; };
 		949B73625DCE33CFA6AB9D8A /* JellyfinUserAdminClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinUserAdminClient.swift; sourceTree = "<group>"; };
 		959AD1E0A6E5CA2A60595B6C /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
@@ -445,6 +451,7 @@
 				B7AB477E9A74428231ECD810 /* HTTPRangeSupport.swift */,
 				C69D4FC449A5A69EC7217C20 /* JellyfinByteRangeReader.swift */,
 				1B24E8FADBBBCD16273C11EE /* PlaybackHTTPHeaders.swift */,
+				5D30B8F9F1066E9609DB972B /* PlaybackLanguage.swift */,
 				26B3C526F91B213FA4BDF40F /* PlaybackPipeline.swift */,
 				2C95AA55AA39DDAC21F8C150 /* PlaybackReporter.swift */,
 				3902BD7A1D804EF4A1AA4A1D /* PlaybackReporting.swift */,
@@ -565,6 +572,7 @@
 			children = (
 				90D91D4A7ED63602813594AF /* ConnectBrandMark.swift */,
 				A2B969AC0F726C1A82B6E4D9 /* ConnectView.swift */,
+				79A1654B5B98C27D30471577 /* FirstRunSetupView.swift */,
 				A800F38D20864B69E7F6E437 /* SiloWhoIsWatchingView.swift */,
 			);
 			path = Connect;
@@ -623,6 +631,7 @@
 				DC535123280EBE8E0BC7162F /* SeerrDiscover.swift */,
 				01253E1D158D0BBE9905263D /* SkipSegment.swift */,
 				DAE3CF5DB0C1D55FAA66726B /* ZelefinCompanion.swift */,
+				925F536FD5F4690C5DB9CBFF /* ZelefinPluginInstaller.swift */,
 			);
 			path = Plugins;
 			sourceTree = "<group>";
@@ -961,6 +970,7 @@
 				8D9FF85CA7753081799A632B /* DownloadTransfer.swift in Sources */,
 				D4B8DE13D6D16B7698FA8DD0 /* DownloadedItemsView.swift in Sources */,
 				29DF0C509FE5F4289D61CAAE /* EpisodeCarousel.swift in Sources */,
+				5D1F934E4ADEF5608F97D299 /* FirstRunSetupView.swift in Sources */,
 				9B82F2C9D642ACEE20019B45 /* HTTPRangeSupport.swift in Sources */,
 				A953BB37469212EBA37F2414 /* HomeFeedChunk.swift in Sources */,
 				35BFA5527F1B486A4A0747FA /* HomeLayoutPreferences.swift in Sources */,
@@ -999,6 +1009,7 @@
 				322D87380319DD3D5379ECB5 /* OpenSubtitlesClient.swift in Sources */,
 				1CE589E3E74FED5AFD8CDA27 /* OpenSubtitlesSearchView.swift in Sources */,
 				B976FE6BCCD46C9C6F12A30F /* PlaybackHTTPHeaders.swift in Sources */,
+				646410A9FC8AA1CABDFF5AEA /* PlaybackLanguage.swift in Sources */,
 				97503FF179D34A21C7BB0E92 /* PlaybackPipeline.swift in Sources */,
 				A3D734001C35051D4079F333 /* PlaybackQueueMenu.swift in Sources */,
 				F24A28D346A06D72689CC4ED /* PlaybackReporter.swift in Sources */,
@@ -1075,6 +1086,7 @@
 				CB918BC23B07B8F6FB49597E /* ZelefinApp.swift in Sources */,
 				3B83FD9055C5FC124A00F94B /* ZelefinCompanion.swift in Sources */,
 				794E2EB4A02821A5709F1E05 /* ZelefinError.swift in Sources */,
+				3F74FF77D3F4B662F926839A /* ZelefinPluginInstaller.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1134,7 +1146,6 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Zelefin/Info.plist;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
@@ -1225,7 +1236,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DISABLE_DIAMOND_PROBLEM_DIAGNOSTIC = YES;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1266,7 +1277,6 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Zelefin/Info.plist;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
@@ -1321,7 +1331,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DISABLE_DIAMOND_PROBLEM_DIAGNOSTIC = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

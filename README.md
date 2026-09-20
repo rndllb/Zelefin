@@ -14,6 +14,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Test Connection reports whether the URL is Jellyfin or Silo
 - Household profiles and PIN on Silo after login (Who’s watching)
 - Try Review Demo on the sign-in screen: a sample library for App Review (Home, Movies, Shows, title pages, and Play) with no server. Hide the button with `ReviewDemo.isEnabled`, or delete `Zelefin/ReviewDemo` after approval.
+- After a new Jellyfin or Silo sign-in, a one-time setup: preferred audio and subtitle languages, optional Seerr sign-in, and Install Plugin for Jellyfin administrators. Silo skips Seerr and the plugin. Review Demo and restoring a saved account skip this screen
 - Quick Connect from another signed-in Jellyfin device
 - Access Gateway tokens for Cloudflare Zero Trust or Pangolin, sent on every request including artwork and playback
 - Multiple saved accounts on this device, with switch-user and Add User / Add Account from Profile (one account is free; extra logins are Zelefin Plus)
@@ -61,7 +62,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - More: favorite, like or dislike, add to a collection, play on another device, and Play in SyncPlay
 - Select Audio and Select Subtitles from the file’s tracks (Jellyfin streams, or Silo watch/catalog `audio_tracks` / `subtitle_tracks`)
 - Version picker when a title has more than one file
-- Administrators can refresh metadata, choose a remote image, and delete the title from the library (with confirmation). Delete and remote images stay Jellyfin-only
+- Administrators can refresh metadata, edit Poster / Thumbnail / Logo / Backdrop from remote images, and delete the title from the library. Delete asks with a centered alert before Jellyfin removes the files. Delete and remote images stay Jellyfin-only. Applying new art refreshes posters and heroes in the app without leaving the title
 - Add Subtitles on movies and episodes when this account can edit subtitles (administrator or Edit Subtitles) and Open Subtitles is on the Jellyfin server. Silo does not offer Add Subtitles from this app
 - Share a `zelefin://` link plus the Jellyfin web URL so another install or a browser can open the title
 - On iPhone, title and Live TV program pages use the same 45 pt glass Back and More pills as iPad. The rest of the iPhone UI stays portrait; the video player can rotate to landscape
@@ -75,9 +76,9 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 - Administrators also get streams started, users coming online on another device, scheduled tasks starting, and new Seerr requests when Seerr is signed in under Plugins
 - Settings → Notifications to turn each kind on or off
 - Stream and online alerts follow Jellyfin session updates while the app is open; library adds also fire when Jellyfin reports a library change
-- With the plugin, those events are Apple Push from your Jellyfin. You do not paste an Apple key on the server. Without the plugin, iOS only lets this device check in the background occasionally, and opening the app always checks right away
+- The plugin is optional. This iPhone still checks Jellyfin while the app is open and when iOS allows a background refresh. The plugin adds Apple Push while the app is fully closed. You do not paste an Apple key on the server. Uninstalling the plugin does not turn off the on-device alerts; use Settings → Notifications for that, and restart Jellyfin so the server unloads the plugin
 - Silo has no Zelefin plugin. This device checks that server itself; lock-screen delivery depends on iOS background time
-- Privacy and support: [zelefin.app/privacy](https://zelefin.app/privacy), [zelefin.app/support](https://zelefin.app/support)
+- Privacy, terms, and support: [zelefin.app/privacy](https://zelefin.app/privacy), [zelefin.app/terms](https://zelefin.app/terms), [zelefin.app/support](https://zelefin.app/support)
 
 ### Playback
 
@@ -85,6 +86,7 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 - Zelefin Direct Play for MKV and similar containers
 - Optional native video player (AVPlayer only; MKV remuxes on the server)
 - Prefer fMP4 or MPEG-TS when using the native player
+- Preferred audio and subtitle languages in Settings → Playback (also set on first sign-in). Automatic uses the title default; Off turns subtitles off. A chosen language is used when that track exists
 - Audio and subtitle track selection, including sidecar files and on-device cues for Direct Play
 - On Silo, playback uses protocol v3. Auto Direct Plays the original file on this device (same as Jellyfin), including HDR — Zelefin maps it on device instead of asking Silo to tone-map. Native Video Player still uses AVPlayer for MP4 and HLS; MKV stays on the built-in engine so Silo does not remux HDR into a transcode. Prefer fMP4 in HLS applies when a remux is required, and MPEG-TS is used when fMP4 is off
 - Adaptive bitrate still measures this connection. On Silo it does not cap Direct Play; a lower Maximum Quality is the only start cap. If Silo still has to re-encode HDR (incompatible codec, subtitle burn-in, or a quality cap), enable **Software HDR Tone Mapping** in Silo → Settings → Playback. Hardware HDR Tone Mapping only permits a GPU recipe after Silo smoke-tests it (VA-API `tonemap_vaapi` or similar). With software off and no validated GPU executor, playback stops with “no validated HDR-preserving or tone-map recipe is installed.” The chapter-thumbnail HDR rows on that page do not apply to playback. Transcoded HDR becomes SDR. Restart Silo if those toggles still show a restart badge.
@@ -106,9 +108,9 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 
 ### Plugins
 
-Settings → Plugins shows what this Jellyfin server actually has installed. Zelefin does not install plugins; it uses the ones already on the server.
+Settings → Plugins shows what this Jellyfin server actually has installed. The first-sign-in setup can add the Zelefin catalog and install the companion plugin for administrators, the same way Neptune does.
 
-- **Zelefin** — Companion plugin for lock-screen alerts, Seerr URL and API key, and Intro Skipper defaults. In Jellyfin: Dashboard → Plugins → Catalog → add `https://raw.githubusercontent.com/rndllb/Zelefin-Plugin/main/manifest.json`, then install Zelefin. Admins do not need an Apple Developer account.
+- **Zelefin** — Companion plugin for lock-screen alerts, Seerr URL and API key, and Intro Skipper defaults. First-time setup offers Install Plugin to admins. You can also add `https://raw.githubusercontent.com/rndllb/Zelefin-Plugin/main/manifest.json` in Jellyfin → Dashboard → Plugins → Catalog. Admins do not need an Apple Developer account.
 - **Intro Skipper** — Skip Intro and Skip Credits during playback. Optional auto-skip for intros and credits.
 - **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Requires an administrator or a user with Edit Subtitles. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
 - **Jellyfin Enhanced** — Remove from Continue Watching or Next Up without changing watched state. TMDB reviews, household reviews, and awards on the title page. Detection uses the plugin list, or `/JellyfinEnhanced/version` when `/Plugins` is admin-only.
@@ -203,6 +205,7 @@ Silo (when this login can administer the server):
 - Drag to reorder Home rows and turn any row off, including Featured
 - Drag to reorder tabs, hide any tab except Home, reset to defaults
 - Tab order, Home row layout, and the combined Continue Watching row sync to this Jellyfin user as display preferences, so another Zelefin install on the same account can pick them up
+- About shows Version and Build, plus Privacy Policy and Terms of Use on [zelefin.app](https://zelefin.app)
 
 ### Zelefin Plus
 

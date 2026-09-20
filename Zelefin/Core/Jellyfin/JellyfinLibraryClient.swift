@@ -806,12 +806,17 @@ class JellyfinLibraryClient: @unchecked Sendable {
     ) async throws -> PlaybackPlan {
         let bitrate = maxBitrate ?? PlaybackPreferences.maxStreamingBitrate
         let resume = await resolvedResumePosition(requested: startTime, item: item)
+        let preferredTracks = (audioIndex == nil || subtitleIndex == nil)
+            ? await streamTracks(for: item.id)
+            : (audio: [], subtitles: [])
+        let resolvedAudio = audioIndex ?? PlaybackLanguage.audioIndex(in: preferredTracks.audio)
+        let resolvedSubtitle = subtitleIndex ?? PlaybackLanguage.subtitleIndex(in: preferredTracks.subtitles)
         let profile = AVDeviceProfileFactory.make(
             preferFMP4InHLS: PlaybackPreferences.effectivePreferFMP4InHLS,
             maxBitrate: bitrate
         )
         let body = PlaybackInfoDto(
-            audioStreamIndex: audioIndex,
+            audioStreamIndex: resolvedAudio,
             deviceProfile: profile,
             enableDirectPlay: enableDirectPlay,
             enableDirectStream: true,
@@ -820,7 +825,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
             maxStreamingBitrate: bitrate,
             mediaSourceID: mediaSourceID,
             startTimeTicks: TickClock.intTicks(from: resume),
-            subtitleStreamIndex: subtitleIndex,
+            subtitleStreamIndex: resolvedSubtitle,
             userID: userID
         )
 
@@ -830,8 +835,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
                 userID: userID,
                 maxStreamingBitrate: bitrate,
                 startTimeTicks: TickClock.intTicks(from: resume),
-                audioStreamIndex: audioIndex,
-                subtitleStreamIndex: subtitleIndex,
+                audioStreamIndex: resolvedAudio,
+                subtitleStreamIndex: resolvedSubtitle,
                 mediaSourceID: mediaSourceID,
                 isAutoOpenLiveStream: true,
                 enableDirectPlay: enableDirectPlay,
@@ -877,8 +882,14 @@ class JellyfinLibraryClient: @unchecked Sendable {
             startTime: isLive ? 0 : resume,
             byteSize: isLive ? nil : source.size.map(Int64.init),
             extraHTTPHeaders: source.requiredHTTPHeaders ?? [:],
-            audioTracks: ItemMapper.tracks(from: streams, kind: .audio),
-            subtitleTracks: ItemMapper.tracks(from: streams, kind: .subtitle),
+            audioTracks: PlaybackLanguage.selecting(
+                ItemMapper.tracks(from: streams, kind: .audio),
+                selectedID: resolvedAudio
+            ),
+            subtitleTracks: PlaybackLanguage.selecting(
+                ItemMapper.tracks(from: streams, kind: .subtitle),
+                selectedID: resolvedSubtitle == -1 ? nil : resolvedSubtitle
+            ),
             externalSubtitles: self.streams.externalSubtitles(itemID: item.id, source: source),
             chapters: isLive ? [] : (dto.map(ItemMapper.chapters(from:)) ?? []),
             trickplay: isLive ? nil : dto.flatMap { ItemMapper.trickplay(from: $0, sourceID: source.id) },
@@ -1655,31 +1666,33 @@ class JellyfinLibraryClient: @unchecked Sendable {
         _ = try await client.send(Paths.deleteItem(itemID: itemID))
     }
 
-    func remoteArtwork(for itemID: String) async throws -> [RemoteImageChoice] {
+    func remoteArtwork(for itemID: String, kind: RemoteArtworkKind) async throws -> [RemoteImageChoice] {
+        let type = ImageType(rawValue: kind.jellyfinTypeName) ?? .primary
         let result = try await client.send(
             Paths.getRemoteImages(
                 itemID: itemID,
-                parameters: .init(type: .primary, startIndex: 0, limit: 40, isIncludeAllLanguages: true)
+                parameters: .init(type: type, startIndex: 0, limit: 40, isIncludeAllLanguages: true)
             )
         ).value
         return (result.images ?? []).compactMap { info in
             guard let raw = info.url, let url = URL(string: raw) else { return nil }
             let thumb = info.thumbnailURL.flatMap(URL.init(string:))
             return RemoteImageChoice(
-                id: raw,
+                id: "\(kind.rawValue)-\(raw)",
                 imageURL: url,
                 thumbnailURL: thumb,
                 provider: info.providerName ?? "Provider",
-                typeName: info.type?.rawValue ?? "Primary",
+                typeName: info.type?.rawValue ?? kind.jellyfinTypeName,
                 width: info.width,
                 height: info.height
             )
         }
     }
 
-    func downloadRemoteArtwork(itemID: String, imageURL: URL) async throws {
+    func downloadRemoteArtwork(itemID: String, kind: RemoteArtworkKind, imageURL: URL) async throws {
+        let type = ImageType(rawValue: kind.jellyfinTypeName) ?? .primary
         _ = try await client.send(
-            Paths.downloadRemoteImage(itemID: itemID, type: .primary, imageURL: imageURL.absoluteString)
+            Paths.downloadRemoteImage(itemID: itemID, type: type, imageURL: imageURL.absoluteString)
         )
     }
 

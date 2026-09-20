@@ -96,7 +96,9 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showsRemoteImages) {
+            .sheet(isPresented: $showsRemoteImages, onDismiss: {
+                Task { await refreshFromServer() }
+            }) {
                 if let item {
                     RemoteImagePickerView(item: item) {
                         showsRemoteImages = false
@@ -113,10 +115,9 @@ struct ItemDetailView: View {
                         }
                 }
             }
-            .confirmationDialog(
+            .alert(
                 "Delete this title from the library?",
-                isPresented: $showsDeleteConfirm,
-                titleVisibility: .visible
+                isPresented: $showsDeleteConfirm
             ) {
                 Button("Delete Files", role: .destructive) {
                     Task { await deleteFromLibrary() }
@@ -402,14 +403,11 @@ struct ItemDetailView: View {
                     .font(PlayButtonLayout.iconFont)
                     .frame(width: PlayButtonLayout.iconWidth)
 
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.black.opacity(0.28))
-                    Capsule()
-                        .fill(Color.black.opacity(0.82))
-                        .scaleEffect(x: item.progress, y: 1, anchor: .leading)
-                }
-                .frame(width: PlayButtonLayout.progressWidth, height: PlayButtonLayout.progressHeight)
+                CapsuleProgressBar(
+                    progress: item.progress,
+                    width: PlayButtonLayout.progressWidth,
+                    height: PlayButtonLayout.progressHeight
+                )
 
                 playButtonLabel(for: item)
             }

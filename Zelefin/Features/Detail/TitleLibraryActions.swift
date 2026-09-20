@@ -251,7 +251,7 @@ struct TitleUserActions: View {
             }
         }
         if let onRemoteImage {
-            Button("Choose Remote Image…", systemImage: "photo.on.rectangle") {
+            Button("Edit Images…", systemImage: "photo.on.rectangle") {
                 guard plus.require(.adminTools) else { return }
                 onRemoteImage()
             }

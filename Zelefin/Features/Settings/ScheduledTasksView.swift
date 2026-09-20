@@ -33,9 +33,9 @@ struct ScheduledTasksView: View {
                 List {
                     if let errorMessage {
                         Section {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
+                            SettingsStatusText(text: errorMessage, isError: true)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     }
                     if !running.isEmpty {
@@ -70,7 +70,9 @@ struct ScheduledTasksView: View {
             } cancel: {
                 await cancel(task)
             }
+            .settingsLoginCard()
         }
+        .settingsCardRow()
     }
 
     private func monitor() async {
@@ -134,9 +136,10 @@ struct ScheduledTaskRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.name)
                         .font(.body.weight(.semibold))
+                        .foregroundStyle(LoginPalette.primaryText)
                     Text(task.stateSubtitle)
                         .font(.caption)
-                        .foregroundStyle(task.lastStatus == .failed && !task.isActive ? Color.red : .secondary)
+                        .foregroundStyle(task.lastStatus == .failed && !task.isActive ? LoginPalette.failure : LoginPalette.secondaryText)
                 }
                 Spacer(minLength: 8)
                 if isBusy {
@@ -152,6 +155,7 @@ struct ScheduledTaskRow: View {
                     }
                     .buttonStyle(.borderless)
                 }
+                SettingsChevron()
             }
             if task.isActive {
                 if let fraction = task.progressFraction {
@@ -185,67 +189,82 @@ struct ScheduledTaskDetailView: View {
                 List {
                     if let errorMessage {
                         Section {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
+                            SettingsStatusText(text: errorMessage, isError: true)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     }
                     Section {
-                        LabeledContent("Status", value: task.state.label)
-                        if let progress = task.progressLabel, task.isActive {
-                            LabeledContent("Progress", value: progress)
-                        }
-                        if task.isActive {
-                            if let fraction = task.progressFraction {
-                                ProgressView(value: fraction)
-                                    .progressViewStyle(.linear)
-                            } else {
-                                ProgressView()
-                                    .progressViewStyle(.linear)
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsInfoRow(label: "Status", value: task.state.label)
+                            if let progress = task.progressLabel, task.isActive {
+                                SettingsCardDivider()
+                                SettingsInfoRow(label: "Progress", value: progress)
+                            }
+                            if task.isActive {
+                                SettingsCardDivider()
+                                if let fraction = task.progressFraction {
+                                    ProgressView(value: fraction)
+                                        .progressViewStyle(.linear)
+                                        .tint(AccentPreferences.current)
+                                } else {
+                                    ProgressView()
+                                        .progressViewStyle(.linear)
+                                        .tint(AccentPreferences.current)
+                                }
                             }
                         }
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                     if !task.summary.isEmpty {
-                        Section("About") {
+                        Section {
                             Text(task.summary)
-                                .font(.body)
-                                .foregroundStyle(.secondary)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(LoginPalette.secondaryText)
+                                .settingsLoginCard()
+                                .settingsCardRow()
+                        } header: {
+                            Text("About")
                         }
                     }
                     if task.lastStatus != nil || task.lastEnded != nil {
-                        Section("Last run") {
-                            if let lastStatus = task.lastStatus {
-                                LabeledContent("Result", value: lastStatus.label)
+                        Section {
+                            VStack(alignment: .leading, spacing: 0) {
+                                if let lastStatus = task.lastStatus {
+                                    SettingsInfoRow(label: "Result", value: lastStatus.label)
+                                }
+                                if let lastEnded = task.lastEnded {
+                                    if task.lastStatus != nil { SettingsCardDivider() }
+                                    SettingsInfoRow(label: "Finished", value: lastEnded.formatted(date: .abbreviated, time: .shortened))
+                                }
+                                if let duration = task.lastDurationLabel {
+                                    SettingsCardDivider()
+                                    SettingsInfoRow(label: "Duration", value: duration)
+                                }
+                                if let lastError = task.lastError {
+                                    SettingsStatusText(text: lastError, isError: true)
+                                        .padding(.top, 12)
+                                }
                             }
-                            if let lastEnded = task.lastEnded {
-                                LabeledContent("Finished", value: lastEnded.formatted(date: .abbreviated, time: .shortened))
-                            }
-                            if let duration = task.lastDurationLabel {
-                                LabeledContent("Duration", value: duration)
-                            }
-                            if let lastError = task.lastError {
-                                Text(lastError)
-                                    .foregroundStyle(.red)
-                                    .font(.footnote)
-                            }
+                            .settingsLoginCard()
+                            .settingsCardRow()
+                        } header: {
+                            Text("Last run")
                         }
                     }
                     Section {
                         if task.canStart {
-                            Button {
+                            SettingsPrimaryButton(title: "Start Task", isBusy: isBusy) {
                                 Task { await start() }
-                            } label: {
-                                actionLabel("Start Task", busy: isBusy)
                             }
-                            .disabled(isBusy)
+                            .settingsCardRow()
                         }
                         if task.canCancel {
-                            Button(role: .destructive) {
+                            SettingsSecondaryButton(title: "Cancel Task", role: .destructive, enabled: !isBusy) {
                                 Task { await cancel() }
-                            } label: {
-                                actionLabel("Cancel Task", busy: isBusy)
                             }
-                            .disabled(isBusy)
+                            .settingsCardRow()
                         }
                     }
                 }
@@ -262,19 +281,6 @@ struct ScheduledTaskDetailView: View {
         }
         .zelefinSettingsChrome(title: task?.name ?? "Task")
         .task { await monitor() }
-    }
-
-    private func actionLabel(_ title: String, busy: Bool) -> some View {
-        HStack {
-            Spacer(minLength: 0)
-            if busy {
-                ProgressView()
-            } else {
-                Text(title)
-                    .fontWeight(.semibold)
-            }
-            Spacer(minLength: 0)
-        }
     }
 
     private func monitor() async {

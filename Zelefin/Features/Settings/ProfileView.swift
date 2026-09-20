@@ -33,9 +33,7 @@ struct ProfileView: View {
         Form {
             Section {
                 identityHero
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 20, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    .settingsHeroRow()
             }
 
             if session.usesSilo {
@@ -55,9 +53,7 @@ struct ProfileView: View {
 
             Section {
                 passwordCard
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 10, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    .settingsCardRow()
             } header: {
                 Text("Password")
             } footer: {
@@ -67,34 +63,20 @@ struct ProfileView: View {
             Section {
                 if let current = session.session {
                     accountRow(current, isCurrent: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
                 ForEach(session.otherAccounts) { account in
                     Button {
                         Task { await session.switchTo(account) }
                     } label: {
                         accountRow(account, isCurrent: false)
+                            .settingsLoginCard()
                     }
                     .buttonStyle(.plain)
+                    .settingsCardRow()
                 }
-                if plus.isUnlocked {
-                    NavigationLink {
-                        AddAccountView()
-                    } label: {
-                        Label(session.usesSilo ? "Add Account" : "Add User", systemImage: "person.badge.plus")
-                    }
-                } else {
-                    Button {
-                        plus.request(.extraAccounts)
-                    } label: {
-                        HStack {
-                            Label(session.usesSilo ? "Add Account" : "Add User", systemImage: "person.badge.plus")
-                            Spacer(minLength: 8)
-                            Image(systemName: "lock.fill")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
+                addUserRow
             } header: {
                 Text(session.usesSilo ? "Accounts" : "Users")
             } footer: {
@@ -304,9 +286,7 @@ struct ProfileView: View {
 
     private var accessTokenCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Device token")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            SettingsFieldLabel(title: "Device token")
             HStack(alignment: .top, spacing: 10) {
                 Group {
                     if tokenVisible {
@@ -316,7 +296,8 @@ struct ProfileView: View {
                         Text(maskedToken)
                     }
                 }
-                .font(.footnote.monospaced())
+                .font(.footnote.monospaced().weight(.semibold))
+                .foregroundStyle(LoginPalette.fieldValue)
                 .lineLimit(tokenVisible ? 6 : 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel(tokenVisible ? "Access token" : "Hidden access token")
@@ -324,22 +305,24 @@ struct ProfileView: View {
                     tokenVisible.toggle()
                 } label: {
                     Image(systemName: tokenVisible ? "eye.slash" : "eye")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(LoginPalette.iconTint)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .accessibilityLabel(tokenVisible ? "Hide token" : "Show token")
                 Button {
                     copyAccessToken()
                 } label: {
                     Image(systemName: tokenCopied ? "checkmark" : "doc.on.doc")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(tokenCopied ? LoginPalette.success : LoginPalette.iconTint)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .disabled(accessToken.isEmpty)
                 .accessibilityLabel(tokenCopied ? "Copied" : "Copy token")
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(LoginCardBackground())
+        .settingsLoginCard()
         .accessibilityHint("This token signs this device into \(serverLabel). Copy it only into apps you trust.")
     }
 
@@ -622,33 +605,79 @@ struct ProfileView: View {
         }
     }
 
+    private var addUserTitle: String {
+        session.usesSilo ? "Add Account" : "Add User"
+    }
+
+    @ViewBuilder
+    private var addUserRow: some View {
+        if plus.isUnlocked {
+            NavigationLink {
+                AddAccountView()
+            } label: {
+                addUserLabel(trailing: .chevron)
+                    .settingsLoginCard()
+            }
+            .settingsCardRow()
+        } else {
+            Button {
+                plus.request(.extraAccounts)
+            } label: {
+                addUserLabel(trailing: .lock)
+                    .settingsLoginCard()
+            }
+            .buttonStyle(.plain)
+            .settingsCardRow()
+        }
+    }
+
+    private enum AddUserTrailing {
+        case chevron
+        case lock
+    }
+
+    private func addUserLabel(trailing: AddUserTrailing) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: "person.badge.plus")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.tint)
+                .frame(width: 28, alignment: .center)
+            Text(addUserTitle)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.primaryText)
+            Spacer(minLength: 8)
+            switch trailing {
+            case .chevron:
+                SettingsChevron()
+            case .lock:
+                Image(systemName: "lock.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(LoginPalette.captionText)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .accessibilityLabel(addUserTitle)
+    }
+
     private func accountRow(_ account: SavedSession, isCurrent: Bool) -> some View {
         HStack(spacing: 14) {
-            UserAvatarView(
-                url: session.avatarURL(for: account),
+            SettingsPersonRow(
+                name: account.userName,
+                subtitle: isCurrent ? "Signed in" : accountSubtitle(account),
+                avatarURL: session.avatarURL(for: account),
                 localImage: isCurrent ? localAvatar : nil,
-                diameter: 48
+                showsChevron: false
             )
-            .overlay {
-                Circle()
-                    .strokeBorder(isCurrent ? Color.white : Color.clear, lineWidth: 2)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(account.userName)
-                    .font(.body.weight(.semibold))
-                Text(isCurrent ? "Signed in" : accountSubtitle(account))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
             if isCurrent {
                 Image(systemName: "checkmark")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(AccentPreferences.current)
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+            } else {
+                SettingsChevron()
             }
         }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(isCurrent ? "\(account.userName), signed in" : "Switch to \(account.userName)")
         .accessibilityAddTraits(isCurrent ? [.isStaticText] : [.isButton])
@@ -777,14 +806,15 @@ struct AddAccountView: View {
                             .font(.body.weight(.semibold))
                         Text("This server")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LoginPalette.secondaryText)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "checkmark")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(AccentPreferences.current)
                 }
-                .padding(.vertical, 4)
+                .settingsLoginCard()
+                .settingsCardRow()
             } footer: {
                 Text(session.usesSilo
                      ? "New accounts are added on the Silo server you’re already using. After you sign in, pick a household profile."
@@ -792,39 +822,42 @@ struct AddAccountView: View {
             }
 
             Section {
-                TextField(session.usesSilo ? "Username or email" : "Username", text: $username)
-                    .textContentType(.username)
-                    .keyboardType(session.usesSilo ? .emailAddress : .default)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsLabeledField(label: session.usesSilo ? "Username or email" : "Username", systemImage: "person.fill") {
+                        TextField(session.usesSilo ? "Username or email" : "Username", text: $username)
+                            .textContentType(.username)
+                            .keyboardType(session.usesSilo ? .emailAddress : .default)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    SettingsCardDivider()
+                    SettingsLabeledField(label: "Password", systemImage: "lock.fill") {
+                        SecureField("Password", text: $password)
+                            .textContentType(.password)
+                    }
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
             } header: {
                 Text("Sign In")
             }
 
             Section {
-                Button {
+                SettingsPrimaryButton(
+                    title: session.usesSilo ? "Add Account" : "Add User",
+                    isBusy: isConnecting,
+                    enabled: canSubmit
+                ) {
                     Task { await add() }
-                } label: {
-                    HStack {
-                        Spacer(minLength: 0)
-                        if isConnecting {
-                            ProgressView()
-                        } else {
-                            Text(session.usesSilo ? "Add Account" : "Add User")
-                                .fontWeight(.semibold)
-                        }
-                        Spacer(minLength: 0)
-                    }
                 }
-                .disabled(!canSubmit || isConnecting)
+                .settingsCardRow()
             }
 
             if let errorMessage {
                 Section {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
+                    SettingsStatusText(text: errorMessage, isError: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
             }
         }

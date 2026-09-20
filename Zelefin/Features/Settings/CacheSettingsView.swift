@@ -89,22 +89,33 @@ struct CacheSettingsView: View {
 
     private var artworkSection: some View {
         Section {
-            labeledSize("Total", artwork.total)
-            ForEach(ArtworkImageKind.allCases) { kind in
-                cacheRow(
-                    title: kind.title,
-                    bucket: artwork.bucket(for: kind),
-                    clearEnabled: !artwork.bucket(for: kind).isEmpty
-                ) {
-                    confirmArtwork = kind
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsInfoRow(label: "Total", value: CacheInventory.formatBytes(artwork.total.bytes))
+                ForEach(ArtworkImageKind.allCases) { kind in
+                    SettingsCardDivider()
+                    cacheRow(
+                        title: kind.title,
+                        bucket: artwork.bucket(for: kind),
+                        clearEnabled: !artwork.bucket(for: kind).isEmpty
+                    ) {
+                        confirmArtwork = kind
+                    }
                 }
+                SettingsSecondaryButton(
+                    title: "Clear All Images",
+                    role: .destructive,
+                    enabled: !artwork.total.isEmpty
+                ) {
+                    confirmAllArtwork = true
+                }
+                .padding(.top, 16)
+                SettingsCardDivider()
+                Toggle("Auto-refresh missing images", isOn: $autoRefreshMissingImages)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
             }
-            Button("Clear All Images", role: .destructive) {
-                confirmAllArtwork = true
-            }
-            .disabled(artwork.total.isEmpty)
-            Toggle("Auto-refresh missing images", isOn: $autoRefreshMissingImages)
-                .tint(AccentPreferences.current)
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Images")
         } footer: {
@@ -114,43 +125,41 @@ struct CacheSettingsView: View {
 
     private var metadataSection: some View {
         Section {
-            labeledSize("Total", metadata.total)
-            ForEach(MetadataCacheFolder.allCases) { folder in
-                cacheRow(
-                    title: folder.title,
-                    bucket: metadata.bucket(for: folder),
-                    clearEnabled: !metadata.bucket(for: folder).isEmpty
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsInfoRow(label: "Total", value: CacheInventory.formatBytes(metadata.total.bytes))
+                ForEach(MetadataCacheFolder.allCases) { folder in
+                    SettingsCardDivider()
+                    cacheRow(
+                        title: folder.title,
+                        bucket: metadata.bucket(for: folder),
+                        clearEnabled: !metadata.bucket(for: folder).isEmpty
+                    ) {
+                        confirmMetadata = folder
+                    }
+                }
+                SettingsSecondaryButton(
+                    title: "Clear All Metadata",
+                    role: .destructive,
+                    enabled: !metadata.total.isEmpty
                 ) {
-                    confirmMetadata = folder
+                    confirmAllMetadata = true
                 }
-            }
-            Button("Clear All Metadata", role: .destructive) {
-                confirmAllMetadata = true
-            }
-            .disabled(metadata.total.isEmpty)
-            Toggle("Auto-refresh missing metadata", isOn: $autoRefreshMissingMetadata)
-                .tint(AccentPreferences.current)
-            Button {
-                Task { await refreshMetadata() }
-            } label: {
-                if isRefreshingMetadata {
-                    ProgressView()
-                } else {
-                    Text("Refresh Missing Metadata")
+                .padding(.top, 16)
+                SettingsCardDivider()
+                Toggle("Auto-refresh missing metadata", isOn: $autoRefreshMissingMetadata)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                SettingsPrimaryButton(title: "Refresh Missing Metadata", isBusy: isRefreshingMetadata) {
+                    Task { await refreshMetadata() }
                 }
+                .padding(.top, 16)
             }
-            .disabled(isRefreshingMetadata)
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Metadata")
         } footer: {
             Text("Home rows, library catalogs, and title pages. Auto-refresh pulls anything this device has not cached yet.")
-        }
-    }
-
-    private func labeledSize(_ title: String, _ bucket: CacheBucket) -> some View {
-        LabeledContent(title) {
-            Text(CacheInventory.formatBytes(bucket.bytes))
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -161,14 +170,17 @@ struct CacheSettingsView: View {
         clear: @escaping () -> Void
     ) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoginPalette.primaryText)
                 Text(CacheInventory.formatBytes(bucket.bytes))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LoginPalette.secondaryText)
             }
             Spacer(minLength: 8)
             Button("Clear", role: .destructive, action: clear)
+                .font(.caption.weight(.bold))
                 .disabled(!clearEnabled)
         }
     }

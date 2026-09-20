@@ -12,50 +12,70 @@ struct SyncPlayView: View {
         List {
             if let errorMessage {
                 Section {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
-                        .font(.footnote)
+                    SettingsStatusText(text: errorMessage, isError: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
             }
             if let name = session.syncPlayGroupName, session.syncPlayGroupID != nil {
-                Section("This Device") {
-                    LabeledContent("Joined", value: name)
-                    Button("Leave Group", role: .destructive) {
-                        Task { await leave() }
+                Section {
+                    VStack(alignment: .leading, spacing: 0) {
+                        SettingsInfoRow(label: "Joined", value: name)
+                        SettingsSecondaryButton(title: "Leave Group", role: .destructive, enabled: !isWorking) {
+                            Task { await leave() }
+                        }
+                        .padding(.top, 16)
                     }
-                    .disabled(isWorking)
+                    .settingsLoginCard()
+                    .settingsCardRow()
+                } header: {
+                    Text("This Device")
                 }
             }
-            Section("New Group") {
-                HStack {
-                    TextField("Name", text: $newName)
-                    Button("Create") {
+            Section {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsLabeledField(label: "Name", systemImage: "person.2.fill") {
+                        TextField("Name", text: $newName)
+                    }
+                    SettingsPrimaryButton(
+                        title: "Create",
+                        isBusy: isWorking,
+                        enabled: !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ) {
                         Task { await create() }
                     }
-                    .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
+                    .padding(.top, 16)
                 }
+                .settingsLoginCard()
+                .settingsCardRow()
+            } header: {
+                Text("New Group")
             }
-            Section("Groups") {
+            Section {
                 if isLoading && groups.isEmpty {
                     ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .settingsCardRow()
                 } else if groups.isEmpty {
-                    Text("No SyncPlay groups are running.")
-                        .foregroundStyle(.secondary)
+                    SettingsStackedRow(title: "No SyncPlay groups are running.")
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 } else {
                     ForEach(groups) { group in
                         Button {
                             Task { await join(group) }
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(group.name)
-                                Text(group.subtitle)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
+                            SettingsStackedRow(title: group.name, subtitle: group.subtitle)
+                                .settingsLoginCard()
                         }
+                        .buttonStyle(.plain)
                         .disabled(isWorking || session.syncPlayGroupID == group.id)
+                        .opacity(session.syncPlayGroupID == group.id ? 0.55 : 1)
+                        .settingsCardRow()
                     }
                 }
+            } header: {
+                Text("Groups")
             }
         }
         .listStyle(.insetGrouped)
@@ -132,31 +152,50 @@ struct SyncPlayPlaySheet: View {
         NavigationStack {
             List {
                 if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
+                    SettingsStatusText(text: errorMessage, isError: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
-                Section("New Group") {
-                    HStack {
-                        TextField("Name", text: $newName)
-                        Button("Start") {
+                Section {
+                    VStack(alignment: .leading, spacing: 0) {
+                        SettingsLabeledField(label: "Name", systemImage: "person.2.fill") {
+                            TextField("Name", text: $newName)
+                        }
+                        SettingsPrimaryButton(
+                            title: "Start",
+                            enabled: !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ) {
                             Task { await createAndPlay() }
                         }
-                        .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .padding(.top, 16)
                     }
+                    .settingsLoginCard()
+                    .settingsCardRow()
+                } header: {
+                    Text("New Group")
                 }
-                Section("Join and Play") {
+                Section {
                     if groups.isEmpty {
-                        Text("No groups yet. Create one to watch together.")
-                            .foregroundStyle(.secondary)
+                        SettingsStackedRow(title: "No groups yet. Create one to watch together.")
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     } else {
                         ForEach(groups) { group in
-                            Button(group.name) {
+                            Button {
                                 Task { await joinAndPlay(group) }
+                            } label: {
+                                SettingsStackedRow(title: group.name)
+                                    .settingsLoginCard()
                             }
+                            .buttonStyle(.plain)
+                            .settingsCardRow()
                         }
                     }
+                } header: {
+                    Text("Join and Play")
                 }
             }
-            .navigationTitle("SyncPlay")
+            .zelefinSettingsChrome(title: "SyncPlay")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onClose)

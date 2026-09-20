@@ -10,6 +10,8 @@ struct PlaybackSettingsView: View {
     @AppStorage(PlaybackPreferences.adaptiveBitrateKey) private var adaptiveBitrate = true
     @AppStorage(PlaybackPreferences.autoPlayNextEpisodeKey) private var autoPlayNextEpisode = true
     @AppStorage(PlaybackPreferences.defaultRateKey) private var defaultRate = 1.0
+    @AppStorage(PlaybackPreferences.audioLanguageKey) private var audioLanguage = PlaybackLanguage.automaticCode
+    @AppStorage(PlaybackPreferences.subtitleLanguageKey) private var subtitleLanguage = PlaybackLanguage.automaticCode
 
     @State private var isTesting = false
     @State private var testError: String?
@@ -17,6 +19,7 @@ struct PlaybackSettingsView: View {
 
     var body: some View {
         Form {
+            languageSection
             qualitySection
             watchingSection
             playerSection
@@ -29,50 +32,91 @@ struct PlaybackSettingsView: View {
         }
     }
 
+    private var languageSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsFieldLabel(title: "Audio")
+                    .padding(.bottom, 8)
+                Picker("Audio", selection: $audioLanguage) {
+                    ForEach(audioChoices, id: \.self) { code in
+                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+                SettingsCardDivider()
+                SettingsFieldLabel(title: "Subtitles")
+                    .padding(.bottom, 8)
+                Picker("Subtitles", selection: $subtitleLanguage) {
+                    ForEach(subtitleChoices, id: \.self) { code in
+                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+            }
+            .settingsLoginCard()
+            .settingsCardRow()
+        } header: {
+            Text("Languages")
+        } footer: {
+            Text("Automatic uses the title default. A language is used when that track exists.")
+        }
+        .onChange(of: audioLanguage) { _, code in
+            Task { await session.applyPlaybackLanguages(audioCode: code, subtitleCode: subtitleLanguage) }
+        }
+        .onChange(of: subtitleLanguage) { _, code in
+            Task { await session.applyPlaybackLanguages(audioCode: audioLanguage, subtitleCode: code) }
+        }
+    }
+
+    private var audioChoices: [String] {
+        [PlaybackLanguage.automaticCode] + SubtitleSearchLanguage.choices.map(\.code)
+    }
+
+    private var subtitleChoices: [String] {
+        [PlaybackLanguage.automaticCode, PlaybackLanguage.offCode] + SubtitleSearchLanguage.choices.map(\.code)
+    }
+
     private var qualitySection: some View {
         Section {
-            Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
-                .tint(AccentPreferences.current)
-            Picker(adaptiveBitrate ? "Maximum Quality" : "Quality", selection: $maxBitrate) {
-                ForEach(PlaybackQuality.allCases) { quality in
-                    Text(quality.title).tag(quality.rawValue)
-                }
-            }
-            .tint(AccentPreferences.current)
-
-            LabeledContent("Connection") {
-                Text(session.adaptiveBitrate.path.transport.title)
-                    .foregroundStyle(.secondary)
-            }
-            if let testResult {
-                LabeledContent("Measured") {
-                    Text(PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
-                        .foregroundStyle(.secondary)
-                }
-                LabeledContent("Recommended") {
-                    Text(recommendedTitle(for: testResult))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let testError {
-                Text(testError)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
-            Button {
-                Task { await runDemoTest() }
-            } label: {
-                if isTesting {
-                    HStack {
-                        Text("Test Connection")
-                        Spacer()
-                        ProgressView()
+            VStack(alignment: .leading, spacing: 0) {
+                Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                SettingsCardDivider()
+                SettingsFieldLabel(title: adaptiveBitrate ? "Maximum Quality" : "Quality")
+                    .padding(.bottom, 8)
+                Picker(adaptiveBitrate ? "Maximum Quality" : "Quality", selection: $maxBitrate) {
+                    ForEach(PlaybackQuality.allCases) { quality in
+                        Text(quality.title).tag(quality.rawValue)
                     }
-                } else {
-                    Text("Test Connection")
                 }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+                SettingsCardDivider()
+                SettingsInfoRow(label: "Connection", value: session.adaptiveBitrate.path.transport.title)
+                if let testResult {
+                    SettingsCardDivider()
+                    SettingsInfoRow(label: "Measured", value: PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
+                    SettingsCardDivider()
+                    SettingsInfoRow(label: "Recommended", value: recommendedTitle(for: testResult))
+                }
+                if let testError {
+                    SettingsStatusText(text: testError, isError: true)
+                        .padding(.top, 12)
+                }
+                SettingsPrimaryButton(
+                    title: "Test Connection",
+                    isBusy: isTesting,
+                    enabled: session.library != nil
+                ) {
+                    Task { await runDemoTest() }
+                }
+                .padding(.top, 16)
             }
-            .disabled(isTesting || session.library == nil)
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Quality")
         } footer: {
@@ -82,26 +126,43 @@ struct PlaybackSettingsView: View {
 
     private var watchingSection: some View {
         Section {
-            Picker("Playback Speed", selection: $defaultRate) {
-                ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
-                    Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsFieldLabel(title: "Playback Speed")
+                    .padding(.bottom, 8)
+                Picker("Playback Speed", selection: $defaultRate) {
+                    ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
+                        Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
+                    }
                 }
-            }
-            .tint(AccentPreferences.current)
-            Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
+                .pickerStyle(.menu)
                 .tint(AccentPreferences.current)
-            Picker("Skip Backward", selection: $skipBackward) {
-                ForEach(PlaybackSkipInterval.allCases) { interval in
-                    Text(interval.title).tag(interval.rawValue)
+                SettingsCardDivider()
+                Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                SettingsCardDivider()
+                SettingsFieldLabel(title: "Skip Backward")
+                    .padding(.bottom, 8)
+                Picker("Skip Backward", selection: $skipBackward) {
+                    ForEach(PlaybackSkipInterval.allCases) { interval in
+                        Text(interval.title).tag(interval.rawValue)
+                    }
                 }
-            }
-            .tint(AccentPreferences.current)
-            Picker("Skip Forward", selection: $skipForward) {
-                ForEach(PlaybackSkipInterval.allCases) { interval in
-                    Text(interval.title).tag(interval.rawValue)
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+                SettingsCardDivider()
+                SettingsFieldLabel(title: "Skip Forward")
+                    .padding(.bottom, 8)
+                Picker("Skip Forward", selection: $skipForward) {
+                    ForEach(PlaybackSkipInterval.allCases) { interval in
+                        Text(interval.title).tag(interval.rawValue)
+                    }
                 }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
             }
-            .tint(AccentPreferences.current)
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Watching")
         } footer: {
@@ -111,12 +172,19 @@ struct PlaybackSettingsView: View {
 
     private var playerSection: some View {
         Section {
-            Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
-                .tint(AccentPreferences.current)
-            if useNativeVideoPlayer {
-                Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
+            VStack(alignment: .leading, spacing: 0) {
+                Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
                     .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                if useNativeVideoPlayer {
+                    SettingsCardDivider()
+                    Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
+                        .tint(AccentPreferences.current)
+                        .font(.body.weight(.semibold))
+                }
             }
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Player")
         } footer: {

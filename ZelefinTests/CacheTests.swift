@@ -140,6 +140,24 @@ final class CatalogSnapshotStoreTests: XCTestCase {
         XCTAssertFalse(ArtworkCache.isLikelyImage(Data()))
     }
 
+    func testRemoveURLsDropsMemoryAndMissingMarkers() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ArtworkRemove-\(UUID().uuidString)", isDirectory: true)
+        let cache = ArtworkCache(directory: directory)
+        let url = try XCTUnwrap(URL(string: "https://jf.example.com/Items/1/Images/Primary?maxHeight=420&tag=abc"))
+        cache.store(UIImage(), for: url)
+        cache.markMissing(url)
+        XCTAssertNotNil(cache.image(for: url))
+        XCTAssertTrue(cache.isSettled(for: url))
+
+        cache.remove(urls: [url])
+
+        XCTAssertNil(cache.image(for: url))
+        XCTAssertFalse(cache.hasCachedData(for: url))
+        XCTAssertFalse(cache.isSettled(for: url))
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     func testMissingPosterIsSettledSoProgressCanFinish() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ArtworkMissing-\(UUID().uuidString)", isDirectory: true)

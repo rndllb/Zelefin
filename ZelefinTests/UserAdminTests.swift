@@ -113,4 +113,11 @@ final class UserPolicyDraftTests: XCTestCase {
             )
         )
     }
+
+    func testRemoteArtworkKindsMapToJellyfinImageTypes() {
+        XCTAssertEqual(RemoteArtworkKind.poster.jellyfinTypeName, "Primary")
+        XCTAssertEqual(RemoteArtworkKind.thumbnail.jellyfinTypeName, "Thumb")
+        XCTAssertEqual(RemoteArtworkKind.logo.jellyfinTypeName, "Logo")
+        XCTAssertEqual(RemoteArtworkKind.backdrop.jellyfinTypeName, "Backdrop")
+    }
 }

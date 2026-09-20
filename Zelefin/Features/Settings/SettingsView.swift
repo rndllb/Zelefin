@@ -1,3 +1,4 @@
+import SafariServices
 import SwiftUI
 import UIKit
 
@@ -43,18 +44,15 @@ struct SettingsView: View {
             NavigationLink {
                 ProfileView()
             } label: {
-                HStack(spacing: 14) {
-                    UserAvatarView(url: session.avatarURL, diameter: 56)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(accountDisplayName)
-                            .font(.body.weight(.semibold))
-                        Text(session.usesSilo ? "Silo account" : "Jellyfin account")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
+                SettingsPersonRow(
+                    name: accountDisplayName,
+                    subtitle: session.usesSilo ? "Silo account" : "Jellyfin account",
+                    avatarURL: session.avatarURL,
+                    showsChevron: true
+                )
+                .settingsLoginCard()
             }
+            .settingsCardRow()
             .accessibilityLabel("\(accountDisplayName), Account info")
         }
     }
@@ -158,22 +156,16 @@ struct SettingsView: View {
             guard plus.require(.adminTools) else { return }
             showsLibraryScanConfirm = true
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.tint)
-                    .frame(width: 28, alignment: .center)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Scan Libraries")
-                    if let libraryScanMessage {
-                        Text(libraryScanMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .padding(.vertical, 2)
+            settingsRowLabel(
+                "Scan Libraries",
+                systemImage: "arrow.triangle.2.circlepath",
+                subtitle: libraryScanMessage,
+                trailing: .none
+            )
+            .settingsLoginCard()
         }
+        .buttonStyle(.plain)
+        .settingsCardRow()
     }
 
     private var deviceSection: some View {
@@ -195,7 +187,7 @@ struct SettingsView: View {
     private var aboutSection: some View {
         Section {
             plusRow
-            settingsRow("About", systemImage: "info.circle", subtitle: DeviceIdentity.version) {
+            settingsRow("About", systemImage: "info.circle", subtitle: DeviceIdentity.versionAndBuild) {
                 SettingsAboutView()
             }
         } header: {
@@ -207,26 +199,16 @@ struct SettingsView: View {
         Button {
             plus.request(.downloads)
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "star.circle")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.tint)
-                    .frame(width: 28, alignment: .center)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Zelefin Plus")
-                    Text(plus.status.settingsLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
+            settingsRowLabel(
+                "Zelefin Plus",
+                systemImage: "star.circle",
+                subtitle: plus.status.settingsLabel,
+                trailing: .chevron
+            )
+            .settingsLoginCard()
         }
         .buttonStyle(.plain)
+        .settingsCardRow()
     }
 
     @ViewBuilder
@@ -241,25 +223,33 @@ struct SettingsView: View {
             Button {
                 plus.request(feature)
             } label: {
-                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, showsLock: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, trailing: .lock)
+                    .settingsLoginCard()
             }
             .buttonStyle(.plain)
+            .settingsCardRow()
         } else {
             NavigationLink {
                 destination()
             } label: {
-                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, showsLock: false)
+                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, trailing: .chevron)
+                    .settingsLoginCard()
             }
+            .settingsCardRow()
         }
+    }
+
+    private enum SettingsRowTrailing {
+        case none
+        case chevron
+        case lock
     }
 
     private func settingsRowLabel(
         _ title: String,
         systemImage: String,
         subtitle: String?,
-        showsLock: Bool
+        trailing: SettingsRowTrailing
     ) -> some View {
         HStack(spacing: 14) {
             Image(systemName: systemImage)
@@ -268,20 +258,28 @@ struct SettingsView: View {
                 .frame(width: 28, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoginPalette.primaryText)
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LoginPalette.secondaryText)
                 }
             }
-            if showsLock {
-                Spacer(minLength: 8)
+            Spacer(minLength: 8)
+            switch trailing {
+            case .none:
+                EmptyView()
+            case .chevron:
+                SettingsChevron()
+            case .lock:
                 Image(systemName: "lock.fill")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(LoginPalette.captionText)
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 
     private var accountDisplayName: String {
@@ -349,26 +347,64 @@ struct SettingsView: View {
     }
 }
 
+enum ZelefinSite {
+    static let privacy = URL(string: "https://zelefin.app/privacy")!
+    static let terms = URL(string: "https://zelefin.app/terms")!
+}
+
 struct SettingsAboutView: View {
     @Environment(PlusEntitlement.self) private var plus
+    @State private var legalPage: LegalPage?
 
     var body: some View {
         List {
             Section {
-                LabeledContent("Zelefin", value: DeviceIdentity.version)
+                VStack(spacing: 14) {
+                    SettingsHeroGlyph(systemImage: "sparkles.tv.fill")
+                    Text("Zelefin")
+                        .font(.title2.weight(.semibold))
+                    SettingsChip(
+                        leading: "Version \(DeviceIdentity.version)",
+                        trailing: "Build \(DeviceIdentity.build)"
+                    )
+                }
+                .frame(maxWidth: .infinity)
+                .settingsHeroRow()
             } footer: {
                 Text("A native Jellyfin and Silo client for iPhone and iPad.")
             }
-            #if DEBUG
+
             Section {
-                Picker("Plus", selection: Binding(
-                    get: { plus.debugOverride },
-                    set: { plus.debugOverride = $0 }
-                )) {
-                    ForEach(PlusDebugOverride.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsLegalRow("Privacy Policy") {
+                        legalPage = .privacy
+                    }
+                    SettingsCardDivider()
+                    SettingsLegalRow("Terms of Use") {
+                        legalPage = .terms
                     }
                 }
+                .settingsLoginCard()
+                .settingsCardRow()
+            }
+
+            #if DEBUG
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    SettingsFieldLabel(title: "Plus")
+                    Picker("Plus", selection: Binding(
+                        get: { plus.debugOverride },
+                        set: { plus.debugOverride = $0 }
+                    )) {
+                        ForEach(PlusDebugOverride.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AccentPreferences.current)
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
             } header: {
                 Text("Debug")
             } footer: {
@@ -377,7 +413,58 @@ struct SettingsAboutView: View {
             #endif
         }
         .zelefinSettingsChrome(title: "About")
+        .sheet(item: $legalPage) { page in
+            SettingsSafariView(url: page.url)
+        }
     }
+}
+
+private enum LegalPage: String, Identifiable {
+    case privacy
+    case terms
+
+    var id: String { rawValue }
+
+    var url: URL {
+        switch self {
+        case .privacy: ZelefinSite.privacy
+        case .terms: ZelefinSite.terms
+        }
+    }
+}
+
+private struct SettingsLegalRow: View {
+    let title: String
+    let action: () -> Void
+
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoginPalette.primaryText)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(LoginPalette.captionText)
+            }
+        }
+    }
+}
+
+private struct SettingsSafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
 extension View {
@@ -392,6 +479,17 @@ extension View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .zelefinAccentTint()
+            .navigationLinkIndicatorVisibility(.hidden)
+            .settingsListWidth()
+    }
+
+    @ViewBuilder
+    private func settingsListWidth() -> some View {
+        if #available(iOS 26, *) {
+            self.listSectionMargins(.horizontal, 10)
+        } else {
+            self.contentMargins(.horizontal, 10, for: .scrollContent)
+        }
     }
 }
 

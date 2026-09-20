@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Shared sign-in canvas colors. Plus uses the same black field and cyan action.
 enum LoginPalette {
@@ -80,5 +81,293 @@ struct LoginCardBackground: ViewModifier {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(LoginPalette.divider, lineWidth: 1)
             )
+    }
+}
+
+enum SettingsChrome {
+    static var cardInsets: EdgeInsets {
+        EdgeInsets(top: 6, leading: 4, bottom: 10, trailing: 4)
+    }
+
+    static var heroInsets: EdgeInsets {
+        EdgeInsets(top: 8, leading: 4, bottom: 20, trailing: 4)
+    }
+}
+
+extension View {
+    func settingsLoginCard() -> some View {
+        self
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(LoginCardBackground())
+    }
+
+    func settingsCardRow() -> some View {
+        self
+            .listRowInsets(SettingsChrome.cardInsets)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
+    func settingsHeroRow() -> some View {
+        self
+            .listRowInsets(SettingsChrome.heroInsets)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
+struct SettingsFieldLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(LoginPalette.captionText)
+            .tracking(0.6)
+    }
+}
+
+struct SettingsCardDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(LoginPalette.divider)
+            .frame(height: 1)
+            .padding(.vertical, 12)
+    }
+}
+
+struct SettingsPrimaryButton: View {
+    let title: String
+    var isBusy = false
+    var enabled = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Spacer(minLength: 0)
+                if isBusy {
+                    ProgressView()
+                        .tint(LoginPalette.actionLabel)
+                } else {
+                    Text(title)
+                        .font(.caption.weight(.bold))
+                        .tracking(0.8)
+                }
+                Spacer(minLength: 0)
+            }
+            .modifier(LoginActionButtonStyle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled || isBusy)
+        .opacity(!enabled || isBusy ? 0.42 : 1)
+        .accessibilityLabel(title)
+    }
+}
+
+struct SettingsSecondaryButton: View {
+    let title: String
+    var role: ButtonRole?
+    var enabled = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: role, action: action) {
+            HStack {
+                Spacer(minLength: 0)
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .tracking(0.8)
+                Spacer(minLength: 0)
+            }
+            .modifier(LoginSecondaryButtonStyle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.42)
+        .accessibilityLabel(title)
+    }
+}
+
+struct SettingsStatusText: View {
+    let text: String
+    var isError = false
+
+    var body: some View {
+        Text(text)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(isError ? LoginPalette.failure : LoginPalette.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct SettingsChip: View {
+    var icon: String?
+    let leading: String
+    var trailing: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.caption2.weight(.bold))
+            }
+            Text(leading)
+                .font(.caption.weight(.bold))
+            if let trailing, !trailing.isEmpty {
+                Text(trailing)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .zelefinLiquidGlassCapsule(interactive: false)
+    }
+}
+
+struct SettingsCameraBadge: View {
+    var body: some View {
+        Image(systemName: "camera.fill")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(.black)
+            .frame(width: 32, height: 32)
+            .background(Circle().fill(.white))
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+    }
+}
+
+struct SettingsHeroGlyph: View {
+    let systemImage: String
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 52, weight: .medium))
+            .foregroundStyle(.white.opacity(0.92))
+            .frame(width: 132, height: 132)
+            .background(Color.white.opacity(0.08))
+            .clipShape(Circle())
+            .padding(6)
+            .zelefinLiquidGlassCircle(interactive: false)
+            .frame(width: 144, height: 144)
+            .accessibilityHidden(true)
+    }
+}
+
+struct SettingsInfoRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsFieldLabel(title: label)
+            Text(value)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.fieldValue)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct SettingsLabeledField<Content: View>: View {
+    let label: String
+    var systemImage: String
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsFieldLabel(title: label)
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(LoginPalette.iconTint)
+                    .frame(width: 22, alignment: .center)
+                    .accessibilityHidden(true)
+                content()
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoginPalette.fieldValue)
+            }
+        }
+    }
+}
+
+struct SettingsStatusValue: View {
+    let text: String
+    var isPositive = false
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(isPositive ? LoginPalette.success : LoginPalette.captionText)
+    }
+}
+
+struct SettingsStackedRow: View {
+    let title: String
+    var subtitle: String = ""
+    var caption: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.primaryText)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(LoginPalette.secondaryText)
+            }
+            if !caption.isEmpty {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(LoginPalette.captionText)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([title, subtitle, caption].filter { !$0.isEmpty }.joined(separator: ", "))
+    }
+}
+
+struct SettingsChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(LoginPalette.captionText)
+            .accessibilityHidden(true)
+    }
+}
+
+struct SettingsPersonRow: View {
+    let name: String
+    let subtitle: String
+    var avatarURL: URL?
+    var localImage: UIImage? = nil
+    var showsChevron = true
+
+    var body: some View {
+        HStack(spacing: 14) {
+            UserAvatarView(url: avatarURL, localImage: localImage, diameter: 48)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoginPalette.primaryText)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(LoginPalette.secondaryText)
+                }
+            }
+            Spacer(minLength: 8)
+            if showsChevron {
+                SettingsChevron()
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(subtitle.isEmpty ? name : "\(name), \(subtitle)")
     }
 }

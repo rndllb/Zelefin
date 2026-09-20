@@ -43,16 +43,19 @@ struct PluginSettingsView: View {
     @ViewBuilder
     private var jellyfinPluginSections: some View {
         Section {
-            HStack {
-                Text("Skip Intro / Outro")
-                Spacer()
-                Text(session.introSkipperAvailable ? "Installed" : "Not on this server")
-                    .foregroundStyle(session.introSkipperAvailable ? .green : .secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                pluginStatusRow("Skip Intro / Outro", installed: session.introSkipperAvailable)
+                SettingsCardDivider()
+                Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                SettingsCardDivider()
+                Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
             }
-            Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
-                .tint(AccentPreferences.current)
-            Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
-                .tint(AccentPreferences.current)
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Intro Skipper")
         } footer: {
@@ -60,12 +63,9 @@ struct PluginSettingsView: View {
         }
 
         Section {
-            HStack {
-                Text("Jellyfin Enhanced")
-                Spacer()
-                Text(session.jellyfinEnhancedAvailable ? "Installed" : "Not on this server")
-                    .foregroundStyle(session.jellyfinEnhancedAvailable ? .green : .secondary)
-            }
+            pluginStatusRow("Jellyfin Enhanced", installed: session.jellyfinEnhancedAvailable)
+                .settingsLoginCard()
+                .settingsCardRow()
         } header: {
             Text("Jellyfin Enhanced")
         } footer: {
@@ -73,31 +73,25 @@ struct PluginSettingsView: View {
         }
 
         Section {
-            HStack {
-                Text("Zelefin")
-                Spacer()
-                Text(session.companionAvailable ? "Installed" : "Not on this server")
-                    .foregroundStyle(session.companionAvailable ? .green : .secondary)
-            }
+            pluginStatusRow("Zelefin", installed: session.companionAvailable)
+                .settingsLoginCard()
+                .settingsCardRow()
         } header: {
             Text("Notifications plugin")
         } footer: {
             if session.companionAvailable {
-                Text("This server can push lock-screen alerts while Zelefin is closed. Allow notifications on this iPhone after sign-in.")
+                Text("This server can push lock-screen alerts while Zelefin is closed. This iPhone also checks the library itself, so banners can still appear without the plugin when the app is open or after a background refresh. Restart Jellyfin after you install or remove the plugin.")
             } else {
-                Text("Install the Zelefin plugin on Jellyfin if you want new titles and streams while the app is closed. Without it, this iPhone only checks when you open Zelefin.")
+                Text("Notifications still work from this iPhone. Zelefin checks Jellyfin while the app is open and when iOS allows a background refresh. The plugin is only for push while the app stays fully closed. After you uninstall it, restart Jellyfin so the server stops sending those pushes.")
             }
         }
     }
 
     private var openSubtitlesSection: some View {
         Section {
-            HStack {
-                Text("Open Subtitles")
-                Spacer()
-                Text(openSubtitlesStatus)
-                    .foregroundStyle(session.openSubtitlesAvailable ? .green : .secondary)
-            }
+            pluginStatusRow("Open Subtitles", installed: session.openSubtitlesAvailable)
+                .settingsLoginCard()
+                .settingsCardRow()
         } header: {
             Text("Open Subtitles")
         } footer: {
@@ -107,25 +101,25 @@ struct PluginSettingsView: View {
 
     private var siloRequestSection: some View {
         Section {
-            HStack {
-                Text("Seerr")
-                Spacer()
-                Text(session.siloSeerrPluginAvailable ? "Installed" : "Not on this server")
-                    .foregroundStyle(session.siloSeerrPluginAvailable ? .green : .secondary)
-            }
-            HStack {
-                Text("Sonarr & Radarr")
-                Spacer()
-                Text(session.siloArrPluginAvailable ? "Installed" : "Not on this server")
-                    .foregroundStyle(session.siloArrPluginAvailable ? .green : .secondary)
-            }
-            if session.siloSeerrPluginAvailable && session.siloArrPluginAvailable {
-                Picker("Discover with", selection: siloRequestSource) {
-                    ForEach(SiloRequestSource.allCases) { source in
-                        Text(source.title).tag(source)
+            VStack(alignment: .leading, spacing: 0) {
+                pluginStatusRow("Seerr", installed: session.siloSeerrPluginAvailable)
+                SettingsCardDivider()
+                pluginStatusRow("Sonarr & Radarr", installed: session.siloArrPluginAvailable)
+                if session.siloSeerrPluginAvailable && session.siloArrPluginAvailable {
+                    SettingsCardDivider()
+                    SettingsFieldLabel(title: "Discover with")
+                        .padding(.bottom, 8)
+                    Picker("Discover with", selection: siloRequestSource) {
+                        ForEach(SiloRequestSource.allCases) { source in
+                            Text(source.title).tag(source)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .tint(AccentPreferences.current)
                 }
             }
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Requests")
         } footer: {
@@ -152,46 +146,51 @@ struct PluginSettingsView: View {
     @ViewBuilder
     private var seerrSignInSection: some View {
         Section {
-            if isSeerrSignedIn {
-                LabeledContent("Server") {
-                    Text(seerrURL)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                LabeledContent("Signed in as") {
-                    Text(seerrDisplayName ?? "")
-                        .foregroundStyle(.secondary)
-                }
-                Button("Sign Out", role: .destructive) {
-                    signOutSeerr()
-                }
-            } else {
-                TextField("https://seerr.example.com", text: $seerrURL)
-                    .textContentType(.URL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField("Username or email", text: $seerrUsername)
-                    .textContentType(.username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField("Password", text: $seerrPassword)
-                    .textContentType(.password)
-                Button {
-                    Task { await signInToSeerr() }
-                } label: {
-                    if isSigningInToSeerr {
-                        ProgressView()
-                    } else {
-                        Text("Sign In")
+            VStack(alignment: .leading, spacing: 0) {
+                if isSeerrSignedIn {
+                    SettingsInfoRow(label: "Server", value: seerrURL)
+                    SettingsCardDivider()
+                    SettingsInfoRow(label: "Signed in as", value: seerrDisplayName ?? "")
+                    SettingsSecondaryButton(title: "Sign Out", role: .destructive) {
+                        signOutSeerr()
                     }
+                    .padding(.top, 16)
+                } else {
+                    SettingsLabeledField(label: "Server", systemImage: "link") {
+                        TextField("https://seerr.example.com", text: $seerrURL)
+                            .textContentType(.URL)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    SettingsCardDivider()
+                    SettingsLabeledField(label: "Username", systemImage: "person.fill") {
+                        TextField("Username or email", text: $seerrUsername)
+                            .textContentType(.username)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    SettingsCardDivider()
+                    SettingsLabeledField(label: "Password", systemImage: "lock.fill") {
+                        SecureField("Password", text: $seerrPassword)
+                            .textContentType(.password)
+                    }
+                    SettingsPrimaryButton(
+                        title: "Sign In",
+                        isBusy: isSigningInToSeerr,
+                        enabled: canSignInToSeerr
+                    ) {
+                        Task { await signInToSeerr() }
+                    }
+                    .padding(.top, 16)
                 }
-                .disabled(!canSignInToSeerr || isSigningInToSeerr)
+                if let seerrStatus {
+                    SettingsStatusText(text: seerrStatus, isError: !seerrStatus.contains("Signed in"))
+                        .padding(.top, 12)
+                }
             }
-            if let seerrStatus {
-                Text(seerrStatus)
-                    .foregroundStyle(seerrStatus.contains("Signed in") ? .green : .red)
-            }
+            .settingsLoginCard()
+            .settingsCardRow()
         } header: {
             Text("Seerr")
         } footer: {
@@ -199,8 +198,19 @@ struct PluginSettingsView: View {
         }
     }
 
-    private var openSubtitlesStatus: String {
-        session.openSubtitlesAvailable ? "Installed" : "Not on this server"
+    private func pluginStatusRow(_ title: String, installed: Bool) -> some View {
+        HStack {
+            Text(title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.primaryText)
+            Spacer(minLength: 8)
+            SettingsStatusValue(
+                text: installed ? "Installed" : "Not on this server",
+                isPositive: installed
+            )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(installed ? "Installed" : "Not on this server")")
     }
 
     private var canSignInToSeerr: Bool {

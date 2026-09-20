@@ -1418,14 +1418,11 @@ struct LiveTVProgramDetailView: View {
                     .font(PlayButtonLayout.iconFont)
                     .frame(width: PlayButtonLayout.iconWidth)
 
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.black.opacity(0.28))
-                    Capsule()
-                        .fill(Color.black.opacity(0.82))
-                        .scaleEffect(x: program.airProgress(at: now), y: 1, anchor: .leading)
-                }
-                .frame(width: PlayButtonLayout.progressWidth, height: PlayButtonLayout.progressHeight)
+                CapsuleProgressBar(
+                    progress: program.airProgress(at: now),
+                    width: PlayButtonLayout.progressWidth,
+                    height: PlayButtonLayout.progressHeight
+                )
 
                 Text(playButtonLabel(now: now))
                     .font(PlayButtonLayout.labelFont)

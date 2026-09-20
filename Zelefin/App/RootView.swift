@@ -88,13 +88,16 @@ struct RootView: View {
     @ViewBuilder
     private var rootContent: some View {
         if session.isRestoring {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                ProgressView()
-                    .tint(.white)
-            }
+            ZelefinLoadingView()
         } else if session.isSignedIn {
             MainTabView()
+                .fullScreenCover(isPresented: Binding(
+                    get: { session.needsFirstRunSetup },
+                    set: { if !$0 { session.completeFirstRunSetup() } }
+                )) {
+                    FirstRunSetupView()
+                        .environment(session)
+                }
         } else {
             ConnectView()
         }

@@ -147,6 +147,21 @@ final class ArtworkCache: @unchecked Sendable {
         memory.removeAllObjects()
     }
 
+    /// Drops memory, disk, and in-flight fetches for these URLs so a replaced
+    /// Jellyfin image is not served from the previous bytes.
+    func remove(urls: [URL]) {
+        for url in urls {
+            memory.removeObject(forKey: url as NSURL)
+            cancelVisibleFetch(for: url)
+            let preferred = preferredDiskURL(for: url)
+            let legacy = legacyDiskURL(for: url)
+            try? fileManager.removeItem(at: preferred)
+            try? fileManager.removeItem(at: legacy)
+            try? fileManager.removeItem(at: missingURL(for: url))
+            try? fileManager.removeItem(at: legacy.appendingPathExtension("missing"))
+        }
+    }
+
     func settledCount(in urls: [URL]) -> Int {
         urls.reduce(0) { $0 + (isSettled(for: $1) ? 1 : 0) }
     }

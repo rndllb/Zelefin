@@ -100,7 +100,14 @@ struct SubtitleSearchLanguage: Hashable, Identifiable, Sendable {
     }()
 
     static var preferred: SubtitleSearchLanguage {
-        choices.first ?? SubtitleSearchLanguage(code: "en", name: "English")
+        let stored = PlaybackPreferences.subtitleLanguageCode
+        if stored != PlaybackLanguage.offCode,
+           stored != PlaybackLanguage.automaticCode,
+           let match = choices.first(where: { $0.code == stored })
+        {
+            return match
+        }
+        return choices.first ?? SubtitleSearchLanguage(code: "en", name: "English")
     }
 
     private static var preferredCodes: [String] {

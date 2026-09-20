@@ -26,9 +26,9 @@ struct SessionsView: View {
                 List {
                     if let errorMessage {
                         Section {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
+                            SettingsStatusText(text: errorMessage, isError: true)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     }
                     if !playing.isEmpty {
@@ -38,7 +38,9 @@ struct SessionsView: View {
                                     SessionDetailView(sessionID: item.id)
                                 } label: {
                                     SessionRow(item: item, localDeviceID: session.session?.deviceID)
+                                        .settingsLoginCard()
                                 }
+                                .settingsCardRow()
                             }
                         }
                     }
@@ -49,7 +51,9 @@ struct SessionsView: View {
                                     SessionDetailView(sessionID: item.id)
                                 } label: {
                                     SessionRow(item: item, localDeviceID: session.session?.deviceID)
+                                        .settingsLoginCard()
                                 }
+                                .settingsCardRow()
                             }
                         }
                     }
@@ -98,20 +102,20 @@ private struct SessionRow: View {
     var localDeviceID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 14) {
             poster
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(item.title)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LoginPalette.primaryText)
                     .lineLimit(2)
                 Text(item.userLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.72))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(LoginPalette.secondaryText)
                     .lineLimit(1)
                 Text(deviceCaption)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.48))
+                    .foregroundStyle(LoginPalette.captionText)
                     .lineLimit(2)
                 if item.isPlaying {
                     HStack(spacing: 8) {
@@ -120,15 +124,16 @@ private struct SessionRow: View {
                         Text(item.positionLabel)
                     }
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(LoginPalette.captionText)
                     if item.runtime != nil {
                         ProgressView(value: item.progressFraction)
-                            .tint(.white)
+                            .tint(AccentPreferences.current)
                     }
                 }
             }
+            SettingsChevron()
+                .padding(.top, 4)
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -154,13 +159,12 @@ private struct SessionRow: View {
                 fill: Color.white.opacity(0.08)
             )
             .frame(width: 52, height: 78)
-            .posterCard(cornerRadius: 6)
+            .posterCard(cornerRadius: 10)
         } else {
             UserAvatarView(
                 url: item.userID.flatMap { session.library?.userAvatarURL(userID: $0, tag: item.userImageTag) },
-                diameter: 40
+                diameter: 48
             )
-            .padding(.top, 4)
         }
     }
 }
@@ -179,74 +183,42 @@ struct SessionDetailView: View {
                 List {
                     Section {
                         header(item)
-                            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
-                            .listRowBackground(Color.clear)
+                            .settingsHeroRow()
                     }
                     if item.isPlaying {
                         Section("Playback") {
-                            LabeledContent("Status", value: item.isPaused ? "Paused" : "Playing")
-                            LabeledContent("Method", value: item.methodLabel)
-                            LabeledContent("Position", value: item.positionLabel)
-                            if let volume = item.volumeLevel {
-                                LabeledContent("Volume", value: item.isMuted ? "Muted (\(volume)%)" : "\(volume)%")
-                            }
+                            playbackCard(item)
+                                .settingsCardRow()
                         }
                     }
                     Section("Device") {
-                        LabeledContent("User", value: item.userLabel)
-                        if !item.client.isEmpty {
-                            LabeledContent("Client", value: item.client)
-                        }
-                        if !item.deviceName.isEmpty {
-                            LabeledContent("Device", value: item.deviceName)
-                        }
-                        if let type = item.deviceType, !type.isEmpty {
-                            LabeledContent("Type", value: type)
-                        }
-                        if let version = item.applicationVersion, !version.isEmpty {
-                            LabeledContent("Version", value: version)
-                        }
-                        if let ip = item.remoteEndPoint, !ip.isEmpty {
-                            LabeledContent("IP", value: ip)
-                        }
-                        if item.isThisDevice(session.session?.deviceID) {
-                            LabeledContent("Session", value: "This device")
-                        }
+                        deviceCard(item)
+                            .settingsCardRow()
                     }
                     if let transcoding = item.transcoding {
                         Section("Transcoding") {
-                            if let codecs = transcoding.codecLine {
-                                LabeledContent("Stream", value: codecs)
-                            }
-                            if let resolution = transcoding.resolutionLabel {
-                                LabeledContent("Resolution", value: resolution)
-                            }
-                            if let bitrate = transcoding.bitrateLabel {
-                                LabeledContent("Bitrate", value: bitrate)
-                            }
-                            if let reasons = transcoding.reasonsLabel {
-                                LabeledContent("Reason", value: reasons)
-                            }
-                            if let percent = transcoding.completionPercentage {
-                                LabeledContent("Complete", value: String(format: "%.0f%%", percent))
-                            }
+                            transcodingCard(transcoding)
+                                .settingsCardRow()
                         }
                     }
                     if item.canControl, item.isPlaying {
                         Section("Controls") {
                             SessionControlBar(item: item, isBusy: isBusy, send: send)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     } else if item.isPlaying {
                         Section {
-                            Text("This client does not accept remote control.")
-                                .foregroundStyle(.white.opacity(0.55))
+                            SettingsStatusText(text: "This client does not accept remote control.")
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     }
                     if let errorMessage {
                         Section {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
+                            SettingsStatusText(text: errorMessage, isError: true)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     }
                 }
@@ -266,30 +238,112 @@ struct SessionDetailView: View {
     }
 
     private func header(_ item: PlaybackSession) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            PosterImage(
-                url: item.nowPlaying.flatMap { session.library?.primaryURL(for: $0) },
-                aspectRatio: 2 / 3,
-                fill: Color.white.opacity(0.08)
-            )
-            .frame(width: 92, height: 138)
-            .posterCard()
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 18) {
+            if item.isPlaying {
+                PosterImage(
+                    url: item.nowPlaying.flatMap { session.library?.primaryURL(for: $0) },
+                    aspectRatio: 2 / 3,
+                    fill: Color.white.opacity(0.08)
+                )
+                .frame(width: 96, height: 144)
+                .posterCard(cornerRadius: 16)
+            } else {
+                UserAvatarView(
+                    url: item.userID.flatMap { session.library?.userAvatarURL(userID: $0, tag: item.userImageTag) },
+                    diameter: 132
+                )
+                .padding(6)
+                .zelefinLiquidGlassCircle(interactive: false)
+                .frame(width: 144, height: 144)
+            }
+
+            VStack(spacing: 10) {
                 Text(item.title)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-                Text(item.deviceLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.62))
-                if item.isPlaying {
+                    .font(.title2.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                SettingsChip(
+                    icon: item.isThisDevice(session.session?.deviceID) ? "iphone" : "tv",
+                    leading: item.isPlaying ? (item.isPaused ? "Paused" : "Playing") : "Connected",
+                    trailing: item.deviceLabel
+                )
+            }
+
+            if item.isPlaying {
+                VStack(spacing: 8) {
                     ProgressView(value: item.progressFraction)
-                        .tint(.white)
+                        .tint(AccentPreferences.current)
                     Text(item.positionLabel)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.5))
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(LoginPalette.captionText)
                 }
+                .padding(.horizontal, 8)
             }
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func playbackCard(_ item: PlaybackSession) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsInfoRow(label: "Status", value: item.isPaused ? "Paused" : "Playing")
+            SettingsCardDivider()
+            SettingsInfoRow(label: "Method", value: item.methodLabel)
+            SettingsCardDivider()
+            SettingsInfoRow(label: "Position", value: item.positionLabel)
+            if let volume = item.volumeLevel {
+                SettingsCardDivider()
+                SettingsInfoRow(label: "Volume", value: item.isMuted ? "Muted (\(volume)%)" : "\(volume)%")
+            }
+        }
+        .settingsLoginCard()
+    }
+
+    private func deviceCard(_ item: PlaybackSession) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsInfoRow(label: "User", value: item.userLabel)
+            if !item.client.isEmpty {
+                SettingsCardDivider()
+                SettingsInfoRow(label: "Client", value: item.client)
+            }
+            if !item.deviceName.isEmpty {
+                SettingsCardDivider()
+                SettingsInfoRow(label: "Device", value: item.deviceName)
+            }
+            if let type = item.deviceType, !type.isEmpty {
+                SettingsCardDivider()
+                SettingsInfoRow(label: "Type", value: type)
+            }
+            if let version = item.applicationVersion, !version.isEmpty {
+                SettingsCardDivider()
+                SettingsInfoRow(label: "Version", value: version)
+            }
+            if let ip = item.remoteEndPoint, !ip.isEmpty {
+                SettingsCardDivider()
+                SettingsInfoRow(label: "IP", value: ip)
+            }
+            if item.isThisDevice(session.session?.deviceID) {
+                SettingsCardDivider()
+                SettingsInfoRow(label: "Session", value: "This device")
+            }
+        }
+        .settingsLoginCard()
+    }
+
+    private func transcodingCard(_ transcoding: TranscodingSummary) -> some View {
+        let rows: [(String, String)] = [
+            transcoding.codecLine.map { ("Stream", $0) },
+            transcoding.resolutionLabel.map { ("Resolution", $0) },
+            transcoding.bitrateLabel.map { ("Bitrate", $0) },
+            transcoding.reasonsLabel.map { ("Reason", $0) },
+            transcoding.completionPercentage.map { ("Complete", String(format: "%.0f%%", $0)) }
+        ].compactMap { $0 }
+
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                if index > 0 { SettingsCardDivider() }
+                SettingsInfoRow(label: row.0, value: row.1)
+            }
+        }
+        .settingsLoginCard()
     }
 
     private func monitor() async {
@@ -410,9 +464,9 @@ private struct SessionControlBar: View {
         } label: {
             Image(systemName: systemImage)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(Color.white.opacity(0.1), in: Circle())
+                .foregroundStyle(LoginPalette.primaryText)
+                .frame(width: 48, height: 48)
+                .zelefinLiquidGlassCircle()
         }
         .accessibilityLabel(label)
     }

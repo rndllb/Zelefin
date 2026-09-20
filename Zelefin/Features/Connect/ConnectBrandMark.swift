@@ -13,6 +13,30 @@ struct ConnectBrandMark: View {
     }
 }
 
+/// Session restore and other full-screen waits. Matches the launch mark on black.
+struct ZelefinLoadingView: View {
+    var message: String? = nil
+    var markSize: CGFloat = 168
+
+    var body: some View {
+        ZStack {
+            LoginPalette.canvas.ignoresSafeArea()
+            LoginCanvasGlow(isRegularWidth: false)
+            VStack(spacing: 20) {
+                ConnectBrandMark(size: markSize)
+                if let message {
+                    Text(message)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(LoginPalette.secondaryText)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message ?? "Loading")
+    }
+}
+
 /// Rounded-square Jellyfin / Silo marks under the Zelefin logo.
 struct ConnectBackendPicker: View {
     @Binding var selection: MediaBackend

@@ -12,6 +12,8 @@ enum PlaybackPreferences {
     static let autoSkipIntroKey = "zelefin.playback.auto-skip-intro"
     static let autoSkipCreditsKey = "zelefin.playback.auto-skip-credits"
     static let defaultRateKey = "zelefin.playback.default-rate"
+    static let audioLanguageKey = "zelefin.playback.audio-language"
+    static let subtitleLanguageKey = "zelefin.playback.subtitle-language"
 
     static var useNativeVideoPlayer: Bool {
         bool(for: useNativeVideoPlayerKey, default: false)
@@ -55,6 +57,18 @@ enum PlaybackPreferences {
 
     static var defaultRate: Float {
         AVKitPlaybackSpeed.resolved(UserDefaults.standard.object(forKey: defaultRateKey) as? Double)
+    }
+
+    /// Empty / `automatic` means the server or title default. ISO language code otherwise.
+    static var audioLanguageCode: String {
+        get { UserDefaults.standard.string(forKey: audioLanguageKey) ?? PlaybackLanguage.automaticCode }
+        set { UserDefaults.standard.set(newValue, forKey: audioLanguageKey) }
+    }
+
+    /// Empty means off. `automatic` follows the audio language with Smart subs.
+    static var subtitleLanguageCode: String {
+        get { UserDefaults.standard.string(forKey: subtitleLanguageKey) ?? PlaybackLanguage.automaticCode }
+        set { UserDefaults.standard.set(newValue, forKey: subtitleLanguageKey) }
     }
 
     /// MPEG-TS HLS is only optional while Apple’s player is on. Direct Play needs fMP4.

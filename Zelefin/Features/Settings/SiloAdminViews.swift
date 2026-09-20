@@ -23,9 +23,9 @@ struct SiloUsersView: View {
                 List {
                     if let errorMessage {
                         Section {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
+                            SettingsStatusText(text: errorMessage, isError: true)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
                     }
                     Section {
@@ -35,17 +35,14 @@ struct SiloUsersView: View {
                                     await reload()
                                 }
                             } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(account.username)
-                                        .font(.body.weight(.semibold))
-                                    if !account.subtitle.isEmpty {
-                                        Text(account.subtitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .padding(.vertical, 4)
+                                SettingsPersonRow(
+                                    name: account.username,
+                                    subtitle: account.subtitle,
+                                    showsChevron: true
+                                )
+                                .settingsLoginCard()
                             }
+                            .settingsCardRow()
                         }
                     }
                 }
@@ -96,34 +93,45 @@ struct SiloCreateUserView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Username", text: $username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField("Email", text: $email)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
-                SecureField("Password", text: $password)
-                    .textContentType(.newPassword)
-                Toggle("Administrator", isOn: $isAdmin)
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsLabeledField(label: "Username", systemImage: "person.fill") {
+                        TextField("Username", text: $username)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    SettingsCardDivider()
+                    SettingsLabeledField(label: "Email", systemImage: "envelope.fill") {
+                        TextField("Email", text: $email)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .textContentType(.emailAddress)
+                    }
+                    SettingsCardDivider()
+                    SettingsLabeledField(label: "Password", systemImage: "lock.fill") {
+                        SecureField("Password", text: $password)
+                            .textContentType(.newPassword)
+                    }
+                    SettingsCardDivider()
+                    Toggle("Administrator", isOn: $isAdmin)
+                        .tint(AccentPreferences.current)
+                        .font(.body.weight(.semibold))
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
             } footer: {
                 Text("Silo requires at least 8 characters for a new password. A default household profile is created for this account.")
             }
             Section {
-                Button {
+                SettingsPrimaryButton(title: "Create Account", isBusy: isSaving, enabled: canSave) {
                     Task { await save() }
-                } label: {
-                    HStack {
-                        Spacer(minLength: 0)
-                        if isSaving { ProgressView() } else { Text("Create Account").fontWeight(.semibold) }
-                        Spacer(minLength: 0)
-                    }
                 }
-                .disabled(!canSave || isSaving)
+                .settingsCardRow()
             }
             if let errorMessage {
                 Section {
-                    Text(errorMessage).foregroundStyle(.red)
+                    SettingsStatusText(text: errorMessage, isError: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
             }
         }
@@ -191,43 +199,89 @@ struct SiloUserEditorView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Username", value: account.username)
-                if let email = account.email, !email.isEmpty {
-                    LabeledContent("Email", value: email)
+                VStack(spacing: 14) {
+                    SettingsHeroGlyph(systemImage: "person.fill")
+                    Text(account.username)
+                        .font(.title2.weight(.semibold))
+                    SettingsChip(
+                        icon: isAdmin ? "checkmark.shield.fill" : "person.fill",
+                        leading: isEnabled ? (isAdmin ? "Administrator" : "User") : "Disabled",
+                        trailing: account.email
+                    )
                 }
-                Toggle("Administrator", isOn: $isAdmin)
-                Toggle("Enabled", isOn: $isEnabled)
-                Button("Save Access") {
-                    Task { await saveAccess() }
-                }
-                .disabled(isSaving)
+                .frame(maxWidth: .infinity)
+                .settingsHeroRow()
             }
 
             Section {
-                SecureField("New password", text: $newPassword)
-                    .textContentType(.newPassword)
-                SecureField("Confirm password", text: $confirmPassword)
-                    .textContentType(.newPassword)
-                Button("Set Password") {
-                    Task { await savePassword() }
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsInfoRow(label: "Username", value: account.username)
+                    if let email = account.email, !email.isEmpty {
+                        SettingsCardDivider()
+                        SettingsInfoRow(label: "Email", value: email)
+                    }
+                    SettingsCardDivider()
+                    Toggle("Administrator", isOn: $isAdmin)
+                        .tint(AccentPreferences.current)
+                        .font(.body.weight(.semibold))
+                    SettingsCardDivider()
+                    Toggle("Enabled", isOn: $isEnabled)
+                        .tint(AccentPreferences.current)
+                        .font(.body.weight(.semibold))
+                    SettingsPrimaryButton(title: "Save Access", isBusy: isSaving) {
+                        Task { await saveAccess() }
+                    }
+                    .padding(.top, 16)
                 }
-                .disabled(newPassword.count < 8 || isSaving)
+                .settingsLoginCard()
+                .settingsCardRow()
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsLabeledField(label: "New", systemImage: "lock.fill") {
+                        SecureField("New", text: $newPassword)
+                            .textContentType(.newPassword)
+                    }
+                    SettingsCardDivider()
+                    SettingsLabeledField(label: "Confirm", systemImage: "lock.fill") {
+                        SecureField("Confirm", text: $confirmPassword)
+                            .textContentType(.newPassword)
+                    }
+                    if !confirmPassword.isEmpty && newPassword != confirmPassword {
+                        Text("The new passwords do not match.")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(LoginPalette.failure)
+                            .padding(.top, 12)
+                    }
+                    SettingsPrimaryButton(
+                        title: "Set Password",
+                        isBusy: isSaving,
+                        enabled: newPassword.count >= 8 && newPassword == confirmPassword
+                    ) {
+                        Task { await savePassword() }
+                    }
+                    .padding(.top, 16)
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
             } footer: {
                 Text("At least 8 characters. This replaces the password for \(account.username).")
             }
 
             if let status {
                 Section {
-                    Text(status)
-                        .foregroundStyle(statusIsError ? Color.red : .secondary)
+                    SettingsStatusText(text: status, isError: statusIsError)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
             }
 
             Section {
-                Button("Delete Account", role: .destructive) {
+                SettingsSecondaryButton(title: "Delete Account", role: .destructive, enabled: !isSaving) {
                     showsDeleteConfirm = true
                 }
-                .disabled(isSaving)
+                .settingsCardRow()
             }
         }
         .zelefinSettingsChrome(title: account.username)
@@ -335,37 +389,34 @@ struct SiloTasksView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(tasks) { task in
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(task.displayName)
-                                if let description = task.description, !description.isEmpty {
-                                    Text(description)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text(task.state?.capitalized ?? "Idle")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Spacer(minLength: 8)
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsStackedRow(
+                                title: task.displayName,
+                                subtitle: task.description ?? "",
+                                caption: task.state?.capitalized ?? "Idle"
+                            )
                             if busyIDs.contains(task.id) {
                                 ProgressView()
+                                    .padding(.top, 16)
                             } else if task.isRunning {
-                                Button("Cancel") {
+                                SettingsSecondaryButton(title: "Cancel") {
                                     Task { await cancel(task) }
                                 }
+                                .padding(.top, 16)
                             } else {
-                                Button("Run") {
+                                SettingsPrimaryButton(title: "Run") {
                                     Task { await run(task) }
                                 }
+                                .padding(.top, 16)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -435,26 +486,21 @@ struct SiloDevicesView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(devices) { device in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(device.displayName)
-                            Text([device.username, device.devicePlatform]
+                        SettingsStackedRow(
+                            title: device.displayName,
+                            subtitle: [device.username, device.devicePlatform]
                                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                                 .filter { !$0.isEmpty }
-                                .joined(separator: " · "))
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            if let date = device.lastUpdated {
-                                Text(date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                        .padding(.vertical, 4)
+                                .joined(separator: " · "),
+                            caption: device.lastUpdated?.formatted(date: .abbreviated, time: .shortened) ?? ""
+                        )
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -496,25 +542,21 @@ struct SiloAuditLogView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(entries) { entry in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(entry.title)
-                            Text([
+                        SettingsStackedRow(
+                            title: entry.title,
+                            subtitle: [
                                 entry.statusCode.map(String.init),
                                 entry.clientIP
-                            ].compactMap { $0 }.joined(separator: " · "))
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            if let date = entry.timestamp {
-                                Text(date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
+                            ].compactMap { $0 }.joined(separator: " · "),
+                            caption: entry.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? ""
+                        )
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -558,30 +600,25 @@ struct SiloLibrariesAdminView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(libraries) { library in
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(library.name)
-                                if !library.subtitle.isEmpty {
-                                    Text(library.subtitle)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer(minLength: 8)
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsStackedRow(title: library.name, subtitle: library.subtitle)
                             if busyIDs.contains(library.id) {
                                 ProgressView()
+                                    .padding(.top, 16)
                             } else {
-                                Button("Scan") {
+                                SettingsPrimaryButton(title: "Scan") {
                                     Task { await scan(library) }
                                 }
+                                .padding(.top, 16)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -661,39 +698,32 @@ struct SiloInvitationsView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     if let status {
-                        Text(status)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        SettingsStatusText(text: status)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(invitations) { invite in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(invite.email)
-                                .font(.body.weight(.semibold))
-                            if !invite.subtitle.isEmpty {
-                                Text(invite.subtitle)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsStackedRow(title: invite.email, subtitle: invite.subtitle)
                             if invite.isPending {
-                                HStack {
-                                    Button("Resend") {
+                                HStack(spacing: 10) {
+                                    SettingsPrimaryButton(title: "Resend", enabled: !busyIDs.contains(invite.id)) {
                                         Task { await resend(invite) }
                                     }
-                                    .disabled(busyIDs.contains(invite.id))
-                                    Button("Revoke", role: .destructive) {
+                                    SettingsSecondaryButton(title: "Revoke", role: .destructive, enabled: !busyIDs.contains(invite.id)) {
                                         Task { await revoke(invite) }
                                     }
-                                    .disabled(busyIDs.contains(invite.id))
                                 }
-                                .font(.footnote.weight(.semibold))
+                                .padding(.top, 16)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -776,40 +806,51 @@ struct SiloCreateInvitationView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Email", text: $email)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
-                Toggle("Administrator", isOn: $isAdmin)
-                TextField("Note (optional)", text: $note)
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsLabeledField(label: "Email", systemImage: "envelope.fill") {
+                        TextField("Email", text: $email)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .textContentType(.emailAddress)
+                    }
+                    SettingsCardDivider()
+                    Toggle("Administrator", isOn: $isAdmin)
+                        .tint(AccentPreferences.current)
+                        .font(.body.weight(.semibold))
+                    SettingsCardDivider()
+                    SettingsLabeledField(label: "Note", systemImage: "text.quote") {
+                        TextField("Note (optional)", text: $note)
+                    }
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
             } footer: {
                 Text("Silo emails the invite when mail is configured. The claim link is also copied so you can send it yourself.")
             }
             if let claimURL {
                 Section {
-                    Text(claimURL.absoluteString)
-                        .font(.footnote)
-                        .textSelection(.enabled)
-                    Button("Copy Link") {
-                        UIPasteboard.general.string = claimURL.absoluteString
+                    VStack(alignment: .leading, spacing: 0) {
+                        SettingsInfoRow(label: "Claim link", value: claimURL.absoluteString)
+                        SettingsPrimaryButton(title: "Copy Link") {
+                            UIPasteboard.general.string = claimURL.absoluteString
+                        }
+                        .padding(.top, 16)
                     }
+                    .settingsLoginCard()
+                    .settingsCardRow()
                 }
             }
             Section {
-                Button {
+                SettingsPrimaryButton(title: "Send Invite", isBusy: isSaving, enabled: email.contains("@")) {
                     Task { await save() }
-                } label: {
-                    HStack {
-                        Spacer(minLength: 0)
-                        if isSaving { ProgressView() } else { Text("Send Invite").fontWeight(.semibold) }
-                        Spacer(minLength: 0)
-                    }
                 }
-                .disabled(!email.contains("@") || isSaving)
+                .settingsCardRow()
             }
             if let errorMessage {
                 Section {
-                    Text(errorMessage).foregroundStyle(.red)
+                    SettingsStatusText(text: errorMessage, isError: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
             }
         }
@@ -874,30 +915,48 @@ struct SiloSessionsView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
-                    }
-                    ForEach(sessions) { playback in
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(playback.title)
-                                if !playback.subtitle.isEmpty {
-                                    Text(playback.subtitle)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer(minLength: 8)
-                            if busyIDs.contains(playback.id) {
-                                ProgressView()
-                            } else {
-                                Button("Stop", role: .destructive) {
-                                    Task { await stop(playback) }
-                                }
-                            }
+                        Section {
+                            SettingsStatusText(text: errorMessage, isError: true)
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         }
-                        .padding(.vertical, 4)
+                    }
+                    Section {
+                        ForEach(sessions) { playback in
+                            VStack(alignment: .leading, spacing: 0) {
+                                HStack(alignment: .top, spacing: 14) {
+                                    Image(systemName: "play.rectangle.fill")
+                                        .font(.title3.weight(.semibold))
+                                        .foregroundStyle(LoginPalette.iconTint)
+                                        .frame(width: 48, height: 48)
+                                        .background(Color.white.opacity(0.08))
+                                        .clipShape(Circle())
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(playback.title)
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(LoginPalette.primaryText)
+                                        if !playback.subtitle.isEmpty {
+                                            Text(playback.subtitle)
+                                                .font(.caption)
+                                                .foregroundStyle(LoginPalette.secondaryText)
+                                        }
+                                    }
+                                    Spacer(minLength: 8)
+                                }
+                                if busyIDs.contains(playback.id) {
+                                    ProgressView()
+                                        .tint(LoginPalette.actionLabel)
+                                        .padding(.top, 16)
+                                } else {
+                                    SettingsSecondaryButton(title: "Stop", role: .destructive) {
+                                        Task { await stop(playback) }
+                                    }
+                                    .padding(.top, 16)
+                                }
+                            }
+                            .settingsLoginCard()
+                            .settingsCardRow()
+                        }
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -952,34 +1011,29 @@ struct SiloNodesView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(nodes) { node in
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(node.name)
-                                Text(node.subtitle)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                if let url = node.url, !url.isEmpty {
-                                    Text(url)
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer(minLength: 8)
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsStackedRow(
+                                title: node.name,
+                                subtitle: node.subtitle,
+                                caption: node.url ?? ""
+                            )
                             if busyIDs.contains(node.id) {
                                 ProgressView()
+                                    .padding(.top, 16)
                             } else {
-                                Button("Check") {
+                                SettingsPrimaryButton(title: "Check") {
                                     Task { await check(node) }
                                 }
+                                .padding(.top, 16)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -1033,25 +1087,21 @@ struct SiloOperationalLogView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(entries) { entry in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(entry.title)
-                            Text([entry.level, entry.component]
+                        SettingsStackedRow(
+                            title: entry.title,
+                            subtitle: [entry.level, entry.component]
                                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                                 .filter { !$0.isEmpty }
-                                .joined(separator: " · "))
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            if let date = entry.timestamp {
-                                Text(date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
+                                .joined(separator: " · "),
+                            caption: entry.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? ""
+                        )
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }

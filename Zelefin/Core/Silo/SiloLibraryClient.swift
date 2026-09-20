@@ -539,6 +539,11 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
             throw ZelefinError.server("Select a profile before playing.")
         }
         let fileID = try await resolveFileID(for: item, mediaSourceID: mediaSourceID)
+        let seededTracks = (audioIndex == nil || subtitleIndex == nil)
+            ? await tracks(for: item, mediaSourceID: String(fileID), seeded: [])
+            : (audio: [MediaTrack](), subtitles: [MediaTrack]())
+        let resolvedAudio = audioIndex ?? PlaybackLanguage.audioIndex(in: seededTracks.audio)
+        let resolvedSubtitle = subtitleIndex ?? PlaybackLanguage.subtitleIndex(in: seededTracks.subtitles)
         let capability = try? await api.playbackCapability()
         if let capability, !capability.supportsV3 {
             throw ZelefinError.server("This Silo server does not advertise playback protocol v3.")
@@ -556,8 +561,8 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
                     maxBitrate: SiloPlaybackStart.startBitrate(
                         selected: PlaybackPreferences.selectedQuality
                     ),
-                    audioIndex: audioIndex,
-                    subtitleIndex: SiloPlaybackStart.subtitleStartIndex(subtitleIndex)
+                    audioIndex: resolvedAudio,
+                    subtitleIndex: SiloPlaybackStart.subtitleStartIndex(resolvedSubtitle)
                 )
             )
         } catch let error as SiloHTTPError {
@@ -581,13 +586,13 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
             let overlay = await SiloPlaybackStart.subtitleOverlay(
                 inventory: plan?.subtitle?.inventory ?? [],
                 selectedCombinedIndex: plan?.subtitle?.selectedCombinedIndex,
-                subtitlesOff: subtitleIndex == -1,
+                subtitlesOff: resolvedSubtitle == -1,
                 resolve: { await api.resolveURL($0) }
             )
             let fileTracks = await tracks(for: item, mediaSourceID: String(fileID), seeded: [])
             let subtitleTracks = SiloPlaybackStart.applyingSubtitleSelection(
                 overlay.tracks.isEmpty ? fileTracks.subtitles : overlay.tracks,
-                requested: subtitleIndex
+                requested: resolvedSubtitle
             )
             return PlaybackPlan(
                 item: item,

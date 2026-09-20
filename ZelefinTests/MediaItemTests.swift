@@ -858,6 +858,21 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(sections[1].items.map(\.id), ["n1"])
     }
 
+    func testReplacingUpdatesMatchingHomeArtwork() {
+        let stale = Self.item(id: "r1", primaryImageTag: "old")
+        let fresh = Self.item(id: "r1", primaryImageTag: "new")
+        let other = Self.item(id: "n1", primaryImageTag: "keep")
+        let layout = HomeLayout(
+            featured: [stale],
+            sections: [
+                HomeSection(id: "continue", title: "Continue", style: .landscape, items: [stale, other])
+            ]
+        )
+        let next = layout.replacing(fresh)
+        XCTAssertEqual(next.featured.first?.primaryImageTag, "new")
+        XCTAssertEqual(next.sections.first?.items.map(\.primaryImageTag), ["new", "keep"])
+    }
+
     func testRemovingAContinueWatchingTitleDropsEmptyQueueRows() {
         let layout = HomeLayout(
             featured: [Self.item(id: "r1", queueKind: .resume)],
@@ -1441,7 +1456,7 @@ final class SearchHistoryStoreTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), ["new", "0", "1"])
     }
 
-    private static func item(id: String) -> MediaItem {
+    private static func item(id: String, primaryImageTag: String? = nil) -> MediaItem {
         MediaItem(
             id: id,
             name: id,
@@ -1457,7 +1472,7 @@ final class SearchHistoryStoreTests: XCTestCase {
             playbackPosition: 0,
             unplayedCount: nil,
             isPlayed: false,
-            primaryImageTag: nil,
+            primaryImageTag: primaryImageTag,
             thumbImageTag: nil,
             backdropImageTag: nil,
             backdropImageTags: [],

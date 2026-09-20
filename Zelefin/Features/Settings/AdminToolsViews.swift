@@ -21,24 +21,18 @@ struct ActivityLogView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     ForEach(entries) { entry in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(entry.title)
-                            if !entry.subtitle.isEmpty {
-                                Text(entry.subtitle)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let date = entry.date {
-                                Text(date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
+                        SettingsStackedRow(
+                            title: entry.title,
+                            subtitle: entry.subtitle,
+                            caption: entry.date?.formatted(date: .abbreviated, time: .shortened) ?? ""
+                        )
+                        .settingsLoginCard()
+                        .settingsCardRow()
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -84,49 +78,44 @@ struct ServerBackupsView: View {
             } else {
                 List {
                     if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                        SettingsStatusText(text: errorMessage, isError: true)
+                            .settingsLoginCard()
+                            .settingsCardRow()
                     }
                     Section {
-                        Button {
+                        SettingsPrimaryButton(title: "Create Backup", isBusy: isCreating) {
                             Task { await create() }
-                        } label: {
-                            if isCreating {
-                                ProgressView()
-                            } else {
-                                Label("Create Backup", systemImage: "plus.circle")
-                            }
                         }
-                        .disabled(isCreating)
+                        .settingsCardRow()
                     } footer: {
                         Text("A backup archives this server’s database and metadata. Restoring one restarts Jellyfin.")
                     }
-                    Section("Archives") {
+                    Section {
                         if backups.isEmpty {
-                            Text("No backups on this server yet.")
-                                .foregroundStyle(.secondary)
+                            SettingsStackedRow(title: "No backups on this server yet.")
+                                .settingsLoginCard()
+                                .settingsCardRow()
                         } else {
                             ForEach(backups) { backup in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(backup.fileName)
-                                    HStack {
-                                        if let date = backup.dateCreated {
-                                            Text(date.formatted(date: .abbreviated, time: .shortened))
-                                        }
-                                        if let version = backup.serverVersion, !version.isEmpty {
-                                            Text("Jellyfin \(version)")
-                                        }
-                                    }
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    Button("Restore…", role: .destructive) {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    SettingsStackedRow(
+                                        title: backup.fileName,
+                                        subtitle: [
+                                            backup.dateCreated?.formatted(date: .abbreviated, time: .shortened),
+                                            backup.serverVersion.flatMap { $0.isEmpty ? nil : "Jellyfin \($0)" }
+                                        ].compactMap { $0 }.joined(separator: " · ")
+                                    )
+                                    SettingsSecondaryButton(title: "Restore…", role: .destructive) {
                                         restoreTarget = backup
                                     }
-                                    .font(.footnote)
+                                    .padding(.top, 16)
                                 }
+                                .settingsLoginCard()
+                                .settingsCardRow()
                             }
                         }
+                    } header: {
+                        Text("Archives")
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -203,36 +192,90 @@ struct ServerBrandingView: View {
 
     var body: some View {
         Form {
+            Section {
+                VStack(spacing: 14) {
+                    SettingsHeroGlyph(systemImage: "paintbrush.fill")
+                    Text("Branding")
+                        .font(.title2.weight(.semibold))
+                    SettingsChip(
+                        icon: "play.tv.fill",
+                        leading: "Jellyfin",
+                        trailing: serverLabel
+                    )
+                }
+                .frame(maxWidth: .infinity)
+                .settingsHeroRow()
+            }
+
             if let errorMessage {
                 Section {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
-                        .font(.footnote)
+                    SettingsStatusText(text: errorMessage, isError: true)
+                        .settingsLoginCard()
+                        .settingsCardRow()
                 }
             }
-            Section("Sign-In") {
-                TextField("Login disclaimer", text: $branding.loginDisclaimer, axis: .vertical)
-                    .lineLimit(3...8)
-                Toggle("Show splashscreen", isOn: $branding.splashscreenEnabled)
-            }
-            Section("Custom CSS") {
-                TextField("CSS", text: $branding.customCSS, axis: .vertical)
-                    .lineLimit(4...12)
-                    .font(.footnote.monospaced())
-            }
-            Section("Splash Image") {
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Label("Upload Splashscreen", systemImage: "photo")
-                }
-                Button("Remove Custom Splashscreen", role: .destructive) {
-                    Task { await deleteSplash() }
-                }
-            }
+
             Section {
-                Button("Save") {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsLabeledField(label: "Login disclaimer", systemImage: "text.quote") {
+                        TextField("Shown on the sign-in screen", text: $branding.loginDisclaimer, axis: .vertical)
+                            .lineLimit(3...8)
+                    }
+                    SettingsCardDivider()
+                    Toggle("Show splashscreen", isOn: $branding.splashscreenEnabled)
+                        .tint(AccentPreferences.current)
+                        .font(.body.weight(.semibold))
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
+            } header: {
+                Text("Sign-In")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    SettingsFieldLabel(title: "CSS")
+                    TextField("CSS", text: $branding.customCSS, axis: .vertical)
+                        .lineLimit(4...12)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(LoginPalette.fieldValue)
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
+            } header: {
+                Text("Custom CSS")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 0) {
+                    PhotosPicker(selection: $pickerItem, matching: .images) {
+                        HStack {
+                            Spacer(minLength: 0)
+                            Text("Upload Splashscreen")
+                                .font(.caption.weight(.bold))
+                                .tracking(0.8)
+                            Spacer(minLength: 0)
+                        }
+                        .modifier(LoginActionButtonStyle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Upload Splashscreen")
+                    SettingsSecondaryButton(title: "Remove Custom Splashscreen", role: .destructive) {
+                        Task { await deleteSplash() }
+                    }
+                    .padding(.top, 10)
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
+            } header: {
+                Text("Splash Image")
+            }
+
+            Section {
+                SettingsPrimaryButton(title: "Save Branding", isBusy: isSaving, enabled: !isLoading) {
                     Task { await save() }
                 }
-                .disabled(isSaving)
+                .settingsCardRow()
             }
         }
         .zelefinSettingsChrome(title: "Branding")
@@ -241,6 +284,11 @@ struct ServerBrandingView: View {
             guard let item else { return }
             Task { await upload(item) }
         }
+    }
+
+    private var serverLabel: String {
+        let name = session.session?.displayServer ?? session.serverName ?? ""
+        return name.isEmpty ? "This server" : name
     }
 
     private func load() async {

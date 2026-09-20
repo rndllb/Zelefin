@@ -868,6 +868,20 @@ struct HomeSection: Identifiable, Hashable, Sendable, Codable {
 struct HomeLayout: Hashable, Sendable, Codable {
     var featured: [MediaItem]
     var sections: [HomeSection]
+
+    func replacing(_ item: MediaItem) -> HomeLayout {
+        HomeLayout(
+            featured: featured.map { $0.id == item.id ? item : $0 },
+            sections: sections.map { section in
+                HomeSection(
+                    id: section.id,
+                    title: section.title,
+                    style: section.style,
+                    items: section.items.map { $0.id == item.id ? item : $0 }
+                )
+            }
+        )
+    }
 }
 
 struct CreditPerson: Identifiable, Hashable, Sendable, Codable {

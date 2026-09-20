@@ -1,0 +1,102 @@
+:root {
+  --bg: #050505;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --accent: #2ad4fc;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  padding: 12vh 24px 64px;
+}
+
+main {
+  max-width: 36rem;
+}
+
+.mark {
+  display: block;
+  width: 88px;
+  height: 88px;
+  margin-bottom: 2.5rem;
+}
+
+.kicker {
+  margin: 0 0 0.75rem;
+  color: var(--accent);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-weight: 600;
+  letter-spacing: -0.06em;
+  line-height: 0.95;
+}
+
+.lede, article p, article li {
+  color: var(--muted);
+  font-size: 1.125rem;
+  line-height: 1.55;
+}
+
+.lede { margin: 0 0 2.5rem; }
+
+.soon {
+  margin: 0 0 3rem;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+nav {
+  display: flex;
+  gap: 1.75rem;
+  flex-wrap: wrap;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover { text-decoration: underline; }
+
+article h1 {
+  font-size: clamp(2.75rem, 7vw, 4rem);
+  margin-bottom: 0.35rem;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 2.5rem;
+  font-size: 0.9rem;
+}
+
+article h2 {
+  margin: 2.25rem 0 0.6rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+article ul {
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+article li { margin: 0.35rem 0; }

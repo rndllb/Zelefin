@@ -15,27 +15,54 @@ struct NotificationSettingsView: View {
         List {
             Section {
                 Toggle("Notifications", isOn: $isEnabled)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                    .settingsLoginCard()
+                    .settingsCardRow()
             } footer: {
                 Text(permissionFooter)
             }
 
             Section {
                 Toggle("New titles", isOn: $libraryAdds)
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
                     .disabled(!isEnabled)
+                    .settingsLoginCard()
+                    .settingsCardRow()
             } footer: {
                 Text("Alerts for movies and episodes added after this device already knows the library. Tapping one opens that title.")
             }
 
             if session.isAdministrator {
                 Section {
-                    if !session.usesSilo {
-                        Toggle("Streams started", isOn: $streams)
-                        Toggle("Users online", isOn: $online)
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !session.usesSilo {
+                            Toggle("Streams started", isOn: $streams)
+                                .tint(AccentPreferences.current)
+                                .font(.body.weight(.semibold))
+                                .disabled(!isEnabled)
+                            SettingsCardDivider()
+                            Toggle("Users online", isOn: $online)
+                                .tint(AccentPreferences.current)
+                                .font(.body.weight(.semibold))
+                                .disabled(!isEnabled)
+                            SettingsCardDivider()
+                        }
+                        Toggle("Scheduled tasks", isOn: $scheduledTasks)
+                            .tint(AccentPreferences.current)
+                            .font(.body.weight(.semibold))
+                            .disabled(!isEnabled)
+                        if session.isDiscoverAvailable {
+                            SettingsCardDivider()
+                            Toggle(session.usesSilo ? "Media requests" : "Seerr requests", isOn: $requests)
+                                .tint(AccentPreferences.current)
+                                .font(.body.weight(.semibold))
+                                .disabled(!isEnabled)
+                        }
                     }
-                    Toggle("Scheduled tasks", isOn: $scheduledTasks)
-                    if session.isDiscoverAvailable {
-                        Toggle(session.usesSilo ? "Media requests" : "Seerr requests", isOn: $requests)
-                    }
+                    .settingsLoginCard()
+                    .settingsCardRow()
                 } header: {
                     Text("Administrators")
                 } footer: {
@@ -67,11 +94,13 @@ struct NotificationSettingsView: View {
         case .denied:
             return "Notifications are off in iOS Settings. Turn them on for Zelefin to see banners on this device."
         case .notDetermined:
-            return "Zelefin asks iOS for permission when you turn this on. With the Zelefin Jellyfin plugin, alerts are push from your server. Without it, this device checks Jellyfin itself."
+            return "Zelefin asks iOS for permission when you turn this on. This iPhone checks Jellyfin itself. The plugin is optional push while the app stays fully closed."
         case .authorized, .provisional, .ephemeral:
-            return "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
+            return session.companionAvailable
+                ? "The Zelefin plugin can push while the app stays closed. This iPhone also checks the server itself, so banners can still appear after you remove the plugin."
+                : "This iPhone checks Jellyfin itself. You do not need the plugin for banners while the app is open or after a background refresh. The plugin is only for push when the app is fully closed."
         @unknown default:
-            return "When the Zelefin plugin is on this Jellyfin server, alerts arrive even if the app stays closed. Otherwise Zelefin checks the server from this device, and iOS may wait until you open the app."
+            return "This iPhone checks Jellyfin itself. The Zelefin plugin is only for push while the app stays fully closed."
         }
     }
 

@@ -64,6 +64,7 @@ struct ZelefinApp: App {
                 .background(Color.black)
                 .zelefinPlusPaywall()
                 .environment(session)
+                .environment(\.libraryArtworkRevision, session.artworkRevision)
                 .environment(downloads)
                 .environment(deepLinks)
                 .environment(plus)
