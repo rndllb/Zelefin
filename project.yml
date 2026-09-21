@@ -46,12 +46,15 @@ targets:
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: YES
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home."
-        INFOPLIST_KEY_UIBackgroundModes: "audio fetch"
+        INFOPLIST_KEY_UIBackgroundModes: "audio remote-notification"
+        INFOPLIST_KEY_UILaunchScreen_UIColorName: LaunchBackground
+        INFOPLIST_KEY_UILaunchScreen_UIImageName: LaunchMark
         ENABLE_PREVIEWS: YES
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Zelefin/Zelefin.entitlements
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
     dependencies:
       - package: JellyfinAPI
         product: JellyfinAPI
@@ -61,6 +64,8 @@ targets:
       - name: Generate Aether dSYMs
         basedOnDependencyAnalysis: false
         runOnlyWhenInstalling: true
+        inputFiles:
+          - $(SRCROOT)/scripts/generate-aether-dsyms.sh
         script: |
           sh "${SRCROOT}/scripts/generate-aether-dsyms.sh"
     info:
@@ -76,12 +81,11 @@ targets:
         UIRequiresFullScreen: false
         UILaunchScreen:
           UIColorName: LaunchBackground
+          UIImageName: LaunchMark
         NSLocationWhenInUseUsageDescription: "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home."
         UIBackgroundModes:
           - audio
-          - fetch
-        BGTaskSchedulerPermittedIdentifiers:
-          - app.zelefin.client.library-alerts
+          - remote-notification
   ZelefinTests:
     type: bundle.unit-test
     platform: iOS

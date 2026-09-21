@@ -375,16 +375,6 @@ struct SiloMediaRequest: Decodable, Sendable {
         return title
     }
 
-    func asAlert() -> LibraryAlertRequest? {
-        let identifier = id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !identifier.isEmpty else { return nil }
-        let name = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return LibraryAlertRequest(
-            id: identifier,
-            title: name.isEmpty ? "a title" : name,
-            requester: "A profile"
-        )
-    }
 }
 
 struct SiloRequestCreate: Encodable, Sendable {
@@ -644,14 +634,6 @@ struct SiloRequestClient: Sendable {
             posterPath: title.posterURL.flatMap(Self.tmdbPath(from:))
         )
         let _: SiloMediaRequest = try await api.post("/api/v2/requests", body: body)
-    }
-
-    func listedAlerts() async throws -> [LibraryAlertRequest] {
-        do {
-            return try await api.siloAdminRequests().compactMap { $0.asAlert() }
-        } catch {
-            return try await api.siloMyRequests().compactMap { $0.asAlert() }
-        }
     }
 
     private func browse(_ kind: String, slug: String, page: Int) async throws -> SeerrDiscoverPage {

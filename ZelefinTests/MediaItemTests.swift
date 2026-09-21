@@ -934,6 +934,47 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(featured.map(\.id), ["fresh", "watched"])
     }
 
+    func testHeroUsesTheSelectedHomeSource() {
+        let added = [Self.title(id: "a1", kind: .movie)]
+        let resume = [Self.title(id: "r1", kind: .movie)]
+        let next = [Self.title(id: "n1", kind: .episode)]
+        let watched = [Self.title(id: "w1", kind: .movie)]
+        let recommend = [
+            HomeSection(
+                id: "recommend-1",
+                title: "Because You Watched Heat",
+                style: .portrait,
+                items: [Self.title(id: "rec1", kind: .movie)]
+            )
+        ]
+        XCTAssertEqual(
+            HomeLayoutPreferences.hero(
+                recentlyAdded: added,
+                continueWatching: resume,
+                nextUp: next,
+                recentlyWatched: watched,
+                recommendations: recommend,
+                source: .continueWatching
+            ).map(\.id),
+            ["r1"]
+        )
+        XCTAssertEqual(
+            HomeLayoutPreferences.hero(
+                recentlyAdded: added,
+                continueWatching: resume,
+                nextUp: next,
+                recentlyWatched: watched,
+                recommendations: recommend,
+                source: .recommendations
+            ).map(\.id),
+            ["rec1"]
+        )
+        XCTAssertEqual(
+            FeaturedHeroContent(rawValue: "moviesAndShows") ?? .recentlyAdded,
+            .recentlyAdded
+        )
+    }
+
     func testFeaturedCapsAtEightTitles() {
         let movies = (1...6).map { Self.title(id: "m\($0)", kind: .movie) }
         let shows = (1...6).map { Self.title(id: "s\($0)", kind: .series) }

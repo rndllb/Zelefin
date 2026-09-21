@@ -80,9 +80,9 @@ struct PluginSettingsView: View {
             Text("Notifications plugin")
         } footer: {
             if session.companionAvailable {
-                Text("This server can push lock-screen alerts while Zelefin is closed. This iPhone also checks the library itself, so banners can still appear without the plugin when the app is open or after a background refresh. Restart Jellyfin after you install or remove the plugin.")
+                Text("This server can push lock-screen alerts while Zelefin is open or closed. Restart Jellyfin after you install or remove the plugin.")
             } else {
-                Text("Notifications still work from this iPhone. Zelefin checks Jellyfin while the app is open and when iOS allows a background refresh. The plugin is only for push while the app stays fully closed. After you uninstall it, restart Jellyfin so the server stops sending those pushes.")
+                Text("Notifications need this plugin. Open Settings → Notifications to install it on this server, or add the Zelefin catalog in Jellyfin. Restart Jellyfin after install.")
             }
         }
     }

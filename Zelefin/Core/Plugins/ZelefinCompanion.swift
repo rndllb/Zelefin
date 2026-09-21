@@ -17,7 +17,7 @@ struct CompanionConfig: Equatable, Sendable, Codable {
 enum CompanionSettings {
     static let pluginInstalledKey = "zelefin.companion.plugin-installed"
 
-    /// Survives a background launch so local polling does not duplicate plugin push.
+    /// Survives a background launch so this device can register for plugin push.
     static var pluginInstalled: Bool {
         get { UserDefaults.standard.bool(forKey: pluginInstalledKey) }
         set { UserDefaults.standard.set(newValue, forKey: pluginInstalledKey) }

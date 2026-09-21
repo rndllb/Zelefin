@@ -748,17 +748,22 @@ struct PortraitPoster: View {
                 .overlay(alignment: .bottomLeading) {
                     PosterQualityBadgeStack(item: item)
                 }
-                .overlay(alignment: .topTrailing) {
-                    if item.isWatched {
-                        PosterWatchedMark()
-                            .padding(6)
-                    }
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    if let score = PosterRatingBadge.starScore(from: item.communityRating) {
+                .overlay(alignment: .topLeading) {
+                    if rank == nil, let score = PosterRatingBadge.starScore(from: item.communityRating) {
                         PosterRatingBadge(rating: score)
                             .padding(6)
                     }
+                }
+                .overlay(alignment: .topTrailing) {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if item.isWatched {
+                            PosterWatchedMark()
+                        }
+                        if rank != nil, let score = PosterRatingBadge.starScore(from: item.communityRating) {
+                            PosterRatingBadge(rating: score)
+                        }
+                    }
+                    .padding(6)
                 }
 
             if let rank {

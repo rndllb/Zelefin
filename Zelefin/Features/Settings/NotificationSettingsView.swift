@@ -4,116 +4,133 @@ import UserNotifications
 struct NotificationSettingsView: View {
     @Environment(SessionStore.self) private var session
     @AppStorage(LibraryAlertSettings.enabledKey) private var isEnabled = true
-    @AppStorage(LibraryAlertSettings.libraryAddsKey) private var libraryAdds = true
-    @AppStorage(LibraryAlertSettings.streamsKey) private var streams = true
-    @AppStorage(LibraryAlertSettings.onlineKey) private var online = true
-    @AppStorage(LibraryAlertSettings.requestsKey) private var requests = true
-    @AppStorage(LibraryAlertSettings.scheduledTasksKey) private var scheduledTasks = true
     @State private var authorization: UNAuthorizationStatus = .notDetermined
+    @State private var isInstallingPlugin = false
+    @State private var isRestarting = false
+    @State private var pluginNeedsRestart = false
+    @State private var pluginStatus: String?
 
     var body: some View {
         List {
-            Section {
-                Toggle("Notifications", isOn: $isEnabled)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
-                    .settingsLoginCard()
-                    .settingsCardRow()
-            } footer: {
-                Text(permissionFooter)
-            }
-
-            Section {
-                Toggle("New titles", isOn: $libraryAdds)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
-                    .disabled(!isEnabled)
-                    .settingsLoginCard()
-                    .settingsCardRow()
-            } footer: {
-                Text("Alerts for movies and episodes added after this device already knows the library. Tapping one opens that title.")
-            }
-
-            if session.isAdministrator {
-                Section {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if !session.usesSilo {
-                            Toggle("Streams started", isOn: $streams)
-                                .tint(AccentPreferences.current)
-                                .font(.body.weight(.semibold))
-                                .disabled(!isEnabled)
-                            SettingsCardDivider()
-                            Toggle("Users online", isOn: $online)
-                                .tint(AccentPreferences.current)
-                                .font(.body.weight(.semibold))
-                                .disabled(!isEnabled)
-                            SettingsCardDivider()
-                        }
-                        Toggle("Scheduled tasks", isOn: $scheduledTasks)
-                            .tint(AccentPreferences.current)
-                            .font(.body.weight(.semibold))
-                            .disabled(!isEnabled)
-                        if session.isDiscoverAvailable {
-                            SettingsCardDivider()
-                            Toggle(session.usesSilo ? "Media requests" : "Seerr requests", isOn: $requests)
-                                .tint(AccentPreferences.current)
-                                .font(.body.weight(.semibold))
-                                .disabled(!isEnabled)
-                        }
-                    }
-                    .settingsLoginCard()
-                    .settingsCardRow()
-                } header: {
-                    Text("Administrators")
-                } footer: {
-                    Text(adminFooter)
-                }
+            if session.companionAvailable {
+                configuredSection
+            } else {
+                pluginRequiredSection
             }
         }
         .zelefinSettingsChrome(title: "Notifications")
         .task {
+            await session.detectPlugins()
             await refreshAuthorization()
         }
         .onChange(of: isEnabled) { _, enabled in
+            guard session.companionAvailable else { return }
             Task { await handleMasterToggle(enabled) }
         }
     }
 
-    private var permissionFooter: String {
-        if session.usesSilo {
-            switch authorization {
-            case .denied:
-                return "Notifications are off in iOS Settings. Turn them on for Zelefin to see banners on this device."
-            case .notDetermined:
-                return "Zelefin asks iOS for permission when you turn this on. This device checks Silo itself while the app can run."
-            default:
-                return "Zelefin checks this Silo server from this device. iOS may wait until you open the app."
-            }
-        }
-        switch authorization {
-        case .denied:
-            return "Notifications are off in iOS Settings. Turn them on for Zelefin to see banners on this device."
-        case .notDetermined:
-            return "Zelefin asks iOS for permission when you turn this on. This iPhone checks Jellyfin itself. The plugin is optional push while the app stays fully closed."
-        case .authorized, .provisional, .ephemeral:
-            return session.companionAvailable
-                ? "The Zelefin plugin can push while the app stays closed. This iPhone also checks the server itself, so banners can still appear after you remove the plugin."
-                : "This iPhone checks Jellyfin itself. You do not need the plugin for banners while the app is open or after a background refresh. The plugin is only for push when the app is fully closed."
-        @unknown default:
-            return "This iPhone checks Jellyfin itself. The Zelefin plugin is only for push while the app stays fully closed."
+    private var configuredSection: some View {
+        Section {
+            Toggle("Notifications", isOn: $isEnabled)
+                .tint(AccentPreferences.current)
+                .font(.body.weight(.semibold))
+                .settingsLoginCard()
+                .settingsCardRow()
+        } footer: {
+            Text(permissionFooter)
         }
     }
 
-    private var adminFooter: String {
+    private var pluginRequiredSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Zelefin plugin")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(LoginPalette.primaryText)
+                    Spacer(minLength: 8)
+                    SettingsStatusValue(
+                        text: pluginStatusLabel,
+                        isPositive: pluginNeedsRestart
+                    )
+                }
+
+                Text(pluginRequiredCopy)
+                    .font(.subheadline)
+                    .foregroundStyle(LoginPalette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if canInstallPlugin {
+                    SettingsPrimaryButton(
+                        title: isInstallingPlugin ? "Installing…" : "Install Plugin",
+                        isBusy: isInstallingPlugin,
+                        enabled: !isInstallingPlugin && !pluginNeedsRestart
+                    ) {
+                        Task { await installPlugin() }
+                    }
+                    if pluginNeedsRestart {
+                        SettingsSecondaryButton(
+                            title: isRestarting ? "Restarting…" : "Restart Jellyfin",
+                            enabled: !isRestarting
+                        ) {
+                            Task { await restartServer() }
+                        }
+                    }
+                } else if !session.usesSilo, !session.isAdministrator, !session.isReviewDemo {
+                    SettingsStatusText(
+                        text: "Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account."
+                    )
+                }
+
+                if let pluginStatus {
+                    SettingsStatusText(text: pluginStatus, isError: pluginStatus.contains("could not"))
+                }
+            }
+            .settingsLoginCard()
+            .settingsCardRow()
+        } footer: {
+            Text(pluginRequiredFooter)
+        }
+    }
+
+    private var canInstallPlugin: Bool {
+        session.isAdministrator && !session.usesSilo && !session.isReviewDemo
+    }
+
+    private var pluginStatusLabel: String {
+        if pluginNeedsRestart { return "Restart needed" }
+        return "Not on this server"
+    }
+
+    private var pluginRequiredCopy: String {
         if session.usesSilo {
-            return session.isDiscoverAvailable
-                ? "Task starts and media requests from this Silo server."
-                : "Scheduled task starts on this Silo server."
+            return "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. This Silo server cannot install that plugin, so notifications are not available here."
         }
-        if PluginSettings.isSeerrConfigured {
-            return "Playback, who is online, scheduled tasks, and Seerr requests."
+        if session.isReviewDemo {
+            return "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Review Demo does not install plugins."
         }
-        return "Playback, who is online, and scheduled tasks. Sign in to Seerr under Plugins for request alerts."
+        return "Install the Zelefin plugin on this Jellyfin server to get lock-screen alerts. The plugin watches the library and can notify this iPhone when titles are added, a stream starts, someone comes online, a scheduled task begins, or a Seerr request comes in — including while Zelefin is closed. This app no longer checks the server itself."
+    }
+
+    private var pluginRequiredFooter: String {
+        if session.usesSilo {
+            return "Connect a Jellyfin server with the Zelefin plugin to receive notifications."
+        }
+        if session.isReviewDemo {
+            return "Sign in to a Jellyfin server to install the plugin."
+        }
+        return "After install, restart Jellyfin so the plugin can load. You do not paste an Apple key on the server."
+    }
+
+    private var permissionFooter: String {
+        switch authorization {
+        case .denied:
+            return "Notifications are off in iOS Settings. Turn them on for Zelefin so the plugin can deliver banners for new titles, streams, users online, scheduled tasks, and Seerr requests."
+        case .notDetermined:
+            return "Zelefin asks iOS for permission when you turn this on. The plugin then pushes new titles, streams, users online, scheduled tasks, and Seerr requests."
+        default:
+            return "The Zelefin plugin pushes lock-screen alerts for new titles, streams, users online, scheduled tasks, and Seerr requests while the app is open or closed. Restart Jellyfin after you install or remove the plugin."
+        }
     }
 
     private func refreshAuthorization() async {
@@ -128,11 +145,37 @@ struct NotificationSettingsView: View {
                 isEnabled = false
             } else {
                 _ = await PushNotificationCenter.requestPermissionIfNeeded()
+                await session.registerCompanionPushIfNeeded()
             }
         }
-        LibraryAlertMonitor.shared.stop()
-        if enabled, session.isSignedIn, !session.isReviewDemo {
-            LibraryAlertMonitor.shared.start(session: session)
+    }
+
+    private func installPlugin() async {
+        isInstallingPlugin = true
+        pluginStatus = nil
+        defer { isInstallingPlugin = false }
+        do {
+            try await session.installZelefinPlugin()
+            pluginNeedsRestart = !session.companionAvailable
+            pluginStatus = pluginNeedsRestart
+                ? "Installed. Restart Jellyfin so the plugin can load."
+                : "Installed."
+            if session.companionAvailable {
+                await handleMasterToggle(isEnabled)
+            }
+        } catch {
+            pluginStatus = error.localizedDescription
+        }
+    }
+
+    private func restartServer() async {
+        isRestarting = true
+        defer { isRestarting = false }
+        do {
+            try await session.restartJellyfinAfterPluginInstall()
+            pluginStatus = "Jellyfin is restarting. Reopen Zelefin in a minute if the library does not load."
+        } catch {
+            pluginStatus = error.localizedDescription
         }
     }
 }

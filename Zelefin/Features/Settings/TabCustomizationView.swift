@@ -8,6 +8,7 @@ struct TabCustomizationView: View {
     @AppStorage(HomeLayoutPreferences.mergeContinueAndNextUpKey) private var mergeContinueAndNextUp = false
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
     @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = ""
+    @AppStorage(FeaturedHeroContent.storageKey) private var featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
     @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
     @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
 
@@ -44,6 +45,26 @@ struct TabCustomizationView: View {
                     .settingsCardRow()
             } footer: {
                 Text(homeFooterCopy)
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsFieldLabel(title: "Content")
+                        .padding(.bottom, 8)
+                    Picker("Featured hero", selection: $featuredHeroContent) {
+                        ForEach(FeaturedHeroContent.allCases) { option in
+                            Text(option.title).tag(option.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AccentPreferences.current)
+                }
+                .settingsLoginCard()
+                .settingsCardRow()
+            } header: {
+                Text("Featured Hero")
+            } footer: {
+                Text("What the Home hero cycles through. Recently Added is the default. Random picks a new set when Home refreshes.")
             }
 
             Section {
@@ -104,6 +125,7 @@ struct TabCustomizationView: View {
                         guard plus.require(.interface) else { return }
                         homeRowOrder = HomeRowKind.defaultOrderRaw
                         homeRowHidden = ""
+                        featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
                     }
                     SettingsSecondaryButton(title: "Reset Tabs") {
                         guard plus.require(.interface) else { return }
@@ -128,6 +150,12 @@ struct TabCustomizationView: View {
         }
         .onChange(of: homeRowHidden) {
             Task { await session.pushDisplayPreferences() }
+        }
+        .onChange(of: featuredHeroContent) {
+            Task {
+                await session.refreshHome()
+                await session.pushDisplayPreferences()
+            }
         }
         .onChange(of: tabOrderRaw) {
             Task { await session.pushDisplayPreferences() }

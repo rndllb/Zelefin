@@ -4,6 +4,8 @@ import UserNotifications
 extension Notification.Name {
     static let zelefinOpenLibraryItem = Notification.Name("zelefin.openLibraryItem")
     static let zelefinOpenScheduledTasks = Notification.Name("zelefin.openScheduledTasks")
+    static let zelefinPlaybackSessions = Notification.Name("zelefin.playbackSessions")
+    static let zelefinLibraryChanged = Notification.Name("zelefin.libraryChanged")
 }
 
 enum LibraryAlertUserInfo {

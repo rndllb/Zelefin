@@ -25,8 +25,6 @@ enum ItemMapper {
 
     static let liveTVFields: [ItemFields] = listFields + [.channelInfo, .airTime]
 
-    static let alertFields: [ItemFields] = listFields + [.dateCreated]
-
     static let episodeFields: [ItemFields] = [
         .overview,
         .primaryImageAspectRatio,

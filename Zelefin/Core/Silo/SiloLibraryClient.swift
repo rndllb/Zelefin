@@ -100,35 +100,43 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
     }
 
     func featuredItemsIgnoringErrors() async -> [MediaItem] {
-        async let catalogMovies = recentlyAdded(type: "movie", limit: 16, imageSize: "large")
-        async let catalogShows = recentlyAdded(type: "show", limit: 16, imageSize: "large")
-        async let home = mappedHome()
-        var movies = await catalogMovies
-        var shows = await catalogShows
-        if movies.isEmpty || shows.isEmpty {
-            let remapped = SiloMapper.canonicalLibraryHome(
-                await home?.librarySections ?? [],
-                libraries: []
+        switch FeaturedHeroContent.current {
+        case .continueWatching, .nextUp, .recommendations, .recentlyWatched:
+            return []
+        case .favorites:
+            let saved = await browseCatalog(kind: .favorites, libraries: [])
+            return HomeLayoutPreferences.featured(
+                latestMovies: saved.filter { $0.kind == .movie },
+                latestShows: saved.filter { $0.kind == .series }
             )
-            if movies.isEmpty { movies = remapped.movies?.items ?? [] }
-            if shows.isEmpty { shows = remapped.shows?.items ?? [] }
+        case .recentlyAdded, .random:
+            async let catalogMovies = recentlyAdded(type: "movie", limit: 16, imageSize: "large")
+            async let catalogShows = recentlyAdded(type: "show", limit: 16, imageSize: "large")
+            async let home = mappedHome()
+            var movies = await catalogMovies
+            var shows = await catalogShows
+            if movies.isEmpty || shows.isEmpty {
+                let remapped = SiloMapper.canonicalLibraryHome(
+                    await home?.librarySections ?? [],
+                    libraries: []
+                )
+                if movies.isEmpty { movies = remapped.movies?.items ?? [] }
+                if shows.isEmpty { shows = remapped.shows?.items ?? [] }
+            }
+            if FeaturedHeroContent.current == .random {
+                movies.shuffle()
+                shows.shuffle()
+            }
+            let featured = HomeLayoutPreferences.featured(
+                latestMovies: movies,
+                latestShows: shows
+            )
+            let homeFeatured = await home?.featured ?? []
+            if !featured.isEmpty {
+                return HomeLayoutPreferences.replacingHeroArtwork(on: featured, with: homeFeatured)
+            }
+            return homeFeatured
         }
-        let featured = HomeLayoutPreferences.featured(
-            latestMovies: movies,
-            latestShows: shows
-        )
-        let homeFeatured = await home?.featured ?? []
-        if !featured.isEmpty {
-            return HomeLayoutPreferences.replacingHeroArtwork(on: featured, with: homeFeatured)
-        }
-        return homeFeatured
-    }
-
-    func recentlyAddedForAlerts() async -> [MediaItem]? {
-        let movies = await recentlyAdded(type: "movie", limit: 24)
-        let shows = await recentlyAdded(type: "show", limit: 24)
-        if movies.isEmpty && shows.isEmpty { return nil }
-        return movies + shows
     }
 
     func libraryHomeIgnoringErrors() async -> (libraries: [MediaLibrary], sections: [HomeSection]) {

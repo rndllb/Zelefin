@@ -185,6 +185,12 @@ enum CacheInventory {
         }
     }
 
+    static func settingsUsageLabel() -> String? {
+        let total = ArtworkCache.shared.usage().total.bytes + metadataUsage().total.bytes
+        guard total > 0 else { return nil }
+        return formatBytes(total)
+    }
+
     static func formatBytes(_ bytes: Int64) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file

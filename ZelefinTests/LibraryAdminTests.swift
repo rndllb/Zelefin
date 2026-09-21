@@ -8,11 +8,13 @@ final class LibraryAdminTests: XCTestCase {
         let previousMerge = defaults.object(forKey: HomeLayoutPreferences.mergeContinueAndNextUpKey)
         let previousHomeOrder = defaults.string(forKey: HomeRowKind.orderStorageKey)
         let previousHomeHidden = defaults.string(forKey: HomeRowKind.hiddenStorageKey)
+        let previousHero = defaults.string(forKey: FeaturedHeroContent.storageKey)
         defer {
             defaults.set(previousOrder, forKey: AppTab.orderStorageKey)
             defaults.set(previousMerge, forKey: HomeLayoutPreferences.mergeContinueAndNextUpKey)
             defaults.set(previousHomeOrder, forKey: HomeRowKind.orderStorageKey)
             defaults.set(previousHomeHidden, forKey: HomeRowKind.hiddenStorageKey)
+            defaults.set(previousHero, forKey: FeaturedHeroContent.storageKey)
         }
 
         defaults.set(AppTab.defaultOrderRaw, forKey: AppTab.orderStorageKey)
@@ -24,7 +26,8 @@ final class LibraryAdminTests: XCTestCase {
             DisplayPreferencesSync.tabOrderKey: "home,library,movies",
             DisplayPreferencesSync.mergeContinueKey: "true",
             DisplayPreferencesSync.homeRowOrderKey: "genres,featured",
-            DisplayPreferencesSync.homeRowHiddenKey: "upcoming,collections"
+            DisplayPreferencesSync.homeRowHiddenKey: "upcoming,collections",
+            DisplayPreferencesSync.featuredHeroContentKey: FeaturedHeroContent.random.rawValue
         ])
 
         XCTAssertEqual(defaults.string(forKey: AppTab.orderStorageKey), "home,library,movies")
@@ -37,6 +40,11 @@ final class LibraryAdminTests: XCTestCase {
         XCTAssertEqual(
             HomeRowKind.hidden(from: defaults.string(forKey: HomeRowKind.hiddenStorageKey) ?? ""),
             [.upcoming, .collections]
+        )
+        XCTAssertEqual(FeaturedHeroContent.current, .random)
+        XCTAssertEqual(
+            DisplayPreferencesSync.customPrefs()[DisplayPreferencesSync.featuredHeroContentKey],
+            FeaturedHeroContent.random.rawValue
         )
     }
 

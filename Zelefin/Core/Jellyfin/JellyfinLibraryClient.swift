@@ -113,28 +113,6 @@ class JellyfinLibraryClient: @unchecked Sendable {
         await ignoringErrors { try await featuredItems() } ?? []
     }
 
-    /// Latest movies, shows, and episodes for local “new on server” alerts.
-    /// Returns `nil` when every request failed, so a timeout cannot look like an empty library.
-    func recentlyAddedForAlerts() async -> [MediaItem]? {
-        async let movies = ignoringErrors {
-            try await latestMedia(include: [.movie], parentID: nil, fields: ItemMapper.alertFields, limit: 24)
-        }
-        async let shows = ignoringErrors {
-            try await latestMedia(include: [.series], parentID: nil, fields: ItemMapper.alertFields, limit: 24)
-        }
-        async let episodes = ignoringErrors {
-            try await latestMedia(include: [.episode], parentID: nil, fields: ItemMapper.alertFields, limit: 24)
-        }
-        let movieItems = await movies
-        let showItems = await shows
-        let episodeItems = await episodes
-        if movieItems == nil, showItems == nil, episodeItems == nil {
-            return nil
-        }
-        var seen = Set<String>()
-        return ((movieItems ?? []) + (showItems ?? []) + (episodeItems ?? [])).filter { seen.insert($0.id).inserted }
-    }
-
     func markPlayed(itemID: String) async throws {
         _ = try await client.send(Paths.markPlayedItem(itemID: itemID, userID: userID, datePlayed: Date()))
     }
@@ -1288,11 +1266,50 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     private func featuredItems() async throws -> [MediaItem] {
-        async let movies = featuredLatest(include: [.movie])
-        async let shows = featuredLatest(include: [.series])
+        switch FeaturedHeroContent.current {
+        case .random:
+            return try await featuredRandom()
+        case .favorites:
+            return featuredFavorites(from: await browseCatalog(kind: .favorites, libraries: []))
+        case .recentlyAdded:
+            async let movies = featuredLatest(include: [.movie])
+            async let shows = featuredLatest(include: [.series])
+            return HomeLayoutPreferences.featured(
+                latestMovies: try await movies,
+                latestShows: try await shows
+            )
+        case .continueWatching, .nextUp, .recommendations, .recentlyWatched:
+            return []
+        }
+    }
+
+    private func featuredRandom() async throws -> [MediaItem] {
+        let result = try await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    limit: 24,
+                    isRecursive: true,
+                    fields: ItemMapper.listFields,
+                    includeItemTypes: [.movie, .series],
+                    sortBy: [.random],
+                    enableUserData: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
+                )
+            )
+        ).value
+        let items = (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
         return HomeLayoutPreferences.featured(
-            latestMovies: try await movies,
-            latestShows: try await shows
+            latestMovies: items.filter { $0.kind == .movie },
+            latestShows: items.filter { $0.kind == .series }
+        )
+    }
+
+    private func featuredFavorites(from items: [MediaItem]) -> [MediaItem] {
+        HomeLayoutPreferences.featured(
+            latestMovies: items.filter { $0.kind == .movie },
+            latestShows: items.filter { $0.kind == .series }
         )
     }
 

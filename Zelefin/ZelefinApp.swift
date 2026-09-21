@@ -31,7 +31,6 @@ final class ZelefinAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         LibraryAlertCenter.shared.prepare()
-        LibraryAlertMonitor.registerBackgroundRefresh()
         return true
     }
 

@@ -131,8 +131,9 @@ extension Notification.Name {
 @MainActor
 enum ProfilePresentation {
     static func show(_ destination: ProfileSheet) {
-        Task { @MainActor in
-            await waitUntilNoModal()
+        // The avatar menu is a presented popover. Waiting on any presented
+        // controller (the old path) sat on that menu and dropped HID handlers.
+        DispatchQueue.main.async {
             NotificationCenter.default.post(name: .zelefinProfileSheet, object: destination)
         }
     }
@@ -143,7 +144,10 @@ enum ProfilePresentation {
 
     static func replace(with destination: ProfileSheet) {
         dismiss()
-        show(destination)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(280))
+            NotificationCenter.default.post(name: .zelefinProfileSheet, object: destination)
+        }
     }
 
     static func promptPIN(named name: String) async -> String? {
@@ -195,10 +199,11 @@ enum ProfilePresentation {
     }
 
     private static func waitUntilNoModal() async {
+        guard hasPresentedViewController else { return }
         for _ in 0..<40 {
             try? await Task.sleep(for: .milliseconds(50))
             if !hasPresentedViewController {
-                try? await Task.sleep(for: .milliseconds(300))
+                try? await Task.sleep(for: .milliseconds(200))
                 return
             }
         }
@@ -208,13 +213,9 @@ enum ProfilePresentation {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
-            .contains { !$0.isHidden && isPresenting(from: $0.rootViewController) }
-    }
-
-    private static func isPresenting(from controller: UIViewController?) -> Bool {
-        guard let controller else { return false }
-        if controller.presentedViewController != nil { return true }
-        return controller.children.contains { isPresenting(from: $0) }
+            .contains { window in
+                !window.isHidden && window.rootViewController?.presentedViewController != nil
+            }
     }
 }
 
@@ -475,8 +476,10 @@ private final class ProfileMenuAction: @unchecked Sendable {
     }
 
     func run() {
-        Task { @MainActor in
-            perform()
+        DispatchQueue.main.async {
+            Task { @MainActor in
+                self.perform()
+            }
         }
     }
 }

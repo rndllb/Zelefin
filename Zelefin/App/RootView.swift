@@ -6,7 +6,6 @@ struct RootView: View {
     @Environment(DeepLinkStore.self) private var deepLinks
     @Environment(PlusEntitlement.self) private var plus
     @Environment(\.openURL) private var openURL
-    @Environment(\.scenePhase) private var scenePhase
     @State private var profileSheet: ProfileSheet?
 
     var body: some View {
@@ -76,7 +75,6 @@ struct RootView: View {
                 await plus.start()
                 await session.restore()
                 plus.isReviewDemo = session.isReviewDemo
-                startLibraryAlertMonitor()
                 consumePendingNotificationDestination()
                 await deepLinks.flushPending(session: session)
             }
@@ -111,12 +109,6 @@ struct RootView: View {
             guard session.isSignedIn, plus.isUnlocked else { return }
             profileSheet = .scheduledTasks
         }
-    }
-
-    private func startLibraryAlertMonitor() {
-        LibraryAlertMonitor.shared.attach(session: session)
-        guard session.isSignedIn, !session.isRestoring, !session.isReviewDemo else { return }
-        LibraryAlertMonitor.shared.start(session: session)
     }
 }
 
@@ -182,28 +174,14 @@ private struct RootSessionLifecycleModifier: ViewModifier {
                 if !signedIn {
                     profileSheet = nil
                     deepLinks.dismissPresentedItem()
-                    LibraryAlertMonitor.shared.stop()
                 } else {
                     Task { await deepLinks.flushPending(session: session) }
-                    startLibraryAlertMonitor()
                 }
-            }
-            .onChange(of: session.isAdministrator) { _, isAdmin in
-                guard isAdmin else { return }
-                startLibraryAlertMonitor()
             }
             .onChange(of: scenePhase) { _, phase in
                 guard session.isSignedIn, !session.isReviewDemo else { return }
-                LibraryAlertMonitor.shared.attach(session: session)
-                switch phase {
-                case .active:
-                    LibraryAlertMonitor.scheduleBackgroundRefresh()
+                if phase == .active {
                     consumePendingNotificationDestination()
-                    Task { await LibraryAlertMonitor.shared.poll(session: session) }
-                case .background:
-                    Task { await LibraryAlertMonitor.shared.pollWhenEnteringBackground() }
-                default:
-                    break
                 }
             }
             .onOpenURL { url in
@@ -219,11 +197,5 @@ private struct RootSessionLifecycleModifier: ViewModifier {
             guard session.isSignedIn, plus.isUnlocked else { return }
             profileSheet = .scheduledTasks
         }
-    }
-
-    private func startLibraryAlertMonitor() {
-        LibraryAlertMonitor.shared.attach(session: session)
-        guard session.isSignedIn, !session.isRestoring, !session.isReviewDemo else { return }
-        LibraryAlertMonitor.shared.start(session: session)
     }
 }

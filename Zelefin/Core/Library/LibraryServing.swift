@@ -21,7 +21,6 @@ protocol LibraryServing: AnyObject, Sendable {
     func nextUpItemsIgnoringErrors() async -> [MediaItem]
     func recentlyWatchedIgnoringErrors() async -> [MediaItem]
     func featuredItemsIgnoringErrors() async -> [MediaItem]
-    func recentlyAddedForAlerts() async -> [MediaItem]?
     func libraryHomeIgnoringErrors() async -> (libraries: [MediaLibrary], sections: [HomeSection])
     func collectionsSectionIgnoringErrors() async -> HomeSection?
     func genresSectionIgnoringErrors() async -> HomeSection?

@@ -115,6 +115,38 @@ enum HomeFeedItem: Identifiable, Hashable, Sendable {
     }
 }
 
+enum FeaturedHeroContent: String, CaseIterable, Identifiable, Sendable {
+    case recentlyAdded
+    case random
+    case continueWatching
+    case nextUp
+    case recommendations
+    case recentlyWatched
+    case favorites
+
+    static let storageKey = "zelefin.home-hero-content"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .recentlyAdded: "Recently Added"
+        case .random: "Random"
+        case .continueWatching: "Continue Watching"
+        case .nextUp: "Next Up"
+        case .recommendations: "Recommendations"
+        case .recentlyWatched: "Recently Watched"
+        case .favorites: "Favorites"
+        }
+    }
+
+    static var current: FeaturedHeroContent {
+        let raw = UserDefaults.standard.string(forKey: storageKey) ?? ""
+        if let value = FeaturedHeroContent(rawValue: raw) { return value }
+        return .recentlyAdded
+    }
+}
+
 enum HomeLayoutPreferences {
     static let mergeContinueAndNextUpKey = "zelefin.merge-continue-next-up"
 
@@ -277,6 +309,32 @@ enum HomeLayoutPreferences {
 
     static func featured(latestMovies: [MediaItem], latestShows: [MediaItem]) -> [MediaItem] {
         interleaveForHero(rankedForHero(latestMovies), rankedForHero(latestShows), limit: featuredLimit)
+    }
+
+    static func hero(
+        recentlyAdded: [MediaItem],
+        continueWatching: [MediaItem],
+        nextUp: [MediaItem],
+        recentlyWatched: [MediaItem],
+        recommendations: [HomeSection],
+        source: FeaturedHeroContent = .current
+    ) -> [MediaItem] {
+        let pool: [MediaItem]
+        switch source {
+        case .recentlyAdded, .random, .favorites:
+            pool = recentlyAdded
+        case .continueWatching:
+            pool = continueWatching
+        case .nextUp:
+            pool = nextUp
+        case .recentlyWatched:
+            pool = recentlyWatched
+        case .recommendations:
+            pool = recommendations.flatMap(\.items)
+        }
+        var seen = Set<String>()
+        let unique = pool.filter { seen.insert($0.id).inserted }
+        return Array(rankedForHero(unique).prefix(featuredLimit))
     }
 
     /// Home-feed hero URLs are requested at `image_size=large`; catalog cards are not.

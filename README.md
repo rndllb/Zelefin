@@ -23,7 +23,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Home
 
-- Featured hero of latest movies and shows
+- Featured hero from Interface settings: recently added, random, continue watching, next up, recommendations, recently watched, or favorites
 - Continue Watching and Next Up, or one combined Continue Watching row (Interface settings)
 - Reorder or hide Home rows in Interface settings, including Featured, recommendations, recently added, collections, and genres (Zelefin Plus). Without Plus, Home is Featured, Continue Watching, Recently Added Movies, and Recently Added Shows, in that order
 - Because You Watched and Because You Liked rows when Jellyfin returns them
@@ -69,15 +69,14 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Notifications
 
-Zelefin watches the server from this device. For lock-screen alerts while the app stays closed, install the [Zelefin plugin](https://github.com/rndllb/Zelefin-Plugin) on Jellyfin.
+Lock-screen alerts need the [Zelefin plugin](https://github.com/rndllb/Zelefin-Plugin) on this Jellyfin server. Without it, this app does not watch the server or post banners.
 
-- New movies, shows, and episodes added after this device has already seen the library: a banner on this iPhone or iPad, and tapping it opens that title
-- Signing out and back in does not replay titles that were already on the server
+- Settings → Notifications explains what the plugin does and lets a Jellyfin administrator install it now
+- New movies, shows, and episodes: a banner on this iPhone or iPad, and tapping it opens that title
 - Administrators also get streams started, users coming online on another device, scheduled tasks starting, and new Seerr requests when Seerr is signed in under Plugins
-- Settings → Notifications to turn each kind on or off
-- Stream and online alerts follow Jellyfin session updates while the app is open; library adds also fire when Jellyfin reports a library change
-- The plugin is optional. This iPhone still checks Jellyfin while the app is open and when iOS allows a background refresh. The plugin adds Apple Push while the app is fully closed. You do not paste an Apple key on the server. Uninstalling the plugin does not turn off the on-device alerts; use Settings → Notifications for that, and restart Jellyfin so the server unloads the plugin
-- Silo has no Zelefin plugin. This device checks that server itself; lock-screen delivery depends on iOS background time
+- Settings → Notifications to turn banners on or off after the plugin is installed
+- You do not paste an Apple key on the server. Restart Jellyfin after you install or remove the plugin
+- Silo has no Zelefin plugin, so notifications are not available on that server
 - Privacy, terms, and support: [zelefin.app/privacy](https://zelefin.app/privacy), [zelefin.app/terms](https://zelefin.app/terms), [zelefin.app/support](https://zelefin.app/support)
 
 ### Playback
@@ -110,7 +109,7 @@ Zelefin watches the server from this device. For lock-screen alerts while the ap
 
 Settings → Plugins shows what this Jellyfin server actually has installed. The first-sign-in setup can add the Zelefin catalog and install the companion plugin for administrators, the same way Neptune does.
 
-- **Zelefin** — Companion plugin for lock-screen alerts, Seerr URL and API key, and Intro Skipper defaults. First-time setup offers Install Plugin to admins. You can also add `https://raw.githubusercontent.com/rndllb/Zelefin-Plugin/main/manifest.json` in Jellyfin → Dashboard → Plugins → Catalog. Admins do not need an Apple Developer account.
+- **Zelefin** — Required companion plugin for lock-screen alerts. Also stores Seerr URL and API key and Intro Skipper defaults. Settings → Notifications and first-time setup offer Install Plugin to admins. You can also add `https://raw.githubusercontent.com/rndllb/Zelefin-Plugin/main/manifest.json` in Jellyfin → Dashboard → Plugins → Catalog. Admins do not need an Apple Developer account.
 - **Intro Skipper** — Skip Intro and Skip Credits during playback. Optional auto-skip for intros and credits.
 - **Open Subtitles** — Search and download a subtitle onto the server from More on a movie or episode, Search, or the player. Requires an administrator or a user with Edit Subtitles. Sidecar files (`.srt` and similar) show in the subtitle list on Direct Play. The title page refreshes after a download so you do not have to leave and come back.
 - **Jellyfin Enhanced** — Remove from Continue Watching or Next Up without changing watched state. TMDB reviews, household reviews, and awards on the title page. Detection uses the plugin list, or `/JellyfinEnhanced/version` when `/Plugins` is admin-only.
@@ -201,6 +200,7 @@ Silo (when this login can administer the server):
 ### Interface
 
 - Accent color for buttons, highlights, and icons. Cyan (the login button) is the default; presets and a custom hex are in Interface settings
+- Featured hero source: recently added, random, continue watching, next up, recommendations, recently watched, or favorites
 - Combine Continue Watching and Next Up
 - Drag to reorder Home rows and turn any row off, including Featured
 - Drag to reorder tabs, hide any tab except Home, reset to defaults
@@ -213,7 +213,7 @@ Sign in, browse, and Play stay free, including HDR, Dolby Vision, Atmos, and 4K.
 
 Plus unlocks downloads (titles already on this device still play), extra accounts, Home row and tab layout, Live TV, sessions and play on another device, SyncPlay, and admin tools. Intro Skipper, Open Subtitles, Jellyfin Enhanced, Seerr, and the Zelefin notifications plugin stay free.
 
-Settings → Zelefin Plus to subscribe or restore. In Debug builds, About → Plus switches Free, Trial, Annual, Lifetime, or StoreKit without a purchase.
+Settings → Zelefin Plus to subscribe or restore. About → Debug → Plus switches Locked, Trial, Annual, Lifetime, or Fake Store without a purchase. New installs start on Annual until that picker is changed.
 
 ## Open in Xcode
 

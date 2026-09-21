@@ -126,6 +126,7 @@ enum DisplayPreferencesSync {
     static let mergeContinueKey = "mergeContinueNextUp"
     static let homeRowOrderKey = "homeRowOrder"
     static let homeRowHiddenKey = "homeRowHidden"
+    static let featuredHeroContentKey = "featuredHeroContent"
 
     static func apply(_ prefs: [String: String]) {
         if let order = prefs[tabOrderKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
@@ -144,6 +145,10 @@ enum DisplayPreferencesSync {
                 forKey: HomeRowKind.hiddenStorageKey
             )
         }
+        if let hero = prefs[featuredHeroContentKey],
+           let content = FeaturedHeroContent(rawValue: hero) {
+            UserDefaults.standard.set(content.rawValue, forKey: FeaturedHeroContent.storageKey)
+        }
     }
 
     static func customPrefs() -> [String: String] {
@@ -151,7 +156,8 @@ enum DisplayPreferencesSync {
             tabOrderKey: UserDefaults.standard.string(forKey: AppTab.orderStorageKey) ?? AppTab.defaultOrderRaw,
             mergeContinueKey: HomeLayoutPreferences.mergeContinueAndNextUp ? "true" : "false",
             homeRowOrderKey: UserDefaults.standard.string(forKey: HomeRowKind.orderStorageKey) ?? HomeRowKind.defaultOrderRaw,
-            homeRowHiddenKey: UserDefaults.standard.string(forKey: HomeRowKind.hiddenStorageKey) ?? ""
+            homeRowHiddenKey: UserDefaults.standard.string(forKey: HomeRowKind.hiddenStorageKey) ?? "",
+            featuredHeroContentKey: FeaturedHeroContent.current.rawValue
         ]
     }
 }

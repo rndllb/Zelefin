@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(PlusEntitlement.self) private var plus
     @State private var showsLibraryScanConfirm = false
     @State private var libraryScanMessage: String?
+    @State private var cacheSubtitle: String?
 
     var body: some View {
         List {
@@ -19,7 +20,12 @@ struct SettingsView: View {
         }
         .zelefinSettingsChrome(title: "Settings")
         .task {
-            await session.detectIntroSkipper()
+            async let capabilities: Void = session.detectIntroSkipper()
+            let usage = await Task.detached(priority: .utility) {
+                CacheInventory.settingsUsageLabel()
+            }.value
+            cacheSubtitle = usage
+            await capabilities
         }
         .confirmationDialog(
             "Scan every library?",
@@ -220,6 +226,8 @@ struct SettingsView: View {
         @ViewBuilder destination: () -> Destination
     ) -> some View {
         if let feature, !plus.isUnlocked {
+            
+            
             Button {
                 plus.request(feature)
             } label: {
@@ -288,15 +296,10 @@ struct SettingsView: View {
     }
 
     private var notificationsSubtitle: String? {
-        guard LibraryAlertSettings.isEnabled else { return "Off" }
-        let parts = [
-            LibraryAlertSettings.libraryAdds ? "New titles" : nil,
-            session.isAdministrator && LibraryAlertSettings.streams ? "Streams" : nil,
-            session.isAdministrator && LibraryAlertSettings.online ? "Online" : nil,
-            session.isAdministrator && LibraryAlertSettings.requests && session.isDiscoverAvailable ? "Requests" : nil,
-            session.isAdministrator && LibraryAlertSettings.scheduledTasks ? "Tasks" : nil
-        ].compactMap { $0 }
-        return parts.isEmpty ? "On" : parts.joined(separator: " · ")
+        if session.usesSilo || session.isReviewDemo || !session.companionAvailable {
+            return "Plugin required"
+        }
+        return LibraryAlertSettings.isEnabled ? "On" : "Off"
     }
 
     private var pluginsSubtitle: String? {
@@ -323,14 +326,6 @@ struct SettingsView: View {
         let name = session.session?.displayServer ?? session.serverName ?? ""
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private var cacheSubtitle: String? {
-        let images = ArtworkCache.shared.usage().total.bytes
-        let metadata = CacheInventory.metadataUsage().total.bytes
-        let total = images + metadata
-        guard total > 0 else { return nil }
-        return CacheInventory.formatBytes(total)
     }
 
     private var syncPlaySubtitle: String? {
@@ -360,7 +355,7 @@ struct SettingsAboutView: View {
         List {
             Section {
                 VStack(spacing: 14) {
-                    SettingsHeroGlyph(systemImage: "sparkles.tv.fill")
+                    ConnectBrandMark(size: 120)
                     Text("Zelefin")
                         .font(.title2.weight(.semibold))
                     SettingsChip(
@@ -388,7 +383,6 @@ struct SettingsAboutView: View {
                 .settingsCardRow()
             }
 
-            #if DEBUG
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     SettingsFieldLabel(title: "Plus")
@@ -408,9 +402,8 @@ struct SettingsAboutView: View {
             } header: {
                 Text("Debug")
             } footer: {
-                Text("Locked makes Plus features ask you to pay. Then tap Live TV, a download, or an extra Home row. Fake Store is only for trying a pretend purchase.")
+                Text("Locked makes Plus features ask you to pay. Then tap Live TV, a download, or an extra Home row. Fake Store is only for trying a pretend purchase. New installs start on Annual until this is changed.")
             }
-            #endif
         }
         .zelefinSettingsChrome(title: "About")
         .sheet(item: $legalPage) { page in

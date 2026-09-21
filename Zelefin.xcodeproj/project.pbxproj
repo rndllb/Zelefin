@@ -166,7 +166,6 @@
 		D4B8DE13D6D16B7698FA8DD0 /* DownloadedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA44AD1DF2E3D8CBCFA598B /* DownloadedItemsView.swift */; };
 		D4E18538C606F896F7F34E23 /* JellyfinServerCapabilitiesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B59BE005E89E43A1FDAC551F /* JellyfinServerCapabilitiesTests.swift */; };
 		D79F783E47DC6967AFD6748F /* ItemDetailSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA915B636DA7F6AA5CE759D /* ItemDetailSnapshotStore.swift */; };
-		D81984E984786FB4148320B9 /* LibraryAlertMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA329334546961B3B26B0651 /* LibraryAlertMonitor.swift */; };
 		D9759B1E1966EC7C80A80B6B /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA790EDE34C897EBDDCBF6A8 /* HomeView.swift */; };
 		DB057223116A7E84F8C91524 /* JellyfinUserAdminClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 949B73625DCE33CFA6AB9D8A /* JellyfinUserAdminClient.swift */; };
 		DB541D3D8049970601FC31CE /* ArtworkURLBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6793B2714E2FA4DBFD1DA6D0 /* ArtworkURLBuilder.swift */; };
@@ -272,7 +271,7 @@
 		4EB149618554E68DACFC0809 /* Zelefin.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = Zelefin.icon; sourceTree = "<group>"; };
 		4EFFB00A3412B2338103E08D /* PushNotificationCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationCenter.swift; sourceTree = "<group>"; };
 		4FCFE829D2A73C6F62712BCC /* PlusPaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusPaywallView.swift; sourceTree = "<group>"; };
-		50A15815C057CE45878100BC /* Zelefin.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Zelefin.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		50A15815C057CE45878100BC /* Zelefin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zelefin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		51D4B85B6B89D4CCF6A65D35 /* SiloQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloQuality.swift; sourceTree = "<group>"; };
 		52F6473A39AADF9EEFBB2882 /* TickClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickClock.swift; sourceTree = "<group>"; };
 		533892AF69D1B7A279174A72 /* SeerrDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeerrDiscoverView.swift; sourceTree = "<group>"; };
@@ -358,7 +357,6 @@
 		B59BE005E89E43A1FDAC551F /* JellyfinServerCapabilitiesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinServerCapabilitiesTests.swift; sourceTree = "<group>"; };
 		B6359B9FE2041843E6943C81 /* RemoteControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlTests.swift; sourceTree = "<group>"; };
 		B7AB477E9A74428231ECD810 /* HTTPRangeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPRangeSupport.swift; sourceTree = "<group>"; };
-		BA329334546961B3B26B0651 /* LibraryAlertMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlertMonitor.swift; sourceTree = "<group>"; };
 		BBE9FA471A5F2AEFB32BF9AC /* JellyfinEnhancedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinEnhancedTests.swift; sourceTree = "<group>"; };
 		BD5FA036EDA5443231414E95 /* MediaItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItemTests.swift; sourceTree = "<group>"; };
 		C2660D221D9BE4C888A4EBA3 /* OpenSubtitlesClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenSubtitlesClient.swift; sourceTree = "<group>"; };
@@ -700,7 +698,6 @@
 			children = (
 				82E2AE060FC5F2C11DFE9D1F /* LibraryAlert.swift */,
 				4E14D0E5EC6A8906776644E7 /* LibraryAlertCenter.swift */,
-				BA329334546961B3B26B0651 /* LibraryAlertMonitor.swift */,
 				98FA38B6CC085E512CB89DB8 /* LibraryAlertSettings.swift */,
 			);
 			path = Alerts;
@@ -919,6 +916,7 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/scripts/generate-aether-dsyms.sh",
 			);
 			name = "Generate Aether dSYMs";
 			outputFileListPaths = (
@@ -993,7 +991,6 @@
 				6AC9E6B35730A2A513BBCC80 /* LibraryAdminModels.swift in Sources */,
 				FF1D639D93CCC0A026320507 /* LibraryAlert.swift in Sources */,
 				3382F8A6AA4090B378A2FDF2 /* LibraryAlertCenter.swift in Sources */,
-				D81984E984786FB4148320B9 /* LibraryAlertMonitor.swift in Sources */,
 				A98FD0130326C0FCA790CA68 /* LibraryAlertSettings.swift in Sources */,
 				A88E062560AB938DB77BE27C /* LibraryMediaViews.swift in Sources */,
 				AADEE287DB7D03A58B475665 /* LibraryServing.swift in Sources */,
@@ -1146,12 +1143,16 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Zelefin/Info.plist;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home.";
-				INFOPLIST_KEY_UIBackgroundModes = "audio fetch";
+				INFOPLIST_KEY_UIBackgroundModes = "audio remote-notification";
+				INFOPLIST_KEY_UILaunchScreen_UIColorName = LaunchBackground;
+				INFOPLIST_KEY_UILaunchScreen_UIImageName = LaunchMark;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1277,12 +1278,16 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Zelefin/Info.plist;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home.";
-				INFOPLIST_KEY_UIBackgroundModes = "audio fetch";
+				INFOPLIST_KEY_UIBackgroundModes = "audio remote-notification";
+				INFOPLIST_KEY_UILaunchScreen_UIColorName = LaunchBackground;
+				INFOPLIST_KEY_UILaunchScreen_UIImageName = LaunchMark;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

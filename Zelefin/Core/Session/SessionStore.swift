@@ -1259,6 +1259,11 @@ final class SessionStore {
         await ZelefinCompanionClient(client: client).registerDevice(token: token)
     }
 
+    func registerCompanionPushIfNeeded() async {
+        guard companionAvailable else { return }
+        await registerCompanionPush()
+    }
+
     private func registerCompanionPush() async {
         _ = await PushNotificationCenter.requestPermissionIfNeeded()
         if let token = PushNotificationCenter.storedToken {
@@ -1286,9 +1291,8 @@ final class SessionStore {
             let user = try await client.send(Paths.getCurrentUser).value
             isAdministrator = user.policy?.isAdministrator == true
             enableSubtitleManagement = user.policy?.enableSubtitleManagement == true
-            LibraryAlertSettings.lastKnownAdministrator = isAdministrator
         } catch {
-            // Keep the last known admin flag so a blip cannot stop session alerts.
+            // Keep the last known admin flag so a blip cannot hide admin tools.
         }
     }
 
@@ -1300,7 +1304,6 @@ final class SessionStore {
         }
         isAdministrator = (session?.userRole ?? "").lowercased() == "admin"
             && (session?.isPrimaryProfile ?? false)
-        LibraryAlertSettings.lastKnownAdministrator = isAdministrator
     }
 
     private func refreshHouseholdProfiles() async {
@@ -1323,7 +1326,6 @@ final class SessionStore {
             session = saved
             persist(saved)
             isAdministrator = (saved.userRole ?? "").lowercased() == "admin" && saved.isPrimaryProfile
-            LibraryAlertSettings.lastKnownAdministrator = isAdministrator
         }
     }
 
@@ -1626,7 +1628,13 @@ final class SessionStore {
 
         guard !sections.isEmpty else { return }
         homeLayout = HomeLayout(
-            featured: featured,
+            featured: HomeLayoutPreferences.hero(
+                recentlyAdded: featured,
+                continueWatching: continueWatching,
+                nextUp: nextUp,
+                recentlyWatched: recentlyWatched,
+                recommendations: recommendations
+            ),
             sections: sections
         )
         homeError = nil

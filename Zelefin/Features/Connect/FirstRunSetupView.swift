@@ -202,7 +202,7 @@ struct FirstRunSetupView: View {
                 title: "Zelefin plugin",
                 subtitle: session.companionAvailable
                     ? "This server already has the Zelefin plugin. Lock-screen alerts can arrive while the app is closed."
-                    : "Install the companion plugin so this iPhone can get new titles and streams while Zelefin is closed. Jellyfin needs a restart after install."
+                    : "Notifications need this plugin. It can alert this iPhone when titles are added or a stream starts, including while Zelefin is closed. Jellyfin needs a restart after install."
             )
             VStack(alignment: .leading, spacing: 0) {
                 HStack {

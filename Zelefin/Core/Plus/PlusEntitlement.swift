@@ -204,7 +204,7 @@ final class PlusEntitlement {
 
     init() {
         let raw = UserDefaults.standard.string(forKey: PlusDebugOverride.storageKey) ?? ""
-        debugOverride = PlusDebugOverride(rawValue: raw) ?? .free
+        debugOverride = PlusDebugOverride(rawValue: raw) ?? .plus
         applyStatus()
     }
 
@@ -321,15 +321,9 @@ final class PlusEntitlement {
     }
 
     private func applyStatus() {
-        let override: PlusDebugOverride?
-        #if DEBUG
-        override = debugOverride
-        #else
-        override = nil
-        #endif
         status = PlusStatusResolver.status(
             isReviewDemo: isReviewDemo,
-            debugOverride: override,
+            debugOverride: debugOverride,
             hasLifetime: hasLifetime,
             hasAnnual: hasAnnual,
             annualIsTrial: annualIsTrial
