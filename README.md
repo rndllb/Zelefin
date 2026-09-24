@@ -43,6 +43,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Sort by name, date added, date played, release date, runtime, play count, ratings, parental rating, or random
 - Filter by played, unplayed, favorite, continue watching, genres, years, studios, tags, languages, ratings, subtitles, trailers, extras, and video kind (SD / HD / 4K, DVD, Blu-ray, ISO)
 - Library lists movies, shows, and Live TV on the server, plus Collections, Favorites, Downloaded, and Genres. Music, playlists, books, photos, home videos, and other Jellyfin libraries stay off this list
+- Each library room shows a short preview of recent titles. Hold a room and drag to reorder it. The eye hides it from Library
 - Live TV opens On Now, Guide, Channels, and Recordings
 - Indexing status sits under the header while the catalog is still catching up
 
@@ -119,9 +120,11 @@ Settings → Plugins shows what this Jellyfin server actually has installed. The
 ### Search and requests
 
 - Search this server’s library (movies, shows, people, collections, and Live TV on Jellyfin)
+- Genre cards with a mark per genre. Music and Music Video stay hidden. Combined Action & Adventure is hidden. Game Show hyphen and space spellings collapse to one card
 - Discover and request through Seerr or Jellyseerr on Jellyfin (sign in under Plugins), or through Silo’s request plugins from Search
-- Trending, popular, upcoming, genres, studios, and networks
+- Trending, popular, upcoming, genres, studios, and networks. Television genres such as News, Soap, and Talk request TV, not movies
 - Request movies and shows with Radarr / Sonarr server, quality, folder, and season picks
+- A pending request can be approved, declined, or edited first. Titles already on the server show a checkmark and do not open a request
 
 ### Downloads
 
@@ -133,7 +136,8 @@ Settings → Plugins shows what this Jellyfin server actually has installed. The
 
 - Who is connected and what they are playing
 - Transcode details (codec, resolution, bitrate, reason)
-- Remote control of other clients that accept it (play, pause, skip, volume)
+- Remote control of other clients that accept it (play, pause, skip, volume), under the progress bar on that session
+- Message a connected session. The other client shows it as a display message from Zelefin
 - This device also accepts remote control from Jellyfin while the socket stays up
 - This device reports its marketing model name to Jellyfin, such as iPhone 17 Pro
 
