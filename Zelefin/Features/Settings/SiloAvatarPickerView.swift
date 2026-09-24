@@ -174,20 +174,34 @@ struct SiloAvatarPickerView: View {
     }
 
     private func upload(_ item: PhotosPickerItem) async {
+        let image: UIImage
+        do {
+            image = try await PickedProfileImage.load(item)
+        } catch is CancellationError {
+            pickerItem = nil
+            return
+        } catch {
+            pickerItem = nil
+            errorMessage = error.localizedDescription
+            return
+        }
+        guard let jpeg = ProfileImageEncoder.jpegData(from: image) else {
+            pickerItem = nil
+            errorMessage = "Zelefin could not read that photo."
+            return
+        }
         isSaving = true
         errorMessage = nil
+        localPreview = image
         defer {
             isSaving = false
             pickerItem = nil
         }
         do {
-            let image = try await PickedProfileImage.load(item)
-            guard let jpeg = ProfileImageEncoder.jpegData(from: image) else {
-                throw ZelefinError.server("Zelefin could not read that photo.")
-            }
-            localPreview = image
             try await session.updateSiloAvatar(jpeg: jpeg)
             dismiss()
+        } catch is CancellationError {
+            localPreview = nil
         } catch {
             localPreview = nil
             errorMessage = error.localizedDescription

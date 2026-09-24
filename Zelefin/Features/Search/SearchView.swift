@@ -72,7 +72,6 @@ struct SearchView: View {
         .ignoresSafeArea(edges: .top)
         .animation(ZelefinMotion.sidebarChrome, value: searchChromeTopInset)
         .animation(ZelefinMotion.sidebarChrome, value: isSidebarVisible)
-        .animation(.smooth(duration: 0.25), value: isSearchSessionActive)
         .onChange(of: searchFieldFocused) { _, focused in
             if !focused, term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 dismissSearchKeyboard()
@@ -116,9 +115,13 @@ private struct SearchTabChrome: View {
         return isSearchSessionActive
     }
 
+    private var chromeVisible: Bool {
+        headerVisible || isSearchSessionActive
+    }
+
     var body: some View {
         VStack(spacing: 10) {
-            if showsTitleRow, headerVisible {
+            if showsTitleRow {
                 HStack(spacing: 12) {
                     Text("Search")
                         .font(.largeTitle.weight(.bold))
@@ -131,7 +134,10 @@ private struct SearchTabChrome: View {
                         ProfileMenu(diameter: 45)
                     }
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .opacity(headerVisible ? 1 : 0)
+                .offset(y: headerVisible ? 0 : -10)
+                .allowsHitTesting(headerVisible)
+                .accessibilityHidden(!headerVisible)
             }
 
             HStack(spacing: 10) {
@@ -147,7 +153,9 @@ private struct SearchTabChrome: View {
                     .focused($searchFieldFocused)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .keyboardType(.webSearch)
                     .submitLabel(.search)
+                    .background(SearchFieldInputConfigurator())
                     .foregroundStyle(.white)
                     .tint(.white)
                     if !term.isEmpty {
@@ -163,7 +171,7 @@ private struct SearchTabChrome: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .zelefinLiquidGlassCapsule()
+                .zelefinLiquidGlassCapsule(interactive: false)
 
                 if isSearchSessionActive {
                     Button {
@@ -189,10 +197,17 @@ private struct SearchTabChrome: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.86)))
                 }
             }
+            .opacity(chromeVisible ? 1 : 0)
+            .offset(y: chromeVisible ? 0 : -10)
+            .allowsHitTesting(chromeVisible)
+            .accessibilityHidden(!chromeVisible)
 
             if showsScopeBar {
                 SearchScopeBar(scope: $scope)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .opacity(chromeVisible ? 1 : 0)
+                    .offset(y: chromeVisible ? 0 : -10)
+                    .allowsHitTesting(chromeVisible)
+                    .accessibilityHidden(!chromeVisible)
             }
         }
         .padding(.horizontal, 16)
@@ -201,10 +216,12 @@ private struct SearchTabChrome: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { height in
+            guard abs(fieldHeight - height) > 0.5 else { return }
             fieldHeight = height
         }
         .animation(.smooth(duration: 0.25), value: isSearchSessionActive)
         .animation(.smooth(duration: 0.22), value: headerVisible)
+        .animation(.smooth(duration: 0.22), value: chromeVisible)
         .animation(.easeInOut(duration: 0.22), value: searchFieldFocused)
         .animation(ZelefinMotion.sidebarChrome, value: showsProfile)
     }
@@ -239,10 +256,82 @@ private struct SearchScopeBar: View {
             }
         }
         .padding(3)
-        .zelefinLiquidGlassCapsule()
+        .zelefinLiquidGlassCapsule(interactive: false)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Search source")
+    }
+}
+
+/// Keeps the keyboard candidate bar from laying out at zero width the first time Search appears.
+private struct SearchFieldInputConfigurator: UIViewRepresentable {
+    func makeUIView(context: Context) -> ConfigView { ConfigView() }
+    func updateUIView(_ uiView: ConfigView, context: Context) { uiView.configure() }
+
+    final class ConfigView: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            isUserInteractionEnabled = false
+            backgroundColor = .clear
+            configure()
+        }
+
+        func configure() {
+            DispatchQueue.main.async { [weak self] in
+                guard let field = self?.nearestTextField() else { return }
+                field.autocorrectionType = .no
+                field.spellCheckingType = .no
+                field.smartQuotesType = .no
+                field.smartDashesType = .no
+                field.smartInsertDeleteType = .no
+                if #available(iOS 17.0, *) {
+                    field.inlinePredictionType = .no
+                }
+            }
+        }
+
+        private func nearestTextField() -> UITextField? {
+            var view: UIView? = superview
+            while let current = view {
+                if let field = current.firstDescendantTextField() { return field }
+                view = current.superview
+            }
+            return nil
+        }
+    }
+}
+
+private extension UIView {
+    func firstDescendantTextField() -> UITextField? {
+        if let field = self as? UITextField { return field }
+        for child in subviews {
+            if let field = child.firstDescendantTextField() { return field }
+        }
+        return nil
+    }
+}
+
+@MainActor
+enum SearchFieldWarmup {
+    private static var didWarm = false
+
+    static func perform() {
+        guard !didWarm else { return }
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first else { return }
+        didWarm = true
+        let field = UITextField(frame: .zero)
+        field.autocorrectionType = .no
+        field.spellCheckingType = .no
+        if #available(iOS 17.0, *) {
+            field.inlinePredictionType = .no
+        }
+        field.inputView = UIView(frame: .zero)
+        field.isHidden = true
+        window.addSubview(field)
+        field.becomeFirstResponder()
+        field.resignFirstResponder()
+        field.removeFromSuperview()
     }
 }
 
@@ -286,7 +375,6 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable, Sendable {
 enum SearchGenreGrid {
     static let spacing: CGFloat = 12
     static let horizontalInset: CGFloat = 36
-    static let cardScale: CGFloat = 0.92
 
     static func columnCount(gridWidth _: CGFloat, isRegularWidth: Bool, isPortrait: Bool) -> Int {
         if !isRegularWidth { return 3 }
@@ -311,7 +399,6 @@ enum SearchGenreGrid {
 }
 
 private struct SearchGenreTile: View {
-    @Environment(SessionStore.self) private var session
     let genre: MediaItem
     var compact = false
 
@@ -320,17 +407,12 @@ private struct SearchGenreTile: View {
             .aspectRatio(1 / 1.52, contentMode: .fit)
             .overlay {
                 GeometryReader { geo in
-                    let width = floor(geo.size.width * SearchGenreGrid.cardScale)
-                    let height = floor(geo.size.height * SearchGenreGrid.cardScale)
-                    LabeledPortraitCard(
+                    GenrePosterCard(
                         title: genre.name,
-                        imageURL: session.library?.artworkURL(for: genre, style: .labeledPortrait),
-                        washColor: LabeledPortraitCard.genreWash(for: genre.name),
-                        width: width,
-                        height: height,
-                        cornerRadius: compact ? 10 : 14
+                        width: geo.size.width,
+                        height: geo.size.height,
+                        cornerRadius: compact ? 8 : 10
                     )
-                    .frame(width: geo.size.width, height: geo.size.height)
                 }
             }
     }
@@ -413,31 +495,32 @@ private struct SearchPage: View {
                 .padding(.bottom, 32)
             }
         }
-        .scrollDismissesKeyboard(.immediately)
-        .zelefinScrollEdgeBlur()
-        .onScrollGeometryChange(for: CGFloat.self, of: { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top
-        }) { oldDistance, distance in
-            let next = max(0, distance)
+        .scrollDismissesKeyboard(.interactively)
+        .onScrollGeometryChange(for: ScrollSample.self, of: { geometry in
+            ScrollSample(
+                offset: geometry.contentOffset.y,
+                distanceFromBottom: RootPageChrome.distanceFromBottom(geometry)
+            )
+        }) { oldSample, sample in
+            let next = max(0, sample.offset)
             if abs(next - scrollDistance) > 0.5 {
                 scrollDistance = next
             }
             if let headerVisible {
                 let visible = RootPageChrome.headerVisible(
                     offset: next,
-                    previousOffset: max(0, oldDistance),
-                    wasVisible: headerVisible.wrappedValue
+                    previousOffset: max(0, oldSample.offset),
+                    wasVisible: headerVisible.wrappedValue,
+                    distanceFromBottom: sample.distanceFromBottom
                 )
-                if visible != headerVisible.wrappedValue {
+                if visible != headerVisible.wrappedValue, sample.distanceFromBottom > 80 {
                     withAnimation(.smooth(duration: 0.22)) {
                         headerVisible.wrappedValue = visible
                     }
                 }
             }
-            if next > 6 {
-                DispatchQueue.main.async {
-                    onDismissKeyboard?()
-                }
+            if sample.offset - oldSample.offset > 24 {
+                onDismissKeyboard?()
             }
         }
         .simultaneousGesture(
@@ -783,6 +866,7 @@ private struct SearchPage: View {
     }
 
     private func handleRequest(_ title: SeerrTitle) {
+        guard !title.isInJellyfin(catalog: session.tmdbCatalog) else { return }
         if session.usesSilo {
             Task { await submitSiloRequest(title) }
         } else {
@@ -839,8 +923,18 @@ struct SeerrRequestRow: View {
     }
 
     var body: some View {
-        Button(action: onRequest) {
-            HStack(spacing: 14) {
+        Group {
+            if isFullyOnServer {
+                row
+            } else {
+                Button(action: onRequest) { row }
+                    .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 14) {
                 PosterImage(url: title.posterURL)
                     .frame(width: 52, height: 78)
                     .overlay(alignment: .topTrailing) {
@@ -864,7 +958,7 @@ struct SeerrRequestRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(isFullyOnServer ? "In Library" : title.availability.buttonTitle)
+                Text(isFullyOnServer ? "In Library" : (title.review == .pendingApproval ? "Pending" : title.availability.buttonTitle))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(canRequestNow ? .black : .white.opacity(0.7))
                     .padding(.horizontal, 12)
@@ -873,17 +967,15 @@ struct SeerrRequestRow: View {
                         canRequestNow ? Color.white : Color.white.opacity(0.18),
                         in: Capsule()
                     )
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 0.5)
-                    .padding(.leading, 82)
-            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 0.5)
+                .padding(.leading, 82)
+        }
     }
 
     private var subtitle: String {

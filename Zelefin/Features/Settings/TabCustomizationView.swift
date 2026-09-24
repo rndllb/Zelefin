@@ -11,6 +11,8 @@ struct TabCustomizationView: View {
     @AppStorage(FeaturedHeroContent.storageKey) private var featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
     @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
     @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
+    @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = false
+    @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
 
     var body: some View {
         List {
@@ -91,11 +93,23 @@ struct TabCustomizationView: View {
             .environment(\.editMode, .constant(plus.isUnlocked ? .active : .inactive))
 
             Section {
+                if UIDevice.current.userInterfaceIdiom != .pad {
+                    Toggle("Show Tab Names", isOn: $showsTabNames)
+                        .font(.body.weight(.semibold))
+                        .tint(AccentPreferences.current)
+                        .settingsLoginCard()
+                        .settingsCardRow()
+                }
+
                 ForEach(AppTab.ordered(from: tabOrderRaw).filter { tab in
                     !(session.usesSilo && tab == .liveTV)
                 }) { tab in
                     HStack(spacing: 12) {
-                        Label(tab.title, systemImage: tab.systemImage)
+                        Label {
+                            Text(tab.title)
+                        } icon: {
+                            TabBarIcon(assetName: tab.iconAsset, systemImage: tab.systemImage)
+                        }
                             .font(.body.weight(.semibold))
                             .foregroundStyle(LoginPalette.primaryText)
                         Spacer(minLength: 8)
@@ -113,11 +127,36 @@ struct TabCustomizationView: View {
             } header: {
                 Text("Tabs")
             } footer: {
-                Text(plus.isUnlocked
-                     ? "Drag to reorder. Turn off a tab to hide it from the tab bar. On iPad, you can also tap Edit at the top of the sidebar."
-                     : "Zelefin Plus lets you reorder and hide tabs.")
+                Text(tabFooterCopy)
             }
             .environment(\.editMode, .constant(.active))
+
+            if !pinnableLibraries.isEmpty {
+                Section {
+                    ForEach(pinnableLibraries) { library in
+                        HStack(spacing: 12) {
+                            Label {
+                                Text(library.name)
+                            } icon: {
+                                TabBarIcon(assetName: "IconsaxLibrary", systemImage: "book")
+                            }
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(LoginPalette.primaryText)
+                            Spacer(minLength: 8)
+                            Toggle("Show \(library.name)", isOn: dockLibraryBinding(for: library))
+                                .labelsHidden()
+                                .tint(AccentPreferences.current)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .settingsLoginCard()
+                        .settingsCardRow()
+                    }
+                } header: {
+                    Text("Libraries")
+                } footer: {
+                    Text(libraryDockFooter)
+                }
+            }
 
             Section {
                 VStack(alignment: .leading, spacing: 0) {
@@ -163,6 +202,26 @@ struct TabCustomizationView: View {
         .task {
             await session.pullDisplayPreferences()
         }
+    }
+
+    private var libraryDockFooter: String {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            "Turn on a custom library, such as Anime, to put it in the dock."
+        } else {
+            "Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 iPhone spots."
+        }
+    }
+
+    private var tabFooterCopy: String {
+        let names = UIDevice.current.userInterfaceIdiom == .pad
+            ? ""
+            : (showsTabNames
+                ? "Each dock icon shows its name. The iPhone dock holds 5 tabs, including Search. "
+                : "The dock shows icons only. Turn Show Tab Names on to put a name under each icon. The iPhone dock holds 5 tabs, including Search. ")
+        if plus.isUnlocked {
+            return names + "Drag to reorder. Turn off a tab to hide it from the tab bar. On iPad, you can also tap Edit at the top of the sidebar."
+        }
+        return names + "Zelefin Plus lets you reorder and hide tabs."
     }
 
     private var homeFooterCopy: String {
@@ -229,11 +288,58 @@ struct TabCustomizationView: View {
         homeRowOrder = HomeRowKind.raw(from: order)
     }
 
+    private var enabledDockTabCount: Int {
+        AppTab.ordered(from: tabOrderRaw).filter { tab in
+            if session.usesSilo && tab == .liveTV { return false }
+            return !tab.canHide || tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
+        }.count
+    }
+
+    private var enabledDockLibraryCount: Int {
+        let ids = DockLibraryPreferences.ids(from: dockLibraryIDsRaw)
+        return pinnableLibraries.filter { ids.contains($0.id) }.count
+    }
+
+    private var canEnableAnotherDockItem: Bool {
+        PhoneDockLimit.canEnableAnother(
+            enabledTabs: enabledDockTabCount,
+            enabledLibraries: enabledDockLibraryCount
+        )
+    }
+
+    private var pinnableLibraries: [MediaLibrary] {
+        session.libraries.filter(DockLibraryPreferences.canPin)
+    }
+
+    private func dockLibraryBinding(for library: MediaLibrary) -> Binding<Bool> {
+        Binding(
+            get: { DockLibraryPreferences.ids(from: dockLibraryIDsRaw).contains(library.id) },
+            set: { isOn in
+                guard plus.require(.interface) else { return }
+                var ids = DockLibraryPreferences.ids(from: dockLibraryIDsRaw)
+                let alreadyOn = ids.contains(library.id)
+                if isOn, !alreadyOn, !canEnableAnotherDockItem {
+                    return
+                }
+                if isOn {
+                    ids.insert(library.id)
+                } else {
+                    ids.remove(library.id)
+                }
+                dockLibraryIDsRaw = DockLibraryPreferences.raw(from: ids)
+            }
+        )
+    }
+
     private func visibilityBinding(for tab: AppTab) -> Binding<Bool> {
         Binding(
             get: { tabCustomization[sidebarVisibility: tab.customizationID] != .hidden },
             set: { isOn in
                 guard plus.require(.interface) else { return }
+                let alreadyOn = tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
+                if isOn, !alreadyOn, !canEnableAnotherDockItem {
+                    return
+                }
                 tabCustomization[sidebarVisibility: tab.customizationID] = isOn ? .automatic : .hidden
             }
         )

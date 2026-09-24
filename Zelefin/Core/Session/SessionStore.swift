@@ -38,6 +38,8 @@ final class SessionStore {
     private(set) var downloadsAvailable = true
     private(set) var openSubtitlesAvailable = false
     private(set) var jellyfinEnhancedAvailable = false
+    /// Plugin dashboard switch `Enable "Remove from Continue Watching"`.
+    private(set) var jellyfinEnhancedRemoveContinueWatching = false
     private(set) var companionAvailable = false
     private(set) var siloRequestsEnabled = false
     private(set) var siloSeerrPluginAvailable = false
@@ -654,10 +656,26 @@ final class SessionStore {
         guard jellyfinEnhancedAvailable, let client else {
             throw ZelefinError.server("Jellyfin Enhanced is not installed on this server.")
         }
+        guard let userID = session?.userID else { throw ZelefinError.missingUser }
         let surface = JellyfinEnhancedHomeHide.surface(queueKind: item.queueKind)
-        try await JellyfinEnhancedClient(client: client).hideFromHome(itemID: item.id, surface: surface)
+        if surface == .continueWatching, !jellyfinEnhancedRemoveContinueWatching {
+            throw ZelefinError.server("Remove from Continue Watching is turned off in Jellyfin Enhanced.")
+        }
+        HomeQueueHideStore.insert(item.id, userID: userID, surface: surface)
         removeFromHome(itemID: item.id)
+        do {
+            try await JellyfinEnhancedClient(client: client).hideFromHome(itemID: item.id, surface: surface)
+        } catch {
+            HomeQueueHideStore.remove(item.id, userID: userID)
+            Task { await refreshHome() }
+            throw error
+        }
         Task { await refreshHome() }
+    }
+
+    func noteHomeQueueResumed(_ itemID: String) {
+        guard let userID = session?.userID else { return }
+        HomeQueueHideStore.remove(itemID, userID: userID)
     }
 
     func toggleFavorite(_ item: MediaItem) async throws -> MediaItem {
@@ -810,6 +828,7 @@ final class SessionStore {
         introSkipperAvailable = false
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
+        jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         siloRequestsEnabled = false
         siloSeerrPluginAvailable = false
@@ -911,6 +930,7 @@ final class SessionStore {
         introSkipperAvailable = false
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
+        jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         siloRequestsEnabled = false
         siloSeerrPluginAvailable = false
@@ -968,6 +988,7 @@ final class SessionStore {
         downloadsAvailable = false
         openSubtitlesAvailable = true
         jellyfinEnhancedAvailable = false
+        jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         siloRequestsEnabled = false
         siloSeerrPluginAvailable = false
@@ -1032,6 +1053,7 @@ final class SessionStore {
         introSkipperAvailable = false
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
+        jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         siloRequestsEnabled = false
         siloSeerrPluginAvailable = false
@@ -1192,6 +1214,7 @@ final class SessionStore {
             introSkipperAvailable = false
             openSubtitlesAvailable = false
             jellyfinEnhancedAvailable = false
+            jellyfinEnhancedRemoveContinueWatching = false
             companionAvailable = false
             CompanionSettings.pluginInstalled = false
             return
@@ -1208,6 +1231,12 @@ final class SessionStore {
             jellyfinEnhancedAvailable = true
         } else {
             jellyfinEnhancedAvailable = await JellyfinEnhancedClient(client: client).isReachable()
+        }
+        if jellyfinEnhancedAvailable {
+            jellyfinEnhancedRemoveContinueWatching = await JellyfinEnhancedClient(client: client)
+                .removeContinueWatchingEnabled()
+        } else {
+            jellyfinEnhancedRemoveContinueWatching = false
         }
         var companion = ZelefinCompanionPlugin.isInstalled(names: names)
         if !companion {
@@ -1227,6 +1256,7 @@ final class SessionStore {
     private func detectSiloPlugins() async {
         introSkipperAvailable = false
         jellyfinEnhancedAvailable = false
+        jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         CompanionSettings.pluginInstalled = false
         openSubtitlesAvailable = false
@@ -1609,6 +1639,16 @@ final class SessionStore {
         upcoming: [MediaItem],
         persist: Bool
     ) {
+        let continueWatching = HomeQueueHideStore.filter(
+            continueWatching,
+            userID: session?.userID,
+            surface: .continueWatching
+        )
+        let nextUp = HomeQueueHideStore.filter(
+            nextUp,
+            userID: session?.userID,
+            surface: .nextUp
+        )
         let merge = HomeLayoutPreferences.mergeContinueAndNextUp
         let sections = HomeLayoutPreferences.assemble(
             resume: continueWatching,

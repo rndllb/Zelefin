@@ -127,6 +127,9 @@ enum DisplayPreferencesSync {
     static let homeRowOrderKey = "homeRowOrder"
     static let homeRowHiddenKey = "homeRowHidden"
     static let featuredHeroContentKey = "featuredHeroContent"
+    static let libraryOrderKey = "libraryOrder"
+    static let libraryHiddenKey = "libraryHidden"
+    static let libraryPageHiddenKey = "libraryPageHidden"
 
     static func apply(_ prefs: [String: String]) {
         if let order = prefs[tabOrderKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
@@ -149,6 +152,21 @@ enum DisplayPreferencesSync {
            let content = FeaturedHeroContent(rawValue: hero) {
             UserDefaults.standard.set(content.rawValue, forKey: FeaturedHeroContent.storageKey)
         }
+        if let order = prefs[libraryOrderKey]?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            UserDefaults.standard.set(order, forKey: LibraryLayoutPreferences.orderKey)
+        }
+        if let hidden = prefs[libraryHiddenKey] {
+            UserDefaults.standard.set(
+                LibraryLayoutPreferences.hiddenRaw(from: LibraryLayoutPreferences.hiddenIDs(from: hidden)),
+                forKey: LibraryLayoutPreferences.hiddenKey
+            )
+        }
+        if let pageHidden = prefs[libraryPageHiddenKey] {
+            UserDefaults.standard.set(
+                LibraryLayoutPreferences.pageHiddenRaw(from: LibraryLayoutPreferences.hiddenBlocks(from: pageHidden)),
+                forKey: LibraryLayoutPreferences.pageHiddenKey
+            )
+        }
     }
 
     static func customPrefs() -> [String: String] {
@@ -157,7 +175,10 @@ enum DisplayPreferencesSync {
             mergeContinueKey: HomeLayoutPreferences.mergeContinueAndNextUp ? "true" : "false",
             homeRowOrderKey: UserDefaults.standard.string(forKey: HomeRowKind.orderStorageKey) ?? HomeRowKind.defaultOrderRaw,
             homeRowHiddenKey: UserDefaults.standard.string(forKey: HomeRowKind.hiddenStorageKey) ?? "",
-            featuredHeroContentKey: FeaturedHeroContent.current.rawValue
+            featuredHeroContentKey: FeaturedHeroContent.current.rawValue,
+            libraryOrderKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.orderKey) ?? "",
+            libraryHiddenKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.hiddenKey) ?? "",
+            libraryPageHiddenKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.pageHiddenKey) ?? ""
         ]
     }
 }

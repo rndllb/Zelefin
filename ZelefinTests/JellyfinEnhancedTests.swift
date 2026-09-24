@@ -36,6 +36,41 @@ final class JellyfinEnhancedPluginTests: XCTestCase {
         )
     }
 
+    func testPublicConfigGatesRemoveFromContinueWatching() {
+        let enabled = Data(#"{"RemoveContinueWatchingEnabled":true}"#.utf8)
+        let disabled = Data(#"{"removeContinueWatchingEnabled":false}"#.utf8)
+        let missing = Data(#"{}"#.utf8)
+        XCTAssertTrue(JellyfinEnhancedJSON.removeContinueWatchingEnabled(from: enabled))
+        XCTAssertFalse(JellyfinEnhancedJSON.removeContinueWatchingEnabled(from: disabled))
+        XCTAssertFalse(JellyfinEnhancedJSON.removeContinueWatchingEnabled(from: missing))
+    }
+
+    func testRemovedContinueWatchingTitleStaysHidden() {
+        let userID = "hide-test-\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: "zelefin.hidden-home.\(userID).continueWatching")
+            UserDefaults.standard.removeObject(forKey: "zelefin.hidden-home.\(userID).nextUp")
+        }
+        HomeQueueHideStore.insert("episode-1", userID: userID, surface: .continueWatching)
+        let items = [
+            MediaItemTestsSupport.item(id: "episode-1", kind: .episode),
+            MediaItemTestsSupport.item(id: "episode-2", kind: .episode)
+        ]
+        XCTAssertEqual(
+            HomeQueueHideStore.filter(items, userID: userID, surface: .continueWatching).map(\.id),
+            ["episode-2"]
+        )
+        XCTAssertEqual(
+            HomeQueueHideStore.filter(items, userID: userID, surface: .nextUp).map(\.id),
+            ["episode-1", "episode-2"]
+        )
+        HomeQueueHideStore.remove("episode-1", userID: userID)
+        XCTAssertEqual(
+            HomeQueueHideStore.filter(items, userID: userID, surface: .continueWatching).map(\.id),
+            ["episode-1", "episode-2"]
+        )
+    }
+
     func testReviewKeyUsesMovieAndShowTMDB() {
         var movie = MediaItemTestsSupport.item(kind: .movie, tmdbID: 27205)
         XCTAssertEqual(JellyfinEnhancedReviewKey.target(for: movie)?.mediaType, "movie")
@@ -150,6 +185,7 @@ final class PosterQualityBadgesTests: XCTestCase {
 
 private enum MediaItemTestsSupport {
     static func item(
+        id: String = "1",
         kind: MediaKind,
         tmdbID: Int? = nil,
         videoRange: VideoRange = .sdr,
@@ -157,7 +193,7 @@ private enum MediaItemTestsSupport {
         videoResolution: VideoResolution = .unknown
     ) -> MediaItem {
         MediaItem(
-            id: "1",
+            id: id,
             name: "Title",
             kind: kind,
             overview: nil,

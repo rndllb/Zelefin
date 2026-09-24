@@ -137,6 +137,93 @@ class JellyfinLibraryClient: @unchecked Sendable {
         try await catalogItems(genreID: genreID, parentID: nil, include: [.movie, .series], query: query, onPage: onPage)
     }
 
+    func items(
+        genreID: String,
+        genreName: String,
+        query: CatalogBrowseQuery,
+        onPage: CatalogPageHandler?
+    ) async throws -> [MediaItem] {
+        let name = genreName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let needle = name.isEmpty ? genreID : name
+        if UUID(uuidString: genreID) == nil {
+            let direct = try await items(genreID: genreID, query: query, onPage: nil)
+            if !direct.isEmpty {
+                await onPage?(CatalogPageUpdate(items: direct, totalCount: direct.count))
+                return direct
+            }
+        }
+        var matched = try await serverGenreItems(genreID: genreID, name: needle, query: query)
+        if matched.isEmpty {
+            matched = try await locallyMatchedGenreItems(name: needle, query: query)
+        }
+        await onPage?(CatalogPageUpdate(items: matched, totalCount: matched.count))
+        return matched
+    }
+
+    /// Jellyfin's combined Movie+Series genre filter often returns nothing, so
+    /// each type is requested on its own, by id and by name.
+    private func serverGenreItems(genreID: String, name: String, query: CatalogBrowseQuery) async throws -> [MediaItem] {
+        var scoped = query
+        scoped.genres = []
+        var seen = Set<String>()
+        var merged: [MediaItem] = []
+        let types: [BaseItemKind] = [.movie, .series]
+        for type in types {
+            if UUID(uuidString: genreID) != nil {
+                let byID = try await catalogItems(
+                    genreID: genreID,
+                    parentID: nil,
+                    include: [type],
+                    query: scoped,
+                    onPage: nil
+                )
+                for item in byID where seen.insert(item.id).inserted {
+                    merged.append(item)
+                }
+            }
+            let spellings = Set([
+                name,
+                name.replacingOccurrences(of: "-", with: " "),
+                name.replacingOccurrences(of: " ", with: "-")
+            ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+            for spelling in spellings {
+                var named = scoped
+                named.genres = [spelling]
+                let byName = try await catalogItems(
+                    genreID: nil,
+                    parentID: nil,
+                    include: [type],
+                    query: named,
+                    onPage: nil
+                )
+                for item in byName where seen.insert(item.id).inserted {
+                    merged.append(item)
+                }
+            }
+        }
+        return query.sorted(merged)
+    }
+
+    private func locallyMatchedGenreItems(name: String, query: CatalogBrowseQuery) async throws -> [MediaItem] {
+        let needle = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return [] }
+        var unscoped = query
+        unscoped.genres = []
+        let all = try await catalogItems(
+            genreID: nil,
+            parentID: nil,
+            include: [.movie, .series],
+            query: unscoped,
+            onPage: nil
+        )
+        let matched = all.filter { item in
+            item.genres.contains { genre in
+                HomeLayoutPreferences.genreKey(genre) == HomeLayoutPreferences.genreKey(needle)
+            }
+        }
+        return query.sorted(matched)
+    }
+
     func items(parentID: String, query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
         try await catalogItems(
             genreID: nil,
@@ -249,6 +336,36 @@ class JellyfinLibraryClient: @unchecked Sendable {
         }
     }
 
+    func previewItems(in library: MediaLibrary, limit: Int) async -> [MediaItem] {
+        let include = browseIncludeTypes(for: library)
+        if let latest = try? await latestMedia(
+            include: include,
+            parentID: library.id,
+            fields: ItemMapper.homeFields,
+            limit: limit
+        ), !latest.isEmpty {
+            return latest
+        }
+        let result = try? await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    limit: limit,
+                    isRecursive: true,
+                    sortOrder: [.descending],
+                    parentID: library.id,
+                    fields: ItemMapper.homeFields,
+                    includeItemTypes: include,
+                    sortBy: [.dateCreated],
+                    enableUserData: true,
+                    enableImageTypes: ItemMapper.listImageTypes,
+                    enableTotalRecordCount: false
+                )
+            )
+        ).value
+        return (result?.items ?? []).prefix(limit).compactMap(ItemMapper.mediaItem(from:))
+    }
+
     func items(inLibraries libraries: [MediaLibrary], query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async -> [MediaItem] {
         if libraries.count == 1 {
             return (try? await items(in: libraries[0], query: query, onPage: onPage)) ?? []
@@ -317,6 +434,39 @@ class JellyfinLibraryClient: @unchecked Sendable {
         }
         let matches = HomeLayoutPreferences.libraries(libraries, matching: kind)
         return await countItems(in: matches)
+    }
+
+    func serverCatalogCounts() async -> ServerCatalogCounts {
+        if let counts = try? await client.send(Paths.getItemCounts(userID: userID)).value {
+            return ServerCatalogCounts(
+                movies: counts.movieCount ?? 0,
+                shows: counts.seriesCount ?? 0,
+                episodes: counts.episodeCount ?? 0
+            )
+        }
+        async let movies = countItems(include: [.movie], parentID: nil)
+        async let shows = countItems(include: [.series], parentID: nil)
+        async let episodes = countItems(include: [.episode], parentID: nil)
+        return await ServerCatalogCounts(movies: movies, shows: shows, episodes: episodes)
+    }
+
+    func roomCounts(for library: MediaLibrary) async -> LibraryRoomCounts {
+        switch library.libraryKind {
+        case .movies:
+            let movies = await countItems(include: [.movie], parentID: library.id)
+            return LibraryRoomCounts(movies: movies, shows: 0, episodes: 0)
+        case .shows:
+            async let shows = countItems(include: [.series], parentID: library.id)
+            async let episodes = countItems(include: [.episode], parentID: library.id)
+            return await LibraryRoomCounts(movies: 0, shows: shows, episodes: episodes)
+        case .liveTV:
+            return LibraryRoomCounts(movies: 0, shows: 0, episodes: 0)
+        default:
+            async let movies = countItems(include: [.movie], parentID: library.id)
+            async let shows = countItems(include: [.series], parentID: library.id)
+            async let episodes = countItems(include: [.episode], parentID: library.id)
+            return await LibraryRoomCounts(movies: movies, shows: shows, episodes: episodes)
+        }
     }
 
     private func countItems(in libraries: [MediaLibrary]) async -> Int {
@@ -1034,7 +1184,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         let result = try await client.send(
             Paths.getGenres(
                 parameters: .init(
-                    limit: 24,
+                    limit: 48,
                     fields: ItemMapper.listFields,
                     includeItemTypes: [.movie, .series],
                     enableImageTypes: ItemMapper.listImageTypes,
@@ -1044,7 +1194,9 @@ class JellyfinLibraryClient: @unchecked Sendable {
                 )
             )
         ).value
-        let genres = (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        let genres = HomeLayoutPreferences.collapsedGenres(
+            (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
+        ).prefix(24).map { $0 }
         guard !genres.isEmpty else { return nil }
         let covers = try await genreCoverItems()
         let assigned = HomeLayoutPreferences.applyGenreCovers(genres, covers: covers)
@@ -1407,6 +1559,21 @@ class JellyfinLibraryClient: @unchecked Sendable {
         _ = try await client.send(
             Paths.sendGeneralCommand(sessionID: sessionID, command: command.rawValue)
         )
+    }
+
+    func sendSessionMessage(sessionID: String, text: String) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let command = GeneralCommand(
+            arguments: [
+                "Header": "Zelefin",
+                "Text": trimmed,
+                "TimeoutMs": "8000"
+            ],
+            controllingUserID: userID,
+            name: .displayMessage
+        )
+        _ = try await client.send(Paths.sendFullGeneralCommand(sessionID: sessionID, command))
     }
 
     func playOnSession(sessionID: String, itemIDs: [String], startPosition: TimeInterval? = nil) async throws {

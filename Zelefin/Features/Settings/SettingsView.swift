@@ -366,7 +366,7 @@ struct SettingsAboutView: View {
                 .frame(maxWidth: .infinity)
                 .settingsHeroRow()
             } footer: {
-                Text("A native Jellyfin and Silo client for iPhone and iPad.")
+                Text("A native Jellyfin and Silo client for iPhone and iPad. Tab icons are from Iconsax.")
             }
 
             Section {
@@ -461,19 +461,24 @@ private struct SettingsSafariView: UIViewControllerRepresentable {
 }
 
 extension View {
-    func zelefinSettingsChrome(title: String) -> some View {
+    func zelefinSettingsCanvas() -> some View {
         self
             .scrollContentBackground(.hidden)
             .background(ZelefinSettingsChrome.canvas)
             .preferredColorScheme(.dark)
+            .zelefinAccentTint()
+            .navigationLinkIndicatorVisibility(.hidden)
+            .settingsListWidth()
+    }
+
+    func zelefinSettingsChrome(title: String) -> some View {
+        self
+            .zelefinSettingsCanvas()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(ZelefinSettingsChrome.canvas, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .zelefinAccentTint()
-            .navigationLinkIndicatorVisibility(.hidden)
-            .settingsListWidth()
     }
 
     @ViewBuilder

@@ -300,6 +300,9 @@ struct PlayerView: View {
         created.onUserTransport = { action in
             Task { await session.forwardSyncPlay(action) }
         }
+        created.onDidStart = {
+            session.noteHomeQueueResumed(plan.item.id)
+        }
         if let skipSegments {
             created.skipSegments = skipSegments
         }

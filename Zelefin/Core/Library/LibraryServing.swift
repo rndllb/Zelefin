@@ -2,6 +2,34 @@ import Foundation
 
 /// Catalog, artwork, and playback that Home, Library, Detail, Search, and Player share.
 /// Live TV, SyncPlay, remote sessions, and admin stay on `JellyfinLibraryClient`.
+struct ServerCatalogCounts: Equatable, Sendable {
+    var movies: Int
+    var shows: Int
+    var episodes: Int
+}
+
+struct LibraryRoomCounts: Equatable, Sendable {
+    var movies: Int
+    var shows: Int
+    var episodes: Int
+
+    var caption: String? {
+        let parts = [
+            Self.phrase(movies, singular: "movie", plural: "movies"),
+            Self.phrase(shows, singular: "show", plural: "shows"),
+            Self.phrase(episodes, singular: "episode", plural: "episodes")
+        ].compactMap { $0 }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func phrase(_ value: Int, singular: String, plural: String) -> String? {
+        guard value > 0 else { return nil }
+        let number = value.formatted(.number.grouping(.automatic))
+        return "\(number) \(value == 1 ? singular : plural)"
+    }
+}
+
 protocol LibraryServing: AnyObject, Sendable {
     func updateServerVersion(_ raw: String?)
 
@@ -29,6 +57,7 @@ protocol LibraryServing: AnyObject, Sendable {
 
     func libraries() async throws -> [MediaLibrary]
     func tmdbCatalog() async -> JellyfinTmdbCatalog
+    func previewItems(in library: MediaLibrary, limit: Int) async -> [MediaItem]
 
     func items(
         in library: MediaLibrary,
@@ -47,10 +76,13 @@ protocol LibraryServing: AnyObject, Sendable {
         onPage: CatalogPageHandler?
     ) async -> [MediaItem]
     func catalogCount(kind: LibraryKind, libraries: [MediaLibrary]) async -> Int
+    func serverCatalogCounts() async -> ServerCatalogCounts
+    func roomCounts(for library: MediaLibrary) async -> LibraryRoomCounts
     func catalogFilterOptions(for library: MediaLibrary) async -> CatalogFilterOptions
     func catalogFilterOptions(for kind: LibraryKind) async -> CatalogFilterOptions
     func mixedCatalogFilterOptions(parentID: String?) async -> CatalogFilterOptions
     func collectionFilterOptions(parentID: String) async -> CatalogFilterOptions
+    func items(genreID: String, genreName: String, query: CatalogBrowseQuery, onPage: CatalogPageHandler?) async throws -> [MediaItem]
     func items(genreID: String, query: CatalogBrowseQuery, onPage: CatalogPageHandler?) async throws -> [MediaItem]
     func items(parentID: String, query: CatalogBrowseQuery, onPage: CatalogPageHandler?) async throws -> [MediaItem]
     func items(personID: String, query: CatalogBrowseQuery, onPage: CatalogPageHandler?) async throws -> [MediaItem]
@@ -154,12 +186,20 @@ extension LibraryServing {
         try await items(in: library, query: .default, onPage: nil)
     }
 
+    func previewItems(in library: MediaLibrary, limit: Int) async -> [MediaItem] {
+        Array(((try? await items(in: library)) ?? []).prefix(limit))
+    }
+
     func browseCatalog(kind: LibraryKind, libraries: [MediaLibrary]) async -> [MediaItem] {
         await browseCatalog(kind: kind, libraries: libraries, query: .default, onPage: nil)
     }
 
     func mixedCatalogFilterOptions() async -> CatalogFilterOptions {
         await mixedCatalogFilterOptions(parentID: nil)
+    }
+
+    func items(genreID: String, genreName: String, query: CatalogBrowseQuery, onPage: CatalogPageHandler?) async throws -> [MediaItem] {
+        try await items(genreID: genreID, query: query, onPage: onPage)
     }
 
     func items(genreID: String) async throws -> [MediaItem] {

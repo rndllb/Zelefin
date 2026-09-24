@@ -749,7 +749,7 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
     func testContinueWatchingMenuOrder() {
         XCTAssertEqual(
             PlaybackQueueMenuLayout.actions(context: .continueWatching, kind: .episode),
-            [.download, .play, .goToShow, .markWatched, .removeFromHomeQueue]
+            [.play, .goToShow, .markWatched, .download, .removeFromHomeQueue]
         )
         XCTAssertEqual(PlaybackQueueMenuLayout.playTitle(for: .episode), "Play Episode")
         XCTAssertEqual(PlaybackQueueMenuLayout.goToTitle(for: .episode), "Go to Show")
@@ -769,25 +769,25 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
     func testFeaturedMenuOmitsHomeHide() {
         XCTAssertEqual(
             PlaybackQueueMenuLayout.actions(context: .featured, kind: .movie),
-            [.download, .play, .goToShow, .markWatched]
+            [.play, .goToShow, .markWatched, .download]
         )
         XCTAssertEqual(
             PlaybackQueueMenuLayout.actions(context: .featured, kind: .series),
-            [.download, .play, .goToShow, .markWatched]
+            [.play, .goToShow, .markWatched, .download]
         )
     }
 
     func testRecentlyWatchedAddsRemove() {
         XCTAssertEqual(
             PlaybackQueueMenuLayout.actions(context: .recentlyWatched, kind: .episode),
-            [.download, .play, .goToShow, .markWatched, .removeFromRecentlyWatched]
+            [.play, .goToShow, .markWatched, .download, .removeFromRecentlyWatched]
         )
     }
 
     func testEpisodeMenuOmitsGoToShow() {
         XCTAssertEqual(
             PlaybackQueueMenuLayout.actions(context: .episode, kind: .episode),
-            [.download, .play, .markWatched]
+            [.play, .markWatched, .download]
         )
         XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(isWatched: false), "Mark as Watched")
         XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(isWatched: true), "Mark as Unwatched")
@@ -1205,7 +1205,7 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertFalse(LibraryKind.favorites.appearsOnHome)
         XCTAssertEqual(
             HomeLayoutPreferences.libraryTabLibraries(libraries).map(\.id),
-            ["m", "s", "tv"]
+            ["m", "s", "cols", "home", "tv", "mix"]
         )
         XCTAssertEqual(
             HomeLayoutPreferences.libraries(libraries, matching: .movies).map(\.id),
@@ -1218,14 +1218,27 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertTrue(LibraryKind.liveTV.appearsInLibrary)
         XCTAssertTrue(LibraryKind.movies.appearsInLibrary)
         XCTAssertTrue(LibraryKind.shows.appearsInLibrary)
-        XCTAssertFalse(LibraryKind.other.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.other.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.photos.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.homeVideos.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.collections.appearsInLibrary)
         XCTAssertFalse(LibraryKind.books.appearsInLibrary)
-        XCTAssertFalse(LibraryKind.photos.appearsInLibrary)
-        XCTAssertFalse(LibraryKind.homeVideos.appearsInLibrary)
         XCTAssertFalse(LibraryKind.music.appearsInLibrary)
         XCTAssertFalse(LibraryKind.playlists.appearsInLibrary)
-        XCTAssertFalse(LibraryKind.collections.appearsInLibrary)
         XCTAssertFalse(LibraryKind.favorites.appearsInLibrary)
+        XCTAssertEqual(LibraryKind.other.systemImage, "rectangle.stack")
+        XCTAssertEqual(
+            LibraryLayoutPreferences.displayed(
+                libraries.filter(\.libraryKind.appearsInLibrary),
+                orderRaw: "mix,m,s",
+                hiddenRaw: "tv"
+            ).map(\.id),
+            ["mix", "m", "s", "cols", "home"]
+        )
+        XCTAssertEqual(
+            LibraryLayoutPreferences.hiddenBlocks(from: "favorites,collections"),
+            [.favorites, .collections]
+        )
         XCTAssertTrue(LibraryKind.movies.appearsOnHome)
         XCTAssertTrue(LibraryKind.shows.appearsOnHome)
         XCTAssertFalse(LibraryKind.homeVideos.appearsOnHome)

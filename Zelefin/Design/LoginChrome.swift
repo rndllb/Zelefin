@@ -340,6 +340,37 @@ struct SettingsChevron: View {
     }
 }
 
+struct SettingsNavRow: View {
+    let title: String
+    let systemImage: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.tint)
+                .frame(width: 28, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoginPalette.primaryText)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(LoginPalette.secondaryText)
+                }
+            }
+            Spacer(minLength: 8)
+            SettingsChevron()
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(subtitle.map { "\(title), \($0)" } ?? title)
+    }
+}
+
 struct SettingsPersonRow: View {
     let name: String
     let subtitle: String

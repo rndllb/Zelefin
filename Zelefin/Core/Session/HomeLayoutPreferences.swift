@@ -284,14 +284,55 @@ enum HomeLayoutPreferences {
         return collapsed
     }
 
+    /// "Game Show" and "Game-Show" are the same genre.
+    static func genreKey(_ name: String) -> String {
+        name.lowercased().filter(\.isLetter) + name.lowercased().filter(\.isNumber)
+    }
+
+    /// Music libraries and music genres are not a supported catalog.
+    static func isBrowsableGenre(_ name: String) -> Bool {
+        switch genreKey(name) {
+        case "music", "musicvideo", "musicvideos", "actionadventure", "actionandadventure", "adventureaction", "adventureandaction":
+            false
+        default:
+            true
+        }
+    }
+
+    static func collapsedGenres(_ genres: [MediaItem]) -> [MediaItem] {
+        var chosen: [String: MediaItem] = [:]
+        var order: [String] = []
+        for genre in genres {
+            let key = genreKey(genre.name)
+            guard !key.isEmpty, isBrowsableGenre(genre.name) else { continue }
+            if let existing = chosen[key] {
+                if prefersGenreName(genre.name, over: existing.name) {
+                    chosen[key] = genre
+                }
+            } else {
+                chosen[key] = genre
+                order.append(key)
+            }
+        }
+        return order.compactMap { chosen[$0] }
+    }
+
+    private static func prefersGenreName(_ candidate: String, over current: String) -> Bool {
+        let candidateSplit = candidate.contains("-")
+        let currentSplit = current.contains("-")
+        if currentSplit && !candidateSplit { return true }
+        if candidateSplit && !currentSplit { return false }
+        return candidate.count < current.count
+    }
+
     static func applyGenreCovers(_ genres: [MediaItem], covers: [MediaItem]) -> [MediaItem] {
         let posters = covers.filter(\.hasGenreCoverArt).shuffled()
         var usedIDs = Set<String>()
 
         return genres.map { genre in
-            let key = genre.name.lowercased()
+            let key = genreKey(genre.name)
             func matches(_ cover: MediaItem) -> Bool {
-                cover.genres.contains { $0.lowercased() == key }
+                cover.genres.contains { genreKey($0) == key }
             }
 
             if let cover = posters.first(where: { matches($0) && !usedIDs.contains($0.id) }) {
@@ -423,5 +464,88 @@ enum FeaturedHeroPaging {
 
     static func shouldClaimPan(velocity: CGSize) -> Bool {
         abs(velocity.width) > abs(velocity.height)
+    }
+}
+
+enum LibraryPageBlock: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case favorites
+    case downloaded
+    case genres
+    case collections
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .favorites: "Favorites"
+        case .downloaded: "Downloaded"
+        case .genres: "Genres"
+        case .collections: "Collections"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .favorites: "heart.fill"
+        case .downloaded: "arrow.down.circle.fill"
+        case .genres: "square.grid.2x2.fill"
+        case .collections: "square.stack.fill"
+        }
+    }
+}
+
+enum LibraryLayoutPreferences {
+    static let orderKey = "zelefin.library-order"
+    static let hiddenKey = "zelefin.library-hidden"
+    static let pageHiddenKey = "zelefin.library-page-hidden"
+
+    static func arranged(_ libraries: [MediaLibrary], orderRaw: String) -> [MediaLibrary] {
+        var remaining = Dictionary(uniqueKeysWithValues: libraries.map { ($0.id, $0) })
+        var ordered: [MediaLibrary] = []
+        for token in orderRaw.split(separator: ",") {
+            let id = String(token)
+            if let library = remaining.removeValue(forKey: id) {
+                ordered.append(library)
+            }
+        }
+        for library in libraries where remaining[library.id] != nil {
+            ordered.append(library)
+        }
+        return ordered
+    }
+
+    static func displayed(
+        _ libraries: [MediaLibrary],
+        orderRaw: String,
+        hiddenRaw: String
+    ) -> [MediaLibrary] {
+        let hidden = hiddenIDs(from: hiddenRaw)
+        return arranged(libraries, orderRaw: orderRaw).filter { !hidden.contains($0.id) }
+    }
+
+    static func hiddenIDs(from raw: String) -> Set<String> {
+        Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+    }
+
+    static func hiddenRaw(from hidden: Set<String>) -> String {
+        hidden.sorted().joined(separator: ",")
+    }
+
+    static func orderRaw(from libraries: [MediaLibrary]) -> String {
+        libraries.map(\.id).joined(separator: ",")
+    }
+
+    /// Empty means the default arrangement. `none` means the user showed every block.
+    static let shownAllToken = "none"
+
+    static func hiddenBlocks(from raw: String) -> Set<LibraryPageBlock> {
+        if raw.isEmpty { return [.collections] }
+        if raw == shownAllToken { return [] }
+        return Set(raw.split(separator: ",").compactMap { LibraryPageBlock(rawValue: String($0)) })
+    }
+
+    static func pageHiddenRaw(from hidden: Set<LibraryPageBlock>) -> String {
+        if hidden.isEmpty { return shownAllToken }
+        return hidden.map(\.rawValue).sorted().joined(separator: ",")
     }
 }

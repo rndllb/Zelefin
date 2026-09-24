@@ -225,11 +225,13 @@ struct SeerrPageInfo: Decodable, Sendable {
 
 struct SeerrListedRequest: Decodable, Sendable {
     var id: Int
+    var status: Int?
     var media: SeerrMediaInfo
     var requestedBy: SeerrUser?
 
-    init(id: Int, media: SeerrMediaInfo, requestedBy: SeerrUser? = nil) {
+    init(id: Int, status: Int? = nil, media: SeerrMediaInfo, requestedBy: SeerrUser? = nil) {
         self.id = id
+        self.status = status
         self.media = media
         self.requestedBy = requestedBy
     }
@@ -286,7 +288,13 @@ extension SeerrClient {
 
     func genreSlider(kind: SeerrTitle.Kind) async throws -> [SeerrGenreSliderItem] {
         let path = kind == .movie ? "api/v1/discover/genreslider/movie" : "api/v1/discover/genreslider/tv"
-        return try await fetch(path, query: [URLQueryItem(name: "language", value: "en")])
+        let items: [SeerrGenreSliderItem] = try await fetch(path, query: [URLQueryItem(name: "language", value: "en")])
+        guard kind == .tv else { return items }
+        return items.map { item in
+            var copy = item
+            copy.siloMediaType = "tv"
+            return copy
+        }
     }
 
     func titleDetails(kind: SeerrTitle.Kind, tmdbID: Int) async throws -> SeerrTitle {
@@ -334,10 +342,16 @@ extension SeerrClient {
         var title = try await titleDetails(kind: kind, tmdbID: tmdbID)
         title.requestID = request.id
         title.requestedByName = request.requestedBy?.requestLabel
-        if title.availability == .missing || title.availability == .unknown {
-            title.availability = .init(status: request.media.status)
-            if title.availability == .missing {
+        let mediaAvailability = SeerrTitle.Availability(status: request.media.status)
+        if title.availability == .available || mediaAvailability == .available {
+            title.availability = .available
+            title.review = nil
+        } else {
+            title.review = SeerrTitle.Review(status: request.status)
+            if title.review == .pendingApproval {
                 title.availability = .pending
+            } else if title.availability == .missing || title.availability == .unknown {
+                title.availability = mediaAvailability == .missing ? .pending : mediaAvailability
             }
         }
         return title

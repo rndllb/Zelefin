@@ -236,16 +236,12 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
         let names = await ignoringErrors {
             (try await api.catalogFilters().genres ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         } ?? []
-        var genres = names.prefix(24).map { SiloMapper.genreItem(name: $0) }
+        var genres = HomeLayoutPreferences.collapsedGenres(names.map { SiloMapper.genreItem(name: $0) })
         if genres.isEmpty {
             let covers = await recentlyAdded(type: "movie", limit: 80) + (await recentlyAdded(type: "show", limit: 80))
-            var seen = Set<String>()
-            genres = covers.flatMap(\.genres).compactMap { name in
-                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { return nil }
-                return SiloMapper.genreItem(name: trimmed)
-            }
+            genres = HomeLayoutPreferences.collapsedGenres(covers.flatMap(\.genres).map { SiloMapper.genreItem(name: $0) })
         }
+        genres = Array(genres.prefix(24))
         guard !genres.isEmpty else { return nil }
         let covers = await recentlyAdded(type: "movie", limit: 80) + (await recentlyAdded(type: "show", limit: 80))
         return HomeSection(
@@ -311,6 +307,14 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
         return try await pagedCatalog(params, query: query, onPage: onPage)
     }
 
+    func previewItems(in library: MediaLibrary, limit: Int) async -> [MediaItem] {
+        await recentlyAdded(
+            type: SiloMapper.catalogType(for: library.libraryKind),
+            libraryID: library.id,
+            limit: limit
+        )
+    }
+
     func items(
         inLibraries libraries: [MediaLibrary],
         query: CatalogBrowseQuery,
@@ -355,6 +359,45 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
         await browseCatalog(kind: kind, libraries: libraries).count
     }
 
+    /// Silo has no server-stats route. Movie, show, and episode totals come from
+    /// `GET /api/v2/catalog` (`total` / `total_count`) with `limit=1`.
+    func serverCatalogCounts() async -> ServerCatalogCounts {
+        async let movies = catalogTotal(types: ["movie"])
+        async let shows = catalogTotal(types: ["series", "show"])
+        async let episodes = catalogTotal(types: ["episode"])
+        return await ServerCatalogCounts(movies: movies, shows: shows, episodes: episodes)
+    }
+
+    func roomCounts(for library: MediaLibrary) async -> LibraryRoomCounts {
+        switch library.libraryKind {
+        case .movies:
+            let movies = await catalogTotal(types: ["movie"], libraryID: library.id)
+            return LibraryRoomCounts(movies: movies, shows: 0, episodes: 0)
+        case .shows:
+            async let shows = catalogTotal(types: ["series", "show"], libraryID: library.id)
+            async let episodes = catalogTotal(types: ["episode"], libraryID: library.id)
+            return await LibraryRoomCounts(movies: 0, shows: shows, episodes: episodes)
+        case .liveTV:
+            return LibraryRoomCounts(movies: 0, shows: 0, episodes: 0)
+        default:
+            async let movies = catalogTotal(types: ["movie"], libraryID: library.id)
+            async let shows = catalogTotal(types: ["series", "show"], libraryID: library.id)
+            async let episodes = catalogTotal(types: ["episode"], libraryID: library.id)
+            return await LibraryRoomCounts(movies: movies, shows: shows, episodes: episodes)
+        }
+    }
+
+    private func catalogTotal(types: [String], libraryID: String? = nil) async -> Int {
+        for type in types {
+            var query = ["type": type, "limit": "1"]
+            if let libraryID { query["library_id"] = libraryID }
+            guard let response = try? await api.catalog(query: query),
+                  let total = response.total ?? response.totalCount else { continue }
+            if total > 0 { return total }
+        }
+        return 0
+    }
+
     func catalogFilterOptions(for library: MediaLibrary) async -> CatalogFilterOptions {
         await options(from: (try? await items(in: library)) ?? [])
     }
@@ -372,9 +415,47 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
     }
 
     func items(genreID: String, query: CatalogBrowseQuery, onPage: CatalogPageHandler?) async throws -> [MediaItem] {
-        var params = baseCatalogQuery(query)
-        params["genre"] = genreID
-        return try await pagedCatalog(params, query: query, onPage: onPage)
+        try await items(genreID: genreID, genreName: genreID, query: query, onPage: onPage)
+    }
+
+    func items(
+        genreID: String,
+        genreName: String,
+        query: CatalogBrowseQuery,
+        onPage: CatalogPageHandler?
+    ) async throws -> [MediaItem] {
+        let name = genreName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let keys = [genreID, name, name.replacingOccurrences(of: "-", with: " "), name.replacingOccurrences(of: " ", with: "-")]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var seen = Set<String>()
+        var merged: [MediaItem] = []
+        var itemIDs = Set<String>()
+        for key in keys where seen.insert(HomeLayoutPreferences.genreKey(key)).inserted {
+            var params = baseCatalogQuery(query)
+            params["genre"] = key
+            guard let page = try? await pagedCatalog(params, query: query, onPage: nil) else { continue }
+            for item in page where itemIDs.insert(item.id).inserted {
+                merged.append(item)
+            }
+        }
+        if !merged.isEmpty {
+            let sorted = query.sorted(merged)
+            await onPage?(CatalogPageUpdate(items: sorted, totalCount: sorted.count))
+            return sorted
+        }
+        var last: [MediaItem] = []
+        let needle = (name.isEmpty ? genreID : name).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return last }
+        let all = try await pagedCatalog(baseCatalogQuery(query), query: query, onPage: nil)
+        last = all.filter { item in
+            item.genres.contains { genre in
+                HomeLayoutPreferences.genreKey(genre) == HomeLayoutPreferences.genreKey(needle)
+            }
+        }
+        let sorted = query.sorted(last)
+        await onPage?(CatalogPageUpdate(items: sorted, totalCount: sorted.count))
+        return sorted
     }
 
     func items(parentID: String, query: CatalogBrowseQuery, onPage: CatalogPageHandler?) async throws -> [MediaItem] {

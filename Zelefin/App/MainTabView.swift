@@ -9,29 +9,69 @@ struct MainTabView: View {
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
     @AppStorage(AppTab.favoritesHiddenDefaultKey) private var favoritesHiddenDefaultApplied = false
     @AppStorage(AppTab.liveTVHiddenDefaultKey) private var liveTVHiddenDefaultApplied = false
+    @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = false
+    @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var dockSelection: DockSelection = .tab(.home)
 
     var body: some View {
         tabView
     }
 
     private var tabView: some View {
-        TabView {
-            ForEach(visibleTabs) { tab in
-            Tab(tab.title, systemImage: tab.systemImage) {
+        TabView(selection: $dockSelection) {
+            ForEach(dockTabs) { tab in
+            Tab(value: DockSelection.tab(tab)) {
                 NavigationStack {
                     tabRoot(tab)
                 }
                 .zelefinSidebarLayout()
+            } label: {
+                dockLabel(
+                    tab.title,
+                    systemImage: tab.systemImage,
+                    assetName: tab.iconAsset,
+                    isSelected: dockSelection == .tab(tab)
+                )
             }
                 .customizationID(tab.customizationID)
                 .customizationBehavior(tab.canHide ? .automatic : .reorderable, for: .sidebar, .tabBar)
             }
 
-            Tab("Search", systemImage: "magnifyingglass", role: .search) {
+            ForEach(dockLibraries) { library in
+                Tab(value: DockSelection.library(library.id)) {
+                    NavigationStack {
+                        CatalogBrowseView(
+                            title: library.name,
+                            libraryKind: library.libraryKind,
+                            libraryID: library.id
+                        )
+                    }
+                    .zelefinSidebarLayout()
+                } label: {
+                    dockLabel(
+                        library.name,
+                        systemImage: "square.grid.2x2",
+                        assetName: "IconsaxLibrary",
+                        isSelected: dockSelection == .library(library.id)
+                    )
+                }
+                .customizationID("app.zelefin.library.\(library.id)")
+                .customizationBehavior(.disabled, for: .sidebar, .tabBar)
+            }
+
+            Tab(value: DockSelection.search, role: .search) {
                 NavigationStack {
                     SearchView()
                 }
                 .zelefinSidebarLayout()
+            } label: {
+                dockLabel(
+                    "Search",
+                    systemImage: "magnifyingglass",
+                    assetName: "IconsaxSearch",
+                    isSelected: dockSelection == .search
+                )
             }
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
         }
@@ -45,8 +85,49 @@ struct MainTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-        .onAppear { applyHiddenTabDefaultsIfNeeded() }
+        .background(TabBarTitleApplier(showsTitles: showsDockTitles, selection: dockSelection))
+        .onAppear {
+            applyHiddenTabDefaultsIfNeeded()
+            TabBarTitleChrome.applyAfterRestore(showsTitles: showsDockTitles)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(350))
+                SearchFieldWarmup.perform()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            TabBarTitleChrome.applyAfterRestore(showsTitles: showsDockTitles)
+        }
+        .onChange(of: showsDockTitles) { _, showsTitles in
+            TabBarTitleChrome.apply(showsTitles: showsTitles)
+        }
+        .onChange(of: dockSelection) { _, selection in
+            TabBarTitleChrome.apply(showsTitles: showsDockTitles, selection: selection)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(50))
+                TabBarTitleChrome.apply(showsTitles: showsDockTitles, selection: selection)
+            }
+        }
         .background(.clear)
+    }
+
+    /// iPad always shows tab names. The dock caption setting is iPhone only.
+    private var showsDockTitles: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || showsTabNames
+    }
+
+    private func dockLabel(
+        _ title: String,
+        systemImage: String,
+        assetName: String? = nil,
+        isSelected: Bool = false
+    ) -> some View {
+        Label {
+            Text(showsDockTitles ? title : "")
+        } icon: {
+            TabBarIcon(assetName: assetName, systemImage: systemImage, isSelected: isSelected)
+        }
+        .accessibilityLabel(title)
     }
 
     private var tabCustomizationBinding: Binding<TabViewCustomization> {
@@ -77,7 +158,12 @@ struct MainTabView: View {
         }
     }
 
-    private var visibleTabs: [AppTab] {
+    private var pinnedLibraries: [MediaLibrary] {
+        let ids = DockLibraryPreferences.ids(from: dockLibraryIDsRaw)
+        return session.libraries.filter { ids.contains($0.id) && DockLibraryPreferences.canPin($0) }
+    }
+
+    private var enabledTabs: [AppTab] {
         var ordered = AppTab.ordered(from: tabOrderRaw)
         if session.usesSilo {
             ordered.removeAll { $0 == .liveTV }
@@ -89,6 +175,14 @@ struct MainTabView: View {
             !tab.canHide || tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
         }
     }
+
+    private var phoneDock: (tabs: [AppTab], libraries: [MediaLibrary]) {
+        PhoneDockLimit.content(tabs: enabledTabs, libraries: pinnedLibraries)
+    }
+
+    private var dockTabs: [AppTab] { phoneDock.tabs }
+
+    private var dockLibraries: [MediaLibrary] { phoneDock.libraries }
 
     @ViewBuilder
     private func tabRoot(_ tab: AppTab) -> some View {
@@ -107,6 +201,258 @@ struct MainTabView: View {
             LibraryView()
         case .favorites:
             CatalogBrowseView(title: "Favorites", libraryKind: .favorites)
+        }
+    }
+}
+
+private enum DockSelection: Hashable {
+    case tab(AppTab)
+    case library(String)
+    case search
+
+    @MainActor
+    init?(tab: UITab) {
+        let identifier = tab.identifier
+        let title = tab.title
+        for appTab in AppTab.allCases {
+            if identifier.contains(appTab.customizationID) || title == appTab.title {
+                self = .tab(appTab)
+                return
+            }
+        }
+        if let range = identifier.range(of: "app.zelefin.library.") {
+            let libraryID = String(identifier[range.upperBound...])
+            if !libraryID.isEmpty {
+                self = .library(libraryID)
+                return
+            }
+        }
+        if title == "Search" || identifier.localizedCaseInsensitiveContains("search") {
+            self = .search
+            return
+        }
+        return nil
+    }
+}
+
+/// Hides the caption under each dock icon without replacing the tab bar material.
+private struct TabBarTitleApplier: UIViewRepresentable {
+    var showsTitles: Bool
+    var selection: DockSelection
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        Coordinator.showsTitles = showsTitles
+        context.coordinator.start()
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        Coordinator.showsTitles = showsTitles
+        let showsTitles = showsTitles
+        DispatchQueue.main.async {
+            TabBarTitleChrome.apply(showsTitles: showsTitles)
+        }
+    }
+
+    @MainActor
+    final class Coordinator {
+        static var showsTitles = false
+        nonisolated(unsafe) private var observer: NSObjectProtocol?
+
+        func start() {
+            guard observer == nil else { return }
+            observer = NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    TabBarTitleChrome.applyAfterRestore(showsTitles: Coordinator.showsTitles)
+                }
+            }
+        }
+
+        deinit {
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+    }
+}
+
+@MainActor
+private enum TabBarTitleChrome {
+    private static var restoreTask: Task<Void, Never>?
+
+    /// SwiftUI puts the 24-point asset back when the app returns. Apply again after that restore.
+    static func applyAfterRestore(showsTitles: Bool) {
+        apply(showsTitles: showsTitles)
+        restoreTask?.cancel()
+        restoreTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            apply(showsTitles: showsTitles)
+        }
+    }
+
+    static func apply(showsTitles: Bool, selection: DockSelection? = nil) {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+        var resolved = selection
+        for window in windows {
+            if let root = window.rootViewController,
+               let detected = applyIcons(in: root, selection: selection) {
+                resolved = detected
+            }
+            apply(showsTitles: showsTitles, in: window, selection: resolved)
+        }
+    }
+
+    @discardableResult
+    private static func applyIcons(in controller: UIViewController, selection: DockSelection?) -> DockSelection? {
+        var detected = selection
+        if let tabs = controller as? UITabBarController {
+            if selection == nil, let selected = tabs.selectedTab, let parsed = DockSelection(tab: selected) {
+                detected = parsed
+            }
+            let selectedIdentifier = tabs.selectedTab?.identifier
+            for tab in tabs.tabs {
+                applyIcon(to: tab, selectedIdentifier: selectedIdentifier, selection: detected)
+            }
+        }
+        for child in controller.children {
+            if let childSelection = applyIcons(in: child, selection: detected) {
+                detected = childSelection
+            }
+        }
+        if let presented = controller.presentedViewController,
+           let presentedSelection = applyIcons(in: presented, selection: detected) {
+            detected = presentedSelection
+        }
+        return detected
+    }
+
+    private static func applyIcon(to tab: UITab, selectedIdentifier: String?, selection: DockSelection?) {
+        if let group = tab as? UITabGroup {
+            for child in group.children {
+                applyIcon(to: child, selectedIdentifier: selectedIdentifier, selection: selection)
+            }
+        }
+        guard let base = assetBase(for: tab) else { return }
+        let selected = isSelected(base: base, identifier: tab.identifier, title: tab.title, selectedIdentifier: selectedIdentifier, selection: selection)
+        if base == "IconsaxSearch", !selected {
+            tab.image = TabBarIconMetrics.originalImage(named: base, color: .white)
+        } else {
+            tab.image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
+        }
+    }
+
+    /// The search tab keeps showing `selectedImage` after another tab is open. Both images follow the real selection.
+    private static func isSelected(
+        base: String,
+        identifier: String,
+        title: String,
+        selectedIdentifier: String?,
+        selection: DockSelection?
+    ) -> Bool {
+        if base == "IconsaxSearch" {
+            if let selection {
+                return selection == .search
+            }
+            return title == "Search" && identifier == selectedIdentifier
+                || identifier.localizedCaseInsensitiveContains("search") && identifier == selectedIdentifier
+        }
+        if let selection {
+            switch selection {
+            case .search:
+                return false
+            case .tab(let tab):
+                return identifier.contains(tab.customizationID) || title == tab.title
+            case .library(let id):
+                return identifier.contains("app.zelefin.library.\(id)")
+            }
+        }
+        return identifier == selectedIdentifier
+    }
+
+    private static func assetBase(for tab: UITab) -> String? {
+        assetBase(identifier: tab.identifier, title: tab.title)
+    }
+
+    private static func assetBase(identifier: String, title: String) -> String? {
+        if identifier.contains("tab.home") || title == "Home" { return "IconsaxHome" }
+        if identifier.contains("tab.movies") || title == "Movies" { return "IconsaxMovies" }
+        if identifier.contains("tab.shows") || title == "Shows" { return "IconsaxShows" }
+        if identifier.contains("tab.liveTV") || title == "Live TV" { return "IconsaxLiveTV" }
+        if identifier.contains("tab.collections") || title == "Collections" { return "IconsaxCollections" }
+        if identifier.contains("library") || title == "Library" { return "IconsaxLibrary" }
+        if identifier.localizedCaseInsensitiveContains("search") || title == "Search" { return "IconsaxSearch" }
+        return nil
+    }
+
+    private static func apply(showsTitles: Bool, in view: UIView, selection: DockSelection?) {
+        if let bar = view as? UITabBar {
+            let standard = bar.standardAppearance.copy()
+            style(standard, showsTitles: showsTitles)
+            bar.standardAppearance = standard
+            let edge = (bar.scrollEdgeAppearance ?? standard).copy()
+            style(edge, showsTitles: showsTitles)
+            bar.scrollEdgeAppearance = edge
+            let inset = showsTitles
+                ? UIEdgeInsets.zero
+                : UIEdgeInsets(top: 6, left: 0, bottom: -6, right: 0)
+            let shift = showsTitles ? UIOffset.zero : UIOffset(horizontal: 0, vertical: 80)
+            for item in bar.items ?? [] {
+                item.imageInsets = inset
+                item.titlePositionAdjustment = shift
+                guard let title = item.title, let base = assetBase(identifier: "", title: title) else { continue }
+                let selected = isSelected(
+                    base: base,
+                    identifier: "",
+                    title: title,
+                    selectedIdentifier: nil,
+                    selection: selection
+                ) || (selection == nil && item == bar.selectedItem)
+                let image: UIImage?
+                if base == "IconsaxSearch", !selected {
+                    image = TabBarIconMetrics.originalImage(named: base, color: .white)
+                } else {
+                    image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
+                }
+                item.image = image
+                item.selectedImage = image
+            }
+        }
+        for subview in view.subviews {
+            apply(showsTitles: showsTitles, in: subview, selection: selection)
+        }
+    }
+
+    private static func style(_ appearance: UITabBarAppearance, showsTitles: Bool) {
+        let hidden: [NSAttributedString.Key: Any] = [
+            .foregroundColor: UIColor.clear,
+            .font: UIFont.systemFont(ofSize: 0.01)
+        ]
+        let attributes = showsTitles ? [:] : hidden
+        for layout in [
+            appearance.stackedLayoutAppearance,
+            appearance.inlineLayoutAppearance,
+            appearance.compactInlineLayoutAppearance
+        ] {
+            layout.normal.titleTextAttributes = attributes
+            layout.selected.titleTextAttributes = attributes
+            layout.disabled.titleTextAttributes = attributes
+            layout.focused.titleTextAttributes = attributes
+            layout.normal.titlePositionAdjustment = showsTitles ? .zero : UIOffset(horizontal: 0, vertical: 80)
+            layout.selected.titlePositionAdjustment = showsTitles ? .zero : UIOffset(horizontal: 0, vertical: 80)
         }
     }
 }

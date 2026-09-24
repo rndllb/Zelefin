@@ -120,6 +120,7 @@ final class PlayerModel {
             }
             await reportPlaybackStarted()
             didStart = true
+            onDidStart?()
             RemoteControlHub.shared.attach(self)
         } catch is CancellationError {
             await stop()
@@ -234,6 +235,7 @@ final class PlayerModel {
     }
 
     var onUserTransport: ((RemotePlaybackAction) -> Void)?
+    var onDidStart: (() -> Void)?
     @ObservationIgnored private var isApplyingRemote = false
 
     func togglePlayPause() {

@@ -609,22 +609,36 @@ struct UserAccountEditorView: View {
     }
 
     private func uploadPhoto(_ item: PhotosPickerItem) async {
+        let image: UIImage
+        do {
+            image = try await PickedProfileImage.load(item)
+        } catch is CancellationError {
+            pickerItem = nil
+            return
+        } catch {
+            pickerItem = nil
+            report(error, isError: true)
+            return
+        }
+        guard let jpeg = ProfileImageEncoder.jpegData(from: image) else {
+            pickerItem = nil
+            report(ZelefinError.server("Zelefin could not read that photo."), isError: true)
+            return
+        }
         isUpdatingPhoto = true
         status = nil
+        localAvatar = image
         defer {
             isUpdatingPhoto = false
             pickerItem = nil
         }
         do {
-            let image = try await PickedProfileImage.load(item)
-            guard let jpeg = ProfileImageEncoder.jpegData(from: image) else {
-                throw ZelefinError.server("Zelefin could not read that photo.")
-            }
-            localAvatar = image
             try await session.updateProfileImage(userID: account.id, jpeg: jpeg)
             try await refreshEditedUser()
             report("Profile picture updated.", isError: false)
             await onChanged()
+        } catch is CancellationError {
+            localAvatar = nil
         } catch {
             localAvatar = nil
             report(error, isError: true)

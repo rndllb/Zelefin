@@ -38,6 +38,48 @@ enum JellyfinEnhancedHomeHide {
     }
 }
 
+/// Titles the user removed from a home row. The next home refresh still receives
+/// them from Jellyfin until the plugin filter catches up, so this set keeps them out.
+enum HomeQueueHideStore {
+    static func ids(userID: String, surface: JellyfinEnhancedHomeSurface) -> Set<String> {
+        let raw = UserDefaults.standard.string(forKey: key(userID: userID, surface: surface)) ?? ""
+        return Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+    }
+
+    static func insert(_ itemID: String, userID: String, surface: JellyfinEnhancedHomeSurface) {
+        var hidden = ids(userID: userID, surface: surface)
+        hidden.insert(itemID)
+        write(hidden, userID: userID, surface: surface)
+    }
+
+    static func remove(_ itemID: String, userID: String) {
+        for surface in [JellyfinEnhancedHomeSurface.continueWatching, .nextUp] {
+            var hidden = ids(userID: userID, surface: surface)
+            guard hidden.remove(itemID) != nil else { continue }
+            write(hidden, userID: userID, surface: surface)
+        }
+    }
+
+    static func filter(
+        _ items: [MediaItem],
+        userID: String?,
+        surface: JellyfinEnhancedHomeSurface
+    ) -> [MediaItem] {
+        guard let userID else { return items }
+        let hidden = ids(userID: userID, surface: surface)
+        guard !hidden.isEmpty else { return items }
+        return items.filter { !hidden.contains($0.id) }
+    }
+
+    private static func write(_ hidden: Set<String>, userID: String, surface: JellyfinEnhancedHomeSurface) {
+        UserDefaults.standard.set(hidden.sorted().joined(separator: ","), forKey: key(userID: userID, surface: surface))
+    }
+
+    private static func key(userID: String, surface: JellyfinEnhancedHomeSurface) -> String {
+        "zelefin.hidden-home.\(userID).\(surface.rawValue)"
+    }
+}
+
 enum JellyfinEnhancedReviewKey {
     static func target(for item: MediaItem) -> (mediaType: String, tmdbID: String)? {
         guard let tmdbID = item.tmdbID, tmdbID > 0 else { return nil }
@@ -197,6 +239,16 @@ struct JellyfinEnhancedClient: Sendable {
     func hideFromHome(itemID: String, surface: JellyfinEnhancedHomeSurface) async throws {
         let path = JellyfinEnhancedHomeHide.path(itemID: itemID, surface: surface)
         _ = try await send(method: "POST", path: path, ok: [200, 201, 204])
+    }
+
+    /// Dashboard switch labeled Enable "Remove from Continue Watching".
+    func removeContinueWatchingEnabled() async -> Bool {
+        do {
+            let data = try await send(method: "GET", path: "/JellyfinEnhanced/public-config", ok: [200])
+            return JellyfinEnhancedJSON.removeContinueWatchingEnabled(from: data)
+        } catch {
+            return false
+        }
     }
 
     func reviews(mediaType: String, tmdbID: String) async throws -> [JellyfinEnhancedReview] {
@@ -375,11 +427,18 @@ enum JellyfinEnhancedJSON {
             switch value(object, key) {
             case let flag as Bool:
                 return flag
+            case let number as NSNumber:
+                return number.boolValue
             default:
                 continue
             }
         }
         return nil
+    }
+
+    static func removeContinueWatchingEnabled(from data: Data) -> Bool {
+        guard let object = object(from: data) else { return false }
+        return bool(object, "RemoveContinueWatchingEnabled", "removeContinueWatchingEnabled") ?? false
     }
 
     static func reviews(from data: Data) -> [JellyfinEnhancedReview] {

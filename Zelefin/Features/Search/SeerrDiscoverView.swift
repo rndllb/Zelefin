@@ -46,12 +46,9 @@ struct SeerrDiscoverHomeView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: PosterMetrics.rowSpacing) {
                         ForEach(titles) { item in
-                            Button {
+                            SeerrRequestPosterButton(title: item) { item in
                                 onSelect(item)
-                            } label: {
-                                SeerrPoster(title: item)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -73,11 +70,7 @@ struct SeerrDiscoverHomeView: View {
                                     home.markRequested(title)
                                 }
                             } label: {
-                                LabeledPortraitCard(
-                                    title: genre.name,
-                                    imageURL: genre.imageURL,
-                                    washColor: LabeledPortraitCard.genreWash(for: genre.name)
-                                )
+                                GenrePosterCard(title: genre.name)
                             }
                             .buttonStyle(.plain)
                             .frame(width: PosterMetrics.portraitSize.width * sidebarLayout.scale, alignment: .leading)
@@ -149,19 +142,7 @@ struct SeerrDiscoverGridView: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(Array(titles.enumerated()), id: \.element.id) { index, title in
-                        Button {
-                            handleRequest(title)
-                        } label: {
-                            FillingPosterCell { size in
-                                SeerrPoster(title: title, size: size)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .onAppear {
-                            if index >= titles.count - 4 {
-                                Task { await loadMore() }
-                            }
-                        }
+                        gridCell(title, index: index)
                     }
                 }
                 .padding(16)
@@ -188,6 +169,17 @@ struct SeerrDiscoverGridView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(requestError ?? "")
+        }
+    }
+
+    private func gridCell(_ title: SeerrTitle, index: Int) -> some View {
+        SeerrRequestPosterButton(title: title, fillsCell: true) { title in
+            handleRequest(title)
+        }
+        .onAppear {
+            if index >= titles.count - 4 {
+                Task { await loadMore() }
+            }
         }
     }
 
@@ -226,6 +218,7 @@ struct SeerrDiscoverGridView: View {
     }
 
     private func handleRequest(_ title: SeerrTitle) {
+        guard !title.isInJellyfin(catalog: session.tmdbCatalog) else { return }
         if session.usesSilo {
             Task { await submitSiloRequest(title) }
         } else {
@@ -254,11 +247,50 @@ struct SeerrDiscoverGridView: View {
     }
 }
 
+private struct SeerrRequestPosterButton: View {
+    @Environment(SessionStore.self) private var session
+    let title: SeerrTitle
+    var fillsCell = false
+    var onSelect: (SeerrTitle) -> Void
+
+    private var locked: Bool {
+        title.isInJellyfin(catalog: session.tmdbCatalog)
+    }
+
+    var body: some View {
+        Group {
+            if locked {
+                poster
+                    .allowsHitTesting(false)
+            } else {
+                Button {
+                    onSelect(title)
+                } label: {
+                    poster
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var poster: some View {
+        if fillsCell {
+            FillingPosterCell { size in
+                SeerrPoster(title: title, size: size, libraryMarkOnly: locked)
+            }
+        } else {
+            SeerrPoster(title: title, libraryMarkOnly: locked)
+        }
+    }
+}
+
 private struct SeerrPoster: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: SeerrTitle
     var size: CGSize? = nil
+    var libraryMarkOnly = false
 
     private var fittedSize: CGSize {
         size ?? PosterMetrics.portraitSize.scaled(by: sidebarLayout.scale)
@@ -272,17 +304,19 @@ private struct SeerrPoster: View {
         PosterImage(url: title.posterURL)
             .frame(width: fittedSize.width, height: fittedSize.height)
             .overlay(alignment: .topLeading) {
-                SeerrKindMark(kind: title.kind)
-                    .padding(6)
+                if !libraryMarkOnly {
+                    SeerrKindMark(kind: title.kind)
+                        .padding(6)
+                }
             }
             .overlay(alignment: .topTrailing) {
-                if isInJellyfin {
+                if libraryMarkOnly || isInJellyfin {
                     JellyfinLibraryMark()
                         .padding(6)
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if let requester = title.requestedByName {
+                if !libraryMarkOnly, let requester = title.requestedByName {
                     Text(requester)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.black)

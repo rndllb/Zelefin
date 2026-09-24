@@ -125,21 +125,41 @@ final class RemoteControlHub {
 
         var backoff: TimeInterval = 1
         while !Task.isCancelled, generation == self.generation {
-            var request = URLRequest(url: url)
-            AccessGateway.apply(&request)
-            request.setValue(session.accessToken, forHTTPHeaderField: "X-Emby-Token")
-            let task = URLSession.shared.webSocketTask(with: request)
+            let task = Self.socketTask(url: url, session: session)
             socket = task
             task.resume()
-            await subscribeToSessions(task)
-            startKeepAlive(every: 30, generation: generation)
-            let dropped = await listen(task, generation: generation)
+            let dropped = await openAndListen(task, generation: generation)
             keepAlive?.cancel()
             socket = nil
             guard dropped, !Task.isCancelled, generation == self.generation else { return }
             try? await Task.sleep(for: .seconds(backoff))
             backoff = min(30, backoff * 2)
         }
+    }
+
+    /// This server rejects a socket that only carries `api_key`. The handshake
+    /// has to include the same MediaBrowser authorization header as the API.
+    private static func socketTask(url: URL, session: SavedSession) -> URLSessionWebSocketTask {
+        var request = URLRequest(url: url)
+        AccessGateway.apply(&request)
+        request.setValue(
+            "MediaBrowser Client=\"\(DeviceIdentity.clientName)\", Device=\"\(DeviceIdentity.deviceName)\", DeviceId=\"\(session.deviceID)\", Version=\"\(DeviceIdentity.version)\", Token=\"\(session.accessToken)\"",
+            forHTTPHeaderField: "Authorization"
+        )
+        return URLSession.shared.webSocketTask(with: request)
+    }
+
+    private func openAndListen(_ task: URLSessionWebSocketTask, generation: Int) async -> Bool {
+        do {
+            let first = try await task.receive()
+            guard !Task.isCancelled, generation == self.generation else { return false }
+            await subscribeToSessions(task)
+            startKeepAlive(every: 30, generation: generation)
+            handle(first)
+        } catch {
+            return true
+        }
+        return await listen(task, generation: generation)
     }
 
     private func startKeepAlive(every seconds: TimeInterval, generation: Int) {

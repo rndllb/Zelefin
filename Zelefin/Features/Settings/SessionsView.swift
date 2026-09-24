@@ -40,6 +40,7 @@ struct SessionsView: View {
                                     SessionRow(item: item, localDeviceID: session.session?.deviceID)
                                         .settingsLoginCard()
                                 }
+                                .navigationLinkIndicatorVisibility(.hidden)
                                 .settingsCardRow()
                             }
                         }
@@ -53,6 +54,7 @@ struct SessionsView: View {
                                     SessionRow(item: item, localDeviceID: session.session?.deviceID)
                                         .settingsLoginCard()
                                 }
+                                .navigationLinkIndicatorVisibility(.hidden)
                                 .settingsCardRow()
                             }
                         }
@@ -102,7 +104,7 @@ private struct SessionRow: View {
     var localDeviceID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .center, spacing: 14) {
             poster
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.title)
@@ -131,8 +133,9 @@ private struct SessionRow: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             SettingsChevron()
-                .padding(.top, 4)
+                .frame(width: 12, height: 18)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
@@ -176,6 +179,8 @@ struct SessionDetailView: View {
     @State private var item: PlaybackSession?
     @State private var errorMessage: String?
     @State private var isBusy = false
+    @State private var isComposingMessage = false
+    @State private var messageText = ""
 
     var body: some View {
         Group {
@@ -201,19 +206,6 @@ struct SessionDetailView: View {
                                 .settingsCardRow()
                         }
                     }
-                    if item.canControl, item.isPlaying {
-                        Section("Controls") {
-                            SessionControlBar(item: item, isBusy: isBusy, send: send)
-                                .settingsLoginCard()
-                                .settingsCardRow()
-                        }
-                    } else if item.isPlaying {
-                        Section {
-                            SettingsStatusText(text: "This client does not accept remote control.")
-                                .settingsLoginCard()
-                                .settingsCardRow()
-                        }
-                    }
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
@@ -234,7 +226,43 @@ struct SessionDetailView: View {
             }
         }
         .zelefinSettingsChrome(title: item?.userLabel ?? "Session")
+        .sheet(isPresented: $isComposingMessage) {
+            messageComposer
+        }
         .task { await monitor() }
+    }
+
+    private var messageComposer: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 10) {
+                if let name = item?.userLabel {
+                    Text("To \(name)")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(LoginPalette.secondaryText)
+                }
+                TextField("Write a message", text: $messageText, axis: .vertical)
+                    .lineLimit(2...4)
+                    .padding(14)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Message")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { isComposingMessage = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send") { Task { await sendMessage() } }
+                        .disabled(isBusy || messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.height(240)])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
     }
 
     private func header(_ item: PlaybackSession) -> some View {
@@ -269,17 +297,43 @@ struct SessionDetailView: View {
             }
 
             if item.isPlaying {
-                VStack(spacing: 8) {
-                    ProgressView(value: item.progressFraction)
-                        .tint(AccentPreferences.current)
-                    Text(item.positionLabel)
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(LoginPalette.captionText)
+                VStack(spacing: 16) {
+                    VStack(spacing: 8) {
+                        ProgressView(value: item.progressFraction)
+                            .tint(AccentPreferences.current)
+                        Text(item.positionLabel)
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(LoginPalette.captionText)
+                    }
+                    if item.canControl {
+                        SessionControlBar(item: item, isBusy: isBusy, send: send)
+                    } else {
+                        Text("This client does not accept remote control.")
+                            .font(.caption)
+                            .foregroundStyle(LoginPalette.captionText)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .padding(.horizontal, 8)
             }
+            messageButton
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var messageButton: some View {
+        Button {
+            messageText = ""
+            isComposingMessage = true
+        } label: {
+            Label("Message", systemImage: "text.bubble")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(LoginPalette.primaryText)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Color.white.opacity(0.08), in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func playbackCard(_ item: PlaybackSession) -> some View {
@@ -390,6 +444,23 @@ struct SessionDetailView: View {
             errorMessage = error.localizedDescription
         }
     }
+
+    private func sendMessage() async {
+        guard let library = session.jellyfinLibrary else { return }
+        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await library.sendSessionMessage(sessionID: sessionID, text: text)
+            messageText = ""
+            isComposingMessage = false
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            isComposingMessage = false
+        }
+    }
 }
 
 private enum SessionControlAction {
@@ -403,48 +474,49 @@ private struct SessionControlBar: View {
     var send: (SessionControlAction) async -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 18) {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                if item.canSeek {
+                    control("gobackward.10", "Back 10 seconds") {
+                        await send(.playstate(.seek, seek: max(0, item.position - 10)))
+                    }
+                }
                 control("backward.end.fill", "Previous") {
                     await send(.playstate(.previousTrack))
                 }
                 control(item.isPaused ? "play.fill" : "pause.fill", item.isPaused ? "Play" : "Pause") {
                     await send(.playstate(item.isPaused ? .unpause : .pause))
                 }
-                control("stop.fill", "Stop") {
-                    await send(.playstate(.stop))
-                }
                 control("forward.end.fill", "Next") {
                     await send(.playstate(.nextTrack))
                 }
-            }
-            .frame(maxWidth: .infinity)
-            if item.canSeek {
-                HStack(spacing: 18) {
-                    control("gobackward.10", "Back 10 seconds") {
-                        await send(.playstate(.seek, seek: max(0, item.position - 10)))
-                    }
+                if item.canSeek {
                     control("goforward.10", "Forward 10 seconds") {
                         let end = item.runtime ?? (item.position + 10)
                         await send(.playstate(.seek, seek: min(end, item.position + 10)))
                     }
                 }
-                .frame(maxWidth: .infinity)
             }
-            if supportsVolume {
-                HStack(spacing: 18) {
+            .frame(maxWidth: .infinity)
+            HStack(spacing: 14) {
+                if supportsVolume {
                     control("speaker.minus.fill", "Volume down") {
                         await send(.command(.volumeDown))
                     }
                     control(item.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill", item.isMuted ? "Unmute" : "Mute") {
                         await send(.command(item.isMuted ? .unmute : .mute))
                     }
+                }
+                control("stop.fill", "Stop") {
+                    await send(.playstate(.stop))
+                }
+                if supportsVolume {
                     control("speaker.plus.fill", "Volume up") {
                         await send(.command(.volumeUp))
                     }
                 }
-                .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
         .disabled(isBusy)

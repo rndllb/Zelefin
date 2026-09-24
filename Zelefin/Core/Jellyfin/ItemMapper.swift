@@ -342,7 +342,7 @@ enum ItemMapper {
         switch collectionType {
         case .movies: .movies
         case .tvshows: .shows
-        case .music: .music
+        case .music, .musicvideos: .music
         case .books: .books
         case .photos: .photos
         case .livetv: .liveTV
@@ -453,7 +453,9 @@ enum ItemMapper {
         case .boxSet: kind = .title(.collection)
         case .tvChannel, .liveTvProgram, .tvProgram: kind = .title(.liveTV)
         case .person: kind = .person
-        case .genre: kind = .genre
+        case .genre:
+            guard HomeLayoutPreferences.isBrowsableGenre(name) else { return nil }
+            kind = .genre
         case .studio: kind = .studio
         case .audio, .musicArtist, .musicAlbum, .musicGenre, .musicVideo, .audioBook, .playlist, .book, .photo, .photoAlbum, .video:
             return nil

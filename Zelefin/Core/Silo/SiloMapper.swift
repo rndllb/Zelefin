@@ -568,6 +568,7 @@ enum SiloMapper {
         case "show", "shows", "series", "tv": .shows
         case "collection", "collections": .collections
         case "live", "livetv", "live_tv": .liveTV
+        case "music", "musicvideo", "musicvideos", "audio": .music
         default: .other
         }
     }

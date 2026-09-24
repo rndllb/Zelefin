@@ -6,6 +6,7 @@ struct CatalogBrowseView: View {
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: String
     let libraryKind: LibraryKind
+    var libraryID: String? = nil
     var showsBackButton = false
 
     @State private var items: [MediaItem] = []
@@ -125,11 +126,15 @@ struct CatalogBrowseView: View {
 
     private func loadOptions() async {
         guard let library = session.library else { return }
-        options = await library.catalogFilterOptions(for: libraryKind)
+        if let libraryID, let match = session.libraries.first(where: { $0.id == libraryID }) {
+            options = await library.catalogFilterOptions(for: match)
+        } else {
+            options = await library.catalogFilterOptions(for: libraryKind)
+        }
     }
 
     private func load() async {
-        if query.isDefault, items.isEmpty, let cached = session.cachedCatalog(kind: libraryKind), !cached.isEmpty {
+        if libraryID == nil, query.isDefault, items.isEmpty, let cached = session.cachedCatalog(kind: libraryKind), !cached.isEmpty {
             items = cached
             isLoading = false
         }
@@ -142,6 +147,9 @@ struct CatalogBrowseView: View {
         if catalog.isEmpty {
             catalog = (try? await library.libraries()) ?? []
         }
+        if let libraryID {
+            catalog = catalog.filter { $0.id == libraryID }
+        }
         let showingCachedDefault = query.isDefault && !items.isEmpty
         let fresh = await library.browseCatalog(
             kind: libraryKind,
@@ -152,7 +160,7 @@ struct CatalogBrowseView: View {
         }
         if !fresh.isEmpty || !query.isDefault {
             items = fresh
-            if query.isDefault {
+            if libraryID == nil, query.isDefault {
                 session.saveCatalog(fresh, kind: libraryKind)
             }
         }

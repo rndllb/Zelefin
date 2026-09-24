@@ -74,6 +74,23 @@ struct SeerrTitle: Identifiable, Hashable, Sendable {
     var availability: Availability
     var requestedByName: String? = nil
     var requestID: Int? = nil
+    /// Seerr's own request status, separate from whether the title is on the server.
+    var review: Review? = nil
+
+    enum Review: String, Hashable, Sendable {
+        case pendingApproval
+        case approved
+        case declined
+
+        init?(status: Int?) {
+            switch status {
+            case 1: self = .pendingApproval
+            case 2: self = .approved
+            case 3: self = .declined
+            default: return nil
+            }
+        }
+    }
 
     var canRequest: Bool { availability.canRequest }
 
@@ -90,6 +107,13 @@ struct SeerrUser: Decodable, Sendable {
     var displayName: String? = nil
     var jellyfinUsername: String? = nil
     var plexUsername: String? = nil
+    var permissions: Int? = nil
+
+    /// Overseerr/Seerr: admin is bit 2, manage requests is bit 16.
+    var canManageRequests: Bool {
+        let bits = permissions ?? 0
+        return bits & 2 != 0 || bits & 16 != 0
+    }
 
     var displayLabel: String {
         [username, jellyfinUsername, displayName, plexUsername, email]
@@ -132,6 +156,18 @@ struct SeerrClient: Sendable {
 
     func request(_ draft: SeerrRequestDraft) async throws {
         try await post(baseURL.appending(path: "api/v1/request"), body: draft.jsonObject)
+    }
+
+    func approveRequest(id: Int, draft: SeerrRequestDraft) async throws {
+        try await post(baseURL.appending(path: "api/v1/request/\(id)/approve"), body: draft.jsonObject)
+    }
+
+    func requestDetails(id: Int) async throws -> SeerrStoredRequest {
+        try await get(baseURL.appending(path: "api/v1/request/\(id)"))
+    }
+
+    func declineRequest(id: Int) async throws {
+        try await post(baseURL.appending(path: "api/v1/request/\(id)/decline"), body: [:])
     }
 
     func radarrServers() async throws -> [SeerrServiceServer] {
@@ -448,6 +484,19 @@ struct SeerrMediaSeason: Decodable, Hashable, Sendable {
 enum SeerrSeasonSelection: Equatable, Sendable {
     case all
     case numbers([Int])
+}
+
+struct SeerrStoredRequest: Decodable, Sendable {
+    var is4k: Bool?
+    var serverId: Int?
+    var profileId: Int?
+    var rootFolder: String?
+    var languageProfileId: Int?
+    var seasons: [SeerrStoredSeason]?
+}
+
+struct SeerrStoredSeason: Decodable, Sendable {
+    var seasonNumber: Int
 }
 
 struct SeerrRequestDraft: Equatable, Sendable {

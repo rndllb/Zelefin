@@ -587,10 +587,42 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
 
     var appearsInLibrary: Bool {
         switch self {
-        case .movies, .shows, .liveTV:
-            true
-        default:
+        case .music, .books, .playlists, .favorites:
             false
+        default:
+            true
+        }
+    }
+
+    var browseLabel: String {
+        switch self {
+        case .movies: "Movies"
+        case .shows: "Shows"
+        case .music: "Music"
+        case .books: "Books"
+        case .photos: "Photos"
+        case .liveTV: "Live TV"
+        case .playlists: "Playlists"
+        case .homeVideos: "Home videos"
+        case .collections: "Collections"
+        case .favorites: "Favorites"
+        case .other: "Library"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .movies: "film"
+        case .shows: "tv"
+        case .music: "music.note"
+        case .books: "book"
+        case .photos: "photo"
+        case .liveTV: "dot.radiowaves.left.and.right"
+        case .playlists: "list.bullet.rectangle"
+        case .homeVideos: "video"
+        case .collections: "square.grid.2x2.fill"
+        case .favorites: "heart.fill"
+        case .other: "rectangle.stack"
         }
     }
 
@@ -612,6 +644,9 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         }
         if lower.contains("collection") {
             return .collections
+        }
+        if lower.contains("music") {
+            return .music
         }
         return nil
     }

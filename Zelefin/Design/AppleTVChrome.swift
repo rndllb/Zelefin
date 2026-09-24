@@ -675,8 +675,42 @@ struct LabeledPortraitCard: View {
     }
 }
 
-/// The "watched" checkmark badge shown at the top-trailing corner of a poster.
-/// Shared across poster styles so the mark looks identical everywhere.
+/// Dark grey into black, with the genre name in Outfit Bold.
+struct GenrePosterCard: View {
+    let title: String
+    var width: CGFloat? = nil
+    var height: CGFloat? = nil
+    var cornerRadius: CGFloat = PosterMetrics.cornerRadius
+    @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+
+    var body: some View {
+        let fittedWidth = width ?? PosterMetrics.portraitSize.width * sidebarLayout.scale
+        let fittedHeight = height ?? PosterMetrics.portraitSize.height * sidebarLayout.scale
+        let size = CGSize(width: fittedWidth, height: fittedHeight)
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(
+                colors: [Color(white: 0.11), Color(white: 0.04), .black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            GenreIcon(title: title, side: size.width * 0.42)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.bottom, size.height * 0.12)
+            Text(title)
+                .font(.custom("Outfit", size: size.width * 0.16).weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(3)
+                .minimumScaleFactor(0.5)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(size.width * 0.08)
+        }
+        .frame(width: fittedWidth, height: fittedHeight)
+        .posterCard(cornerRadius: cornerRadius)
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .accessibilityLabel(title)
+    }
+}
 struct PosterWatchedMark: View {
     var size: CGFloat = 22
 
@@ -1403,12 +1437,23 @@ enum RootPageChrome {
         showsTitle(idiom: UIDevice.current.userInterfaceIdiom)
     }
 
-    static func headerVisible(offset: CGFloat, previousOffset: CGFloat, wasVisible: Bool) -> Bool {
+    static func headerVisible(
+        offset: CGFloat,
+        previousOffset: CGFloat,
+        wasVisible: Bool,
+        distanceFromBottom: CGFloat = .greatestFiniteMagnitude
+    ) -> Bool {
         if offset <= hideAfter { return true }
         let delta = offset - previousOffset
         if delta > 2 { return false }
-        if delta < -2 { return true }
+        // A bottom bounce moves the offset upward without the user scrolling up.
+        if delta < -2, distanceFromBottom > 24 { return true }
         return wasVisible
+    }
+
+    static func distanceFromBottom(_ geometry: ScrollGeometry) -> CGFloat {
+        let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
+        return geometry.contentSize.height - visibleBottom
     }
 
     /// Lift a safe-area overlay into the iPad top tab bar row, matching Home.
@@ -1446,13 +1491,17 @@ private struct HeaderScrollVisibilityModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onScrollGeometryChange(for: CGFloat.self, of: { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top
+            .onScrollGeometryChange(for: ScrollSample.self, of: { geometry in
+                ScrollSample(
+                    offset: geometry.contentOffset.y + geometry.contentInsets.top,
+                    distanceFromBottom: RootPageChrome.distanceFromBottom(geometry)
+                )
             }) { oldValue, newValue in
                 let next = RootPageChrome.headerVisible(
-                    offset: max(0, newValue),
-                    previousOffset: max(0, oldValue),
-                    wasVisible: isVisible
+                    offset: max(0, newValue.offset),
+                    previousOffset: max(0, oldValue.offset),
+                    wasVisible: isVisible,
+                    distanceFromBottom: newValue.distanceFromBottom
                 )
                 guard next != isVisible else { return }
                 withAnimation(.smooth(duration: 0.22)) {
@@ -1483,6 +1532,11 @@ enum ScreenInsets {
         }
         return 59
     }
+}
+
+struct ScrollSample: Equatable {
+    var offset: CGFloat
+    var distanceFromBottom: CGFloat
 }
 
 enum ZelefinMotion {

@@ -25,13 +25,13 @@ enum PlaybackQueueMenuLayout {
         _ = kind
         switch context {
         case .episode:
-            return [.download, .play, .markWatched]
+            return [.play, .markWatched, .download]
         case .continueWatching, .nextUp:
-            return [.download, .play, .goToShow, .markWatched, .removeFromHomeQueue]
+            return [.play, .goToShow, .markWatched, .download, .removeFromHomeQueue]
         case .featured:
-            return [.download, .play, .goToShow, .markWatched]
+            return [.play, .goToShow, .markWatched, .download]
         case .recentlyWatched:
-            return [.download, .play, .goToShow, .markWatched, .removeFromRecentlyWatched]
+            return [.play, .goToShow, .markWatched, .download, .removeFromRecentlyWatched]
         }
     }
 
@@ -72,12 +72,25 @@ struct PlaybackQueueMenuContent: View {
     var onPlay: () -> Void
     var onDownload: () -> Void
     var onMarkWatched: () -> Void
-    var onAddSubtitles: (() -> Void)? = nil
     var onRemoveFromHomeQueue: (() -> Void)? = nil
     var onRemoveFromRecentlyWatched: (() -> Void)? = nil
 
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
+
+    private var showsHomeQueueRemoval: Bool {
+        guard actionsContainRemoval, onRemoveFromHomeQueue != nil else { return false }
+        guard session.jellyfinEnhancedAvailable else { return false }
+        let surface = JellyfinEnhancedHomeHide.surface(queueKind: item.queueKind)
+        if surface == .continueWatching {
+            return session.jellyfinEnhancedRemoveContinueWatching
+        }
+        return true
+    }
+
+    private var actionsContainRemoval: Bool {
+        PlaybackQueueMenuLayout.actions(context: context, kind: item.kind).contains(.removeFromHomeQueue)
+    }
 
     var body: some View {
         let actions = PlaybackQueueMenuLayout.actions(context: context, kind: item.kind)
@@ -85,21 +98,6 @@ struct PlaybackQueueMenuContent: View {
             ? downloads.control(for: item, account: session.session)
             : .unavailable
 
-        TitleUserActions(item: item, onChange: { _ in })
-
-        if actions.contains(.download) {
-            Button(DownloadControlCopy.title(for: downloadState), systemImage: DownloadControlCopy.symbol(for: downloadState)) {
-                onDownload()
-            }
-            .disabled(downloadState == .unavailable)
-        }
-        if item.kind == .movie || item.kind == .episode {
-            TitlePlaybackMenus(item: item, onAddSubtitles: onAddSubtitles)
-        } else if session.shouldShowAddSubtitles(for: item), let onAddSubtitles {
-            Button("Add Subtitles", systemImage: "captions.bubble") {
-                onAddSubtitles()
-            }
-        }
         if actions.contains(.play) {
             Button(PlaybackQueueMenuLayout.playTitle(for: item.kind), systemImage: "play.fill") {
                 onPlay()
@@ -123,17 +121,34 @@ struct PlaybackQueueMenuContent: View {
                 onMarkWatched()
             }
         }
-        if actions.contains(.removeFromHomeQueue),
-           session.jellyfinEnhancedAvailable,
-           let onRemoveFromHomeQueue
+        if actions.contains(.download) {
+            Button(DownloadControlCopy.title(for: downloadState), systemImage: DownloadControlCopy.symbol(for: downloadState)) {
+                onDownload()
+            }
+            .disabled(downloadState == .unavailable)
+        }
+        Button {
+            Task { _ = try? await session.toggleFavorite(item) }
+        } label: {
+            Label(
+                item.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                systemImage: item.isFavorite ? "heart.fill" : "heart"
+            )
+        }
+        if actions.contains(.removeFromHomeQueue) && showsHomeQueueRemoval
+            || actions.contains(.removeFromRecentlyWatched) && onRemoveFromRecentlyWatched != nil
         {
+            Divider()
+        }
+        if showsHomeQueueRemoval {
             Button(
                 JellyfinEnhancedHomeHide.menuTitle(
                     for: JellyfinEnhancedHomeHide.surface(queueKind: item.queueKind)
                 ),
-                systemImage: "eye.slash"
+                systemImage: "eye.slash",
+                role: .destructive
             ) {
-                onRemoveFromHomeQueue()
+                onRemoveFromHomeQueue?()
             }
         }
         if actions.contains(.removeFromRecentlyWatched), let onRemoveFromRecentlyWatched {
@@ -310,7 +325,6 @@ struct PlaybackQueueOverflowButton: View {
     @Environment(PlusEntitlement.self) private var plus
     @State private var errorMessage: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
-    @State private var subtitleSearchItem: MediaItem?
 
     var body: some View {
         Menu {
@@ -320,9 +334,6 @@ struct PlaybackQueueOverflowButton: View {
                 onPlay: onPlay,
                 onDownload: { Task { await requestDownloadAction() } },
                 onMarkWatched: { Task { await toggleWatched() } },
-                onAddSubtitles: {
-                    subtitleSearchItem = item
-                },
                 onRemoveFromHomeQueue: (context == .continueWatching || context == .nextUp)
                     ? { Task { await removeFromHomeQueue() } }
                     : nil,
@@ -362,7 +373,6 @@ struct PlaybackQueueOverflowButton: View {
             downloads.removeDownloaded(item: item, account: session.session)
             onDidChange?()
         }
-        .openSubtitlesSearch(item: $subtitleSearchItem)
     }
 
     private func requestDownloadAction() async {

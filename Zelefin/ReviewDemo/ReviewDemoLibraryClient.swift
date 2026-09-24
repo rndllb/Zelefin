@@ -135,6 +135,10 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
         return items
     }
 
+    override func previewItems(in library: MediaLibrary, limit: Int) async -> [MediaItem] {
+        Array(ReviewDemoCatalog.items(in: library).prefix(limit))
+    }
+
     override func collectionItems(
         query: CatalogBrowseQuery = .default,
         onPage: CatalogPageHandler? = nil
@@ -163,6 +167,30 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
 
     override func catalogCount(kind: LibraryKind, libraries: [MediaLibrary]) async -> Int {
         await browseCatalog(kind: kind, libraries: libraries).count
+    }
+
+    override func serverCatalogCounts() async -> ServerCatalogCounts {
+        ServerCatalogCounts(
+            movies: ReviewDemoCatalog.movies.count,
+            shows: ReviewDemoCatalog.shows.count,
+            episodes: ReviewDemoCatalog.episodes.count
+        )
+    }
+
+    override func roomCounts(for library: MediaLibrary) async -> LibraryRoomCounts {
+        switch library.libraryKind {
+        case .movies:
+            return LibraryRoomCounts(movies: ReviewDemoCatalog.movies.count, shows: 0, episodes: 0)
+        case .shows:
+            return LibraryRoomCounts(movies: 0, shows: ReviewDemoCatalog.shows.count, episodes: ReviewDemoCatalog.episodes.count)
+        default:
+            let items = ReviewDemoCatalog.items(in: library)
+            return LibraryRoomCounts(
+                movies: items.filter { $0.kind == .movie }.count,
+                shows: items.filter { $0.kind == .series }.count,
+                episodes: items.filter { $0.kind == .episode }.count
+            )
+        }
     }
 
     override func item(id: String) async throws -> MediaItem {

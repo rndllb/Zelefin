@@ -225,11 +225,14 @@ struct MediaRow: View {
         case .ranked:
             PortraitPoster(item: item, imageURL: url, rank: rank)
         case .labeledPortrait:
-            LabeledPortraitCard(
-                title: item.browsingCardTitle,
-                imageURL: url,
-                washColor: item.kind == .genre ? LabeledPortraitCard.genreWash(for: item.name) : nil
-            )
+            if item.kind == .genre {
+                GenrePosterCard(title: item.browsingCardTitle)
+            } else {
+                LabeledPortraitCard(
+                    title: item.browsingCardTitle,
+                    imageURL: url
+                )
+            }
         }
     }
 
@@ -445,13 +448,20 @@ struct CatalogCardGridView: View {
                         }
                     } label: {
                         FillingPosterCell { size in
-                            LabeledPortraitCard(
-                                title: item.browsingCardTitle,
-                                imageURL: session.library?.artworkURL(for: item, style: .labeledPortrait),
-                                washColor: item.kind == .genre ? LabeledPortraitCard.genreWash(for: item.name) : nil,
-                                width: size.width,
-                                height: size.height
-                            )
+                            if item.kind == .genre {
+                                GenrePosterCard(
+                                    title: item.browsingCardTitle,
+                                    width: size.width,
+                                    height: size.height
+                                )
+                            } else {
+                                LabeledPortraitCard(
+                                    title: item.browsingCardTitle,
+                                    imageURL: session.library?.artworkURL(for: item, style: .labeledPortrait),
+                                    width: size.width,
+                                    height: size.height
+                                )
+                            }
                         }
                     }
                     .buttonStyle(.plain)
@@ -578,7 +588,7 @@ struct CatalogGridView: View {
             }
             switch query {
             case let .genre(id):
-                items = try await library.items(genreID: id, query: browseQuery, onPage: onPage)
+                items = try await library.items(genreID: id, genreName: title, query: browseQuery, onPage: onPage)
             case let .parent(id):
                 items = try await library.items(parentID: id, query: browseQuery, onPage: onPage)
             case let .person(id):

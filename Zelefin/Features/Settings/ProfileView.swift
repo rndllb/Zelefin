@@ -693,21 +693,37 @@ struct ProfileView: View {
     }
 
     private func uploadPhoto(_ item: PhotosPickerItem) async {
+        let image: UIImage
+        do {
+            image = try await PickedProfileImage.load(item)
+        } catch is CancellationError {
+            pickerItem = nil
+            return
+        } catch {
+            pickerItem = nil
+            statusIsError = true
+            status = error.localizedDescription
+            return
+        }
+        guard let jpeg = ProfileImageEncoder.jpegData(from: image) else {
+            pickerItem = nil
+            statusIsError = true
+            status = "Zelefin could not read that photo."
+            return
+        }
         isUpdatingPhoto = true
         status = nil
+        localAvatar = image
         defer {
             isUpdatingPhoto = false
             pickerItem = nil
         }
         do {
-            let image = try await PickedProfileImage.load(item)
-            guard let jpeg = ProfileImageEncoder.jpegData(from: image) else {
-                throw ZelefinError.server("Zelefin could not read that photo.")
-            }
-            localAvatar = image
             try await session.updateProfileImage(jpeg)
             statusIsError = false
             status = "Profile picture updated."
+        } catch is CancellationError {
+            localAvatar = nil
         } catch {
             localAvatar = nil
             statusIsError = true
@@ -933,12 +949,13 @@ struct UserAvatarView: View {
 
     private func load() async {
         guard localImage == nil else { return }
-        remoteImage = nil
-        guard let url else { return }
-        if let loaded = await ArtworkCache.shared.load(from: url, persist: false) {
-            guard !Task.isCancelled else { return }
-            remoteImage = loaded
+        guard let url else {
+            remoteImage = nil
+            return
         }
+        guard let loaded = await ArtworkCache.shared.load(from: url, persist: false) else { return }
+        guard !Task.isCancelled else { return }
+        remoteImage = loaded
     }
 }
 
