@@ -29,6 +29,7 @@ import app.zelefin.core.TitleTrailer
 import app.zelefin.core.ZelefinException
 import app.zelefin.core.arr
 import app.zelefin.core.bool
+import app.zelefin.core.dbl
 import app.zelefin.core.int
 import app.zelefin.core.obj
 import app.zelefin.core.objects
@@ -385,6 +386,81 @@ class SiloClient(
     suspend fun stop(sessionId: String) = withContext(Dispatchers.IO) {
         call("/api/v1/playback/${urlPath(sessionId)}", method = "DELETE")
         Unit
+    }
+
+    data class ManagedDownload(val id: String, val contentId: String?, val status: String, val fileSize: Long?) {
+        val isReady: Boolean get() = status.equals("ready", ignoreCase = true)
+        val isRevoked: Boolean get() = status.equals("revoked", ignoreCase = true)
+    }
+
+    /** `GET /api/v1/downloads/capability`: whether this profile may download, and the quality to request. */
+    suspend fun downloadCapability(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val response = call("/api/v1/downloads/capability")
+        val json = SiloJson.objectOrNull(response.body)
+        if (response.status !in 200..299 || json == null) return@withContext false to "original"
+        val usable = json.bool("enabled") == true && json.bool("download_allowed") == true
+        val presets = (json.arr("quality_presets") ?: json.arr("formats"))
+            ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.ifEmpty { null } }
+            .orEmpty()
+        val quality = presets.firstOrNull { it.equals("original", ignoreCase = true) } ?: presets.firstOrNull() ?: "original"
+        usable to quality
+    }
+
+    suspend fun downloadFileId(item: MediaItem): Int? = withContext(Dispatchers.IO) {
+        item.mediaSourceId?.toIntOrNull() ?: runCatching { catalogItem(item.id)?.mediaSourceId?.toIntOrNull() }.getOrNull()
+    }
+
+    /** `POST /api/v1/downloads`; returns the rows the server echoes back. */
+    suspend fun createDownload(contentId: String, fileId: Int?, quality: String): List<ManagedDownload> = withContext(Dispatchers.IO) {
+        val file = fileId?.let { ""","file_id":$it""" }.orEmpty()
+        val body = """{"content_id":${jsonString(contentId)}$file,"quality":${jsonString(quality)}}"""
+        val response = call("/api/v1/downloads", method = "POST", body = body)
+        if (response.status !in 200..299) throw ZelefinException.server(errorMessage(response.body, response.status))
+        managedDownloads(response.body)
+    }
+
+    suspend fun downloadRows(): List<ManagedDownload> = withContext(Dispatchers.IO) {
+        val response = call("/api/v1/downloads")
+        if (response.status !in 200..299) return@withContext emptyList()
+        managedDownloads(response.body)
+    }
+
+    fun downloadFileUrl(id: String): String? = SiloMediaUrl.resolve(baseUrl, "/api/v1/downloads/${urlPath(id)}/file")
+
+    suspend fun completeDownload(id: String) = withContext(Dispatchers.IO) {
+        call("/api/v1/downloads/${urlPath(id)}", method = "PATCH", body = """{"status":"completed"}""")
+        Unit
+    }
+
+    suspend fun deleteDownload(id: String) = withContext(Dispatchers.IO) {
+        call("/api/v1/downloads/${urlPath(id)}", method = "DELETE")
+        Unit
+    }
+
+    fun mediaHeaders(): Map<String, String> = streamHeaders()
+
+    suspend fun itemPosterUrl(id: String): String? = withContext(Dispatchers.IO) { catalogItem(id)?.posterUrl }
+
+    private fun managedDownloads(body: String): List<ManagedDownload> {
+        val element = runCatching { SiloJson.parse(body) }.getOrNull() ?: return emptyList()
+        val rows = when (element) {
+            is kotlinx.serialization.json.JsonArray -> element.mapNotNull { it as? JsonObject }
+            is JsonObject -> when {
+                element.arr("downloads") != null -> element.objects("downloads")
+                element.arr("items") != null -> element.objects("items")
+                else -> listOf(element.obj("download") ?: element)
+            }
+            else -> emptyList()
+        }
+        return rows.mapNotNull { row ->
+            val id = row.str("id") ?: row.int("id")?.toString() ?: return@mapNotNull null
+            ManagedDownload(
+                id = id,
+                contentId = row.str("content_id") ?: row.int("content_id")?.toString(),
+                status = row.str("status") ?: "preparing",
+                fileSize = row.dbl("file_size")?.toLong(),
+            )
+        }
     }
 
     private suspend fun resolvePlayable(item: MediaItem): MediaItem {

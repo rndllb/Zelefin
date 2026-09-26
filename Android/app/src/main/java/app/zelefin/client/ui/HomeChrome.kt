@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.rememberCoroutineScope
+import app.zelefin.client.HomeShelf
 import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.core.ArtworkUrls
 import app.zelefin.core.HomeFeed
@@ -97,6 +98,7 @@ fun HomeFeedPage(
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
     onHideFromHome: (suspend (MediaItem, JellyfinEnhancedHomeSurface) -> String?)? = null,
+    onSeeAll: (HomeShelf) -> Unit = {},
 ) {
     var more by remember { mutableStateOf<TitleMoreRequest?>(null) }
     var note by remember { mutableStateOf<MenuNotice?>(null) }
@@ -121,6 +123,12 @@ fun HomeFeedPage(
         }
     }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val featured = if (HomeLayoutPreferences.showsFeatured) feed.featured else emptyList()
+    val continueWatching = if (HomeLayoutPreferences.mergeContinueAndNextUp) {
+        (feed.continueWatching + feed.nextUp).distinctBy { it.id }
+    } else {
+        feed.continueWatching
+    }
     Box(Modifier.fillMaxSize()) {
     PullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -141,37 +149,42 @@ fun HomeFeedPage(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            top = if (feed.featured.isEmpty()) statusTop + HomeHeaderHeight else 0.dp,
+            top = if (featured.isEmpty()) statusTop + HomeHeaderHeight else 0.dp,
             bottom = bottomInset,
         ),
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-        if (feed.featured.isNotEmpty()) {
+        if (featured.isNotEmpty()) {
             item {
-                FeaturedHero(feed.featured, session, onOpen, onPlay, paused = more != null) { item, anchor ->
+                FeaturedHero(featured, session, onOpen, onPlay, paused = more != null) { item, anchor ->
                     more = TitleMoreRequest(item, TitleMenuContext.Featured, anchor)
                 }
             }
         }
-        if (feed.continueWatching.isNotEmpty()) {
-            item {
-                HomeRow("Continue Watching", feed.continueWatching, session, landscape = true, onOpen) { item, anchor ->
-                    more = TitleMoreRequest(item, TitleMenuContext.ContinueWatching, anchor)
+        HomeLayoutPreferences.visibleRows.forEach { row ->
+            when (row) {
+                HomeRowKind.ContinueWatching -> if (continueWatching.isNotEmpty()) {
+                    item {
+                        HomeRow("Continue Watching", continueWatching, session, landscape = true, onOpen, onSeeAll = { onSeeAll(HomeShelf.ContinueWatching) }) { item, anchor ->
+                            val fromNextUp = feed.continueWatching.none { it.id == item.id }
+                            more = TitleMoreRequest(item, if (fromNextUp) TitleMenuContext.NextUp else TitleMenuContext.ContinueWatching, anchor)
+                        }
+                    }
+                }
+                HomeRowKind.NextUp -> if (feed.nextUp.isNotEmpty()) {
+                    item {
+                        HomeRow("Next Up", feed.nextUp, session, landscape = true, onOpen, onSeeAll = { onSeeAll(HomeShelf.NextUp) }) { item, anchor ->
+                            more = TitleMoreRequest(item, TitleMenuContext.NextUp, anchor)
+                        }
+                    }
+                }
+                HomeRowKind.RecentMovies -> if (feed.recentMovies.isNotEmpty()) {
+                    item { HomeRow("Recently Added Movies", feed.recentMovies, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentMovies) }) }
+                }
+                HomeRowKind.RecentShows -> if (feed.recentShows.isNotEmpty()) {
+                    item { HomeRow("Recently Added Shows", feed.recentShows, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentShows) }) }
                 }
             }
-        }
-        if (feed.nextUp.isNotEmpty()) {
-            item {
-                HomeRow("Next Up", feed.nextUp, session, landscape = true, onOpen) { item, anchor ->
-                    more = TitleMoreRequest(item, TitleMenuContext.NextUp, anchor)
-                }
-            }
-        }
-        if (feed.recentMovies.isNotEmpty()) {
-            item { HomeRow("Recently Added Movies", feed.recentMovies, session, landscape = false, onOpen) }
-        }
-        if (feed.recentShows.isNotEmpty()) {
-            item { HomeRow("Recently Added Shows", feed.recentShows, session, landscape = false, onOpen) }
         }
     }
     }
@@ -493,12 +506,15 @@ private fun HomeRow(
     session: SavedSession?,
     landscape: Boolean,
     onOpen: (MediaItem) -> Unit,
+    onSeeAll: (() -> Unit)? = null,
     onMore: ((MediaItem, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
-            Modifier.padding(horizontal = 16.dp),
+            Modifier
+                .padding(horizontal = 16.dp)
+                .then(if (onSeeAll != null) Modifier.clickable(onClick = onSeeAll) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {

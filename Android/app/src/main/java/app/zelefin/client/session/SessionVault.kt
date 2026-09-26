@@ -38,6 +38,26 @@ class SessionVault(context: Context) {
 
     fun current(): SavedSession? = loadAccounts()?.current
 
+    fun accounts(): List<SavedSession> = loadAccounts()?.accounts.orEmpty()
+
+    /** Drops one saved account and returns the account that becomes current, if any remain. */
+    fun remove(accountId: String): SavedSession? {
+        val box = loadAccounts() ?: return null
+        val remaining = box.accounts.filterNot { it.accountId == accountId }
+        if (remaining.isEmpty()) {
+            clear()
+            return null
+        }
+        val currentId = if (box.currentId == accountId || remaining.none { it.accountId == box.currentId }) {
+            remaining.first().accountId
+        } else {
+            box.currentId
+        }
+        val next = SavedAccountBox(accounts = remaining, currentId = currentId)
+        prefs.edit().putString(ACCOUNTS, json.encodeToString(next)).apply()
+        return next.current
+    }
+
     fun clear() {
         prefs.edit().remove(ACCOUNTS).apply()
     }

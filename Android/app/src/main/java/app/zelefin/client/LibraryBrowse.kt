@@ -86,6 +86,10 @@ sealed interface LibraryRoute {
         override val title get() = "Genres"
     }
 
+    data object Downloaded : LibraryRoute {
+        override val title get() = "Downloaded"
+    }
+
     data class Genre(val genre: LibraryGenre) : LibraryRoute {
         override val title get() = genre.name
     }

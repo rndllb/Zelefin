@@ -131,6 +131,7 @@ fun LibraryScreen(
     onClearRecentSearches: () -> Unit,
     plugins: app.zelefin.client.PluginsController,
     onHideFromHome: suspend (MediaItem, app.zelefin.client.plugins.JellyfinEnhancedHomeSurface) -> String? = { _, _ -> null },
+    onSeeAll: (app.zelefin.client.HomeShelf) -> Unit = {},
 ) {
     val contentBottom = DockContentReserve
     val pluginState by plugins.state.collectAsState()
@@ -155,6 +156,7 @@ fun LibraryScreen(
                     onToggleWatched,
                     onToggleFavorite,
                     onHideFromHome = if (pluginState.hidesFromHome) onHideFromHome else null,
+                    onSeeAll = onSeeAll,
                 )
                 AppTab.Movies -> CatalogBrowsePage(
                     title = "Movies",
@@ -253,6 +255,7 @@ fun DetailScreen(
     onSetCollectionMember: suspend (String, String, Boolean) -> Unit = { _, _, _ -> },
     onCreateCollection: suspend (String, String) -> Unit = { _, _ -> },
     plugins: app.zelefin.client.PluginsController? = null,
+    actions: DetailTitleActions = DetailTitleActions(),
 ) {
     DetailPage(
         detail,
@@ -268,6 +271,7 @@ fun DetailScreen(
         onSetCollectionMember,
         onCreateCollection,
         plugins,
+        actions = actions,
     )
 }
 
@@ -278,15 +282,24 @@ fun PlayerScreen(
     onProgress: (Double, Boolean) -> Unit,
     onStopped: (Double) -> Unit,
     onClose: () -> Unit,
+    session: app.zelefin.core.SavedSession? = null,
+    onLoadNext: suspend (MediaItem) -> MediaItem? = { null },
+    onPlayNext: (MediaItem, Double) -> Unit = { _, _ -> },
 ) {
     val pluginState by plugins.state.collectAsState()
     var segments by remember(plan.item.id) { mutableStateOf(emptyList<app.zelefin.client.plugins.SkipSegment>()) }
     LaunchedEffect(plan.item.id) { segments = plugins.skipSegments(plan.item.id) }
+    var nextEpisode by remember(plan.item.id) { mutableStateOf<MediaItem?>(null) }
+    LaunchedEffect(plan.item.id) {
+        if (plan.item.kind == app.zelefin.core.MediaKind.Episode) nextEpisode = runCatching { onLoadNext(plan.item) }.getOrNull()
+    }
+    val nextArtwork = remember(nextEpisode, session) { nextEpisode?.let { artworkCandidates(it, session, landscape = true) }.orEmpty() }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         PlayerSurface(
             plan = plan,
             onProgress = onProgress,
             onStopped = onStopped,
+            onClose = onClose,
             skipSegments = segments,
             autoSkip = { kind ->
                 when (kind) {
@@ -294,8 +307,10 @@ fun PlayerScreen(
                     app.zelefin.client.plugins.SkipSegment.Kind.Outro -> pluginState.autoSkipCredits
                 }
             },
+            nextEpisode = nextEpisode,
+            nextArtwork = nextArtwork,
+            onPlayNext = onPlayNext,
         )
-        TextButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) { Text("Close", color = Color.White) }
     }
 }
 

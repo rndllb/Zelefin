@@ -29,6 +29,7 @@ object GatewayHttp {
     }
 
     val client: OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(ServerRoute.interceptor)
         .addInterceptor(gateway)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)

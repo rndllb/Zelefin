@@ -42,8 +42,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.zelefin.client.ui.BrowseScreen
 import app.zelefin.client.ui.ConnectScreen
 import app.zelefin.client.ui.DetailScreen
+import app.zelefin.client.ui.DetailTitleActions
 import app.zelefin.client.ui.LibraryScreen
 import app.zelefin.client.ui.PinScreen
 import app.zelefin.client.ui.PlayerScreen
@@ -72,6 +74,16 @@ import app.zelefin.client.ui.zelefinSheetBackdrop
 import app.zelefin.core.TitleDetail
 
 class MainActivity : ComponentActivity() {
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        app.zelefin.client.ui.PlayerWindow.onUserLeaveHint(this)
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        app.zelefin.client.ui.PlayerWindow.onModeChanged(this, isInPictureInPictureMode)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -115,11 +127,12 @@ class MainActivity : ComponentActivity() {
                 val knownDetails = remember { mutableMapOf<String, TitleDetail>() }
                 state.detail?.let { knownDetails[it.item.id] = it }
                 LaunchedEffect(backdrop) {
-                    if (backdrop !is Screen.Detail && backdrop != Screen.Library) detailCoversDock = false
+                    if (backdrop !is Screen.Detail && backdrop !is Screen.Browse && backdrop != Screen.Library) detailCoversDock = false
                 }
                 val showDock = state.session != null && !sheetUp && when (backdrop) {
                     Screen.Library -> !detailCoversDock
                     is Screen.Detail -> !detailCoversDock
+                    is Screen.Browse -> !detailCoversDock
                     else -> false
                 }
                 val hazeState = rememberZelefinHazeState()
@@ -142,7 +155,7 @@ class MainActivity : ComponentActivity() {
                             ) { screen ->
                                 Box(Modifier.fillMaxSize()) {
                                     ZelefinScreen(screen, state, model, knownDetails) { detailCoversDock = it }
-                                    if (navigation.currentState != navigation.targetState && screen is Screen.Detail) {
+                                    if (navigation.currentState != navigation.targetState && screen.isPushedPage()) {
                                         ZelefinGlassDiscs(hazeState, glassHost)
                                     }
                                 }
@@ -164,6 +177,9 @@ class MainActivity : ComponentActivity() {
                         ZelefinGlassDiscs(hazeState, glassHost)
                         glassHost.content?.invoke()
                     }
+                    // Settings pages live in the sheet; their confirms and pickers still need the glass overlay.
+                    if (sheetUp) glassHost.content?.invoke()
+                    app.zelefin.client.ui.DownloadNoticeAlert()
                     if (showDock) {
                         ZelefinFloatingDock(
                             currentTab = state.tab,
@@ -256,6 +272,26 @@ private fun ZelefinScreen(
             onClearRecentSearches = model::clearRecentSearches,
             plugins = model.plugins,
             onHideFromHome = model::hideFromHome,
+            onSeeAll = { shelf -> model.openBrowse(BrowsePage.Home(shelf)) },
+        )
+        is Screen.Browse -> BrowseScreen(
+            page = screen.page,
+            state = state,
+            onBack = model::back,
+            onOpen = model::openItem,
+            onPlay = model::play,
+            onToggleWatched = model::toggleWatched,
+            onToggleFavorite = model::toggleFavorite,
+            onBrowse = model::openBrowse,
+            onEnsureGrid = model::ensureBrowseGrid,
+            onGridQuery = model::applyLibraryQuery,
+            onGridRefresh = model::refreshLibraryGrid,
+            onGridFilters = model::loadLibraryFilters,
+            onCoversDock = onDetailCoversDock,
+            onProfile = model::openProfile,
+            onSessions = model::openSessions,
+            onSettings = model::openSettings,
+            onSignOut = model::signOut,
         )
         is Screen.Detail -> DetailScreen(
             knownDetails[screen.id] ?: state.detail,
@@ -271,6 +307,7 @@ private fun ZelefinScreen(
             onSetCollectionMember = model::setCollectionMember,
             onCreateCollection = model::createCollection,
             plugins = model.plugins,
+            actions = detailActions(model, state),
         )
         is Screen.Settings -> SettingsScreen(state, model::back, model::openProfile, model::openSettingsTopic)
         is Screen.Profile -> ProfileScreen(state, model::back)
@@ -278,19 +315,46 @@ private fun ZelefinScreen(
         is Screen.Player -> PlayerScreen(
             plan = screen.plan,
             plugins = model.plugins,
-            onProgress = model::playbackProgress,
-            onStopped = model::playbackStopped,
+            onProgress = { position, paused -> model.playbackProgress(screen.plan, position, paused) },
+            onStopped = { position -> model.playbackStopped(screen.plan, position) },
             onClose = model::back,
+            session = state.session,
+            onLoadNext = model::nextEpisode,
+            onPlayNext = { next, position -> model.playNext(screen.plan, position, next) },
         )
     }
+}
+
+private fun detailActions(model: ZelefinModel, state: ZelefinUiState): DetailTitleActions {
+    val jellyfin = state.session?.usesSilo == false
+    return DetailTitleActions(
+        onBrowse = model::openBrowse,
+        onRefreshDetail = model::refreshDetail,
+        remoteTargets = if (jellyfin) model::remotePlayTargets else null,
+        playOnRemote = model::playOnRemote,
+        syncPlayGroups = if (jellyfin) model::syncPlayGroups else null,
+        playInSyncPlay = model::playInSyncPlay,
+        refreshMetadata = if (jellyfin) model::refreshMetadata else null,
+        remoteArtwork = if (jellyfin) model::remoteArtwork else null,
+        applyArtwork = model::applyRemoteArtwork,
+        deleteFromLibrary = if (jellyfin) model::deleteFromLibrary else null,
+    )
+}
+
+private fun Screen.isPushedPage(): Boolean = this is Screen.Detail || this is Screen.Browse
+
+private fun Screen.pushedReturn(): Screen? = when (this) {
+    is Screen.Detail -> returnTo
+    is Screen.Browse -> returnTo
+    else -> null
 }
 
 private fun AnimatedContentTransitionScope<Screen>.pageTransition(): ContentTransform {
     val from = initialState
     val to = targetState
     val spec = tween<IntOffset>(380, easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f))
-    val pop = from is Screen.Detail && (to == from.returnTo || to !is Screen.Detail)
-    val push = to is Screen.Detail && from !is Screen.Player && !pop
+    val pop = from.isPushedPage() && (to == from.pushedReturn() || !to.isPushedPage())
+    val push = to.isPushedPage() && from !is Screen.Player && !pop
     return when {
         push -> (slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it / 3 })
             .apply { targetContentZIndex = 1f }
@@ -302,6 +366,7 @@ private fun AnimatedContentTransitionScope<Screen>.pageTransition(): ContentTran
 
 private fun Screen.pageKey(): String = when (this) {
     is Screen.Detail -> "detail:$id"
+    is Screen.Browse -> "browse:${page.title}:${page.hashCode()}"
     is Screen.Player -> "player:${plan.item.id}"
     is Screen.SettingsTopic -> "topic:$id"
     is Screen.Pin -> "pin:${profile.id}"

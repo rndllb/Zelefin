@@ -18,6 +18,7 @@ class ZelefinApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         ZelefinPush.ensureChannel(this)
+        app.zelefin.client.ui.loadInterfacePreferences(this)
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)

@@ -50,7 +50,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.aspectRatio
+import app.zelefin.client.BrowsePage
 import app.zelefin.client.EnhancedExtras
+import app.zelefin.client.LibraryRoute
 import app.zelefin.client.PluginsController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -90,6 +93,9 @@ private sealed interface DetailSheet {
     data object Seasons : DetailSheet
     data class Subtitles(val item: MediaItem) : DetailSheet
     data class Review(val existing: app.zelefin.client.plugins.JellyfinEnhancedReview?) : DetailSheet
+    data class RemotePlay(val item: MediaItem) : DetailSheet
+    data class SyncPlay(val item: MediaItem) : DetailSheet
+    data class Images(val item: MediaItem) : DetailSheet
 }
 
 @Composable
@@ -107,11 +113,15 @@ fun DetailPage(
     onSetCollectionMember: suspend (String, String, Boolean) -> Unit = { _, _, _ -> },
     onCreateCollection: suspend (String, String) -> Unit = { _, _ -> },
     plugins: PluginsController? = null,
+    actions: DetailTitleActions = DetailTitleActions(),
 ) {
     var sheet by remember { mutableStateOf<DetailSheet?>(null) }
     var note by remember { mutableStateOf<MenuNotice?>(null) }
+    var downloadRemoval by remember { mutableStateOf<MediaItem?>(null) }
+    DownloadRemovalOverlay(downloadRemoval) { downloadRemoval = null }
     val pageSheet: DetailSheet? = when (val current = sheet) {
         DetailSheet.MoreInfo, is DetailSheet.Collections, is DetailSheet.Subtitles, is DetailSheet.Review -> current
+        is DetailSheet.RemotePlay, is DetailSheet.SyncPlay, is DetailSheet.Images -> current
         else -> null
     }
     val pluginState = plugins?.state?.collectAsState()?.value
@@ -211,6 +221,9 @@ fun DetailPage(
                         moreInfo = detail.moreInfo,
                     )
                 }
+                item(key = "download-status") {
+                    DetailDownloadStatus(item, Modifier.padding(bottom = 20.dp))
+                }
                 if (detail.seasons.isNotEmpty()) {
                     item(key = "episodes") {
                         EpisodeStripSection(
@@ -232,7 +245,7 @@ fun DetailPage(
                 }
                 if (detail.trailers.isNotEmpty()) {
                     item(key = "trailers") {
-                        SectionTitle("Trailers")
+                        SectionTitle("Trailers") { actions.onBrowse(BrowsePage.Trailers(detail.trailers, item)) }
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -254,7 +267,7 @@ fun DetailPage(
                 }
                 if (detail.related.isNotEmpty()) {
                     item(key = "related") {
-                        SectionTitle("Related")
+                        SectionTitle("Related") { actions.onBrowse(BrowsePage.Shelf("Related", detail.related)) }
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -268,13 +281,17 @@ fun DetailPage(
                 }
                 if (item.people.isNotEmpty()) {
                     item(key = "cast") {
-                        SectionTitle("Cast & Crew")
+                        SectionTitle("Cast & Crew") { actions.onBrowse(BrowsePage.Cast(item.people)) }
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(item.people.take(24), key = { it.id + it.roleLabel }) { person ->
-                                CastCard(person, session)
+                                CastCard(
+                                    person,
+                                    session,
+                                    onClick = personRoute(person, session)?.let { route -> { actions.onBrowse(BrowsePage.Library(route)) } },
+                                )
                             }
                         }
                         Spacer(Modifier.height(20.dp))
@@ -282,7 +299,9 @@ fun DetailPage(
                 }
                 items(detail.collections, key = { it.collection.id }) { membership ->
                     val title = if (detail.collections.size > 1) membership.collection.name else "Collection"
-                    SectionTitle(title)
+                    SectionTitle(title) {
+                        actions.onBrowse(BrowsePage.Library(LibraryRoute.Collection(membership.collection.id, membership.collection.name)))
+                    }
                     LazyRow(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -330,13 +349,11 @@ fun DetailPage(
                         )
                     }
                     DownloadSharePill(
-                        onDownload = {
-                            note = MenuNotice(
-                                "Zelefin Plus",
-                                "Zelefin Plus includes Downloads. Sign in, browse, and Play stay free.",
-                            )
-                        },
+                        item = item,
+                        episodes = detail.episodes,
                         onShare = { shareTitle(context, item, session) },
+                        onRemove = { downloadRemoval = it },
+                        onNotice = { note = it },
                     )
                 }
             }
@@ -375,9 +392,34 @@ fun DetailPage(
                             item = shown.item,
                             plugins = plugins,
                             onClose = { sheet = null },
-                            onSaved = {},
+                            onSaved = actions.onRefreshDetail,
                         )
                     }
+                }
+                is DetailSheet.RemotePlay -> ZelefinSheetSurface(sheetMotion.progress) {
+                    RemotePlaySheet(
+                        item = shown.item,
+                        onLoad = actions.remoteTargets ?: { emptyList() },
+                        onPlay = actions.playOnRemote,
+                        onClose = { sheet = null },
+                    )
+                }
+                is DetailSheet.SyncPlay -> ZelefinSheetSurface(sheetMotion.progress) {
+                    SyncPlaySheet(
+                        item = shown.item,
+                        defaultGroupName = session?.userName?.let { "$it’s group" } ?: "Watch Together",
+                        onLoad = actions.syncPlayGroups ?: { emptyList() },
+                        onStart = actions.playInSyncPlay,
+                        onClose = { sheet = null },
+                    )
+                }
+                is DetailSheet.Images -> ZelefinSheetSurface(sheetMotion.progress) {
+                    ImagePickerSheet(
+                        item = shown.item,
+                        onLoad = actions.remoteArtwork ?: { _, _ -> emptyList() },
+                        onChoose = actions.applyArtwork,
+                        onClose = { sheet = null },
+                    )
                 }
                 is DetailSheet.Review -> ZelefinSheetSurface(sheetMotion.progress) {
                     TitleReviewEditor(
@@ -422,8 +464,17 @@ fun DetailPage(
         onAddSubtitles = more?.item?.takeIf { pluginState?.showsAddSubtitles(it.kind) == true }?.let {
             { target -> sheet = DetailSheet.Subtitles(target) }
         },
+        isAdmin = pluginState?.isAdmin == true,
+        onPlayElsewhere = actions.remoteTargets?.let { { target -> sheet = DetailSheet.RemotePlay(target) } },
+        onSyncPlay = actions.syncPlayGroups?.let { { target -> sheet = DetailSheet.SyncPlay(target) } },
+        onRefreshMetadata = actions.refreshMetadata?.let { refresh -> { target -> refresh(pageItem ?: target) } },
+        onEditImages = actions.remoteArtwork?.let { { target -> sheet = DetailSheet.Images(pageItem ?: target) } },
+        onDeleteFromLibrary = actions.deleteFromLibrary?.let { delete -> { target -> delete(pageItem ?: target) } },
     )
 }
+
+private fun personRoute(person: app.zelefin.core.CreditPerson, session: SavedSession?): LibraryRoute.Person? =
+    if (session?.usesSilo == true || person.id.isBlank()) null else LibraryRoute.Person(person.id, person.name)
 
 @Composable
 private fun DetailHero(
@@ -672,9 +723,14 @@ private fun MoreCapsule(modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CastCard(person: app.zelefin.core.CreditPerson, session: SavedSession?) {
+private fun CastCard(person: app.zelefin.core.CreditPerson, session: SavedSession?, onClick: (() -> Unit)? = null) {
     val photo = session?.serverUrl?.let { ArtworkUrls.person(it, person, session.accessToken) }
-    Column(Modifier.width(116.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier
+            .width(116.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Box(
             Modifier
                 .size(110.dp)
@@ -1123,10 +1179,11 @@ private fun EpisodeCard(
 }
 
 @Composable
-private fun TrailerCard(
+internal fun TrailerCard(
     trailer: TitleTrailer,
     title: MediaItem,
     session: app.zelefin.core.SavedSession?,
+    fillWidth: Boolean = false,
     onClick: () -> Unit,
 ) {
     val art = trailer.thumbnailUrl?.let { listOf(it) }
@@ -1134,8 +1191,7 @@ private fun TrailerCard(
         ?: heroArtworkCandidates(title, session)
     Box(
         Modifier
-            .width(280.dp)
-            .height(158.dp)
+            .then(if (fillWidth) Modifier.fillMaxWidth().aspectRatio(16f / 9f) else Modifier.width(280.dp).height(158.dp))
             .posterChrome()
             .clickable(onClick = onClick),
     ) {
@@ -1170,9 +1226,11 @@ private fun TrailerCard(
 }
 
 @Composable
-private fun SectionTitle(title: String) {
+private fun SectionTitle(title: String, onClick: (() -> Unit)? = null) {
     Row(
-        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -1189,23 +1247,6 @@ private fun GlassMore(modifier: Modifier = Modifier, onMore: (Rect) -> Unit) {
             .size(45.dp)
             .onGloballyPositioned { anchor.value = it.boundsInRoot() }
             .zelefinGlassDisc("detail-more", "More", Icons.Filled.MoreHoriz) { onMore(anchor.value) },
-    )
-}
-
-@Composable
-private fun DownloadSharePill(onDownload: () -> Unit, onShare: () -> Unit) {
-    Box(
-        Modifier
-            .size(width = 92.dp, height = 45.dp)
-            .zelefinGlassSplit(
-                key = "detail-download-share",
-                leadingDescription = "Download",
-                leadingIcon = Icons.Outlined.Download,
-                trailingDescription = "Share",
-                trailingIcon = Icons.Outlined.Share,
-                onLeading = onDownload,
-                onTrailing = onShare,
-            ),
     )
 }
 

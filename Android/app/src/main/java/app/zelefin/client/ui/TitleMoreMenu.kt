@@ -38,9 +38,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,10 +67,8 @@ enum class TitleMenuContext { Featured, ContinueWatching, NextUp, Episode, Detai
 
 internal data class MenuNotice(val title: String, val message: String)
 
-private fun plusNotice(feature: String) = MenuNotice(
-    "Zelefin Plus",
-    "Zelefin Plus includes $feature. Sign in, browse, and Play stay free.",
-)
+internal fun plusNotice(feature: app.zelefin.client.ZelefinPlus.Feature): MenuNotice =
+    app.zelefin.client.ZelefinPlus.notice(feature).let { (title, message) -> MenuNotice(title, message) }
 
 data class TitleMoreRequest(
     val item: MediaItem,
@@ -89,14 +92,63 @@ internal fun TitleMoreOverlay(
     onDismissNote: () -> Unit = {},
     onAddSubtitles: ((MediaItem) -> Unit)? = null,
     onHideFromHome: ((MediaItem, TitleMenuContext) -> Unit)? = null,
+    isAdmin: Boolean = false,
+    onPlayElsewhere: ((MediaItem) -> Unit)? = null,
+    onSyncPlay: ((MediaItem) -> Unit)? = null,
+    onRefreshMetadata: (suspend (MediaItem) -> Unit)? = null,
+    onEditImages: ((MediaItem) -> Unit)? = null,
+    onDeleteFromLibrary: (suspend (MediaItem) -> Unit)? = null,
 ) {
     val haze = LocalZelefinHaze.current
     PresentZelefinOverlay(visible = (request != null || note != null) && haze != null) {
         val hazeState = haze ?: return@PresentZelefinOverlay
         val current = request
         var menuNote by remember(current?.item?.id, current?.anchor) { mutableStateOf<MenuNotice?>(null) }
+        var actionNote by remember(current?.item?.id, current?.anchor) { mutableStateOf<MenuNotice?>(null) }
+        var confirmDelete by remember(current?.item?.id, current?.anchor) { mutableStateOf(false) }
+        var working by remember(current?.item?.id, current?.anchor) { mutableStateOf(false) }
+        var downloadRemoval by remember(current?.item?.id, current?.anchor) { mutableStateOf<MediaItem?>(null) }
+        val scope = rememberCoroutineScope()
         val showing = note ?: menuNote
-        if (showing != null) {
+        val finished = actionNote
+        if (finished != null && note == null) {
+            ZelefinGlassAlert(
+                hazeState = hazeState,
+                title = finished.title,
+                message = finished.message,
+                onDismiss = {
+                    actionNote = null
+                    onDismiss()
+                },
+            )
+        } else if (confirmDelete && current != null && onDeleteFromLibrary != null && note == null) {
+            ZelefinGlassConfirm(
+                hazeState = hazeState,
+                title = "Delete this title from the library?",
+                message = "Jellyfin will remove this item and its files from the server. This cannot be undone.",
+                confirmLabel = if (working) "Deleting…" else "Delete Files",
+                destructive = true,
+                enabled = !working,
+                onCancel = { confirmDelete = false },
+                onConfirm = {
+                    working = true
+                    scope.launch {
+                        runCatching { onDeleteFromLibrary(current.item) }
+                            .onSuccess {
+                                working = false
+                                confirmDelete = false
+                                onDismiss()
+                            }
+                            .onFailure { error ->
+                                if (error is kotlinx.coroutines.CancellationException) throw error
+                                working = false
+                                confirmDelete = false
+                                actionNote = MenuNotice("Couldn’t Delete", error.message ?: "Jellyfin kept this title. Try again in a moment.")
+                            }
+                    }
+                },
+            )
+        } else if (showing != null) {
             ZelefinGlassAlert(
                 hazeState = hazeState,
                 title = showing.title,
@@ -104,6 +156,18 @@ internal fun TitleMoreOverlay(
                 onDismiss = {
                     if (note != null) onDismissNote() else menuNote = null
                 },
+            )
+        } else if (downloadRemoval != null) {
+            val removing = downloadRemoval!!
+            DownloadRemovalConfirm(
+                hazeState = hazeState,
+                prompt = app.zelefin.client.downloads.DownloadPrompts.removal(removing),
+                onConfirm = {
+                    app.zelefin.client.downloads.ZelefinDownloads.remove(removing.id)
+                    downloadRemoval = null
+                    onDismiss()
+                },
+                onDismiss = { downloadRemoval = null },
             )
         } else if (current != null) {
             TitleMorePanel(
@@ -124,7 +188,21 @@ internal fun TitleMoreOverlay(
                     onDismiss()
                     onToggleWatched(current.item)
                 },
-                onDownload = { menuNote = plusNotice("Downloads") },
+                onDownload = {
+                    val target = app.zelefin.client.downloads.DownloadEligibility.playableItem(current.item)
+                    when (app.zelefin.client.downloads.ZelefinDownloads.state.value.control(current.item)) {
+                        app.zelefin.client.downloads.DownloadControlState.Idle -> {
+                            val notice = target?.let(::startDownload)
+                            if (notice != null) menuNote = notice else onDismiss()
+                        }
+                        is app.zelefin.client.downloads.DownloadControlState.Downloading -> {
+                            app.zelefin.client.downloads.ZelefinDownloads.cancel(current.item)
+                            onDismiss()
+                        }
+                        app.zelefin.client.downloads.DownloadControlState.Downloaded -> downloadRemoval = target
+                        app.zelefin.client.downloads.DownloadControlState.Unavailable -> Unit
+                    }
+                },
                 onToggleFavorite = {
                     onDismiss()
                     onToggleFavorite(current.item)
@@ -146,6 +224,43 @@ internal fun TitleMoreOverlay(
                         hide(current.item, current.context)
                     }
                 },
+                isAdmin = isAdmin,
+                onPlayElsewhere = onPlayElsewhere?.let { open ->
+                    {
+                        onDismiss()
+                        open(current.item)
+                    }
+                },
+                onSyncPlay = onSyncPlay?.let { open ->
+                    {
+                        onDismiss()
+                        open(current.item)
+                    }
+                },
+                onRefreshMetadata = onRefreshMetadata?.let { refresh ->
+                    {
+                        if (!working) {
+                            working = true
+                            scope.launch {
+                                actionNote = runCatching { refresh(current.item) }.fold(
+                                    onSuccess = { MenuNotice("Refreshing Metadata", "Jellyfin is refreshing this title. New details appear in a moment.") },
+                                    onFailure = { error ->
+                                        if (error is kotlinx.coroutines.CancellationException) throw error
+                                        MenuNotice("Couldn’t Refresh", error.message ?: "Jellyfin didn’t accept the refresh. Try again in a moment.")
+                                    },
+                                )
+                                working = false
+                            }
+                        }
+                    }
+                },
+                onEditImages = onEditImages?.let { open ->
+                    {
+                        onDismiss()
+                        open(current.item)
+                    }
+                },
+                onDeleteFromLibrary = onDeleteFromLibrary?.let { { confirmDelete = true } },
             )
         }
     }
@@ -168,12 +283,21 @@ private fun TitleMorePanel(
     onCollections: (() -> Unit)?,
     onAddSubtitles: (() -> Unit)?,
     onHideFromHome: (() -> Unit)?,
+    isAdmin: Boolean = false,
+    onPlayElsewhere: (() -> Unit)? = null,
+    onSyncPlay: (() -> Unit)? = null,
+    onRefreshMetadata: (() -> Unit)? = null,
+    onEditImages: (() -> Unit)? = null,
+    onDeleteFromLibrary: (() -> Unit)? = null,
 ) {
     val item = request.item
     val showGoTo = request.context != TitleMenuContext.Episode
     val library = request.context == TitleMenuContext.Detail
     val showRemote = library && !usesSilo
     val showSync = showRemote && item.kind.usesVideoPlayer
+    val showRefresh = isAdmin && onRefreshMetadata != null
+    val showAdminRemote = isAdmin && showRemote
+    val showAdmin = showRefresh || showAdminRemote
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     val menuWidth = when {
         onHideFromHome != null -> 320.dp
@@ -199,10 +323,13 @@ private fun TitleMorePanel(
                         rows += 1
                         if (showRemote) rows += 1
                         if (showSync) rows += 1
-                        rows += 1
-                        rules += 1
+                        if (showAdmin) {
+                            rules += 1
+                            if (showRefresh) rows += 1
+                            if (showAdminRemote) rows += 2
+                        }
                         if (showRemote) {
-                            rows += 3
+                            rows += 1
                             rules += 1
                         }
                     }
@@ -237,7 +364,18 @@ private fun TitleMorePanel(
                 if (item.isWatched) Icons.Outlined.VisibilityOff else Icons.Outlined.CheckCircle,
                 onToggleWatched,
             )
-            MoreRow("Download", Icons.Outlined.Download, onDownload)
+            val downloadControl = app.zelefin.client.downloads.ZelefinDownloads.state.collectAsState().value.control(item)
+            if (downloadControl != app.zelefin.client.downloads.DownloadControlState.Unavailable) {
+                MoreRow(
+                    downloadControl.menuTitle,
+                    when (downloadControl) {
+                        is app.zelefin.client.downloads.DownloadControlState.Downloading -> Icons.Outlined.StopCircle
+                        app.zelefin.client.downloads.DownloadControlState.Downloaded -> Icons.Filled.CheckCircle
+                        else -> Icons.Outlined.Download
+                    },
+                    onDownload,
+                )
+            }
             MoreRow(
                 if (item.isFavorite) "Remove from Favorites" else "Add to Favorites",
                 if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
@@ -257,21 +395,35 @@ private fun TitleMorePanel(
             if (library && onCollections != null) {
                 MoreRow("Add to Collection…", Icons.Outlined.Folder, onClick = onCollections)
                 if (showRemote) {
-                    MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = { onNotice(plusNotice("Sessions")) })
+                    MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = {
+                        plusGated(app.zelefin.client.ZelefinPlus.Feature.Sessions, onNotice, onPlayElsewhere)
+                    })
                 }
                 if (showSync) {
-                    MoreRow("Play in SyncPlay…", Icons.Outlined.Groups, onClick = { onNotice(plusNotice("SyncPlay")) })
+                    MoreRow("Play in SyncPlay…", Icons.Outlined.Groups, onClick = {
+                        plusGated(app.zelefin.client.ZelefinPlus.Feature.SyncPlay, onNotice, onSyncPlay)
+                    })
                 }
-                MenuHairline()
-                MoreRow("Refresh Metadata", Icons.Outlined.Refresh, onClick = { onNotice(plusNotice("Admin Tools")) })
+                if (showAdmin) {
+                    MenuHairline()
+                    if (showRefresh) {
+                        MoreRow("Refresh Metadata", Icons.Outlined.Refresh, onClick = {
+                            plusGated(app.zelefin.client.ZelefinPlus.Feature.AdminTools, onNotice, onRefreshMetadata)
+                        })
+                    }
+                    if (showAdminRemote) {
+                        MoreRow("Edit Images…", Icons.Outlined.Image, onClick = {
+                            plusGated(app.zelefin.client.ZelefinPlus.Feature.AdminTools, onNotice, onEditImages)
+                        })
+                        MoreRow(
+                            "Delete from Library…",
+                            Icons.Outlined.Delete,
+                            onClick = { plusGated(app.zelefin.client.ZelefinPlus.Feature.AdminTools, onNotice, onDeleteFromLibrary) },
+                            destructive = true,
+                        )
+                    }
+                }
                 if (showRemote) {
-                    MoreRow("Edit Images…", Icons.Outlined.Image, onClick = { onNotice(plusNotice("Admin Tools")) })
-                    MoreRow(
-                        "Delete from Library…",
-                        Icons.Outlined.Delete,
-                        onClick = { onNotice(plusNotice("Admin Tools")) },
-                        destructive = true,
-                    )
                     MenuHairline()
                     MoreRow(
                         "Skip Cinema Intros",
@@ -282,6 +434,10 @@ private fun TitleMorePanel(
             }
         }
     }
+}
+
+private fun plusGated(feature: app.zelefin.client.ZelefinPlus.Feature, onNotice: (MenuNotice) -> Unit, action: (() -> Unit)?) {
+    if (!app.zelefin.client.ZelefinPlus.allows(feature)) onNotice(plusNotice(feature)) else action?.invoke()
 }
 
 @Composable

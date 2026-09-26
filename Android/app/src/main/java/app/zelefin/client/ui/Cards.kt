@@ -199,6 +199,7 @@ fun BoxScope.ItemPosterMarks(item: MediaItem, portrait: Boolean) {
     } else {
         QualityBadgeRow(item, compact = true, Modifier.align(Alignment.TopStart).padding(6.dp))
     }
+    DownloadPosterMark(item, portrait)
 }
 
 @Composable

@@ -142,6 +142,7 @@ fun LibraryTabPage(
             LibraryRoute.Genres -> GenresPage(state.libraryOverview.genres, state.libraryOverview.genresLoading, bottomInset, onBack) {
                 onRoute(LibraryRoute.Genre(it))
             }
+            LibraryRoute.Downloaded -> DownloadedPage(state.session, bottomInset, onBack, onOpen)
             else -> {
                 val grid = state.libraryGrids[route] ?: app.zelefin.client.LibraryGridState()
                 CatalogBrowsePage(
@@ -267,18 +268,17 @@ private fun LibraryHome(
                                 modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp),
                             ) { onRoute(LibraryRoute.Room(room)) }
                         }
-                        if (jumps.isNotEmpty()) {
-                            item(key = "jumps") {
-                                Row(
-                                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    jumps.forEach { block ->
-                                        JumpTile(block, Modifier.weight(1f)) {
-                                            onRoute(if (block == LibraryPageBlock.Favorites) LibraryRoute.Favorites else LibraryRoute.Genres)
-                                        }
+                        item(key = "jumps") {
+                            Row(
+                                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                jumps.forEach { block ->
+                                    JumpTile(block, Modifier.weight(1f)) {
+                                        onRoute(if (block == LibraryPageBlock.Favorites) LibraryRoute.Favorites else LibraryRoute.Genres)
                                     }
                                 }
+                                DownloadedJumpTile(Modifier.weight(1f)) { onRoute(LibraryRoute.Downloaded) }
                             }
                         }
                         if (collections.isNotEmpty()) {

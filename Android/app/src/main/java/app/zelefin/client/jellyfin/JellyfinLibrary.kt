@@ -144,6 +144,8 @@ class JellyfinLibrary(
 
     val serverUrl: String get() = api.baseUrl ?: baseUrl
 
+    internal val sdk: ApiClient get() = api
+
     suspend fun probe(): ServerReachability = withContext(Dispatchers.IO) {
         try {
             val info = api.systemApi.getPublicSystemInfo().content
@@ -1098,7 +1100,7 @@ private fun CultureDto.toChoice(): CatalogFilterChoice? {
     return CatalogFilterChoice(code, label)
 }
 
-private fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
+internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
     val tags = imageTags.orEmpty().entries.associate { (type, tag) -> type.serialName to tag }
     return JellyfinItemSnapshot(
         id = id.toString(),
