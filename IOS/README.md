@@ -13,7 +13,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - Jellyfin or Silo server URL, username (or email on Silo), and password
 - Test Connection reports whether the URL is Jellyfin or Silo
 - Household profiles and PIN on Silo after login (Who’s watching)
-- Try Review Demo on the sign-in screen: a sample library for App Review (Home, Movies, Shows, title pages, and Play) with no server. Hide the button with `ReviewDemo.isEnabled`, or delete `Zelefin/ReviewDemo` after approval.
+- Try Review Demo on the sign-in screen: a sample library for App Review (Home, Movies, Shows, title pages, and Play) with no server. Hide the button with `ReviewDemo.isEnabled`, or delete `IOS/Zelefin/ReviewDemo` after approval.
 - After a new Jellyfin or Silo sign-in, a one-time setup: preferred audio and subtitle languages, optional Seerr sign-in, and Install Plugin for Jellyfin administrators. Silo skips Seerr and the plugin. Review Demo and restoring a saved account skip this screen
 - Quick Connect from another signed-in Jellyfin device
 - Access Gateway tokens for Cloudflare Zero Trust or Pangolin, sent on every request including artwork and playback
@@ -222,7 +222,6 @@ Settings → Zelefin Plus to subscribe or restore. About → Debug → Plus swit
 ## Open in Xcode
 
 ```bash
-cd IOS
 xcodegen generate
 open Zelefin.xcodeproj
 ```
