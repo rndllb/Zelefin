@@ -1,0 +1,19 @@
+---
+description: Android overlay menus use the same glass as the floating dock
+globs: Android/**/*.kt
+alwaysApply: true
+---
+
+# Android overlay menus
+
+Every overlay menu, popover, and alert on Android uses the dock glass. Do not add a Material `DropdownMenu`, `Popup`, `Dialog`, or `AlertDialog` for these.
+
+Use the existing chrome:
+
+- Present it with `PresentZelefinOverlay` through `LocalZelefinGlassHost`, in the same window as the page, so the frost can sample the content behind it.
+- Draw the panel with `Modifier.zelefinGlassChrome(hazeState, ZelefinOverlayShape)`.
+- That chrome is the dock’s thin haze, fill `DockFill` (`0x6628282A`), 0.5 dp `DockBorder` (white 16%), and the dock’s soft shadow.
+- A pressed row uses `DockSelectedFill`. Labels use `DockInactive`.
+- A short message uses `ZelefinGlassAlert`.
+
+Only one overlay can be presented at a time.
