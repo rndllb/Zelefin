@@ -222,7 +222,7 @@ Settings → Zelefin Plus to subscribe or restore. About → Debug → Plus swit
 ## Open in Xcode
 
 ```bash
-cd Zelefin
+cd IOS
 xcodegen generate
 open Zelefin.xcodeproj
 ```
