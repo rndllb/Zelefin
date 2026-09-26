@@ -184,9 +184,9 @@ fun ZelefinGlassAlert(
                 .padding(horizontal = 16.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(title, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center)
+            Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center)
             Spacer(Modifier.height(4.dp))
-            Text(message, color = DockInactive, fontFamily = Outfit, fontSize = 13.sp, textAlign = TextAlign.Center)
+            Text(message, color = DockInactive, fontFamily = ZelefinFont, fontSize = 13.sp, textAlign = TextAlign.Center)
             Spacer(Modifier.height(14.dp))
             Box(
                 Modifier
@@ -201,7 +201,7 @@ fun ZelefinGlassAlert(
                     .clickable(onClick = onDismiss),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("OK", color = ZelefinCyan, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Text("OK", color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             }
         }
     }
@@ -228,7 +228,7 @@ private fun GlassMenuRow(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = tint, fontFamily = Outfit, fontSize = 17.sp, modifier = Modifier.weight(1f))
+        Text(title, color = tint, fontFamily = ZelefinFont, fontSize = 17.sp, modifier = Modifier.weight(1f))
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
     }
 }
@@ -267,7 +267,7 @@ fun AccountAvatar(
                 .background(Color.White.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(initial, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
+            Text(initial, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
             val url = session?.let(::avatarImageUrl)
             if (url != null) {
                 CachedArtwork(

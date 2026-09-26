@@ -34,6 +34,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -104,7 +106,13 @@ fun LibraryScreen(
     onTab: (AppTab) -> Unit,
     onOpen: (MediaItem) -> Unit,
     onPlay: (MediaItem) -> Unit,
-    onOpenLibrary: (LibraryRoom) -> Unit,
+    onLibraryRoute: (app.zelefin.client.LibraryRoute) -> Unit,
+    onLibraryBack: () -> Unit,
+    onLibraryQuery: (app.zelefin.client.LibraryRoute, app.zelefin.client.CatalogBrowseQuery) -> Unit,
+    onLibraryRefresh: (app.zelefin.client.LibraryRoute) -> Unit,
+    onLibraryFilters: (app.zelefin.client.LibraryRoute) -> Unit,
+    onLibraryLayout: (app.zelefin.client.LibraryLayout) -> Unit,
+    onResetLibraryLayout: () -> Unit,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit,
     onProfile: () -> Unit,
@@ -112,28 +120,25 @@ fun LibraryScreen(
     onSessions: () -> Unit,
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
+    onCatalogQuery: (AppTab, app.zelefin.client.CatalogBrowseQuery) -> Unit,
+    onCatalogRefresh: (AppTab) -> Unit,
+    onCatalogFilters: (AppTab) -> Unit,
+    onCoversDock: (Boolean) -> Unit,
+    onSearchTerm: (String) -> Unit,
+    onSearchHit: (app.zelefin.client.SearchHit) -> Unit,
+    onSearchOpen: (MediaItem) -> Unit,
+    onRemoveRecentSearch: (String) -> Unit,
+    onClearRecentSearches: () -> Unit,
+    plugins: app.zelefin.client.PluginsController,
+    onHideFromHome: suspend (MediaItem, app.zelefin.client.plugins.JellyfinEnhancedHomeSurface) -> String? = { _, _ -> null },
 ) {
     val contentBottom = DockContentReserve
+    val pluginState by plugins.state.collectAsState()
     Box(Modifier.fillMaxSize().background(ZelefinBlack)) {
         Column(Modifier.fillMaxSize()) {
-            if (state.tab != AppTab.Home) {
-                Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        state.tab.name,
-                        color = Color.White,
-                        fontFamily = Outfit,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        fontSize = 34.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onRefresh) { Text("Refresh") }
-                    AccountAvatarMenu(state.session, onProfile, onSessions, onSettings, onSignOut)
-                }
+            if (state.tab != AppTab.Library && state.tab != AppTab.Search) {
+                state.message?.let { Text(it, color = ZelefinMuted, modifier = Modifier.padding(horizontal = 20.dp)) }
             }
-            state.message?.let { Text(it, color = ZelefinMuted, modifier = Modifier.padding(horizontal = 20.dp)) }
             when (state.tab) {
                 AppTab.Home -> HomeFeedPage(
                     state.home,
@@ -149,33 +154,86 @@ fun LibraryScreen(
                     onSignOut,
                     onToggleWatched,
                     onToggleFavorite,
+                    onHideFromHome = if (pluginState.hidesFromHome) onHideFromHome else null,
                 )
-                AppTab.Movies -> PosterGrid(state.movies, state, contentBottom, onOpen)
-                AppTab.Shows -> PosterGrid(state.shows, state, contentBottom, onOpen)
-                AppTab.Library -> LibraryPane(state, contentBottom, onOpen, onOpenLibrary) { onTab(AppTab.Library) }
-                AppTab.Search -> SearchPane(state, contentBottom, onOpen)
+                AppTab.Movies -> CatalogBrowsePage(
+                    title = "Movies",
+                    items = state.movies,
+                    query = state.movieQuery,
+                    options = state.movieFilters,
+                    session = state.session,
+                    refreshing = state.moviesRefreshing,
+                    loading = state.moviesLoading,
+                    bottomInset = contentBottom,
+                    onOpen = onOpen,
+                    onRefresh = { onCatalogRefresh(AppTab.Movies) },
+                    onQuery = { onCatalogQuery(AppTab.Movies, it) },
+                    onLoadFilters = { onCatalogFilters(AppTab.Movies) },
+                    onCoversDock = onCoversDock,
+                    onProfile = onProfile,
+                    onSessions = onSessions,
+                    onSettings = onSettings,
+                    onSignOut = onSignOut,
+                )
+                AppTab.Shows -> CatalogBrowsePage(
+                    title = "Shows",
+                    items = state.shows,
+                    query = state.showQuery,
+                    options = state.showFilters,
+                    session = state.session,
+                    refreshing = state.showsRefreshing,
+                    loading = state.showsLoading,
+                    bottomInset = contentBottom,
+                    onOpen = onOpen,
+                    onRefresh = { onCatalogRefresh(AppTab.Shows) },
+                    onQuery = { onCatalogQuery(AppTab.Shows, it) },
+                    onLoadFilters = { onCatalogFilters(AppTab.Shows) },
+                    onCoversDock = onCoversDock,
+                    onProfile = onProfile,
+                    onSessions = onSessions,
+                    onSettings = onSettings,
+                    onSignOut = onSignOut,
+                )
+                AppTab.Library -> LibraryTabPage(
+                    state = state,
+                    bottomInset = contentBottom,
+                    onOpen = onOpen,
+                    onRoute = onLibraryRoute,
+                    onBack = onLibraryBack,
+                    onQuery = onLibraryQuery,
+                    onRefresh = onLibraryRefresh,
+                    onFilters = onLibraryFilters,
+                    onLayout = onLibraryLayout,
+                    onResetLayout = onResetLibraryLayout,
+                    onCoversDock = onCoversDock,
+                    onProfile = onProfile,
+                    onSessions = onSessions,
+                    onSettings = onSettings,
+                    onSignOut = onSignOut,
+                )
+                AppTab.Search -> SearchTabPage(
+                    state = state,
+                    bottomInset = contentBottom,
+                    onTerm = onSearchTerm,
+                    onHit = onSearchHit,
+                    onOpenItem = onSearchOpen,
+                    onOpen = onOpen,
+                    onPlay = onPlay,
+                    onRemoveRecent = onRemoveRecentSearch,
+                    onClearRecents = onClearRecentSearches,
+                    onRoute = onLibraryRoute,
+                    onBack = onLibraryBack,
+                    onQuery = onLibraryQuery,
+                    onRefresh = onLibraryRefresh,
+                    onFilters = onLibraryFilters,
+                    onCoversDock = onCoversDock,
+                    onProfile = onProfile,
+                    onSessions = onSessions,
+                    onSettings = onSettings,
+                    onSignOut = onSignOut,
+                    plugins = plugins,
+                )
             }
-        }
-    }
-}
-
-@Composable
-private fun PosterGrid(posters: List<MediaItem>, state: ZelefinUiState, bottomInset: androidx.compose.ui.unit.Dp, onOpen: (MediaItem) -> Unit) {
-    if (posters.isEmpty() && state.busy) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ZelefinCyan) }
-        return
-    }
-    val gridState = rememberLazyGridState()
-    TrackHazeScroll(gridState.isScrollInProgress)
-    LazyVerticalGrid(
-        state = gridState,
-        columns = GridCells.Adaptive(132.dp),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        items(posters.size) { index ->
-            PosterCard(posters[index], state.session, modifier = Modifier.fillMaxWidth()) { onOpen(posters[index]) }
         }
     }
 }
@@ -194,6 +252,7 @@ fun DetailScreen(
     onLoadCollections: suspend (String) -> app.zelefin.client.jellyfin.CollectionEditor = { app.zelefin.client.jellyfin.CollectionEditor(emptyList(), emptySet()) },
     onSetCollectionMember: suspend (String, String, Boolean) -> Unit = { _, _, _ -> },
     onCreateCollection: suspend (String, String) -> Unit = { _, _ -> },
+    plugins: app.zelefin.client.PluginsController? = null,
 ) {
     DetailPage(
         detail,
@@ -208,13 +267,34 @@ fun DetailScreen(
         onLoadCollections,
         onSetCollectionMember,
         onCreateCollection,
+        plugins,
     )
 }
 
 @Composable
-fun PlayerScreen(plan: PlaybackPlan, onProgress: (Double, Boolean) -> Unit, onStopped: (Double) -> Unit, onClose: () -> Unit) {
+fun PlayerScreen(
+    plan: PlaybackPlan,
+    plugins: app.zelefin.client.PluginsController,
+    onProgress: (Double, Boolean) -> Unit,
+    onStopped: (Double) -> Unit,
+    onClose: () -> Unit,
+) {
+    val pluginState by plugins.state.collectAsState()
+    var segments by remember(plan.item.id) { mutableStateOf(emptyList<app.zelefin.client.plugins.SkipSegment>()) }
+    LaunchedEffect(plan.item.id) { segments = plugins.skipSegments(plan.item.id) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        PlayerSurface(plan, onProgress, onStopped)
+        PlayerSurface(
+            plan = plan,
+            onProgress = onProgress,
+            onStopped = onStopped,
+            skipSegments = segments,
+            autoSkip = { kind ->
+                when (kind) {
+                    app.zelefin.client.plugins.SkipSegment.Kind.Intro -> pluginState.autoSkipIntro
+                    app.zelefin.client.plugins.SkipSegment.Kind.Outro -> pluginState.autoSkipCredits
+                }
+            },
+        )
         TextButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) { Text("Close", color = Color.White) }
     }
 }
@@ -235,89 +315,6 @@ private fun Field(label: String, value: String, password: Boolean = false, onCha
             focusedLabelColor = ZelefinCyan,
         ),
     )
-}
-
-@Composable
-private fun LibraryPane(
-    state: ZelefinUiState,
-    bottomInset: androidx.compose.ui.unit.Dp,
-    onOpen: (MediaItem) -> Unit,
-    onOpenLibrary: (LibraryRoom) -> Unit,
-    onBack: () -> Unit,
-) {
-    var heldItems by remember { mutableStateOf(state.libraryItems) }
-    if (state.openLibraryId != null && state.libraryItems.isNotEmpty()) heldItems = state.libraryItems
-    val rooms = rememberZelefinPush(state.openLibraryId) { from, to ->
-        when {
-            from == null && to != null -> ZelefinPushRelation.Push
-            from != null && to == null -> ZelefinPushRelation.Pop
-            from != to && to != null -> ZelefinPushRelation.Push
-            else -> ZelefinPushRelation.None
-        }
-    }
-    ZelefinPush(rooms) { libraryId ->
-        if (libraryId != null) {
-            val posters = if (state.openLibraryId == libraryId) state.libraryItems else heldItems
-            Column(Modifier.fillMaxSize()) {
-                TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) { Text("Libraries") }
-                PosterGrid(posters, state, bottomInset, onOpen)
-            }
-        } else if (state.libraries.isEmpty() && state.busy) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ZelefinCyan) }
-        } else {
-            val listState = rememberLazyListState()
-            TrackHazeScroll(listState.isScrollInProgress)
-            LazyColumn(state = listState, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.libraries, key = { it.id }) { room ->
-                    Text(
-                        room.name,
-                        style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.fillMaxWidth().clickable { onOpenLibrary(room) }.padding(vertical = 14.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SearchPane(state: ZelefinUiState, bottomInset: androidx.compose.ui.unit.Dp, onOpen: (MediaItem) -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
-    val results = androidx.compose.runtime.remember(query, state.movies, state.shows, state.home) {
-        val needle = query.trim()
-        if (needle.isEmpty()) {
-            emptyList()
-        } else {
-            (state.movies + state.shows + state.home.featured + state.home.continueWatching + state.home.nextUp + state.home.recentMovies + state.home.recentShows)
-                .distinctBy { it.id }
-                .filter { item ->
-                    item.name.contains(needle, ignoreCase = true) ||
-                        item.seriesName?.contains(needle, ignoreCase = true) == true
-                }
-        }
-    }
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Field("Movies, shows, people", query) { query = it }
-        if (query.isBlank()) {
-            Text("Search your libraries.", color = ZelefinMuted)
-        } else if (results.isEmpty()) {
-            Text("No titles match.", color = ZelefinMuted)
-        } else {
-            val gridState = rememberLazyGridState()
-            TrackHazeScroll(gridState.isScrollInProgress)
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Adaptive(132.dp),
-                contentPadding = PaddingValues(bottom = bottomInset),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                items(results.size) { index ->
-                    PosterCard(results[index], state.session, modifier = Modifier.fillMaxWidth()) { onOpen(results[index]) }
-                }
-            }
-        }
-    }
 }
 
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)

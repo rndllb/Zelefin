@@ -219,7 +219,7 @@ private fun RatingBadge(score: Double, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFD60A), modifier = Modifier.size(8.dp))
-        Text(String.format("%.1f", score), color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+        Text(String.format("%.1f", score), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 10.sp)
     }
 }
 
@@ -232,7 +232,7 @@ private fun QualityBadgeRow(item: MediaItem, compact: Boolean, modifier: Modifie
             Text(
                 title,
                 color = Color.White,
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = if (compact) 10.sp else 11.sp,
                 modifier = Modifier

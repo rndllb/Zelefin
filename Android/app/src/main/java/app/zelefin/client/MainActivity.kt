@@ -1,12 +1,17 @@
 package app.zelefin.client
 
+import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import app.zelefin.client.push.ZelefinPush
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
@@ -67,12 +72,20 @@ import app.zelefin.client.ui.zelefinSheetBackdrop
 import app.zelefin.core.TitleDetail
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        ZelefinPush.handleLaunch(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) ZelefinPush.handleLaunch(intent)
         enableEdgeToEdge()
         setContent {
             val model: ZelefinModel = viewModel()
             val state by model.state.collectAsState()
+            PushEffects(model, state)
             val configuration = LocalConfiguration.current
             val tablet = configuration.smallestScreenWidthDp >= 600
             val context = LocalContext.current
@@ -87,7 +100,8 @@ class MainActivity : ComponentActivity() {
             ZelefinTheme {
                 val handlesBack = when (val screen = state.screen) {
                     Screen.Connect, is Screen.Profiles -> false
-                    Screen.Library -> state.openLibraryId != null
+                    Screen.Library -> (state.tab == AppTab.Library && state.libraryPath.isNotEmpty()) ||
+                        (state.tab == AppTab.Search && state.searchPath.isNotEmpty())
                     else -> true
                 }
                 BackHandler(enabled = handlesBack) { model.back() }
@@ -101,10 +115,10 @@ class MainActivity : ComponentActivity() {
                 val knownDetails = remember { mutableMapOf<String, TitleDetail>() }
                 state.detail?.let { knownDetails[it.item.id] = it }
                 LaunchedEffect(backdrop) {
-                    if (backdrop !is Screen.Detail) detailCoversDock = false
+                    if (backdrop !is Screen.Detail && backdrop != Screen.Library) detailCoversDock = false
                 }
                 val showDock = state.session != null && !sheetUp && when (backdrop) {
-                    Screen.Library -> true
+                    Screen.Library -> !detailCoversDock
                     is Screen.Detail -> !detailCoversDock
                     else -> false
                 }
@@ -168,6 +182,31 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Opens tapped alerts once signed in, and asks for notification permission the first time the plugin is found. */
+@Composable
+private fun PushEffects(model: ZelefinModel, state: ZelefinUiState) {
+    val context = LocalContext.current
+    val pushItem by ZelefinPush.openItem.collectAsState()
+    val accountId = state.session?.accountId
+    LaunchedEffect(pushItem, accountId) {
+        val id = pushItem ?: return@LaunchedEffect
+        if (accountId == null) return@LaunchedEffect
+        ZelefinPush.consumeOpenItem(id)
+        model.openPushItem(id)
+    }
+    val plugins by model.plugins.state.collectAsState()
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        model.plugins.registerPush()
+    }
+    LaunchedEffect(plugins.companionAvailable, plugins.pushEnabled) {
+        if (!plugins.companionAvailable || !plugins.pushEnabled) return@LaunchedEffect
+        if (!ZelefinPush.needsRuntimePermission() || ZelefinPush.permissionGranted(context)) return@LaunchedEffect
+        if (ZelefinPush.hasAskedPermission(context)) return@LaunchedEffect
+        ZelefinPush.markAskedPermission(context)
+        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+}
+
 @Composable
 private fun ZelefinScreen(
     screen: Screen,
@@ -175,8 +214,7 @@ private fun ZelefinScreen(
     model: ZelefinModel,
     knownDetails: Map<String, TitleDetail>,
     onDetailCoversDock: (Boolean) -> Unit,
-) {
-    when (screen) {
+) {    when (screen) {
         Screen.Connect -> ConnectScreen(
             state = state,
             onBackend = model::setBackend,
@@ -193,7 +231,13 @@ private fun ZelefinScreen(
             onTab = model::selectTab,
             onOpen = model::openItem,
             onPlay = model::play,
-            onOpenLibrary = model::openLibrary,
+            onLibraryRoute = model::openLibraryRoute,
+            onLibraryBack = model::back,
+            onLibraryQuery = model::applyLibraryQuery,
+            onLibraryRefresh = model::refreshLibraryGrid,
+            onLibraryFilters = model::loadLibraryFilters,
+            onLibraryLayout = model::updateLibraryLayout,
+            onResetLibraryLayout = model::resetLibraryLayout,
             onRefresh = model::refreshLibrary,
             onSignOut = model::signOut,
             onProfile = model::openProfile,
@@ -201,6 +245,17 @@ private fun ZelefinScreen(
             onSessions = model::openSessions,
             onToggleWatched = model::toggleWatched,
             onToggleFavorite = model::toggleFavorite,
+            onCatalogQuery = model::applyCatalogQuery,
+            onCatalogRefresh = model::refreshCatalog,
+            onCatalogFilters = model::loadCatalogFilters,
+            onCoversDock = onDetailCoversDock,
+            onSearchTerm = model::updateSearchTerm,
+            onSearchHit = model::openSearchHit,
+            onSearchOpen = model::openSearchItem,
+            onRemoveRecentSearch = model::removeRecentSearch,
+            onClearRecentSearches = model::clearRecentSearches,
+            plugins = model.plugins,
+            onHideFromHome = model::hideFromHome,
         )
         is Screen.Detail -> DetailScreen(
             knownDetails[screen.id] ?: state.detail,
@@ -215,12 +270,14 @@ private fun ZelefinScreen(
             onLoadCollections = model::loadCollections,
             onSetCollectionMember = model::setCollectionMember,
             onCreateCollection = model::createCollection,
+            plugins = model.plugins,
         )
         is Screen.Settings -> SettingsScreen(state, model::back, model::openProfile, model::openSettingsTopic)
         is Screen.Profile -> ProfileScreen(state, model::back)
-        is Screen.SettingsTopic -> SettingsTopicScreen(screen.id, state, model::back)
+        is Screen.SettingsTopic -> SettingsTopicScreen(screen.id, state, model.plugins, model::back)
         is Screen.Player -> PlayerScreen(
             plan = screen.plan,
+            plugins = model.plugins,
             onProgress = model::playbackProgress,
             onStopped = model::playbackStopped,
             onClose = model::back,

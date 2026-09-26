@@ -47,6 +47,7 @@ data class MediaItem(
     val videoRange: VideoRange = VideoRange.Sdr,
     val audioFormat: AudioFormat = AudioFormat.Unknown,
     val communityRating: Double? = null,
+    val tmdbId: Int? = null,
     val criticRating: Double? = null,
     val videoResolution: VideoResolution = VideoResolution.Unknown,
     val hasClosedCaptions: Boolean = false,

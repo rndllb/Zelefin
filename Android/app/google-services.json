@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "230384662153",
+    "project_id": "zelefin-761ae",
+    "storage_bucket": "zelefin-761ae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:230384662153:android:34ac0eb4dab41d7d16b858",
+        "android_client_info": {
+          "package_name": "app.zelefin.client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBrcU9rNOHpl7S-su8cTSFoQpw4RvBKZUI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -98,6 +98,7 @@ object ItemMapper {
             videoRange = videoRange(snapshot.streams),
             audioFormat = audioFormat(snapshot.streams),
             communityRating = snapshot.communityRating,
+            tmdbId = tmdbId(snapshot.providerIds),
             criticRating = snapshot.criticRating,
             videoResolution = videoResolution(width, height),
             hasClosedCaptions = snapshot.streams.any { it.type.equals("Subtitle", true) },

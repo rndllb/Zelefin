@@ -1,6 +1,16 @@
 package app.zelefin.client.silo
 
+import app.zelefin.client.CatalogBrowseQuery
+import app.zelefin.client.CatalogSortField
+import app.zelefin.client.CatalogStatusFilter
+import app.zelefin.client.LibraryCounts
+import app.zelefin.client.LibraryKind
 import app.zelefin.client.LibraryRoom
+import app.zelefin.client.SearchHit
+import app.zelefin.client.SearchHitKind
+import app.zelefin.client.searchSubtitle
+import app.zelefin.client.matchesCatalog
+import app.zelefin.client.orderedForCatalog
 import app.zelefin.client.network.GatewayHttp
 import app.zelefin.core.AccessGateway
 import app.zelefin.core.HomeFeed
@@ -32,6 +42,8 @@ import kotlinx.serialization.json.jsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+
+private data class SiloCatalogPage(val items: List<MediaItem>, val total: Int?)
 
 class SiloClient(
     val baseUrl: String,
@@ -129,33 +141,156 @@ class SiloClient(
         rooms.mapNotNull { room ->
             val name = room.str("name") ?: return@mapNotNull null
             val id = room.str("id") ?: room.int("id")?.toString() ?: return@mapNotNull null
-            LibraryRoom(id = id, name = name)
+            val kind = LibraryKind.fromSilo(room.str("type") ?: room.str("kind") ?: room.str("media_type"))
+            LibraryRoom(id = id, name = name, kind = kind)
         }
     }
 
-    suspend fun libraryItems(libraryId: String): List<MediaItem> {
-        val movies = catalog("movie", libraryId)
-        val shows = catalog("series", libraryId)
-        return (movies + shows).distinctBy { it.id }
+    fun catalogType(kind: LibraryKind): String? = when (kind) {
+        LibraryKind.Movies -> "movie"
+        LibraryKind.Shows -> "series"
+        LibraryKind.Collections -> "collection"
+        else -> null
     }
 
-    suspend fun catalog(type: String, libraryId: String? = null): List<MediaItem> = withContext(Dispatchers.IO) {
+    /** Silo has no server-stats route, so totals come from the catalog `total` with `limit=1`. */
+    suspend fun serverCounts(): LibraryCounts = withContext(Dispatchers.IO) {
+        LibraryCounts(
+            movies = catalogTotal(listOf("movie")),
+            shows = catalogTotal(listOf("series", "show")),
+            episodes = catalogTotal(listOf("episode")),
+        )
+    }
+
+    suspend fun roomCounts(room: LibraryRoom): LibraryCounts = withContext(Dispatchers.IO) {
+        when (room.kind) {
+            LibraryKind.Movies -> LibraryCounts(movies = catalogTotal(listOf("movie"), room.id))
+            LibraryKind.Shows -> LibraryCounts(
+                shows = catalogTotal(listOf("series", "show"), room.id),
+                episodes = catalogTotal(listOf("episode"), room.id),
+            )
+            LibraryKind.LiveTV -> LibraryCounts()
+            else -> LibraryCounts(
+                catalogTotal(listOf("movie"), room.id),
+                catalogTotal(listOf("series", "show"), room.id),
+                catalogTotal(listOf("episode"), room.id),
+            )
+        }
+    }
+
+    private fun catalogTotal(types: List<String>, libraryId: String? = null): Int {
+        for (type in types) {
+            val query = buildMap {
+                put("type", type)
+                put("limit", "1")
+                if (libraryId != null) put("library_id", libraryId)
+            }
+            val total = catalogPage(query).total ?: continue
+            if (total > 0) return total
+        }
+        return 0
+    }
+
+    suspend fun previewItems(room: LibraryRoom, limit: Int = 8): List<MediaItem> = withContext(Dispatchers.IO) {
         val query = buildMap {
-            put("type", type)
+            catalogType(room.kind)?.let { put("type", it) }
             put("sort", "added_at")
             put("order", "desc")
-            put("limit", "80")
+            put("limit", limit.toString())
+            put("image_size", "large")
+            put("library_id", room.id)
+        }
+        runCatching { firstCatalog(query) }.getOrDefault(emptyList()).take(limit)
+    }
+
+    suspend fun catalog(type: String?, libraryId: String? = null, browse: CatalogBrowseQuery? = null): List<MediaItem> =
+        withContext(Dispatchers.IO) {
+            if (browse == null) {
+                val query = buildMap {
+                    type?.let { put("type", it) }
+                    put("sort", "added_at")
+                    put("order", "desc")
+                    put("limit", "80")
+                    put("image_size", "large")
+                    if (!libraryId.isNullOrBlank()) put("library_id", libraryId)
+                }
+                return@withContext firstCatalog(query)
+            }
+            val collected = mutableListOf<MediaItem>()
+            val seen = mutableSetOf<String>()
+            var offset = 0
+            val pageSize = 200
+            while (collected.size < 20_000) {
+                val page = catalogPage(browseQuery(type, libraryId, browse, offset, pageSize))
+                if (page.items.isEmpty()) break
+                val fresh = page.items.filter { seen.add(it.id) }
+                if (fresh.isEmpty()) break
+                collected += fresh
+                val next = offset + page.items.size
+                val total = page.total
+                val finished = if (total != null && total > 0) next >= total else page.items.size < pageSize
+                if (finished) break
+                offset = next
+            }
+            collected.matchesCatalog(browse).orderedForCatalog(browse)
+        }
+
+    suspend fun search(term: String): List<SearchHit> = withContext(Dispatchers.IO) {
+        firstCatalog(mapOf("q" to term, "limit" to "40", "image_size" to "large")).map { item ->
+            SearchHit(item.id, item.name, item.searchSubtitle(), SearchHitKind.Title, item)
+        }
+    }
+
+    private fun browseQuery(type: String?, libraryId: String?, browse: CatalogBrowseQuery, offset: Int, pageSize: Int): Map<String, String> {
+        val pair = siloSort(browse.sort)
+        val order = if (browse.sortAscending) pair.second else if (pair.second == "asc") "desc" else "asc"
+        return buildMap {
+            type?.let { put("type", it) }
+            put("sort", pair.first)
+            put("order", order)
+            put("limit", pageSize.toString())
+            put("offset", offset.toString())
             put("image_size", "large")
             if (!libraryId.isNullOrBlank()) put("library_id", libraryId)
+            if (CatalogStatusFilter.Favorite in browse.statuses) put("favorite", "true")
+            browse.genres.firstOrNull()?.let { put("genre", it) }
+            browse.years.firstOrNull()?.let { put("year", it.toString()) }
         }
+    }
+
+    private fun siloSort(field: CatalogSortField): Pair<String, String> = when (field) {
+        CatalogSortField.Name -> "title" to "asc"
+        CatalogSortField.DateAdded -> "added_at" to "desc"
+        CatalogSortField.ReleaseDate -> "year" to "desc"
+        CatalogSortField.CommunityRating, CatalogSortField.CriticRating -> "rating" to "desc"
+        CatalogSortField.Runtime -> "runtime" to "desc"
+        CatalogSortField.DatePlayed -> "date_viewed" to "desc"
+        else -> "title" to "asc"
+    }
+
+    private fun firstCatalog(query: Map<String, String>): List<MediaItem> {
         for (path in listOf("/api/v2/catalog", "/api/v1/catalog")) {
             val response = call(path, query = query)
             if (response.status !in 200..299) continue
             val element = runCatching { SiloJson.parse(response.body) }.getOrNull() ?: continue
             val items = SiloMapper.catalogItems(element, baseUrl)
-            if (items.isNotEmpty()) return@withContext items
+            if (items.isNotEmpty()) return items
         }
-        emptyList()
+        return emptyList()
+    }
+
+    private fun catalogPage(query: Map<String, String>): SiloCatalogPage {
+        for (path in listOf("/api/v2/catalog", "/api/v1/catalog")) {
+            val response = call(path, query = query)
+            if (response.status !in 200..299) continue
+            val element = runCatching { SiloJson.parse(response.body) }.getOrNull() ?: continue
+            val items = SiloMapper.catalogItems(element, baseUrl)
+            val total = (element as? JsonObject)?.let { obj ->
+                obj.int("total") ?: obj.int("total_count") ?: obj.int("totalCount")
+            }
+            if (items.isNotEmpty() || total == 0) return SiloCatalogPage(items, total)
+        }
+        return SiloCatalogPage(emptyList(), null)
     }
 
     suspend fun detail(id: String): TitleDetail = withContext(Dispatchers.IO) {
@@ -318,7 +453,7 @@ class SiloClient(
         return headers
     }
 
-    private fun identity(): Map<String, String> = mapOf(
+    fun identity(): Map<String, String> = mapOf(
         "X-Silo-Device-Id" to deviceId,
         "X-Silo-Device-Name" to deviceName,
         "X-Silo-Device-Platform" to "Android",

@@ -1,5 +1,8 @@
 package app.zelefin.client.ui
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -37,6 +43,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -51,6 +58,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -63,8 +71,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
+import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.core.ArtworkUrls
 import app.zelefin.core.HomeFeed
+import kotlinx.coroutines.launch
 import app.zelefin.core.MediaItem
 import app.zelefin.core.SavedSession
 import kotlinx.coroutines.delay
@@ -85,11 +96,32 @@ fun HomeFeedPage(
     onSignOut: () -> Unit,
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
+    onHideFromHome: (suspend (MediaItem, JellyfinEnhancedHomeSurface) -> String?)? = null,
 ) {
     var more by remember { mutableStateOf<TitleMoreRequest?>(null) }
+    var note by remember { mutableStateOf<MenuNotice?>(null) }
+    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val refreshState = rememberPullToRefreshState()
+    var headerVisible by remember { mutableStateOf(true) }
+    var previousOffset by remember { mutableIntStateOf(0) }
     TrackHazeScroll(listState.isScrollInProgress)
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset
+        }.collect { offset ->
+            val delta = offset - previousOffset
+            previousOffset = offset
+            headerVisible = when {
+                offset <= 40 -> true
+                delta > 12 -> false
+                delta < -12 -> true
+                else -> headerVisible
+            }
+        }
+    }
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(Modifier.fillMaxSize()) {
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,
@@ -105,17 +137,20 @@ fun HomeFeedPage(
             )
         },
     ) {
-    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset), verticalArrangement = Arrangement.spacedBy(28.dp)) {
-        item {
-            if (feed.featured.isNotEmpty()) {
-                Box {
-                    FeaturedHero(feed.featured, session, onOpen, onPlay, paused = more != null) { item, anchor ->
-                        more = TitleMoreRequest(item, TitleMenuContext.Featured, anchor)
-                    }
-                    HomeTitleBar(session, onProfile, onSessions, onSettings, onSignOut)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            top = if (feed.featured.isEmpty()) statusTop + HomeHeaderHeight else 0.dp,
+            bottom = bottomInset,
+        ),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
+    ) {
+        if (feed.featured.isNotEmpty()) {
+            item {
+                FeaturedHero(feed.featured, session, onOpen, onPlay, paused = more != null) { item, anchor ->
+                    more = TitleMoreRequest(item, TitleMenuContext.Featured, anchor)
                 }
-            } else {
-                HomeTitleBar(session, onProfile, onSessions, onSettings, onSignOut)
             }
         }
         if (feed.continueWatching.isNotEmpty()) {
@@ -140,6 +175,8 @@ fun HomeFeedPage(
         }
     }
     }
+    HomeTitleBar(headerVisible, session, onProfile, onSessions, onSettings, onSignOut)
+    }
     TitleMoreOverlay(
         request = more,
         onDismiss = { more = null },
@@ -147,20 +184,41 @@ fun HomeFeedPage(
         onOpen = onOpen,
         onToggleWatched = onToggleWatched,
         onToggleFavorite = onToggleFavorite,
+        note = note,
+        onDismissNote = { note = null },
+        onHideFromHome = onHideFromHome?.let { hide ->
+            { item, context ->
+                val surface = if (context == TitleMenuContext.NextUp) {
+                    JellyfinEnhancedHomeSurface.NextUp
+                } else {
+                    JellyfinEnhancedHomeSurface.ContinueWatching
+                }
+                scope.launch {
+                    hide(item, surface)?.let { note = MenuNotice("Jellyfin Enhanced", it) }
+                }
+            }
+        },
     )
 }
 
+private val HomeHeaderHeight = 59.dp
+
 @Composable
 private fun HomeTitleBar(
+    visible: Boolean,
     session: SavedSession?,
     onProfile: () -> Unit,
     onSessions: () -> Unit,
     onSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(180), label = "homeHeader")
+    val shift by animateDpAsState(if (visible) 0.dp else (-120).dp, tween(180), label = "homeHeaderShift")
     Row(
         Modifier
             .fillMaxWidth()
+            .offset(y = shift)
+            .graphicsLayer { this.alpha = alpha }
             .statusBarsPadding()
             .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -168,7 +226,7 @@ private fun HomeTitleBar(
         Text(
             "Home",
             color = Color.White,
-            fontFamily = Outfit,
+            fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
             fontSize = 34.sp,
             modifier = Modifier.weight(1f),
@@ -268,7 +326,7 @@ private fun FeaturedHero(
                     Text(
                         item.heroMetadataLine,
                         color = Color.White.copy(alpha = 0.86f),
-                        fontFamily = Outfit,
+                        fontFamily = ZelefinFont,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
                         maxLines = 1,
@@ -287,7 +345,7 @@ private fun FeaturedHero(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                        Text("Play", color = Color.Black, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                        Text("Play", color = Color.Black, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     }
                 }
                 val moreAnchor = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
@@ -403,7 +461,7 @@ internal fun HeroLogo(
         Text(
             item.name,
             color = Color.White,
-            fontFamily = Outfit,
+            fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
             fontSize = titleSize,
             textAlign = TextAlign.Center,
@@ -419,7 +477,7 @@ private fun RatingBadge(rating: String) {
     Text(
         rating,
         color = Color.White,
-        fontFamily = Outfit,
+        fontFamily = ZelefinFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.sp,
         modifier = Modifier
@@ -444,7 +502,7 @@ private fun HomeRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(title, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
             Icon(
                 Icons.Filled.KeyboardArrowRight,
                 contentDescription = null,
@@ -525,7 +583,7 @@ private fun LandscapeHomeCard(
                 Text(
                     caption,
                     color = Color.White.copy(alpha = 0.75f),
-                    fontFamily = Outfit,
+                    fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.sp,
                     maxLines = 1,

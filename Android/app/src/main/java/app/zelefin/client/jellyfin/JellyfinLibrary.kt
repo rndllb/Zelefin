@@ -5,7 +5,21 @@ import app.zelefin.client.network.GatewayHttp
 import app.zelefin.core.CreditPerson
 import app.zelefin.core.FeaturedHero
 import app.zelefin.core.HomeFeed
+import app.zelefin.client.CatalogBrowseQuery
+import app.zelefin.client.CatalogFeatureFilter
+import app.zelefin.client.CatalogFilterChoice
+import app.zelefin.client.CatalogFilterOptions
+import app.zelefin.client.CatalogSortField
+import app.zelefin.client.CatalogStatusFilter
+import app.zelefin.client.CatalogVideoKind
+import app.zelefin.client.LibraryCounts
+import app.zelefin.client.LibraryGenre
+import app.zelefin.client.LibraryKind
 import app.zelefin.client.LibraryRoom
+import app.zelefin.client.SearchHit
+import app.zelefin.client.plugins.JellyfinTmdbCatalog
+import app.zelefin.client.SearchHitKind
+import app.zelefin.client.isBrowsableGenre
 import app.zelefin.core.ItemMapper
 import app.zelefin.core.JellyfinItemSnapshot
 import app.zelefin.core.JellyfinStreamSnapshot
@@ -37,11 +51,16 @@ import org.jellyfin.sdk.api.client.HttpClientOptions
 import org.jellyfin.sdk.api.client.exception.InvalidStatusException
 import org.jellyfin.sdk.api.client.extensions.collectionApi
 import org.jellyfin.sdk.api.client.extensions.get
+import org.jellyfin.sdk.api.client.extensions.filterApi
+import org.jellyfin.sdk.api.client.extensions.genresApi
 import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.api.client.extensions.localizationApi
+import org.jellyfin.sdk.api.client.extensions.studiosApi
 import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
 import org.jellyfin.sdk.api.client.extensions.quickConnectApi
+import org.jellyfin.sdk.api.client.extensions.searchApi
 import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.api.client.extensions.tvShowsApi
 import org.jellyfin.sdk.api.client.extensions.userApi
@@ -60,7 +79,10 @@ import org.jellyfin.sdk.model.api.DirectPlayProfile
 import org.jellyfin.sdk.model.api.DlnaProfileType
 import org.jellyfin.sdk.model.api.EncodingContext
 import org.jellyfin.sdk.model.api.ImageType
+import org.jellyfin.sdk.model.api.CollectionType
+import org.jellyfin.sdk.model.api.CultureDto
 import org.jellyfin.sdk.model.api.ItemFields
+import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.MediaStreamProtocol
 import org.jellyfin.sdk.model.api.MediaStreamType
@@ -73,16 +95,41 @@ import org.jellyfin.sdk.model.api.PlaybackStartInfo
 import org.jellyfin.sdk.model.api.PlaybackStopInfo
 import org.jellyfin.sdk.model.api.QuickConnectDto
 import org.jellyfin.sdk.model.api.RepeatMode
+import org.jellyfin.sdk.model.api.SearchHint
 import org.jellyfin.sdk.model.api.SortOrder
+import org.jellyfin.sdk.model.api.VideoType
+import org.jellyfin.sdk.model.api.request.GetStudiosRequest
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.jellyfin.sdk.model.api.SubtitleProfile
 import org.jellyfin.sdk.model.api.TranscodingProfile
 import org.jellyfin.sdk.model.api.request.GetEpisodesRequest
+import org.jellyfin.sdk.model.api.request.GetGenresRequest
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import org.jellyfin.sdk.model.api.request.GetNextUpRequest
 import org.jellyfin.sdk.model.api.request.GetResumeItemsRequest
 import org.jellyfin.sdk.model.api.request.GetSeasonsRequest
 import org.jellyfin.sdk.model.api.request.GetSimilarItemsRequest
+
+data class JellyfinScope(
+    val kinds: List<BaseItemKind>,
+    val parentId: String? = null,
+    val genreIds: List<String> = emptyList(),
+    val personIds: List<String> = emptyList(),
+    val studioIds: List<String> = emptyList(),
+)
+
+private fun libraryKind(type: CollectionType?, name: String): LibraryKind = when (type) {
+    CollectionType.MOVIES -> LibraryKind.Movies
+    CollectionType.TVSHOWS -> LibraryKind.Shows
+    CollectionType.MUSIC, CollectionType.MUSICVIDEOS -> LibraryKind.Music
+    CollectionType.BOOKS -> LibraryKind.Books
+    CollectionType.PHOTOS -> LibraryKind.Photos
+    CollectionType.LIVETV -> LibraryKind.LiveTV
+    CollectionType.PLAYLISTS -> LibraryKind.Playlists
+    CollectionType.HOMEVIDEOS -> LibraryKind.HomeVideos
+    CollectionType.BOXSETS -> LibraryKind.Collections
+    else -> LibraryKind.inferred(name) ?: LibraryKind.Other
+}
 
 class JellyfinLibrary(
     context: Context,
@@ -207,43 +254,414 @@ class JellyfinLibrary(
         api.userViewsApi.getUserViews(userId = userId, includeHidden = true).content.items.mapNotNull { dto ->
             val name = dto.name?.trim().orEmpty()
             if (name.isEmpty()) return@mapNotNull null
-            LibraryRoom(id = dto.id.toString(), name = name)
+            LibraryRoom(id = dto.id.toString(), name = name, kind = libraryKind(dto.collectionType, name))
         }
     }
 
-    suspend fun itemsInLibrary(userId: UUID, parentId: String): List<MediaItem> = withContext(Dispatchers.IO) {
+    fun scope(room: LibraryRoom): JellyfinScope = JellyfinScope(
+        kinds = when (room.kind) {
+            LibraryKind.Movies -> listOf(BaseItemKind.MOVIE, BaseItemKind.BOX_SET)
+            LibraryKind.Shows -> listOf(BaseItemKind.SERIES)
+            LibraryKind.Collections -> listOf(BaseItemKind.BOX_SET)
+            LibraryKind.Books -> listOf(BaseItemKind.BOOK)
+            LibraryKind.Photos -> listOf(BaseItemKind.PHOTO, BaseItemKind.PHOTO_ALBUM)
+            LibraryKind.LiveTV -> listOf(BaseItemKind.TV_CHANNEL)
+            LibraryKind.Playlists -> listOf(BaseItemKind.PLAYLIST)
+            LibraryKind.HomeVideos -> listOf(BaseItemKind.VIDEO, BaseItemKind.MOVIE)
+            else -> listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES)
+        },
+        parentId = room.id,
+    )
+
+    suspend fun serverCounts(userId: UUID): LibraryCounts = withContext(Dispatchers.IO) {
+        runCatching {
+            val counts = api.libraryApi.getItemCounts(userId = userId).content
+            LibraryCounts(counts.movieCount ?: 0, counts.seriesCount ?: 0, counts.episodeCount ?: 0)
+        }.getOrElse {
+            LibraryCounts(
+                countItems(userId, listOf(BaseItemKind.MOVIE), null),
+                countItems(userId, listOf(BaseItemKind.SERIES), null),
+                countItems(userId, listOf(BaseItemKind.EPISODE), null),
+            )
+        }
+    }
+
+    suspend fun roomCounts(userId: UUID, room: LibraryRoom): LibraryCounts = withContext(Dispatchers.IO) {
+        val movies = suspend { countItems(userId, listOf(BaseItemKind.MOVIE), room.id) }
+        val shows = suspend { countItems(userId, listOf(BaseItemKind.SERIES), room.id) }
+        val episodes = suspend { countItems(userId, listOf(BaseItemKind.EPISODE), room.id) }
+        when (room.kind) {
+            LibraryKind.Movies -> LibraryCounts(movies = movies())
+            LibraryKind.Shows -> LibraryCounts(shows = shows(), episodes = episodes())
+            LibraryKind.LiveTV -> LibraryCounts()
+            else -> LibraryCounts(movies(), shows(), episodes())
+        }
+    }
+
+    private suspend fun countItems(userId: UUID, kinds: List<BaseItemKind>, parentId: String?): Int = runCatching {
         api.itemsApi.getItems(
             GetItemsRequest(
                 userId = userId,
-                parentId = UUID.fromString(parentId),
+                parentId = parentId?.let(UUID::fromString),
                 recursive = true,
-                includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
-                sortBy = listOf(ItemSortBy.SORT_NAME),
-                sortOrder = listOf(SortOrder.ASCENDING),
-                limit = 80,
-                fields = listFields,
-                enableUserData = true,
-                enableImageTypes = imageTypes,
+                includeItemTypes = kinds,
+                limit = 0,
+                enableTotalRecordCount = true,
             ),
-        ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        ).content.totalRecordCount
+    }.getOrDefault(0)
+
+    suspend fun previewItems(userId: UUID, room: LibraryRoom, limit: Int = 8): List<MediaItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            api.itemsApi.getItems(
+                GetItemsRequest(
+                    userId = userId,
+                    parentId = UUID.fromString(room.id),
+                    recursive = true,
+                    includeItemTypes = scope(room).kinds,
+                    sortBy = listOf(ItemSortBy.DATE_CREATED),
+                    sortOrder = listOf(SortOrder.DESCENDING),
+                    limit = limit,
+                    fields = listFields,
+                    enableUserData = true,
+                    enableImageTypes = imageTypes,
+                    enableTotalRecordCount = false,
+                ),
+            ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        }.getOrDefault(emptyList())
     }
 
-    suspend fun catalog(userId: UUID, kind: BaseItemKind): List<MediaItem> = withContext(Dispatchers.IO) {
-        val result = api.itemsApi.getItems(
+    suspend fun genres(userId: UUID, limit: Int? = null): List<LibraryGenre> = withContext(Dispatchers.IO) {
+        api.genresApi.getGenres(
+            GetGenresRequest(
+                userId = userId,
+                limit = limit,
+                includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
+                sortBy = listOf(ItemSortBy.SORT_NAME),
+                enableImages = false,
+                enableTotalRecordCount = false,
+            ),
+        ).content.items.mapNotNull { dto ->
+            val name = dto.name?.trim().orEmpty()
+            if (name.isEmpty()) null else LibraryGenre(dto.id.toString(), name)
+        }
+    }
+
+    suspend fun tmdbCatalog(userId: UUID): JellyfinTmdbCatalog = withContext(Dispatchers.IO) {
+        val items = api.itemsApi.getItems(
             GetItemsRequest(
                 userId = userId,
                 recursive = true,
-                includeItemTypes = listOf(kind),
-                sortBy = listOf(ItemSortBy.DATE_CREATED),
-                sortOrder = listOf(SortOrder.DESCENDING),
-                limit = 80,
-                fields = listFields,
-                enableUserData = true,
-                enableImageTypes = imageTypes,
+                includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
+                fields = listOf(ItemFields.PROVIDER_IDS),
+                enableImages = false,
+                enableUserData = false,
+                enableTotalRecordCount = false,
             ),
-        ).content
-        result.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        ).content.items
+        val movies = mutableSetOf<Int>()
+        val series = mutableSetOf<Int>()
+        items.forEach { dto ->
+            val ids = dto.providerIds?.mapNotNull { (key, value) -> value?.let { key to it } }?.toMap()
+            val tmdb = JellyfinTmdbCatalog.tmdbId(ids) ?: return@forEach
+            if (dto.type == BaseItemKind.SERIES) series += tmdb else movies += tmdb
+        }
+        JellyfinTmdbCatalog(movies, series)
     }
+
+    suspend fun searchHints(userId: UUID, term: String): List<SearchHit> = withContext(Dispatchers.IO) {
+        val trimmed = term.trim()
+        if (trimmed.isEmpty()) return@withContext emptyList()
+        val hints = api.searchApi.getSearchHints(
+            limit = 24,
+            userId = userId,
+            searchTerm = trimmed,
+            includeItemTypes = listOf(
+                BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.EPISODE, BaseItemKind.BOX_SET,
+                BaseItemKind.PERSON, BaseItemKind.GENRE, BaseItemKind.STUDIO, BaseItemKind.TV_CHANNEL,
+            ),
+            includePeople = true,
+            includeMedia = true,
+            includeGenres = true,
+            includeStudios = true,
+            includeArtists = false,
+        ).content.searchHints
+        val seen = mutableSetOf<String>()
+        hints.mapNotNull { hint ->
+            val hit = searchHit(hint) ?: return@mapNotNull null
+            if (seen.add(hit.id)) hit else null
+        }
+    }
+
+    private fun searchHit(hint: SearchHint): SearchHit? {
+        val id = hint.id.toString()
+        val name = hint.name?.takeIf { it.isNotBlank() } ?: return null
+        val (kind, mediaKind) = when (hint.type) {
+            BaseItemKind.MOVIE -> SearchHitKind.Title to MediaKind.Movie
+            BaseItemKind.SERIES -> SearchHitKind.Title to MediaKind.Series
+            BaseItemKind.EPISODE -> SearchHitKind.Title to MediaKind.Episode
+            BaseItemKind.BOX_SET -> SearchHitKind.Title to MediaKind.Collection
+            BaseItemKind.TV_CHANNEL, BaseItemKind.LIVE_TV_PROGRAM, BaseItemKind.TV_PROGRAM -> SearchHitKind.Title to MediaKind.LiveTV
+            BaseItemKind.PERSON -> SearchHitKind.Person to MediaKind.Unknown
+            BaseItemKind.GENRE -> if (isBrowsableGenre(name)) SearchHitKind.Genre to MediaKind.Genre else return null
+            BaseItemKind.STUDIO -> SearchHitKind.Studio to MediaKind.Unknown
+            else -> return null
+        }
+        val label = when (kind) {
+            SearchHitKind.Title -> when (mediaKind) {
+                MediaKind.Movie -> "Movie"
+                MediaKind.Series -> "Show"
+                MediaKind.Episode -> hint.series ?: "Episode"
+                MediaKind.Collection -> "Collection"
+                MediaKind.LiveTV -> "Live TV"
+                else -> "Title"
+            }
+            SearchHitKind.Person -> "Person"
+            SearchHitKind.Genre -> "Genre"
+            SearchHitKind.Studio -> "Studio"
+        }
+        val item = MediaItem(
+            id = id,
+            name = name,
+            kind = mediaKind,
+            year = hint.productionYear,
+            seriesName = hint.series,
+            primaryImageTag = hint.primaryImageTag,
+        )
+        return SearchHit(
+            id = id,
+            name = name,
+            subtitle = listOfNotNull(label, hint.productionYear?.toString()).joinToString(" · "),
+            kind = kind,
+            item = item,
+        )
+    }
+
+    suspend fun collectionPreview(userId: UUID, limit: Int = 12): List<MediaItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            api.itemsApi.getItems(
+                GetItemsRequest(
+                    userId = userId,
+                    recursive = true,
+                    includeItemTypes = listOf(BaseItemKind.BOX_SET),
+                    sortBy = listOf(ItemSortBy.SORT_NAME),
+                    sortOrder = listOf(SortOrder.ASCENDING),
+                    limit = limit,
+                    fields = listFields,
+                    enableUserData = true,
+                    enableImageTypes = imageTypes,
+                    enableTotalRecordCount = false,
+                ),
+            ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun catalog(
+        userId: UUID,
+        kind: BaseItemKind,
+        query: CatalogBrowseQuery = CatalogBrowseQuery(),
+        onPage: (List<MediaItem>) -> Unit = {},
+    ): List<MediaItem> = browse(userId, JellyfinScope(listOf(kind)), query, onPage)
+
+    suspend fun browse(
+        userId: UUID,
+        scope: JellyfinScope,
+        query: CatalogBrowseQuery = CatalogBrowseQuery(),
+        onPage: (List<MediaItem>) -> Unit = {},
+    ): List<MediaItem> = withContext(Dispatchers.IO) {
+        val passes = query.resolutionPasses()
+        if (passes.size == 1) {
+            val (isHd, is4k) = passes.first()
+            val items = catalogPass(userId, scope, query, isHd, is4k, onPage)
+            return@withContext if (query.sort == CatalogSortField.Random) items.shuffled() else items
+        }
+        val merged = LinkedHashMap<String, MediaItem>()
+        for ((isHd, is4k) in passes) {
+            for (item in catalogPass(userId, scope, query, isHd, is4k) {}) {
+                merged.putIfAbsent(item.id, item)
+            }
+            onPage(merged.values.toList())
+        }
+        merged.values.toList()
+    }
+
+    suspend fun catalogFilters(userId: UUID, kind: BaseItemKind): CatalogFilterOptions =
+        catalogFilters(userId, JellyfinScope(listOf(kind)))
+
+    suspend fun catalogFilters(userId: UUID, scope: JellyfinScope): CatalogFilterOptions = withContext(Dispatchers.IO) {
+        val kinds = scope.kinds.takeIf { it.isNotEmpty() }
+        val parent = scope.parentId?.let(UUID::fromString)
+        val filters = runCatching {
+            api.filterApi.getQueryFiltersLegacy(userId = userId, parentId = parent, includeItemTypes = kinds).content
+        }.getOrNull()
+        val studios = runCatching {
+            api.studiosApi.getStudios(
+                GetStudiosRequest(
+                    userId = userId,
+                    parentId = parent,
+                    includeItemTypes = kinds,
+                    enableImages = false,
+                    enableTotalRecordCount = false,
+                ),
+            ).content.items.mapNotNull { it.name?.trim()?.takeIf { name -> name.isNotEmpty() } }
+        }.getOrDefault(emptyList())
+        val languages = runCatching {
+            api.localizationApi.getCultures().content.mapNotNull { it.toChoice() }
+        }.getOrDefault(emptyList()).sortedBy { it.name.lowercase() }
+        CatalogFilterOptions(
+            genres = filters?.genres.orEmpty().toChoices(),
+            officialRatings = filters?.officialRatings.orEmpty().toChoices(),
+            tags = filters?.tags.orEmpty().toChoices(),
+            years = filters?.years.orEmpty().sortedDescending().map { CatalogFilterChoice(it.toString(), it.toString()) },
+            studios = studios.distinct().sortedBy { it.lowercase() }.map { CatalogFilterChoice(it, it) },
+            languages = languages,
+        )
+    }
+
+    private suspend fun catalogPass(
+        userId: UUID,
+        scope: JellyfinScope,
+        query: CatalogBrowseQuery,
+        isHd: Boolean?,
+        is4k: Boolean?,
+        onPage: (List<MediaItem>) -> Unit,
+    ): List<MediaItem> {
+        val audio = query.audioLanguages.takeIf { it.isNotEmpty() }?.sorted()?.joinToString(",")
+        val subtitles = query.subtitleLanguages.takeIf { it.isNotEmpty() }?.sorted()?.joinToString(",")
+        val collected = LinkedHashMap<String, MediaItem>()
+        var start = 0
+        while (start < CatalogMaxItems) {
+            val request = catalogRequest(userId, scope, query, isHd, is4k, start)
+            val page = try {
+                if (audio == null && subtitles == null) {
+                    api.itemsApi.getItems(request).content
+                } else {
+                    api.get<BaseItemDtoQueryResult>(
+                        "/Items",
+                        pathParameters = emptyMap(),
+                        queryParameters = catalogQueryParameters(request, audio, subtitles),
+                    ).content
+                }
+            } catch (error: Exception) {
+                if (collected.isEmpty()) throw error
+                break
+            }
+            if (page.items.isEmpty()) break
+            for (item in page.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }) {
+                collected.putIfAbsent(item.id, item)
+            }
+            onPage(collected.values.toList())
+            val fetched = page.items.size
+            val next = start + fetched
+            val total = page.totalRecordCount
+            val finished = if (total > 0) {
+                next >= total
+            } else {
+                fetched < CatalogPageSize
+            }
+            if (finished || next == start) break
+            start = next
+        }
+        return collected.values.toList()
+    }
+
+    private fun catalogRequest(
+        userId: UUID,
+        scope: JellyfinScope,
+        query: CatalogBrowseQuery,
+        isHd: Boolean?,
+        is4k: Boolean?,
+        start: Int,
+    ): GetItemsRequest {
+        val played = CatalogStatusFilter.Played in query.statuses
+        val unplayed = CatalogStatusFilter.Unplayed in query.statuses
+        val filters = buildList {
+            if (played && !unplayed) add(ItemFilter.IS_PLAYED)
+            if (unplayed && !played) add(ItemFilter.IS_UNPLAYED)
+            if (CatalogStatusFilter.Favorite in query.statuses) add(ItemFilter.IS_FAVORITE)
+            if (CatalogStatusFilter.ContinueWatching in query.statuses) add(ItemFilter.IS_RESUMABLE)
+        }
+        val discs = query.videoKinds.mapNotNull { kind ->
+            when (kind) {
+                CatalogVideoKind.Dvd -> VideoType.DVD
+                CatalogVideoKind.BluRay -> VideoType.BLU_RAY
+                CatalogVideoKind.Iso -> VideoType.ISO
+                else -> null
+            }
+        }
+        return GetItemsRequest(
+            userId = userId,
+            parentId = scope.parentId?.let(UUID::fromString),
+            recursive = true,
+            includeItemTypes = scope.kinds.takeIf { it.isNotEmpty() },
+            genreIds = scope.genreIds.map(UUID::fromString).takeIf { it.isNotEmpty() },
+            personIds = scope.personIds.map(UUID::fromString).takeIf { it.isNotEmpty() },
+            studioIds = scope.studioIds.map(UUID::fromString).takeIf { it.isNotEmpty() },
+            sortBy = listOf(query.sort.toItemSort()),
+            sortOrder = if (query.sort.allowsDirection) {
+                listOf(if (query.sortAscending) SortOrder.ASCENDING else SortOrder.DESCENDING)
+            } else {
+                null
+            },
+            startIndex = start,
+            limit = CatalogPageSize,
+            filters = filters.takeIf { it.isNotEmpty() },
+            hasSubtitles = true.takeIf { CatalogFeatureFilter.Subtitles in query.features },
+            hasTrailer = true.takeIf { CatalogFeatureFilter.Trailers in query.features },
+            hasSpecialFeature = true.takeIf { CatalogFeatureFilter.Extras in query.features },
+            hasThemeSong = true.takeIf { CatalogFeatureFilter.ThemeSongs in query.features },
+            hasThemeVideo = true.takeIf { CatalogFeatureFilter.ThemeVideos in query.features },
+            isHd = isHd,
+            is4k = is4k,
+            is3d = true.takeIf { CatalogVideoKind.ThreeD in query.videoKinds },
+            videoTypes = discs.takeIf { it.isNotEmpty() },
+            genres = query.genres.sorted().takeIf { it.isNotEmpty() },
+            officialRatings = query.officialRatings.sorted().takeIf { it.isNotEmpty() },
+            tags = query.tags.sorted().takeIf { it.isNotEmpty() },
+            years = query.years.sorted().takeIf { it.isNotEmpty() },
+            studios = query.studios.sorted().takeIf { it.isNotEmpty() },
+            fields = catalogFields,
+            enableUserData = true,
+            enableImageTypes = imageTypes,
+            enableTotalRecordCount = true,
+        )
+    }
+
+    private fun catalogQueryParameters(request: GetItemsRequest, audio: String?, subtitles: String?): Map<String, Any?> =
+        buildMap {
+            put("userId", request.userId)
+            put("parentId", request.parentId)
+            put("genreIds", request.genreIds)
+            put("personIds", request.personIds)
+            put("studioIds", request.studioIds)
+            put("startIndex", request.startIndex)
+            put("limit", request.limit)
+            put("recursive", request.recursive)
+            put("includeItemTypes", request.includeItemTypes)
+            put("sortBy", request.sortBy)
+            put("sortOrder", request.sortOrder)
+            put("filters", request.filters)
+            put("fields", request.fields)
+            put("enableUserData", request.enableUserData)
+            put("enableImageTypes", request.enableImageTypes)
+            put("enableTotalRecordCount", request.enableTotalRecordCount)
+            put("hasSubtitles", request.hasSubtitles)
+            put("hasTrailer", request.hasTrailer)
+            put("hasSpecialFeature", request.hasSpecialFeature)
+            put("hasThemeSong", request.hasThemeSong)
+            put("hasThemeVideo", request.hasThemeVideo)
+            put("isHd", request.isHd)
+            put("is4K", request.is4k)
+            put("is3D", request.is3d)
+            put("videoTypes", request.videoTypes)
+            put("genres", request.genres)
+            put("officialRatings", request.officialRatings)
+            put("tags", request.tags)
+            put("years", request.years)
+            put("studios", request.studios)
+            put("audioLanguages", audio)
+            put("subtitleLanguages", subtitles)
+        }
 
     suspend fun detail(userId: UUID, id: String): TitleDetail = withContext(Dispatchers.IO) {
         val itemId = UUID.fromString(id)
@@ -456,6 +874,9 @@ class JellyfinLibrary(
             ItemFields.PEOPLE,
         )
         private val imageTypes = listOf(ImageType.PRIMARY, ImageType.THUMB, ImageType.BACKDROP, ImageType.LOGO)
+        private val catalogFields = listOf(ItemFields.GENRES, ItemFields.MEDIA_STREAMS, ItemFields.WIDTH, ItemFields.HEIGHT)
+        private const val CatalogPageSize = 200
+        private const val CatalogMaxItems = 20_000
 
         fun jellyfin(context: Context) = createJellyfin {
             this.context = context.applicationContext
@@ -650,6 +1071,32 @@ data class CollectionEditor(
     val collections: List<MediaItem>,
     val memberIds: Set<String>,
 )
+
+private fun CatalogSortField.toItemSort(): ItemSortBy = when (this) {
+    CatalogSortField.Name -> ItemSortBy.SORT_NAME
+    CatalogSortField.Random -> ItemSortBy.RANDOM
+    CatalogSortField.CommunityRating -> ItemSortBy.COMMUNITY_RATING
+    CatalogSortField.CriticRating -> ItemSortBy.CRITIC_RATING
+    CatalogSortField.DateAdded -> ItemSortBy.DATE_CREATED
+    CatalogSortField.DatePlayed -> ItemSortBy.DATE_PLAYED
+    CatalogSortField.ParentalRating -> ItemSortBy.OFFICIAL_RATING
+    CatalogSortField.PlayCount -> ItemSortBy.PLAY_COUNT
+    CatalogSortField.ReleaseDate -> ItemSortBy.PREMIERE_DATE
+    CatalogSortField.Runtime -> ItemSortBy.RUNTIME
+}
+
+private fun List<String>.toChoices(): List<CatalogFilterChoice> = map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .distinct()
+    .sortedBy { it.lowercase() }
+    .map { CatalogFilterChoice(it, it) }
+
+private fun CultureDto.toChoice(): CatalogFilterChoice? {
+    val code = (threeLetterIsoLanguageName ?: twoLetterIsoLanguageName).trim().lowercase()
+    if (code.isEmpty()) return null
+    val label = displayName.trim().ifEmpty { code.uppercase() }
+    return CatalogFilterChoice(code, label)
+}
 
 private fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
     val tags = imageTags.orEmpty().entries.associate { (type, tag) -> type.serialName to tag }

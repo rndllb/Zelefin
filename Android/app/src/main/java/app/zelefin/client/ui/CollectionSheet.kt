@@ -125,7 +125,7 @@ fun CollectionSheet(
                 Text(
                     "Collections",
                     color = Color.White,
-                    fontFamily = Outfit,
+                    fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 20.sp,
                     modifier = Modifier.weight(1f),
@@ -140,7 +140,7 @@ fun CollectionSheet(
                         .clickable(onClick = onDismiss),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("✕", color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text("✕", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 }
             }
             Column(
@@ -152,13 +152,13 @@ fun CollectionSheet(
                     .navigationBarsPadding(),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Text("New Collection", color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text("New Collection", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     BasicTextField(
                         value = name,
                         onValueChange = { name = it },
                         singleLine = true,
-                        textStyle = TextStyle(color = Color.White, fontFamily = Outfit, fontSize = 16.sp),
+                        textStyle = TextStyle(color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp),
                         cursorBrush = SolidColor(ZelefinCyan),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { create() }),
@@ -167,7 +167,7 @@ fun CollectionSheet(
                             Column {
                                 Box(Modifier.padding(vertical = 10.dp)) {
                                     if (name.isEmpty()) {
-                                        Text("Name", color = Color.White.copy(alpha = 0.4f), fontFamily = Outfit, fontSize = 16.sp)
+                                        Text("Name", color = Color.White.copy(alpha = 0.4f), fontFamily = ZelefinFont, fontSize = 16.sp)
                                     }
                                     inner()
                                 }
@@ -179,22 +179,22 @@ fun CollectionSheet(
                     Text(
                         "Create",
                         color = if (canCreate) ZelefinCyan else Color.White.copy(alpha = 0.35f),
-                        fontFamily = Outfit,
+                        fontFamily = ZelefinFont,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 16.sp,
                         modifier = Modifier.clickable(enabled = canCreate, onClick = ::create),
                     )
                 }
-                Text("Collections", color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text("Collections", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 error?.let {
-                    Text(it, color = Color(0xFFFF453A), fontFamily = Outfit, fontSize = 14.sp)
+                    Text(it, color = Color(0xFFFF453A), fontFamily = ZelefinFont, fontSize = 14.sp)
                 }
                 when {
                     loading && editor == null -> CircularProgressIndicator(color = ZelefinCyan, modifier = Modifier.size(28.dp))
                     editor?.collections.isNullOrEmpty() -> Text(
                         "No collections yet.",
                         color = Color.White.copy(alpha = 0.55f),
-                        fontFamily = Outfit,
+                        fontFamily = ZelefinFont,
                         fontSize = 16.sp,
                     )
                     else -> {
@@ -211,7 +211,7 @@ fun CollectionSheet(
                                 Text(
                                     collection.name,
                                     color = Color.White,
-                                    fontFamily = Outfit,
+                                    fontFamily = ZelefinFont,
                                     fontSize = 16.sp,
                                     modifier = Modifier.weight(1f),
                                 )

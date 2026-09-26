@@ -145,7 +145,7 @@ fun ConnectScreen(
                 )
                 Text(
                     "Zelefin",
-                    fontFamily = Outfit,
+                    fontFamily = ZelefinFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 34.sp,
                     color = Color.White,
@@ -222,7 +222,7 @@ fun ConnectScreen(
                         Text(
                             "Advanced: access gateway",
                             color = Caption,
-                            fontFamily = Outfit,
+                            fontFamily = ZelefinFont,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp,
                             modifier = Modifier.weight(1f),
@@ -255,7 +255,7 @@ fun ConnectScreen(
                         Text(
                             "Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin.",
                             color = Caption,
-                            fontFamily = Outfit,
+                            fontFamily = ZelefinFont,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                         )
@@ -266,7 +266,7 @@ fun ConnectScreen(
                     Text(
                         message,
                         color = if (message.contains("reachable", ignoreCase = true)) Secondary else Failure,
-                        fontFamily = Outfit,
+                        fontFamily = ZelefinFont,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
@@ -288,7 +288,7 @@ fun ConnectScreen(
                         Text(
                             handshake.groupedCode,
                             color = ZelefinCyan,
-                            fontFamily = Outfit,
+                            fontFamily = ZelefinFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 40.sp,
                             letterSpacing = 4.sp,
@@ -297,7 +297,7 @@ fun ConnectScreen(
                         Text(
                             "Enter this code on a device that is already signed in.",
                             color = Secondary,
-                            fontFamily = Outfit,
+                            fontFamily = ZelefinFont,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center,
@@ -378,7 +378,7 @@ private fun BackendTile(backend: MediaBackend, selected: Boolean, size: Dp, onCl
         Text(
             if (silo) "SILO" else "JELLYFIN",
             color = if (selected) Color.White else Caption,
-            fontFamily = Outfit,
+            fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
             fontSize = 11.sp,
             letterSpacing = 1.sp,
@@ -387,7 +387,7 @@ private fun BackendTile(backend: MediaBackend, selected: Boolean, size: Dp, onCl
 }
 
 @Composable
-private fun LoginField(
+internal fun LoginField(
     label: String,
     value: String,
     icon: ImageVector,
@@ -403,7 +403,7 @@ private fun LoginField(
 ) {
     val fieldStyle = TextStyle(
         color = Color.White,
-        fontFamily = Outfit,
+        fontFamily = ZelefinFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
     )
@@ -412,7 +412,7 @@ private fun LoginField(
             Text(
                 label,
                 color = Caption,
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
                 letterSpacing = 0.6.sp,
@@ -422,7 +422,7 @@ private fun LoginField(
                 Text(
                     "FORGOT",
                     color = ZelefinCyan,
-                    fontFamily = Outfit,
+                    fontFamily = ZelefinFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     letterSpacing = 0.8.sp,
@@ -508,7 +508,7 @@ private fun LoginButton(
             Text(
                 title,
                 color = if (filled) Color.Black else Color.White,
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 letterSpacing = 0.8.sp,

@@ -43,10 +43,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import app.zelefin.client.EnhancedExtras
+import app.zelefin.client.PluginsController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,6 +88,8 @@ private sealed interface DetailSheet {
     data object MoreInfo : DetailSheet
     data class Collections(val item: MediaItem) : DetailSheet
     data object Seasons : DetailSheet
+    data class Subtitles(val item: MediaItem) : DetailSheet
+    data class Review(val existing: app.zelefin.client.plugins.JellyfinEnhancedReview?) : DetailSheet
 }
 
 @Composable
@@ -97,12 +106,59 @@ fun DetailPage(
     onLoadCollections: suspend (String) -> app.zelefin.client.jellyfin.CollectionEditor = { app.zelefin.client.jellyfin.CollectionEditor(emptyList(), emptySet()) },
     onSetCollectionMember: suspend (String, String, Boolean) -> Unit = { _, _, _ -> },
     onCreateCollection: suspend (String, String) -> Unit = { _, _ -> },
+    plugins: PluginsController? = null,
 ) {
     var sheet by remember { mutableStateOf<DetailSheet?>(null) }
     var note by remember { mutableStateOf<MenuNotice?>(null) }
     val pageSheet: DetailSheet? = when (val current = sheet) {
-        DetailSheet.MoreInfo, is DetailSheet.Collections -> current
+        DetailSheet.MoreInfo, is DetailSheet.Collections, is DetailSheet.Subtitles, is DetailSheet.Review -> current
         else -> null
+    }
+    val pluginState = plugins?.state?.collectAsState()?.value
+    val scope = rememberCoroutineScope()
+    val pageItem = detail?.item
+    var extrasRevision by remember(pageItem?.id) { mutableIntStateOf(0) }
+    var extras by remember(pageItem?.id) { mutableStateOf<EnhancedExtras?>(null) }
+    var reviewBusy by remember { mutableStateOf(false) }
+    var reviewError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(pageItem?.id, pageItem?.tmdbId, pluginState?.jellyfin?.enhanced, extrasRevision) {
+        val target = pageItem ?: return@LaunchedEffect
+        extras = plugins?.enhancedExtras(target.kind, target.tmdbId)
+    }
+    fun saveReview(content: String, rating: Double?) {
+        val target = pageItem ?: return
+        val controller = plugins ?: return
+        reviewBusy = true
+        reviewError = null
+        scope.launch {
+            try {
+                controller.saveReview(target.kind, target.tmdbId, content, rating)
+                sheet = null
+                extrasRevision++
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Throwable) {
+                reviewError = error.message ?: "The review didn’t save."
+            }
+            reviewBusy = false
+        }
+    }
+    fun deleteReview(review: app.zelefin.client.plugins.JellyfinEnhancedReview) {
+        val target = pageItem ?: return
+        val controller = plugins ?: return
+        reviewBusy = true
+        scope.launch {
+            try {
+                controller.deleteReview(target.kind, target.tmdbId, review)
+                if (sheet is DetailSheet.Review) sheet = null
+                extrasRevision++
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Throwable) {
+                note = MenuNotice("Reviews", error.message ?: "The review didn’t delete.")
+            }
+            reviewBusy = false
+        }
     }
     val sheetMotion = rememberZelefinSheet(pageSheet)
     BackHandler(enabled = sheet != null || note != null || sheetMotion.displayed != null) {
@@ -237,6 +293,20 @@ fun DetailPage(
                     }
                     Spacer(Modifier.height(20.dp))
                 }
+                extras?.let { loaded ->
+                    item(key = "enhanced") {
+                        TitleEnhancedExtras(
+                            extras = loaded,
+                            isAdministrator = pluginState?.isAdmin == true,
+                            isOwn = { plugins?.isOwnReview(it) == true },
+                            onWrite = {
+                                reviewError = null
+                                sheet = DetailSheet.Review(loaded.reviews.firstOrNull { plugins?.isOwnReview(it) == true })
+                            },
+                            onDelete = ::deleteReview,
+                        )
+                    }
+                }
                 item(key = "about") { AboutRow(item) { sheet = DetailSheet.MoreInfo } }
                 item(key = "information") { FactsBlock("Information", detail.moreInfo.information) }
                 item(key = "languages") { FactsBlock("Languages", detail.moreInfo.languages) }
@@ -299,6 +369,26 @@ fun DetailPage(
                         onDismiss = { sheet = null },
                     )
                 }
+                is DetailSheet.Subtitles -> if (plugins != null) {
+                    ZelefinSheetSurface(sheetMotion.progress) {
+                        OpenSubtitlesSheet(
+                            item = shown.item,
+                            plugins = plugins,
+                            onClose = { sheet = null },
+                            onSaved = {},
+                        )
+                    }
+                }
+                is DetailSheet.Review -> ZelefinSheetSurface(sheetMotion.progress) {
+                    TitleReviewEditor(
+                        existing = shown.existing,
+                        busy = reviewBusy,
+                        error = reviewError,
+                        onSave = ::saveReview,
+                        onDelete = shown.existing?.let { review -> { deleteReview(review) } },
+                        onClose = { sheet = null },
+                    )
+                }
                 else -> Unit
             }
         }
@@ -329,6 +419,9 @@ fun DetailPage(
         },
         note = note,
         onDismissNote = { note = null },
+        onAddSubtitles = more?.item?.takeIf { pluginState?.showsAddSubtitles(it.kind) == true }?.let {
+            { target -> sheet = DetailSheet.Subtitles(target) }
+        },
     )
 }
 
@@ -381,7 +474,7 @@ private fun DetailHero(
             Text(
                 item.heroMetadataLine,
                 color = Color.White.copy(alpha = 0.92f),
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
                 maxLines = 1,
@@ -397,7 +490,7 @@ private fun DetailHero(
                         Text(
                             overview,
                             color = Color.White.copy(alpha = 0.88f),
-                            fontFamily = Outfit,
+                            fontFamily = ZelefinFont,
                             fontSize = 15.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -450,7 +543,7 @@ private fun DetailPlayButton(item: MediaItem, onClick: () -> Unit) {
         Text(
             item.playActionDurationLabel ?: "Play",
             color = Color.Black,
-            fontFamily = Outfit,
+            fontFamily = ZelefinFont,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
             maxLines = 1,
@@ -468,13 +561,13 @@ private fun SpecsRow(item: MediaItem) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (yearRuntime.isNotBlank()) {
-            Text(yearRuntime, color = Color.White.copy(alpha = 0.88f), fontFamily = Outfit, fontSize = 15.sp, maxLines = 1)
+            Text(yearRuntime, color = Color.White.copy(alpha = 0.88f), fontFamily = ZelefinFont, fontSize = 15.sp, maxLines = 1)
         }
         item.criticRating?.takeIf { it > 0 }?.let { score ->
             Text(
                 "${kotlin.math.round(score).toInt()}%",
                 color = Color.White.copy(alpha = 0.88f),
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontSize = 15.sp,
             )
         }
@@ -483,13 +576,13 @@ private fun SpecsRow(item: MediaItem) {
             Text(
                 if (score <= 10) String.format("%.1f", score) else "${score.toInt()}%",
                 color = Color.White.copy(alpha = 0.88f),
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontSize = 15.sp,
             )
         }
         item.ageGateLabel?.let { age ->
             Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color(0xFF34C759), modifier = Modifier.size(14.dp))
-            Text(age, color = Color.White.copy(alpha = 0.88f), fontFamily = Outfit, fontSize = 15.sp)
+            Text(age, color = Color.White.copy(alpha = 0.88f), fontFamily = ZelefinFont, fontSize = 15.sp)
         }
         item.officialRating?.takeIf { it.isNotBlank() }?.let { SpecBadge(it) }
         resolutionLabel(item.videoResolution)?.let { SpecBadge(it) }
@@ -505,7 +598,7 @@ private fun SpecBadge(value: String) {
     Text(
         value,
         color = Color.White.copy(alpha = 0.9f),
-        fontFamily = Outfit,
+        fontFamily = ZelefinFont,
         fontSize = 12.sp,
         modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 2.dp),
     )
@@ -521,8 +614,8 @@ private fun SeasonHeader(title: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(title, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-        Text("↕", color = Color.White.copy(alpha = 0.55f), fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+        Text("↕", color = Color.White.copy(alpha = 0.55f), fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 16.sp)
     }
 }
 
@@ -549,7 +642,7 @@ private fun SeasonMenu(
                 Text(
                     season.seasonMenuTitle,
                     color = if (selected) ZelefinCyan else Color.White,
-                    fontFamily = Outfit,
+                    fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 17.sp,
                     modifier = Modifier
@@ -567,7 +660,7 @@ private fun MoreCapsule(modifier: Modifier, onClick: () -> Unit) {
     Text(
         "MORE",
         color = Color.White,
-        fontFamily = Outfit,
+        fontFamily = ZelefinFont,
         fontWeight = FontWeight.Bold,
         fontSize = 12.sp,
         modifier = modifier
@@ -592,7 +685,7 @@ private fun CastCard(person: app.zelefin.core.CreditPerson, session: SavedSessio
             Text(
                 person.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
                 color = Color.White,
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 28.sp,
             )
@@ -606,8 +699,8 @@ private fun CastCard(person: app.zelefin.core.CreditPerson, session: SavedSessio
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(person.name, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-        Text(person.roleLabel, color = Color.White.copy(alpha = 0.55f), fontFamily = Outfit, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        Text(person.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        Text(person.roleLabel, color = Color.White.copy(alpha = 0.55f), fontFamily = ZelefinFont, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }
 
@@ -625,7 +718,7 @@ private fun AboutRow(item: MediaItem, onMore: () -> Unit) {
     Text(
         "About",
         color = Color.White,
-        fontFamily = Outfit,
+        fontFamily = ZelefinFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -701,13 +794,13 @@ private fun AboutSynopsisCard(title: String, genres: String?, overview: String?,
             .clickable(enabled = !overview.isNullOrBlank(), onClick = onMore)
             .padding(12.dp),
     ) {
-        Text(title, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         genres?.let {
-            Text(it, color = Color.White.copy(alpha = 0.45f), fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+            Text(it, color = Color.White.copy(alpha = 0.45f), fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
         }
         if (!overview.isNullOrBlank()) {
             Box(Modifier.padding(top = 4.dp).weight(1f)) {
-                Text(overview, color = Color.White.copy(alpha = 0.92f), fontFamily = Outfit, fontSize = 12.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Text(overview, color = Color.White.copy(alpha = 0.92f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 Row(Modifier.align(Alignment.BottomEnd), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier
@@ -715,7 +808,7 @@ private fun AboutSynopsisCard(title: String, genres: String?, overview: String?,
                             .height(18.dp)
                             .background(Brush.horizontalGradient(listOf(Color.Transparent, AboutCardColor))),
                     )
-                    Text("MORE", color = Color.White.copy(alpha = 0.55f), fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("MORE", color = Color.White.copy(alpha = 0.55f), fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
@@ -734,10 +827,10 @@ private fun AboutRatingCard(value: String, label: String, meaning: String, icon:
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             icon()
-            Text(value, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 22.sp, maxLines = 1)
+            Text(value, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp, maxLines = 1)
         }
-        Text(label, color = Color.White.copy(alpha = 0.45f), fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, letterSpacing = 0.6.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
-        Text(meaning, color = Color.White.copy(alpha = 0.92f), fontFamily = Outfit, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        Text(label, color = Color.White.copy(alpha = 0.45f), fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, letterSpacing = 0.6.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
+        Text(meaning, color = Color.White.copy(alpha = 0.92f), fontFamily = ZelefinFont, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
@@ -747,7 +840,7 @@ private fun FactsBlock(title: String, rows: List<app.zelefin.core.TitleMoreRow>)
     Text(
         title,
         color = Color.White,
-        fontFamily = Outfit,
+        fontFamily = ZelefinFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -755,8 +848,8 @@ private fun FactsBlock(title: String, rows: List<app.zelefin.core.TitleMoreRow>)
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         rows.forEach { row ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(row.label, color = Color.White.copy(alpha = 0.48f), fontFamily = Outfit, fontSize = 13.sp)
-                Text(row.value, color = Color.White, fontFamily = Outfit, fontSize = 16.sp)
+                Text(row.label, color = Color.White.copy(alpha = 0.48f), fontFamily = ZelefinFont, fontSize = 13.sp)
+                Text(row.value, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp)
             }
         }
     }
@@ -780,9 +873,9 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
         ) {
             Spacer(Modifier.size(46.dp))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(item.name, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 2, textAlign = TextAlign.Center)
+                Text(item.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 2, textAlign = TextAlign.Center)
                 item.genres.firstOrNull()?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, color = Color.White.copy(alpha = 0.72f), fontFamily = Outfit, fontSize = 15.sp)
+                    Text(it, color = Color.White.copy(alpha = 0.72f), fontFamily = ZelefinFont, fontSize = 15.sp)
                 }
             }
             Box(
@@ -794,7 +887,7 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
                     .clickable(onClick = onDismiss),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("✕", color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text("✕", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             }
         }
         Column(
@@ -807,7 +900,7 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
             item.overview?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = Color.White, fontFamily = Outfit, fontSize = 16.sp)
+                Text(it, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp)
             }
             SpecsRow(item)
             MoreInfoBlock("Information", info.information)
@@ -815,13 +908,13 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
             MoreInfoBlock("File", info.file)
             if (info.links.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Links", color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                    Text("Links", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     info.links.forEach { link ->
                         val context = LocalContext.current
                         Text(
                             link.name,
                             color = Color.White,
-                            fontFamily = Outfit,
+                            fontFamily = ZelefinFont,
                             fontSize = 16.sp,
                             textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                             modifier = Modifier.clickable {
@@ -833,10 +926,10 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
             }
             info.accessibilityNote?.let { note ->
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Accessibility", color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                    Text("Accessibility", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         SpecBadge("CC")
-                        Text(note, color = Color.White.copy(alpha = 0.72f), fontFamily = Outfit, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Text(note, color = Color.White.copy(alpha = 0.72f), fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -849,11 +942,11 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
 private fun MoreInfoBlock(title: String, rows: List<app.zelefin.core.TitleMoreRow>) {
     if (rows.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(title, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
         rows.forEach { row ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(row.label, color = Color.White.copy(alpha = 0.48f), fontFamily = Outfit, fontSize = 13.sp)
-                Text(row.value, color = Color.White, fontFamily = Outfit, fontSize = 16.sp)
+                Text(row.label, color = Color.White.copy(alpha = 0.48f), fontFamily = ZelefinFont, fontSize = 13.sp)
+                Text(row.value, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp)
             }
         }
     }
@@ -997,13 +1090,13 @@ private fun EpisodeCard(
         }
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             ordinal?.let {
-                Text(it, color = Color.White.copy(alpha = 0.55f), fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, letterSpacing = 0.7.sp)
+                Text(it, color = Color.White.copy(alpha = 0.55f), fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, letterSpacing = 0.7.sp)
             }
-            Text(item.name, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 item.overview.orEmpty(),
                 color = Color.White.copy(alpha = 0.62f),
-                fontFamily = Outfit,
+                fontFamily = ZelefinFont,
                 fontSize = 12.sp,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
@@ -1012,7 +1105,7 @@ private fun EpisodeCard(
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White.copy(alpha = 0.84f), modifier = Modifier.size(9.dp))
                 item.runtimeLabel?.let {
-                    Text(it, color = Color.White.copy(alpha = 0.84f), fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.padding(start = 6.dp))
+                    Text(it, color = Color.White.copy(alpha = 0.84f), fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.padding(start = 6.dp))
                 }
                 Spacer(Modifier.weight(1f))
                 Icon(
@@ -1070,8 +1163,8 @@ private fun TrailerCard(
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))),
         )
         Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(trailer.title, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(trailer.caption, color = Color.White.copy(alpha = 0.78f), fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1)
+            Text(trailer.title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(trailer.caption, color = Color.White.copy(alpha = 0.78f), fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1)
         }
     }
 }
@@ -1083,7 +1176,7 @@ private fun SectionTitle(title: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(title, color = Color.White, fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+        Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
         Icon(Icons.Outlined.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.45f))
     }
 }

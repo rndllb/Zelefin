@@ -6,6 +6,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.zelefin.client.jellyfin.CollectionEditor
 import app.zelefin.client.jellyfin.JellyfinLibrary
+import app.zelefin.client.jellyfin.JellyfinScope
+import app.zelefin.client.plugins.HomeQueueHideStore
+import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
+import app.zelefin.client.push.ZelefinPush
 import app.zelefin.client.session.SessionVault
 import app.zelefin.client.session.SnapshotStore
 import app.zelefin.client.silo.SiloClient
@@ -27,6 +31,7 @@ import app.zelefin.core.ZelefinException
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +43,7 @@ enum class AppTab { Home, Movies, Shows, Library, Search }
 data class LibraryRoom(
     val id: String,
     val name: String,
+    val kind: LibraryKind = LibraryKind.Other,
 )
 
 sealed interface Screen {
@@ -63,11 +69,24 @@ data class ZelefinUiState(
     val movies: List<MediaItem> = emptyList(),
     val shows: List<MediaItem> = emptyList(),
     val libraries: List<LibraryRoom> = emptyList(),
-    val libraryItems: List<MediaItem> = emptyList(),
-    val openLibraryId: String? = null,
+    val libraryPath: List<LibraryRoute> = emptyList(),
+    val searchPath: List<LibraryRoute> = emptyList(),
+    val search: LibrarySearchState = LibrarySearchState(),
+    val libraryGrids: Map<LibraryRoute, LibraryGridState> = emptyMap(),
+    val libraryOverview: LibraryOverview = LibraryOverview(),
+    val libraryLayout: LibraryLayout = LibraryLayout(),
+    val librariesLoading: Boolean = false,
     val detail: TitleDetail? = null,
     val quickConnect: QuickConnectHandshake? = null,
     val homeRefreshing: Boolean = false,
+    val moviesRefreshing: Boolean = false,
+    val showsRefreshing: Boolean = false,
+    val moviesLoading: Boolean = false,
+    val showsLoading: Boolean = false,
+    val movieQuery: CatalogBrowseQuery = CatalogBrowseQuery(),
+    val showQuery: CatalogBrowseQuery = CatalogBrowseQuery(),
+    val movieFilters: CatalogFilterOptions = CatalogFilterOptions(),
+    val showFilters: CatalogFilterOptions = CatalogFilterOptions(),
     val gatewayId: String = "",
     val gatewaySecret: String = "",
 )
@@ -75,10 +94,26 @@ data class ZelefinUiState(
 class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private val vault = SessionVault(application)
     private val snapshots = SnapshotStore(application)
-    private val _state = MutableStateFlow(ZelefinUiState())
+    private val layoutStore = LibraryLayoutStore(application)
+    private val searchHistory = SearchHistoryStore(application)
+    private val _state = MutableStateFlow(
+        ZelefinUiState(libraryLayout = layoutStore.load(), search = LibrarySearchState(recents = searchHistory.load())),
+    )
+    private var searchJob: Job? = null
+    val plugins = PluginsController(
+        application = application,
+        scope = viewModelScope,
+        session = { _state.value.session },
+        siloIdentity = { siloClient().identity() },
+        tmdbCatalog = { jellyfinClient().tmdbCatalog(userUuid()) },
+    )
     val state: StateFlow<ZelefinUiState> = _state.asStateFlow()
 
     private var jellyfin: JellyfinLibrary? = null
+    private var movieCatalogJob: Job? = null
+    private var showCatalogJob: Job? = null
+    private var overviewJob: Job? = null
+    private val gridJobs = mutableMapOf<LibraryRoute, Job>()
     private var silo: SiloClient? = null
     private var activePlan: PlaybackPlan? = null
     private var lastReported = 0.0
@@ -96,7 +131,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     screen = Screen.Library,
                     backend = saved.backend,
-                    home = cachedHome?.first ?: it.home,
+                    home = cachedHome?.first?.let(::visibleHome) ?: it.home,
                     libraries = cachedHome?.second ?: emptyList(),
                     movies = snapshots.loadCatalog(saved, "movies").orEmpty(),
                     shows = snapshots.loadCatalog(saved, "shows").orEmpty(),
@@ -187,12 +222,85 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectTab(tab: AppTab) {
+        val silo = _state.value.session?.backend == MediaBackend.Silo
         _state.update { it.copy(tab = tab, screen = Screen.Library) }
-        if ((tab == AppTab.Movies || tab == AppTab.Search) && _state.value.movies.isEmpty()) loadCatalog(AppTab.Movies)
-        if ((tab == AppTab.Shows || tab == AppTab.Search) && _state.value.shows.isEmpty()) loadCatalog(AppTab.Shows)
+        if (tab == AppTab.Movies || (tab == AppTab.Search && silo)) loadCatalog(AppTab.Movies)
+        if (tab == AppTab.Shows || (tab == AppTab.Search && silo)) loadCatalog(AppTab.Shows)
         if (tab == AppTab.Library) {
-            _state.update { it.copy(openLibraryId = null, libraryItems = emptyList()) }
-            if (_state.value.libraries.isEmpty()) loadLibraries()
+            _state.update { it.copy(libraryPath = emptyList()) }
+            loadLibraryOverview()
+        }
+        if (tab == AppTab.Search) {
+            _state.update { it.copy(searchPath = emptyList()) }
+            loadSearchGenres()
+        }
+    }
+
+    fun updateSearchTerm(term: String) {
+        if (term == _state.value.search.term) return
+        searchJob?.cancel()
+        val trimmed = term.trim()
+        if (trimmed.length < SearchMinimumLength) {
+            _state.update { it.copy(search = it.search.copy(term = term, hits = emptyList(), loading = false)) }
+            return
+        }
+        _state.update { it.copy(search = it.search.copy(term = term, loading = true)) }
+        searchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(SearchDebounceMillis)
+            val result = runCatching {
+                when (_state.value.session?.backend) {
+                    MediaBackend.Silo -> siloClient().search(trimmed)
+                    else -> jellyfinClient().searchHints(userUuid(), trimmed)
+                }
+            }
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            val hits = result.getOrDefault(emptyList())
+            _state.update { state ->
+                if (state.search.term.trim() != trimmed) state
+                else state.copy(search = state.search.copy(hits = hits, loading = false))
+            }
+        }
+    }
+
+    fun openSearchHit(hit: SearchHit) {
+        when (hit.kind) {
+            SearchHitKind.Title -> openSearchItem(hit.item)
+            SearchHitKind.Person -> openLibraryRoute(LibraryRoute.Person(hit.id, hit.name))
+            SearchHitKind.Studio -> openLibraryRoute(LibraryRoute.Studio(hit.id, hit.name))
+            SearchHitKind.Genre -> openLibraryRoute(LibraryRoute.Genre(LibraryGenre(hit.id, hit.name)))
+        }
+    }
+
+    fun openSearchItem(item: MediaItem) {
+        val recents = searchHistory.record(item)
+        _state.update { it.copy(search = it.search.copy(recents = recents)) }
+        openItem(item)
+    }
+
+    fun removeRecentSearch(id: String) {
+        val recents = searchHistory.remove(id)
+        _state.update { it.copy(search = it.search.copy(recents = recents)) }
+    }
+
+    fun clearRecentSearches() {
+        searchHistory.clear()
+        _state.update { it.copy(search = it.search.copy(recents = emptyList())) }
+    }
+
+    private fun loadSearchGenres() {
+        if (_state.value.search.genres.isNotEmpty()) return
+        _state.update { it.copy(search = it.search.copy(genresLoading = true)) }
+        viewModelScope.launch {
+            val genres = runCatching {
+                when (_state.value.session?.backend) {
+                    MediaBackend.Silo -> {
+                        val items = _state.value.movies + _state.value.shows
+                        catalogOptionsFromItems(items).genres.map { LibraryGenre(it.id, it.name) }
+                    }
+                    else -> jellyfinClient().genres(userUuid(), limit = 48)
+                }
+            }.getOrDefault(emptyList()).collapsedGenres().take(24)
+            _state.update { it.copy(search = it.search.copy(genres = genres, genresLoading = false)) }
         }
     }
 
@@ -204,6 +312,18 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             else -> Screen.Library
         }
         showDetail(target, returnTo)
+    }
+
+    /** Opens the title from a tapped alert (iOS `DeepLinkStore.openLibraryItem`). */
+    fun openPushItem(rawId: String) {
+        if (_state.value.session == null) return
+        val id = ZelefinPush.normalizedItemId(rawId)
+        viewModelScope.launch {
+            val item = runCatching { loadDetail(id).item }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+            if (item != null) openItem(item) else showDetail(id, Screen.Library)
+        }
     }
 
     fun openProfile() {
@@ -230,8 +350,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun back() {
         val current = _state.value
-        if (current.screen is Screen.Library && current.openLibraryId != null) {
-            _state.update { it.copy(openLibraryId = null, libraryItems = emptyList(), message = null) }
+        if (current.screen is Screen.Library && current.tab == AppTab.Library && current.libraryPath.isNotEmpty()) {
+            _state.update { it.copy(libraryPath = it.libraryPath.dropLast(1), message = null) }
+            return
+        }
+        if (current.screen is Screen.Library && current.tab == AppTab.Search && current.searchPath.isNotEmpty()) {
+            _state.update { it.copy(searchPath = it.searchPath.dropLast(1), message = null) }
             return
         }
         val next = when (val screen = current.screen) {
@@ -345,6 +469,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun play(item: MediaItem) {
         val returnTo = _state.value.screen
+        _state.value.session?.let { HomeQueueHideStore.remove(getApplication(), item.id, it.userId) }
         launch("Starting playback…") {
             val detail = _state.value.detail
             val target = if (detail != null && detail.item.id == item.id) {
@@ -401,13 +526,14 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshLibrary() {
+        plugins.ensureDetected()
         viewModelScope.launch {
             val session = _state.value.session
             val cached = session?.let { snapshots.loadHome(it) }
             _state.update {
                 it.copy(
                     homeRefreshing = true,
-                    home = cached?.first ?: it.home,
+                    home = cached?.first?.let(::visibleHome) ?: it.home,
                     libraries = if (cached != null && it.libraries.isEmpty()) cached.second else it.libraries,
                 )
             }
@@ -421,10 +547,19 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun signOut() {
+        plugins.unregisterPush()
         vault.clear()
         jellyfin = null
         silo = null
-        _state.update { ZelefinUiState(gatewayId = it.gatewayId, gatewaySecret = it.gatewaySecret) }
+        plugins.reset()
+        _state.update {
+            ZelefinUiState(
+                gatewayId = it.gatewayId,
+                gatewaySecret = it.gatewaySecret,
+                libraryLayout = it.libraryLayout,
+                search = LibrarySearchState(recents = searchHistory.load()),
+            )
+        }
     }
 
     private suspend fun signInJellyfin(url: String, username: String, password: String) {
@@ -554,69 +689,321 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         return JellyfinLibrary(getApplication(), url).probe()
     }
 
-    private suspend fun currentHome(): HomeFeed = when (_state.value.session?.backend) {
-        MediaBackend.Silo -> siloClient().home()
-        else -> jellyfinClient().home(UUID.fromString(_state.value.session?.userId))
+    private suspend fun currentHome(): HomeFeed = visibleHome(
+        when (_state.value.session?.backend) {
+            MediaBackend.Silo -> siloClient().home()
+            else -> jellyfinClient().home(UUID.fromString(_state.value.session?.userId))
+        },
+    )
+
+    private fun visibleHome(feed: HomeFeed): HomeFeed {
+        val session = _state.value.session ?: return feed
+        if (session.backend != MediaBackend.Jellyfin) return feed
+        val app = getApplication<Application>()
+        return feed.copy(
+            continueWatching = HomeQueueHideStore.filter(app, feed.continueWatching, session.userId, JellyfinEnhancedHomeSurface.ContinueWatching),
+            nextUp = HomeQueueHideStore.filter(app, feed.nextUp, session.userId, JellyfinEnhancedHomeSurface.NextUp),
+        )
     }
 
-    fun openLibrary(room: LibraryRoom) {
-        _state.update { it.copy(openLibraryId = room.id, libraryItems = emptyList(), busy = true, message = null) }
+    /** Jellyfin Enhanced hide; the title leaves the row right away and comes back if the server says no. Returns an error message. */
+    suspend fun hideFromHome(item: MediaItem, surface: JellyfinEnhancedHomeSurface): String? {
+        val session = _state.value.session ?: return null
+        if (surface == JellyfinEnhancedHomeSurface.ContinueWatching && !plugins.state.value.jellyfin.enhancedRemoveContinueWatching) {
+            return "Remove from Continue Watching is turned off in Jellyfin Enhanced."
+        }
+        val app = getApplication<Application>()
+        HomeQueueHideStore.insert(app, item.id, session.userId, surface)
+        _state.update { it.copy(home = visibleHome(it.home)) }
+        return try {
+            plugins.hideFromHome(item.id, surface)
+            _state.value.session?.let { snapshots.saveHome(it, _state.value.home, _state.value.libraries) }
+            null
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Throwable) {
+            HomeQueueHideStore.remove(app, item.id, session.userId)
+            refreshLibrary()
+            error.message ?: "Jellyfin Enhanced couldn’t remove this title."
+        }
+    }
+
+    fun openLibraryRoute(route: LibraryRoute) {
+        _state.update { state ->
+            if (state.tab == AppTab.Search) {
+                val path = state.searchPath + route
+                state.copy(searchPath = path, libraryGrids = state.libraryGrids.filterKeys { it in path || it in state.libraryPath }, message = null)
+            } else {
+                val path = state.libraryPath + route
+                state.copy(libraryPath = path, libraryGrids = state.libraryGrids.filterKeys { it in path || it in state.searchPath }, message = null)
+            }
+        }
+        when (route) {
+            LibraryRoute.Genres -> loadGenres()
+            is LibraryRoute.Discover -> plugins.loadDiscoverGrid(route.query)
+            else -> loadLibraryGrid(route)
+        }
+    }
+
+    fun applyLibraryQuery(route: LibraryRoute, query: CatalogBrowseQuery) {
+        if (_state.value.libraryGrids[route]?.query == query) return
+        updateGrid(route) { copy(query = query) }
+        loadLibraryGrid(route)
+    }
+
+    fun refreshLibraryGrid(route: LibraryRoute) = loadLibraryGrid(route, refreshing = true)
+
+    fun loadLibraryFilters(route: LibraryRoute) {
         viewModelScope.launch {
+            val items = _state.value.libraryGrids[route]?.items.orEmpty()
+            val options = runCatching {
+                when (_state.value.session?.backend) {
+                    MediaBackend.Silo -> catalogOptionsFromItems(items)
+                    else -> jellyfinClient().catalogFilters(userUuid(), jellyfinScope(route))
+                }
+            }.getOrDefault(catalogOptionsFromItems(items))
+            updateGrid(route) { copy(filters = options) }
+        }
+    }
+
+    fun updateLibraryLayout(layout: LibraryLayout) {
+        layoutStore.save(layout)
+        _state.update { it.copy(libraryLayout = layout) }
+        loadRoomDetails()
+    }
+
+    fun resetLibraryLayout() {
+        layoutStore.reset()
+        _state.update { it.copy(libraryLayout = LibraryLayout()) }
+        loadRoomDetails()
+    }
+
+    private fun updateGrid(route: LibraryRoute, transform: LibraryGridState.() -> LibraryGridState) {
+        _state.update { state ->
+            val current = state.libraryGrids[route] ?: LibraryGridState()
+            state.copy(libraryGrids = state.libraryGrids + (route to current.transform()))
+        }
+    }
+
+    private fun userUuid(): UUID = UUID.fromString(_state.value.session?.userId)
+
+    private fun jellyfinScope(route: LibraryRoute): JellyfinScope {
+        val titles = listOf(org.jellyfin.sdk.model.api.BaseItemKind.MOVIE, org.jellyfin.sdk.model.api.BaseItemKind.SERIES)
+        return when (route) {
+            is LibraryRoute.Room -> jellyfinClient().scope(route.room)
+            is LibraryRoute.Genre -> JellyfinScope(titles, genreIds = listOf(route.genre.id))
+            is LibraryRoute.Collection -> JellyfinScope(emptyList(), parentId = route.id)
+            is LibraryRoute.Person -> JellyfinScope(titles, personIds = listOf(route.id))
+            is LibraryRoute.Studio -> JellyfinScope(titles, studioIds = listOf(route.id))
+            else -> JellyfinScope(titles)
+        }
+    }
+
+    private fun loadLibraryGrid(route: LibraryRoute, refreshing: Boolean = false) {
+        val query = _state.value.libraryGrids[route]?.query ?: CatalogBrowseQuery()
+        val effective = if (route == LibraryRoute.Favorites) {
+            query.copy(statuses = query.statuses + CatalogStatusFilter.Favorite)
+        } else {
+            query
+        }
+        updateGrid(route) { copy(loading = items.isEmpty() && !refreshing, refreshing = refreshing) }
+        gridJobs.remove(route)?.cancel()
+        gridJobs[route] = viewModelScope.launch {
+            val gridJob = this
             runCatching {
                 when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> siloClient().libraryItems(room.id)
-                    else -> jellyfinClient().itemsInLibrary(UUID.fromString(_state.value.session?.userId), room.id)
+                    MediaBackend.Silo -> {
+                        val client = siloClient()
+                        when (route) {
+                            is LibraryRoute.Room -> client.catalog(client.catalogType(route.room.kind), route.room.id, effective)
+                            is LibraryRoute.Genre -> client.catalog(null, null, effective.copy(genres = effective.genres + route.genre.name))
+                            LibraryRoute.Favorites -> client.catalog(null, null, effective)
+                            else -> emptyList()
+                        }
+                    }
+                    else -> jellyfinClient().browse(userUuid(), jellyfinScope(route), effective) { page ->
+                        if (gridJob.isActive) updateGrid(route) { copy(items = page, loading = false) }
+                    }
                 }
             }.onSuccess { items ->
-                _state.update { it.copy(libraryItems = items, busy = false) }
+                updateGrid(route) { copy(items = items, loading = false, refreshing = false) }
             }.onFailure { error ->
-                _state.update { it.copy(busy = false, message = error.message) }
+                if (error is CancellationException) throw error
+                updateGrid(route) { copy(loading = false, refreshing = false) }
             }
         }
     }
 
-    private fun loadLibraries() {
+    private fun loadGenres() {
+        if (_state.value.libraryOverview.genres.isNotEmpty()) return
+        _state.update { it.copy(libraryOverview = it.libraryOverview.copy(genresLoading = true)) }
         viewModelScope.launch {
-            _state.update { it.copy(busy = true) }
-            runCatching {
+            val genres = runCatching {
                 when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> siloClient().libraries()
-                    else -> jellyfinClient().libraries(UUID.fromString(_state.value.session?.userId))
+                    MediaBackend.Silo -> {
+                        val items = _state.value.movies + _state.value.shows
+                        catalogOptionsFromItems(items).genres.map { LibraryGenre(it.id, it.name) }
+                    }
+                    else -> jellyfinClient().genres(userUuid())
                 }
+            }.getOrDefault(emptyList())
+            _state.update { it.copy(libraryOverview = it.libraryOverview.copy(genres = genres, genresLoading = false)) }
+        }
+    }
+
+    private fun loadLibraryOverview() {
+        overviewJob?.cancel()
+        overviewJob = viewModelScope.launch {
+            _state.update { it.copy(librariesLoading = it.libraries.isEmpty()) }
+            if (_state.value.libraries.isNotEmpty()) loadRoomDetails()
+            val silo = _state.value.session?.backend == MediaBackend.Silo
+            launch {
+                val counts = runCatching {
+                    if (silo) siloClient().serverCounts() else jellyfinClient().serverCounts(userUuid())
+                }.getOrNull()
+                if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
+            }
+            if (!silo) {
+                launch {
+                    val collections = jellyfinClient().collectionPreview(userUuid())
+                    _state.update { it.copy(libraryOverview = it.libraryOverview.copy(collections = collections)) }
+                }
+            }
+            runCatching {
+                if (silo) siloClient().libraries() else jellyfinClient().libraries(userUuid())
             }.onSuccess { rooms ->
-                _state.update { it.copy(libraries = rooms, busy = false, message = null) }
+                val changed = rooms != _state.value.libraries
+                _state.update { it.copy(libraries = rooms, librariesLoading = false, message = null) }
                 _state.value.session?.let { snapshots.saveHome(it, _state.value.home, rooms) }
+                if (changed || _state.value.libraryOverview.covers.isEmpty()) loadRoomDetails()
             }.onFailure { error ->
-                _state.update { it.copy(busy = false, message = error.message) }
+                if (error is CancellationException) throw error
+                _state.update { it.copy(librariesLoading = false, message = if (it.libraries.isEmpty()) error.message else it.message) }
             }
         }
     }
 
-    private fun loadCatalog(tab: AppTab) {
+    private fun loadRoomDetails() {
+        val state = _state.value
+        val silo = state.session?.backend == MediaBackend.Silo
+        val rooms = state.libraryLayout.displayed(state.libraries.libraryTabRooms(silo))
+        viewModelScope.launch {
+            rooms.forEach { room ->
+                launch {
+                    val counts = runCatching {
+                        if (silo) siloClient().roomCounts(room) else jellyfinClient().roomCounts(userUuid(), room)
+                    }.getOrNull() ?: return@launch
+                    _state.update {
+                        it.copy(libraryOverview = it.libraryOverview.copy(roomCounts = it.libraryOverview.roomCounts + (room.id to counts)))
+                    }
+                }
+                if (room.kind == LibraryKind.LiveTV || state.libraryOverview.covers[room.id]?.isNotEmpty() == true) return@forEach
+                launch {
+                    val covers = runCatching {
+                        if (silo) siloClient().previewItems(room) else jellyfinClient().previewItems(userUuid(), room)
+                    }.getOrDefault(emptyList())
+                    if (covers.isEmpty()) return@launch
+                    _state.update {
+                        it.copy(libraryOverview = it.libraryOverview.copy(covers = it.libraryOverview.covers + (room.id to covers)))
+                    }
+                }
+            }
+        }
+    }
+
+    fun applyCatalogQuery(tab: AppTab, query: CatalogBrowseQuery) {
+        val current = if (tab == AppTab.Movies) _state.value.movieQuery else _state.value.showQuery
+        if (current == query) return
+        _state.update { if (tab == AppTab.Movies) it.copy(movieQuery = query) else it.copy(showQuery = query) }
+        loadCatalog(tab)
+    }
+
+    fun refreshCatalog(tab: AppTab) {
+        loadCatalog(tab, refreshing = true)
+    }
+
+    fun loadCatalogFilters(tab: AppTab) {
+        viewModelScope.launch {
+            val items = if (tab == AppTab.Movies) _state.value.movies else _state.value.shows
+            val options = runCatching {
+                when (_state.value.session?.backend) {
+                    MediaBackend.Silo -> catalogOptionsFromItems(items)
+                    else -> {
+                        val kind = if (tab == AppTab.Movies) {
+                            org.jellyfin.sdk.model.api.BaseItemKind.MOVIE
+                        } else {
+                            org.jellyfin.sdk.model.api.BaseItemKind.SERIES
+                        }
+                        jellyfinClient().catalogFilters(UUID.fromString(_state.value.session?.userId), kind)
+                    }
+                }
+            }.getOrDefault(catalogOptionsFromItems(items))
+            _state.update { if (tab == AppTab.Movies) it.copy(movieFilters = options) else it.copy(showFilters = options) }
+        }
+    }
+
+    private fun loadCatalog(tab: AppTab, refreshing: Boolean = false) {
         val session = _state.value.session
         val kind = if (tab == AppTab.Movies) "movies" else "shows"
-        session?.let { snapshots.loadCatalog(it, kind) }?.let { cached ->
-            _state.update { if (tab == AppTab.Movies) it.copy(movies = cached) else it.copy(shows = cached) }
+        val query = if (tab == AppTab.Movies) _state.value.movieQuery else _state.value.showQuery
+        if (query.isDefault) {
+            session?.let { snapshots.loadCatalog(it, kind) }?.let { cached ->
+                _state.update { if (tab == AppTab.Movies) it.copy(movies = cached) else it.copy(shows = cached) }
+            }
         }
-        viewModelScope.launch {
+        val empty = if (tab == AppTab.Movies) _state.value.movies.isEmpty() else _state.value.shows.isEmpty()
+        _state.update {
+            if (tab == AppTab.Movies) {
+                it.copy(moviesRefreshing = refreshing, moviesLoading = empty && !refreshing)
+            } else {
+                it.copy(showsRefreshing = refreshing, showsLoading = empty && !refreshing)
+            }
+        }
+        val previous = if (tab == AppTab.Movies) movieCatalogJob else showCatalogJob
+        previous?.cancel()
+        val job = viewModelScope.launch {
+            val catalogJob = this
             runCatching {
                 when (_state.value.session?.backend) {
                     MediaBackend.Silo -> {
                         val type = if (tab == AppTab.Movies) "movie" else "series"
-                        siloClient().catalog(type)
+                        siloClient().catalog(type, browse = query)
                     }
                     else -> {
-                        val kind = if (tab == AppTab.Movies) org.jellyfin.sdk.model.api.BaseItemKind.MOVIE else org.jellyfin.sdk.model.api.BaseItemKind.SERIES
-                        jellyfinClient().catalog(UUID.fromString(_state.value.session?.userId), kind)
+                        val itemKind = if (tab == AppTab.Movies) {
+                            org.jellyfin.sdk.model.api.BaseItemKind.MOVIE
+                        } else {
+                            org.jellyfin.sdk.model.api.BaseItemKind.SERIES
+                        }
+                        jellyfinClient().catalog(UUID.fromString(_state.value.session?.userId), itemKind, query) { page ->
+                            if (!catalogJob.isActive) return@catalog
+                            _state.update { state ->
+                                if (tab == AppTab.Movies) state.copy(movies = page, moviesLoading = false)
+                                else state.copy(shows = page, showsLoading = false)
+                            }
+                        }
                     }
                 }
             }.onSuccess { items ->
                 _state.update {
-                    if (tab == AppTab.Movies) it.copy(movies = items) else it.copy(shows = items)
+                    if (tab == AppTab.Movies) {
+                        it.copy(movies = items, moviesRefreshing = false, moviesLoading = false)
+                    } else {
+                        it.copy(shows = items, showsRefreshing = false, showsLoading = false)
+                    }
                 }
-                _state.value.session?.let { snapshots.saveCatalog(it, kind, items) }
+                if (query.isDefault) {
+                    _state.value.session?.let { snapshots.saveCatalog(it, kind, items) }
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                _state.update {
+                    if (tab == AppTab.Movies) it.copy(moviesRefreshing = false, moviesLoading = false)
+                    else it.copy(showsRefreshing = false, showsLoading = false)
+                }
             }
         }
+        if (tab == AppTab.Movies) movieCatalogJob = job else showCatalogJob = job
     }
 
     private suspend fun loadDetail(id: String): TitleDetail = when (_state.value.session?.backend) {
@@ -662,7 +1049,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             ),
             movies = movies.mapId(),
             shows = shows.mapId(),
-            libraryItems = libraryItems.mapId(),
+            libraryGrids = libraryGrids.mapValues { (_, grid) -> grid.copy(items = grid.items.mapId()) },
             detail = detail?.copy(
                 item = if (detail.item.id == id) detail.item.transform() else detail.item,
                 episodes = detail.episodes.mapId(),

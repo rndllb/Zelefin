@@ -1,6 +1,7 @@
 package app.zelefin.client.session
 
 import android.content.Context
+import app.zelefin.client.LibraryKind
 import app.zelefin.client.LibraryRoom
 import app.zelefin.core.HomeFeed
 import app.zelefin.core.MediaItem
@@ -29,7 +30,7 @@ class SnapshotStore(context: Context) {
             file.delete()
             return null
         }
-        return snapshot.home to snapshot.libraries.map { LibraryRoom(it.id, it.name) }
+        return snapshot.home to snapshot.libraries.map { LibraryRoom(it.id, it.name, LibraryKind.stored(it.kind)) }
     }
 
     fun saveHome(session: SavedSession, home: HomeFeed, libraries: List<LibraryRoom>) {
@@ -47,7 +48,7 @@ class SnapshotStore(context: Context) {
                 serverHost = host(session.serverUrl),
                 savedAt = Instant.now().toString(),
                 home = home,
-                libraries = libraries.map { StoredLibrary(it.id, it.name) },
+                libraries = libraries.map { StoredLibrary(it.id, it.name, it.kind.name) },
             ),
         )
     }
@@ -144,7 +145,7 @@ class SnapshotStore(context: Context) {
         runCatching { URI(serverUrl).host }.getOrNull()?.takeIf { it.isNotBlank() } ?: serverUrl
 
     @Serializable
-    private data class StoredLibrary(val id: String, val name: String)
+    private data class StoredLibrary(val id: String, val name: String, val kind: String? = null)
 
     @Serializable
     private data class HomeSnapshotFile(

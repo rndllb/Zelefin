@@ -2,6 +2,7 @@ package app.zelefin.client
 
 import android.app.Application
 import app.zelefin.client.network.GatewayHttp
+import app.zelefin.client.push.ZelefinPush
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
@@ -12,6 +13,11 @@ class ZelefinApplication : Application(), ImageLoaderFactory {
     init {
         // kotlin-logging uses Android's Log when this is set, and SLF4J otherwise.
         System.setProperty("kotlin-logging-to-android-native", "true")
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        ZelefinPush.ensureChannel(this)
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)

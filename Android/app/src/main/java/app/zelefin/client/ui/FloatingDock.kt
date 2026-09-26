@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +35,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -118,6 +121,7 @@ class GlassDisc(
     var bounds by mutableStateOf(Rect.Zero)
     var onClick: () -> Unit = onClick
     var onSecondaryClick: () -> Unit = onSecondaryClick
+    var badge by mutableIntStateOf(0)
 }
 
 val LocalZelefinHaze = staticCompositionLocalOf<ZelefinHazeState?> { null }
@@ -189,6 +193,7 @@ fun Modifier.zelefinGlassSplit(
     trailingIcon: ImageVector,
     onLeading: () -> Unit,
     onTrailing: () -> Unit,
+    badge: Int = 0,
 ): Modifier {
     val host = LocalZelefinGlassHost.current ?: return this
     val leading = rememberUpdatedState(onLeading)
@@ -211,6 +216,7 @@ fun Modifier.zelefinGlassSplit(
         host.discs.firstOrNull { it.key == key }?.let { disc ->
             disc.onClick = { leading.value() }
             disc.onSecondaryClick = { trailing.value() }
+            disc.badge = badge
         }
     }
     return this.onGloballyPositioned { coords ->
@@ -274,6 +280,20 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(split, contentDescription = disc.secondaryDescription, tint = Color.White, modifier = Modifier.size(22.dp))
+                            if (disc.badge > 0) {
+                                Text(
+                                    disc.badge.toString(),
+                                    color = Color.Black,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 4.dp, end = 2.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White)
+                                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                                )
+                            }
                         }
                     }
                 }

@@ -51,6 +51,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.outlined.ClosedCaption
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
+import app.zelefin.client.plugins.JellyfinEnhancedHomeHide
+import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
 
@@ -83,6 +87,8 @@ internal fun TitleMoreOverlay(
     onCollections: (() -> Unit)? = null,
     note: MenuNotice? = null,
     onDismissNote: () -> Unit = {},
+    onAddSubtitles: ((MediaItem) -> Unit)? = null,
+    onHideFromHome: ((MediaItem, TitleMenuContext) -> Unit)? = null,
 ) {
     val haze = LocalZelefinHaze.current
     PresentZelefinOverlay(visible = (request != null || note != null) && haze != null) {
@@ -126,6 +132,20 @@ internal fun TitleMoreOverlay(
                 onNotice = { menuNote = it },
                 onToggleSkipCinema = onToggleSkipCinema,
                 onCollections = onCollections,
+                onAddSubtitles = onAddSubtitles?.let { add ->
+                    {
+                        onDismiss()
+                        add(current.item)
+                    }
+                },
+                onHideFromHome = onHideFromHome?.takeIf {
+                    current.context == TitleMenuContext.ContinueWatching || current.context == TitleMenuContext.NextUp
+                }?.let { hide ->
+                    {
+                        onDismiss()
+                        hide(current.item, current.context)
+                    }
+                },
             )
         }
     }
@@ -146,6 +166,8 @@ private fun TitleMorePanel(
     onNotice: (MenuNotice) -> Unit,
     onToggleSkipCinema: () -> Unit,
     onCollections: (() -> Unit)?,
+    onAddSubtitles: (() -> Unit)?,
+    onHideFromHome: (() -> Unit)?,
 ) {
     val item = request.item
     val showGoTo = request.context != TitleMenuContext.Episode
@@ -153,7 +175,11 @@ private fun TitleMorePanel(
     val showRemote = library && !usesSilo
     val showSync = showRemote && item.kind.usesVideoPlayer
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val menuWidth = if (library) 292.dp else 250.dp
+    val menuWidth = when {
+        onHideFromHome != null -> 320.dp
+        library -> 292.dp
+        else -> 250.dp
+    }
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -166,6 +192,8 @@ private fun TitleMorePanel(
                     val width = menuWidth.roundToPx()
                     val gap = 8.dp.roundToPx()
                     var rows = 4 + if (showGoTo) 1 else 0
+                    if (onAddSubtitles != null) rows += 1
+                    if (onHideFromHome != null) rows += 1
                     var rules = 0
                     if (library) {
                         rows += 1
@@ -181,7 +209,8 @@ private fun TitleMorePanel(
                     val natural = rows * 44.dp.roundToPx() + rules * 9.dp.roundToPx() + 12.dp.roundToPx()
                     val menuHeight = natural.coerceAtMost((screenHeight - 24.dp).roundToPx())
                     val below = request.anchor.bottom + gap
-                    val y = if (below + menuHeight > screenHeight.roundToPx()) {
+                    val dockClear = (screenHeight - DockContentReserve).roundToPx()
+                    val y = if (below + menuHeight > dockClear) {
                         (request.anchor.top - gap - menuHeight).toInt()
                     } else {
                         below.toInt()
@@ -214,6 +243,17 @@ private fun TitleMorePanel(
                 if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                 onToggleFavorite,
             )
+            if (onHideFromHome != null) {
+                val surface = if (request.context == TitleMenuContext.NextUp) {
+                    JellyfinEnhancedHomeSurface.NextUp
+                } else {
+                    JellyfinEnhancedHomeSurface.ContinueWatching
+                }
+                MoreRow(JellyfinEnhancedHomeHide.menuTitle(surface), Icons.Outlined.RemoveCircleOutline, onHideFromHome)
+            }
+            if (onAddSubtitles != null) {
+                MoreRow("Add Subtitles", Icons.Outlined.ClosedCaption, onAddSubtitles)
+            }
             if (library && onCollections != null) {
                 MoreRow("Add to Collection…", Icons.Outlined.Folder, onClick = onCollections)
                 if (showRemote) {
@@ -245,7 +285,7 @@ private fun TitleMorePanel(
 }
 
 @Composable
-private fun MenuHairline() {
+internal fun MenuHairline() {
     Box(
         Modifier
             .fillMaxWidth()
@@ -256,7 +296,7 @@ private fun MenuHairline() {
 }
 
 @Composable
-private fun MoreRow(
+internal fun MoreRow(
     title: String,
     icon: ImageVector?,
     onClick: () -> Unit,
@@ -276,7 +316,7 @@ private fun MoreRow(
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = tint, fontFamily = Outfit, fontSize = 17.sp, maxLines = 1, modifier = Modifier.weight(1f))
+        Text(title, color = tint, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, modifier = Modifier.weight(1f))
         if (icon != null) {
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         } else {
