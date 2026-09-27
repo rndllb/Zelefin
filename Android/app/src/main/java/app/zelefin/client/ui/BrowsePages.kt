@@ -108,7 +108,13 @@ fun BrowseScreen(
                     refreshing = grid.refreshing,
                     loading = grid.loading,
                     bottomInset = DockContentReserve,
-                    onOpen = onOpen,
+                    onOpen = { item ->
+                        if (route == LibraryRoute.AllCollections && item.kind == app.zelefin.core.MediaKind.Collection) {
+                            onBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name)))
+                        } else {
+                            onOpen(item)
+                        }
+                    },
                     onRefresh = { onGridRefresh(route) },
                     onQuery = { onGridQuery(route, it) },
                     onLoadFilters = { onGridFilters(route) },
@@ -127,7 +133,7 @@ fun BrowseScreen(
             }
             is BrowsePage.Home -> {
                 val items = when (page.shelf) {
-                    HomeShelf.ContinueWatching -> state.home.continueWatching
+                    HomeShelf.ContinueWatching -> homeContinueWatching(state.home)
                     HomeShelf.NextUp -> state.home.nextUp
                     HomeShelf.RecentMovies -> state.home.recentMovies
                     HomeShelf.RecentShows -> state.home.recentShows
@@ -223,9 +229,11 @@ private fun QueueListPage(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = browseTop(), bottom = DockContentReserve),
         ) {
+            val labelsKind = context == TitleMenuContext.ContinueWatching && HomeLayoutPreferences.mergeContinueAndNextUp
             items(items, key = { it.id }) { item ->
-                QueueRow(item, session, onClick = { onOpen(item) }) { anchor ->
-                    more = TitleMoreRequest(item, context, anchor)
+                val itemContext = if (labelsKind && item.queueKind == app.zelefin.core.PlaybackQueueKind.NextUp) TitleMenuContext.NextUp else context
+                QueueRow(item, session, kindLabel = if (labelsKind) queueKindLabel(item) else null, onClick = { onOpen(item) }) { anchor ->
+                    more = TitleMoreRequest(item, itemContext, anchor)
                 }
             }
         }
@@ -243,7 +251,7 @@ private fun QueueListPage(
 }
 
 @Composable
-private fun QueueRow(item: MediaItem, session: SavedSession?, onClick: () -> Unit, onMore: (Rect) -> Unit) {
+private fun QueueRow(item: MediaItem, session: SavedSession?, kindLabel: String? = null, onClick: () -> Unit, onMore: (Rect) -> Unit) {
     val anchor = remember { mutableStateOf(Rect.Zero) }
     Row(
         Modifier
@@ -296,6 +304,7 @@ private fun QueueRow(item: MediaItem, session: SavedSession?, onClick: () -> Uni
                 overflow = TextOverflow.Ellipsis,
             )
             val subtitle = listOfNotNull(
+                kindLabel,
                 item.name.takeIf { it != item.continueWatchingTitle },
                 item.continueWatchingCaption,
             ).joinToString(" · ")

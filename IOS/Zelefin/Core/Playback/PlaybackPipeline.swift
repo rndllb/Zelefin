@@ -323,9 +323,9 @@ enum DirectPlaySeekPolicy {
 }
 
 /// Where playback should begin. Direct Play files start at t=0 on the byte stream,
-/// so the client must open at the saved playhead. Remux / transcode HLS already
-/// includes `StartTimeTicks` on the server URL — seeking again would skip twice.
-/// Silo `original_http` is Direct Play of the full file, so the client owns the playhead.
+/// so the client must open at the saved playhead. Jellyfin plans always set
+/// `clientOwnsPlayhead` because their HLS URLs carry no `StartTimeTicks` (see
+/// `StreamResumeURL`). Silo `original_http` is Direct Play of the full file.
 enum PlaybackResumePolicy {
     static let threshold: TimeInterval = 5
 
@@ -358,21 +358,16 @@ enum PlaybackResumePolicy {
 }
 
 enum StreamResumeURL {
-    /// Remux / transcode HLS only resumes if `StartTimeTicks` is on the playlist URL.
-    /// Jellyfin 12 keeps that value on the POST body and sometimes omits it from `TranscodingUrl`.
-    static func ensuringStartTimeTicks(
-        _ url: URL,
-        method: PlaybackMethod,
-        startTime: TimeInterval
-    ) -> URL {
-        guard method != .directPlay, startTime > PlaybackResumePolicy.threshold else { return url }
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
-        var items = components.queryItems ?? []
-        if items.contains(where: { $0.name.compare("StartTimeTicks", options: .caseInsensitive) == .orderedSame }) {
-            return url
-        }
-        items.append(URLQueryItem(name: "StartTimeTicks", value: "\(TickClock.intTicks(from: startTime))"))
-        components.queryItems = items
+    /// Jellyfin 12.1 copies `StartTimeTicks` from the playlist URL onto the fMP4 init and
+    /// every segment URL, then rejects those segments with 400 ("StartTimeTicks is not
+    /// allowed"). HLS must open at t=0 and let the player seek to the resume point.
+    static func strippingStartTimeTicks(_ url: URL) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = components.queryItems
+        else { return url }
+        let kept = items.filter { $0.name.compare("StartTimeTicks", options: .caseInsensitive) != .orderedSame }
+        guard kept.count != items.count else { return url }
+        components.queryItems = kept.isEmpty ? nil : kept
         return components.url ?? url
     }
 }

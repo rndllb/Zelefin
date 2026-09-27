@@ -211,13 +211,22 @@ class PlaybackResumeTest {
     }
 
     @Test
-    fun remuxUrlGetsStartTimeTicksWhenJellyfinOmitsThem() {
-        val url = "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a"
-        val patched = StreamResumeUrl.ensuringStartTimeTicks(url, PlaybackMethod.Transcode, 600.0)
-        assertTrue(patched.contains("StartTimeTicks=6000000000"))
-        val already = "https://jellyfin.local/Videos/1/master.m3u8?StartTimeTicks=1"
-        assertEquals(already, StreamResumeUrl.ensuringStartTimeTicks(already, PlaybackMethod.Transcode, 600.0))
-        assertEquals(url, StreamResumeUrl.ensuringStartTimeTicks(url, PlaybackMethod.DirectPlay, 600.0))
+    fun streamUrlDropsStartTimeTicksSoJellyfinSegmentsLoad() {
+        assertEquals(
+            "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a&api_key=k",
+            StreamResumeUrl.strippingStartTimeTicks("https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a&startTimeTicks=6000000000&api_key=k"),
+        )
+        val clean = "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a"
+        assertEquals(clean, StreamResumeUrl.strippingStartTimeTicks(clean))
+        assertEquals(
+            "https://jellyfin.local/Videos/1/master.m3u8",
+            StreamResumeUrl.strippingStartTimeTicks("https://jellyfin.local/Videos/1/master.m3u8?StartTimeTicks=1"),
+        )
+    }
+
+    @Test
+    fun hlsResumeIsClientSeekWhenPlanOwnsPlayhead() {
+        assertEquals(600.0, PlaybackResumePolicy.clientStartPosition(PlaybackMethod.Transcode, 600.0, clientOwnsPlayhead = true))
     }
 
     @Test

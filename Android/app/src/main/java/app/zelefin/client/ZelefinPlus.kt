@@ -15,6 +15,7 @@ object ZelefinPlus {
         Sessions("Sessions"),
         SyncPlay("SyncPlay"),
         AdminTools("Admin Tools"),
+        Interface("Home and Tabs"),
     }
 
     fun allows(@Suppress("UNUSED_PARAMETER") feature: Feature): Boolean = UNLOCKED

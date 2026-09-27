@@ -42,8 +42,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AddComment
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloseFullscreen
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.OpenInFull
+import app.zelefin.core.PlaybackChapter
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Forward10
@@ -137,6 +144,8 @@ private enum class PlayerMenuPage(val title: String) {
     Speed("Playback Speed"),
     Audio("Select Audio"),
     Subtitles("Select Subtitles"),
+    Chapters("Chapters"),
+    Sleep("Sleep Timer"),
 }
 
 private class PlayerTrack(val title: String, val group: Tracks.Group, val index: Int, val selected: Boolean)
@@ -153,6 +162,9 @@ fun PlayerSurface(
     nextEpisode: MediaItem? = null,
     nextArtwork: List<String> = emptyList(),
     onPlayNext: (MediaItem, Double) -> Unit = { _, _ -> },
+    onAddSubtitles: ((Double) -> Unit)? = null,
+    suspended: Boolean = false,
+    onAdaptiveBitrate: ((Int, Double) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -171,7 +183,14 @@ fun PlayerSurface(
             .apply {
                 trackSelectionParameters = preferredLanguages(context, trackSelectionParameters)
                 setPlaybackSpeed(PlaybackPreferences.defaultRate(context))
-                setMediaItem(ExoItem.fromUri(plan.streamUrl))
+                val subtitles = plan.externalSubtitles.map { subtitle ->
+                    ExoItem.SubtitleConfiguration.Builder(android.net.Uri.parse(subtitle.url))
+                        .setMimeType(subtitle.mimeType)
+                        .setLanguage(subtitle.language)
+                        .setLabel(subtitle.title)
+                        .build()
+                }
+                setMediaItem(ExoItem.Builder().setUri(plan.streamUrl).setSubtitleConfigurations(subtitles).build())
                 prepare()
                 if (clientStart != null) seekTo((clientStart * 1000).toLong())
                 playWhenReady = true
@@ -181,6 +200,7 @@ fun PlayerSurface(
     val currentOnProgress by rememberUpdatedState(onProgress)
     val currentOnStopped by rememberUpdatedState(onStopped)
     val currentOnClose by rememberUpdatedState(onClose)
+    LiveAdaptiveMonitor(player, plan, mediaSeconds, onAdaptiveBitrate)
     DisposableEffect(player) {
         onDispose {
             val seconds = mediaSeconds()
@@ -321,7 +341,7 @@ fun PlayerSurface(
     val pipSupported = remember(context) { PlayerWindow.supported(context) }
     val skipBack = remember { PlaybackPreferences.skipBackward(context) }
     val skipForward = remember { PlaybackPreferences.skipForward(context) }
-    val autoplay = remember { PlaybackPreferences.autoplayNext(context) }
+    val autoplayPreference = remember { PlaybackPreferences.autoplayNext(context) }
 
     var chromeVisible by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
@@ -329,6 +349,28 @@ fun PlayerSurface(
     var lockHint by remember { mutableStateOf(false) }
     var scrubTime by remember { mutableStateOf<Double?>(null) }
     var menuPage by remember { mutableStateOf<PlayerMenuPage?>(null) }
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
+    var fillsScreen by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
+    var sleep by remember { mutableStateOf<SleepTimer>(SleepTimer.Off) }
+    var sleepDeadline by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(fillsScreen, playerView) {
+        playerView?.resizeMode = if (fillsScreen) {
+            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        } else {
+            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+    }
+    LaunchedEffect(sleep) {
+        val timer = sleep as? SleepTimer.Minutes ?: return@LaunchedEffect
+        sleepDeadline = android.os.SystemClock.elapsedRealtime() + timer.minutes * 60_000L
+        while (android.os.SystemClock.elapsedRealtime() < sleepDeadline) delay(1_000)
+        player.pause()
+        sleep = SleepTimer.Off
+    }
+    LaunchedEffect(suspended) {
+        if (suspended) player.pause()
+    }
     val reveal = {
         chromeVisible = true
         interaction += 1
@@ -357,6 +399,7 @@ fun PlayerSurface(
         interaction += 1
     }
 
+    val autoplay = autoplayPreference && sleep != SleepTimer.EndOfEpisode
     var upNextCancelled by remember { mutableStateOf(false) }
     var upNextCountdown by remember { mutableStateOf<Double?>(null) }
     var finishing by remember { mutableStateOf(false) }
@@ -449,7 +492,11 @@ fun PlayerSurface(
     val subtitle = if (item.kind == MediaKind.Episode) episodeCaption(item, includeName = item.seriesName != null) else null
     val buffering = playbackError == null &&
         (playbackState == Player.STATE_BUFFERING || (playbackState == Player.STATE_IDLE && playWhenReady))
-    val showChrome = chromeVisible && !locked && !inPip
+    val showChrome = chromeVisible && !locked && !inPip && !suspended
+    val frostActive = !inPip && !suspended &&
+        (showChrome || menuPage != null || prompt != null || upNextVisible || lockHint || playbackError != null)
+    PlayerFrostCapture(playerView?.videoSurfaceView as? android.view.TextureView, frostActive, isPlaying)
+    DisposableEffect(Unit) { onDispose { PlayerFrost.clear() } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
@@ -457,6 +504,7 @@ fun PlayerSurface(
                 (LayoutInflater.from(viewContext).inflate(R.layout.zelefin_player_view, null) as PlayerView).apply {
                     this.player = player
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    playerView = this
                 }
             },
             update = { view -> if (view.player !== player) view.player = player },
@@ -493,6 +541,12 @@ fun PlayerSurface(
                 skipBack = skipBack,
                 skipForward = skipForward,
                 pipSupported = pipSupported,
+                chapterStarts = plan.chapters.map { it.startSeconds },
+                fillsScreen = fillsScreen,
+                onToggleFill = {
+                    fillsScreen = !fillsScreen
+                    reveal()
+                },
                 onClose = onClose,
                 onLock = {
                     locked = true
@@ -515,6 +569,20 @@ fun PlayerSurface(
                     seekMedia(time.coerceAtLeast(streamOffset))
                     reveal()
                 },
+            )
+        }
+        if (showStats && !inPip) {
+            PlaybackStatsPanel(
+                player = player,
+                plan = plan,
+                position = mediaPosition,
+                duration = mediaDuration,
+                speed = speed,
+                fillsScreen = fillsScreen,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(start = 16.dp, top = 64.dp, end = 16.dp),
             )
         }
         val lift by animateDpAsState(if (showChrome) 84.dp else 18.dp, label = "player-lift")
@@ -622,6 +690,34 @@ fun PlayerSurface(
             onAudio = selectAudio,
             subtitles = subtitleTracks,
             onSubtitle = selectSubtitle,
+            chapters = plan.chapters,
+            position = mediaPosition,
+            onChapter = { chapter ->
+                seekMedia(chapter.startSeconds.coerceAtLeast(streamOffset))
+                menuPage = null
+                reveal()
+            },
+            sleep = sleep,
+            sleepRemaining = if (sleep is SleepTimer.Minutes) {
+                ((sleepDeadline - android.os.SystemClock.elapsedRealtime()) / 1000.0).coerceAtLeast(0.0)
+            } else {
+                null
+            },
+            sleepOffersEndOfEpisode = item.kind == MediaKind.Episode,
+            onSleep = { timer ->
+                sleep = timer
+                menuPage = null
+            },
+            onAddSubtitles = onAddSubtitles?.let { add ->
+                {
+                    menuPage = null
+                    add(mediaSeconds())
+                }
+            },
+            fillsScreen = fillsScreen,
+            onToggleFill = { fillsScreen = !fillsScreen },
+            showStats = showStats,
+            onToggleStats = { showStats = !showStats },
         )
     }
 }
@@ -637,6 +733,9 @@ private fun PlayerChrome(
     skipBack: Int,
     skipForward: Int,
     pipSupported: Boolean,
+    chapterStarts: List<Double>,
+    fillsScreen: Boolean,
+    onToggleFill: () -> Unit,
     onClose: () -> Unit,
     onLock: () -> Unit,
     onPip: () -> Unit,
@@ -724,17 +823,22 @@ private fun PlayerChrome(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     GlassIconButton(Icons.Rounded.Lock, "Lock Controls", onClick = onLock)
                     if (pipSupported) GlassIconButton(Icons.Rounded.PictureInPictureAlt, "Picture in Picture", onClick = onPip)
+                    GlassIconButton(
+                        if (fillsScreen) Icons.Rounded.CloseFullscreen else Icons.Rounded.OpenInFull,
+                        if (fillsScreen) "Fit to screen" else "Fill screen",
+                        onClick = onToggleFill,
+                    )
                     GlassIconButton(Icons.Rounded.MoreHoriz, "More", onClick = onMore)
                 }
             }
             Spacer(Modifier.weight(1f))
-            Timeline(position = position, duration = duration, onScrub = onScrub, onSeek = onSeek)
+            Timeline(position = position, duration = duration, chapterStarts = chapterStarts, onScrub = onScrub, onSeek = onSeek)
         }
     }
 }
 
 @Composable
-private fun Timeline(position: Double, duration: Double, onScrub: (Double) -> Unit, onSeek: (Double) -> Unit) {
+private fun Timeline(position: Double, duration: Double, chapterStarts: List<Double>, onScrub: (Double) -> Unit, onSeek: (Double) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -746,6 +850,7 @@ private fun Timeline(position: Double, duration: Double, onScrub: (Double) -> Un
         Scrubber(
             position = position,
             duration = duration,
+            chapterStarts = chapterStarts,
             onScrub = onScrub,
             onSeek = onSeek,
             modifier = Modifier
@@ -773,7 +878,14 @@ private fun TimeLabel(text: String, modifier: Modifier, end: Boolean = false) {
 
 /** Thin capsule that thickens and shows a knob while dragged, like the iOS AVKit timeline. */
 @Composable
-private fun Scrubber(position: Double, duration: Double, onScrub: (Double) -> Unit, onSeek: (Double) -> Unit, modifier: Modifier) {
+private fun Scrubber(
+    position: Double,
+    duration: Double,
+    chapterStarts: List<Double>,
+    onScrub: (Double) -> Unit,
+    onSeek: (Double) -> Unit,
+    modifier: Modifier,
+) {
     var dragging by remember { mutableStateOf(false) }
     val currentScrub by rememberUpdatedState(onScrub)
     val currentSeek by rememberUpdatedState(onSeek)
@@ -818,6 +930,18 @@ private fun Scrubber(position: Double, duration: Double, onScrub: (Double) -> Un
                 .clip(RoundedCornerShape(50))
                 .background(Color.White),
         )
+        if (duration > 0) {
+            val tickHeight by animateDpAsState(if (dragging) 10.dp else 7.dp, label = "chapter-tick")
+            chapterStarts.filter { it > 1.0 && it < duration - 1.0 }.forEach { start ->
+                Box(
+                    Modifier
+                        .offset { IntOffset((width * (start / duration).toFloat()).roundToPx(), 0) }
+                        .width(1.5.dp)
+                        .height(tickHeight)
+                        .background(Color.White.copy(alpha = 0.7f)),
+                )
+            }
+        }
         if (dragging) {
             Box(
                 Modifier
@@ -1010,6 +1134,18 @@ private fun PlayerMenuPanel(
     onAudio: (PlayerTrack) -> Unit,
     subtitles: List<PlayerTrack>,
     onSubtitle: (PlayerTrack?) -> Unit,
+    chapters: List<PlaybackChapter>,
+    position: Double,
+    onChapter: (PlaybackChapter) -> Unit,
+    sleep: SleepTimer,
+    sleepRemaining: Double?,
+    sleepOffersEndOfEpisode: Boolean,
+    onSleep: (SleepTimer) -> Unit,
+    onAddSubtitles: (() -> Unit)?,
+    fillsScreen: Boolean,
+    onToggleFill: () -> Unit,
+    showStats: Boolean,
+    onToggleStats: () -> Unit,
 ) {
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     Box(Modifier.fillMaxSize()) {
@@ -1068,6 +1204,37 @@ private fun PlayerMenuPanel(
                         }
                         MenuRow("Select Subtitles", subtitles.firstOrNull { it.selected }?.title ?: "Off", Icons.Rounded.ClosedCaption) {
                             onPage(PlayerMenuPage.Subtitles)
+                        }
+                        if (chapters.isNotEmpty()) {
+                            MenuRow("Chapters", chapters.size.toString(), Icons.AutoMirrored.Rounded.FormatListBulleted) {
+                                onPage(PlayerMenuPage.Chapters)
+                            }
+                        }
+                        MenuRow(
+                            "Sleep Timer",
+                            sleepRemaining?.let { clockText(it) } ?: sleepTitle(sleep),
+                            Icons.Rounded.Bedtime,
+                        ) { onPage(PlayerMenuPage.Sleep) }
+                        onAddSubtitles?.let { add -> ActionRow("Add Subtitles", Icons.Rounded.AddComment, add) }
+                        ToggleRow("Fill screen", Icons.Rounded.OpenInFull, fillsScreen, onToggleFill)
+                        ToggleRow("Stats", Icons.Rounded.Info, showStats, onToggleStats)
+                    }
+                    PlayerMenuPage.Chapters -> {
+                        val current = chapters.lastOrNull { it.startSeconds <= position + 0.5 }
+                        chapters.forEach { chapter ->
+                            ChoiceRow("${clockText(chapter.startSeconds)}  ${chapter.name}", selected = chapter == current) { onChapter(chapter) }
+                        }
+                    }
+                    PlayerMenuPage.Sleep -> {
+                        ChoiceRow("Off", selected = sleep == SleepTimer.Off) { onSleep(SleepTimer.Off) }
+                        SleepTimer.durations.forEach { minutes ->
+                            val timer = SleepTimer.Minutes(minutes)
+                            ChoiceRow(sleepTitle(timer), selected = sleep == timer) { onSleep(timer) }
+                        }
+                        if (sleepOffersEndOfEpisode) {
+                            ChoiceRow(sleepTitle(SleepTimer.EndOfEpisode), selected = sleep == SleepTimer.EndOfEpisode) {
+                                onSleep(SleepTimer.EndOfEpisode)
+                            }
                         }
                     }
                     PlayerMenuPage.Speed -> PlaybackPreferences.speeds.forEach { rate ->
@@ -1138,6 +1305,41 @@ private fun MenuRow(title: String, value: String, icon: ImageVector, onClick: ()
 }
 
 @Composable
+private fun ActionRow(title: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(title, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun ToggleRow(title: String, icon: ImageVector, on: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(title, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp, modifier = Modifier.weight(1f))
+        Text(if (on) "On" else "Off", color = Color.White.copy(alpha = 0.62f), fontFamily = ZelefinFont, fontSize = 14.sp)
+        if (on) {
+            Spacer(Modifier.width(6.dp))
+            Icon(Icons.Rounded.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
 private fun ChoiceRow(title: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
@@ -1171,12 +1373,6 @@ private fun MenuNote(text: String) {
         fontSize = 13.sp,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
     )
-}
-
-@Composable
-private fun Modifier.playerGlass(shape: Shape): Modifier {
-    val haze = LocalZelefinHaze.current
-    return if (haze != null) zelefinGlassChrome(haze, shape) else clip(shape).background(DockFill)
 }
 
 private fun skipIcon(seconds: Int, forward: Boolean): ImageVector? = when (seconds) {

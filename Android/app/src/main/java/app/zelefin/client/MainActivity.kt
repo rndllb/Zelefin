@@ -186,6 +186,10 @@ class MainActivity : ComponentActivity() {
                             hazeState = hazeState,
                             onSelect = model::selectTab,
                             modifier = Modifier.align(Alignment.BottomCenter),
+                            entries = app.zelefin.client.ui.TabPreferences.dockEntries(state.libraries),
+                            currentRoomId = state.dockRoomId,
+                            showsNames = app.zelefin.client.ui.TabPreferences.showsNames,
+                            onSelectEntry = { entry -> entry.room?.let(model::selectDockRoom) ?: model.selectTab(entry.tab) },
                         )
                     }
                     if (state.busy && state.screen == Screen.Connect) {
@@ -273,6 +277,8 @@ private fun ZelefinScreen(
             plugins = model.plugins,
             onHideFromHome = model::hideFromHome,
             onSeeAll = { shelf -> model.openBrowse(BrowsePage.Home(shelf)) },
+            onBrowse = model::openBrowse,
+            onEnsureGrid = model::ensureBrowseGrid,
         )
         is Screen.Browse -> BrowseScreen(
             page = screen.page,
@@ -321,6 +327,8 @@ private fun ZelefinScreen(
             session = state.session,
             onLoadNext = model::nextEpisode,
             onPlayNext = { next, position -> model.playNext(screen.plan, position, next) },
+            onReload = { position -> model.reloadPlayback(screen.plan, position) },
+            onAdaptiveBitrate = { bitsPerSecond, position -> model.reloadPlaybackAtBitrate(screen.plan, position, bitsPerSecond) },
         )
     }
 }

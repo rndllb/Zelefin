@@ -328,6 +328,9 @@ object SiloMapper {
         osVersion: String,
         model: String,
         formFactor: String,
+        bandwidthCapKbps: Int? = null,
+        audioIndex: Int? = null,
+        subtitleIndex: Int? = null,
     ): String = buildJsonObject {
         put("protocol_version", 3)
         put("client_features", buildJsonArray {
@@ -342,10 +345,17 @@ object SiloMapper {
         put("file_id", fileId)
         put("profile_id", profileId)
         put("playback_attempt_id", attemptId)
-        put("quality_preference", "original")
+        // A user-picked cap must not silently become "original".
+        put("quality_preference", if (bandwidthCapKbps == null) "original" else "auto")
         put("subtitle_fidelity_preference", "preserve")
         put("start_position", startPosition)
+        audioIndex?.let { put("audio_track_index", it) }
+        subtitleIndex?.let { put("subtitle_track_index", it) }
         put("metered", false)
+        bandwidthCapKbps?.let {
+            put("bandwidth_estimate_kbps", it)
+            put("bandwidth_cap_kbps", it)
+        }
         put("client_capabilities", capabilities())
         put("client_playback_context", context(appVersion, osVersion, model, formFactor))
     }.toString()

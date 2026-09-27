@@ -189,7 +189,7 @@ fun CatalogBrowsePage(
             if (motion.displayed != null) ZelefinSheetScrim(motion.progress)
         }
         if (motion.displayed != null) {
-            ZelefinSheetSurface(motion.progress) {
+            ZelefinSheetSurface(motion.progress, canvas = ZelefinBlack) {
                 when (val page = motion.displayed) {
                     CatalogSheet.Sort -> SortSheet(
                         query = draft,

@@ -27,14 +27,18 @@ object PlaybackResumePolicy {
 }
 
 object StreamResumeUrl {
-    fun ensuringStartTimeTicks(url: String, method: PlaybackMethod, startTime: Double): String {
-        if (method == PlaybackMethod.DirectPlay || startTime <= PlaybackResumePolicy.THRESHOLD) return url
-        val query = url.substringAfter('?', "")
-        val hasTicks = query.split("&").any { it.substringBefore("=").equals("StartTimeTicks", ignoreCase = true) }
-        if (hasTicks) return url
-        val ticks = TickClock.ticks(startTime)
-        val joiner = if (url.contains("?")) "&" else "?"
-        return "$url${joiner}StartTimeTicks=$ticks"
+    /**
+     * Jellyfin 12.1 copies `StartTimeTicks` from the playlist URL onto the fMP4 init and every
+     * segment URL, then rejects those segments with 400 ("StartTimeTicks is not allowed").
+     * HLS must open at t=0 and let the player seek to the resume point.
+     */
+    fun strippingStartTimeTicks(url: String): String {
+        if (!url.contains('?')) return url
+        val path = url.substringBefore('?')
+        val params = url.substringAfter('?').split("&")
+        val kept = params.filterNot { it.substringBefore("=").equals("StartTimeTicks", ignoreCase = true) }
+        if (kept.size == params.size) return url
+        return if (kept.isEmpty()) path else "$path?${kept.joinToString("&")}"
     }
 }
 

@@ -3,8 +3,9 @@ package app.zelefin.client.jellyfin
 import android.content.Context
 import app.zelefin.client.network.GatewayHttp
 import app.zelefin.core.CreditPerson
-import app.zelefin.core.FeaturedHero
 import app.zelefin.core.HomeFeed
+import app.zelefin.core.HomeRowStyle
+import app.zelefin.core.HomeSection
 import app.zelefin.client.CatalogBrowseQuery
 import app.zelefin.client.CatalogFeatureFilter
 import app.zelefin.client.CatalogFilterChoice
@@ -50,6 +51,9 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.HttpClientOptions
 import org.jellyfin.sdk.api.client.exception.InvalidStatusException
 import org.jellyfin.sdk.api.client.extensions.collectionApi
+import org.jellyfin.sdk.api.client.extensions.displayPreferencesApi
+import org.jellyfin.sdk.api.client.extensions.moviesApi
+import org.jellyfin.sdk.model.api.RecommendationType
 import org.jellyfin.sdk.api.client.extensions.get
 import org.jellyfin.sdk.api.client.extensions.filterApi
 import org.jellyfin.sdk.api.client.extensions.genresApi
@@ -211,7 +215,7 @@ class JellyfinLibrary(
         throw ZelefinException.quickConnectExpired()
     }
 
-    suspend fun home(userId: UUID): HomeFeed = withContext(Dispatchers.IO) {
+    suspend fun home(userId: UUID, hero: HeroContent = HeroContent.RecentlyAdded): HomeFeed = withContext(Dispatchers.IO) {
         val resume = items(userId, PlaybackQueueKind.Resume) {
             api.itemsApi.getResumeItems(
                 GetResumeItemsRequest(
@@ -240,15 +244,162 @@ class JellyfinLibrary(
         }
         val movies = latest(userId, BaseItemKind.MOVIE)
         val shows = latest(userId, BaseItemKind.SERIES)
-        HomeFeed(
-            featured = FeaturedHero.interleave(
-                movies.filter { it.hasHeroBackdrop && !it.isWatched },
-                shows.filter { it.hasHeroBackdrop && !it.isWatched },
-            ).ifEmpty { FeaturedHero.interleave(movies, shows) },
-            continueWatching = resume,
-            nextUp = nextUp,
-            recentMovies = movies,
-            recentShows = shows,
+        coroutineScope {
+            val upcoming = async { upcomingEpisodes(userId) }
+            val recommendations = async { movieRecommendations(userId) }
+            val collections = async { collectionPreview(userId, limit = 24) }
+            val genres = async { homeGenres(userId) }
+            val watched = async { recentlyWatched(userId) }
+            val heroPool = async {
+                when (hero) {
+                    HeroContent.Random -> randomTitles(userId)
+                    HeroContent.Favorites -> favoriteTitles(userId)
+                    else -> emptyList()
+                }
+            }
+            val feed = HomeFeed(
+                continueWatching = resume,
+                nextUp = nextUp,
+                recentMovies = movies,
+                recentShows = shows,
+                upcoming = upcoming.await(),
+                recommendations = recommendations.await(),
+                collections = collections.await(),
+                genres = genres.await(),
+                recentlyWatched = watched.await(),
+            )
+            feed.copy(featured = heroItems(feed, hero, heroPool.await()))
+        }
+    }
+
+    /** Hero sources, mirroring iOS `FeaturedHeroContent`. */
+    enum class HeroContent { RecentlyAdded, Random, ContinueWatching, NextUp, Recommendations, RecentlyWatched, Favorites }
+
+    private fun heroItems(feed: HomeFeed, hero: HeroContent, pool: List<MediaItem>): List<MediaItem> {
+        val recent = app.zelefin.client.ui.HomeHero.recentlyAdded(feed.recentMovies, feed.recentShows)
+        val picked = when (hero) {
+            HeroContent.RecentlyAdded -> recent
+            HeroContent.Random, HeroContent.Favorites -> app.zelefin.client.ui.HomeHero.fromPool(pool)
+            HeroContent.ContinueWatching -> app.zelefin.client.ui.HomeHero.fromPool(feed.continueWatching)
+            HeroContent.NextUp -> app.zelefin.client.ui.HomeHero.fromPool(feed.nextUp)
+            HeroContent.Recommendations -> app.zelefin.client.ui.HomeHero.fromPool(feed.recommendations.flatMap { it.items })
+            HeroContent.RecentlyWatched -> app.zelefin.client.ui.HomeHero.fromPool(feed.recentlyWatched)
+        }
+        return picked.ifEmpty { recent }
+    }
+
+    private suspend fun upcomingEpisodes(userId: UUID): List<MediaItem> = items(userId, PlaybackQueueKind.NextUp) {
+        api.tvShowsApi.getUpcomingEpisodes(
+            userId = userId,
+            limit = 20,
+            fields = listFields,
+            enableImages = true,
+            enableImageTypes = imageTypes,
+            enableUserData = true,
+        ).content.items
+    }
+
+    private suspend fun movieRecommendations(userId: UUID): List<HomeSection> = runCatching {
+        api.moviesApi.getMovieRecommendations(
+            userId = userId,
+            fields = listFields,
+            categoryLimit = 5,
+            itemLimit = 16,
+        ).content.mapIndexedNotNull { index, row ->
+            val items = row.items.orEmpty().mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+            if (items.isEmpty()) return@mapIndexedNotNull null
+            HomeSection(
+                id = "recommend-${row.categoryId ?: index}",
+                title = recommendationTitle(row.recommendationType, row.baselineItemName),
+                style = HomeRowStyle.Portrait,
+                items = items,
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    private fun recommendationTitle(type: RecommendationType, baseline: String?): String {
+        val name = baseline?.trim().orEmpty()
+        return when (type) {
+            RecommendationType.SIMILAR_TO_RECENTLY_PLAYED -> if (name.isEmpty()) "Because You Watched" else "Because You Watched $name"
+            RecommendationType.SIMILAR_TO_LIKED_ITEM -> if (name.isEmpty()) "Because You Liked" else "Because You Liked $name"
+            RecommendationType.HAS_DIRECTOR_FROM_RECENTLY_PLAYED, RecommendationType.HAS_LIKED_DIRECTOR ->
+                if (name.isEmpty()) "More From This Director" else "Directed Like $name"
+            RecommendationType.HAS_ACTOR_FROM_RECENTLY_PLAYED, RecommendationType.HAS_LIKED_ACTOR ->
+                if (name.isEmpty()) "More From This Cast" else "Starring Like $name"
+        }
+    }
+
+    private suspend fun homeGenres(userId: UUID): List<MediaItem> = runCatching {
+        genres(userId, limit = 48)
+            .filter { isBrowsableGenre(it.name) }
+            .distinctBy { genre -> genre.name.lowercase().filter { it.isLetterOrDigit() } }
+            .take(24)
+            .map { MediaItem(id = it.id, name = it.name, kind = MediaKind.Genre) }
+    }.getOrDefault(emptyList())
+
+    /** Played movies and episodes, newest first, one card per show (iOS `collapseRecentlyWatched`). */
+    private suspend fun recentlyWatched(userId: UUID): List<MediaItem> = runCatching {
+        val items = api.itemsApi.getItems(
+            GetItemsRequest(
+                userId = userId,
+                recursive = true,
+                includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.EPISODE),
+                filters = listOf(ItemFilter.IS_PLAYED),
+                isPlayed = true,
+                mediaTypes = listOf(MediaType.VIDEO),
+                sortBy = listOf(ItemSortBy.DATE_PLAYED),
+                sortOrder = listOf(SortOrder.DESCENDING),
+                limit = 40,
+                fields = listFields,
+                enableUserData = true,
+                enableImageTypes = imageTypes,
+                enableTotalRecordCount = false,
+            ),
+        ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        val seenSeries = mutableSetOf<String>()
+        items.filter { item ->
+            val series = item.seriesId?.takeIf { item.kind == MediaKind.Episode }
+            series == null || seenSeries.add(series)
+        }.take(20)
+    }.getOrDefault(emptyList())
+
+    private suspend fun randomTitles(userId: UUID): List<MediaItem> = titleSample(userId, ItemSortBy.RANDOM, favorites = false)
+
+    private suspend fun favoriteTitles(userId: UUID): List<MediaItem> = titleSample(userId, ItemSortBy.DATE_CREATED, favorites = true)
+
+    private suspend fun titleSample(userId: UUID, sort: ItemSortBy, favorites: Boolean): List<MediaItem> = runCatching {
+        api.itemsApi.getItems(
+            GetItemsRequest(
+                userId = userId,
+                recursive = true,
+                includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
+                filters = if (favorites) listOf(ItemFilter.IS_FAVORITE) else null,
+                sortBy = listOf(sort),
+                sortOrder = listOf(SortOrder.DESCENDING),
+                limit = if (favorites) 48 else 24,
+                fields = listFields,
+                enableUserData = true,
+                enableImageTypes = imageTypes,
+                enableTotalRecordCount = false,
+            ),
+        ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+    }.getOrDefault(emptyList())
+
+    /** Interface choices synced through Jellyfin display preferences, shared with iOS (`DisplayPreferencesSync`). */
+    suspend fun displayPreferenceCustomPrefs(userId: UUID): Map<String, String> = withContext(Dispatchers.IO) {
+        api.displayPreferencesApi.getDisplayPreferences(DisplayPreferencesId, userId, ClientName).content.customPrefs.orEmpty()
+            .mapNotNull { (key, value) -> value?.let { key to it } }
+            .toMap()
+    }
+
+    suspend fun updateDisplayPreferenceCustomPrefs(userId: UUID, prefs: Map<String, String>) = withContext(Dispatchers.IO) {
+        val current = api.displayPreferencesApi.getDisplayPreferences(DisplayPreferencesId, userId, ClientName).content
+        val merged = current.customPrefs.orEmpty().mapNotNull { (key, value) -> value?.let { key to it } }.toMap() + prefs
+        api.displayPreferencesApi.updateDisplayPreferences(
+            DisplayPreferencesId,
+            userId,
+            ClientName,
+            current.copy(id = DisplayPreferencesId, client = ClientName, customPrefs = merged),
         )
     }
 
@@ -729,16 +880,51 @@ class JellyfinLibrary(
         }
     }
 
-    suspend fun playback(userId: UUID, item: MediaItem): PlaybackPlan = withContext(Dispatchers.IO) {
+    /**
+     * [bitrate] turns the source file bitrate (when known) into the stream cap, so adaptive
+     * bitrate can Direct Play files that fit. Language preferences pick the audio / subtitle
+     * streams Jellyfin bakes into a transcode.
+     */
+    suspend fun playback(
+        userId: UUID,
+        item: MediaItem,
+        audioLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
+        subtitleLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
+        bitrate: suspend (sourceBitrate: Int?) -> Int = { MAX_BITRATE },
+    ): PlaybackPlan = withContext(Dispatchers.IO) {
         val target = item
         val resume = if (target.playbackPosition > PlaybackResumePolicy.THRESHOLD) target.playbackPosition else 0.0
+        val itemDto = runCatching { api.userLibraryApi.getItem(UUID.fromString(target.id), userId).content }.getOrNull()
+        val firstSource = itemDto?.mediaSources?.firstOrNull()
+        val streams = firstSource?.mediaStreams ?: itemDto?.mediaStreams.orEmpty()
+        val sourceBitrate = firstSource?.bitrate?.takeIf { it > 0 }
+            ?: streams.filter { it.type == MediaStreamType.VIDEO || it.type == MediaStreamType.AUDIO }
+                .sumOf { it.bitRate ?: 0 }.takeIf { it > 0 }
+        fun languageTracks(type: MediaStreamType, defaultIndex: Int?) = streams.filter { it.type == type }.map { stream ->
+            app.zelefin.client.LanguageTrack(
+                index = stream.index,
+                language = stream.language,
+                isSelected = if (defaultIndex != null) stream.index == defaultIndex else stream.isDefault,
+            )
+        }
+        val audioIndex = app.zelefin.client.PlaybackLanguage.audioIndex(
+            languageTracks(MediaStreamType.AUDIO, firstSource?.defaultAudioStreamIndex),
+            audioLanguage,
+        )
+        val subtitleIndex = app.zelefin.client.PlaybackLanguage.subtitleIndex(
+            languageTracks(MediaStreamType.SUBTITLE, firstSource?.defaultSubtitleStreamIndex),
+            subtitleLanguage,
+        )
+        val maxBitrate = bitrate(sourceBitrate).coerceIn(1, MAX_BITRATE)
         val response = api.mediaInfoApi.getPostedPlaybackInfo(
             itemId = UUID.fromString(target.id),
             data = PlaybackInfoDto(
                 userId = userId,
-                maxStreamingBitrate = MAX_BITRATE,
+                maxStreamingBitrate = maxBitrate,
                 startTimeTicks = app.zelefin.core.TickClock.ticks(resume),
-                deviceProfile = deviceProfile(),
+                audioStreamIndex = audioIndex,
+                subtitleStreamIndex = subtitleIndex,
+                deviceProfile = deviceProfile(maxBitrate),
                 enableDirectPlay = true,
                 enableDirectStream = true,
                 enableTranscoding = true,
@@ -764,7 +950,38 @@ class JellyfinLibrary(
                 container = source.container?.ifBlank { null } ?: "mkv",
             )
         } ?: throw ZelefinException.missingStreamUrl()
-        val url = StreamResumeUrl.ensuringStartTimeTicks(rawUrl, method, resume)
+        val url = StreamResumeUrl.strippingStartTimeTicks(rawUrl)
+        val chapters = runCatching {
+            (itemDto ?: api.userLibraryApi.getItem(UUID.fromString(target.id), userId).content).chapters.orEmpty()
+                .mapIndexedNotNull { index, chapter ->
+                    val ticks = chapter.startPositionTicks
+                    app.zelefin.core.PlaybackChapter(
+                        startSeconds = app.zelefin.core.TickClock.seconds(ticks),
+                        name = chapter.name?.takeIf { it.isNotBlank() } ?: "Chapter ${index + 1}",
+                    )
+                }
+                .sortedBy { it.startSeconds }
+        }.getOrDefault(emptyList())
+        // Direct play already carries embedded tracks, so only sideload files that live beside the video.
+        val externalSubtitles = source.mediaStreams.orEmpty()
+            .filter { it.type == MediaStreamType.SUBTITLE && it.deliveryMethod == SubtitleDeliveryMethod.EXTERNAL }
+            .filter { method != PlaybackMethod.DirectPlay || it.isExternal }
+            .mapNotNull { stream ->
+                val path = stream.deliveryUrl?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val mime = when (stream.codec?.lowercase()) {
+                    "srt", "subrip" -> androidx.media3.common.MimeTypes.APPLICATION_SUBRIP
+                    "vtt", "webvtt" -> androidx.media3.common.MimeTypes.TEXT_VTT
+                    "ass", "ssa" -> androidx.media3.common.MimeTypes.TEXT_SSA
+                    else -> return@mapNotNull null
+                }
+                val subtitleUrl = ServerUrl.resolve(base, path, api.accessToken) ?: return@mapNotNull null
+                app.zelefin.core.ExternalSubtitle(
+                    url = subtitleUrl,
+                    mimeType = mime,
+                    language = stream.language,
+                    title = stream.displayTitle ?: stream.title ?: stream.language ?: "Subtitle",
+                )
+            }
         PlaybackPlan(
             item = target,
             streamUrl = url,
@@ -775,8 +992,60 @@ class JellyfinLibrary(
             videoCodec = source.mediaStreams?.firstOrNull { it.type == MediaStreamType.VIDEO }?.codec,
             startTimeSeconds = resume,
             headers = app.zelefin.client.network.GatewayCredentials.headers(),
-            clientOwnsPlayhead = method == PlaybackMethod.DirectPlay,
+            clientOwnsPlayhead = true,
+            chapters = chapters,
+            externalSubtitles = externalSubtitles,
+            appliedBitrate = maxBitrate,
+            sourceBitrate = source.bitrate?.takeIf { it > 0 } ?: sourceBitrate,
         )
+    }
+
+    /** Times a `/Playback/BitrateTest` download, like iOS `measureStreamingBitrate`. */
+    suspend fun measureBitrate(
+        size: Int,
+        timeoutMillis: Long,
+        transport: app.zelefin.client.NetworkTransport,
+    ): app.zelefin.client.BitrateProbeResult? = withContext(Dispatchers.IO) {
+        val base = api.baseUrl ?: return@withContext null
+        val url = ServerUrl.resolve(base, "/Playback/BitrateTest?size=$size", null) ?: return@withContext null
+        val client = app.zelefin.client.network.GatewayHttp.client.newBuilder()
+            .callTimeout(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .build()
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .header("X-Emby-Token", api.accessToken.orEmpty())
+            .build()
+        runCatching {
+            val started = System.nanoTime()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val bytes = response.body?.bytes()?.size ?: 0
+                if (bytes < 16_000) return@use null
+                app.zelefin.client.BitrateProbeResult.from(bytes, System.nanoTime() - started, transport)
+            }
+        }.getOrNull()
+    }
+
+    /** Mirrors iOS `SessionStore.applyPlaybackLanguages` for the signed-in Jellyfin user. */
+    suspend fun applyPlaybackLanguages(userId: UUID, audioCode: String, subtitleCode: String) = withContext(Dispatchers.IO) {
+        val automatic = app.zelefin.client.PlaybackPreferences.AUTOMATIC
+        val off = app.zelefin.client.PlaybackPreferences.OFF
+        val current = runCatching { api.userApi.getCurrentUser().content.configuration }.getOrNull() ?: return@withContext
+        val audio = if (audioCode == automatic) "" else audioCode
+        val subtitle = if (subtitleCode == automatic || subtitleCode == off) "" else subtitleCode
+        val mode = when {
+            subtitleCode == off -> org.jellyfin.sdk.model.api.SubtitlePlaybackMode.NONE
+            subtitle.isEmpty() -> org.jellyfin.sdk.model.api.SubtitlePlaybackMode.DEFAULT
+            else -> org.jellyfin.sdk.model.api.SubtitlePlaybackMode.SMART
+        }
+        val updated = current.copy(
+            audioLanguagePreference = audio,
+            playDefaultAudioTrack = audio.isEmpty(),
+            subtitleLanguagePreference = subtitle,
+            subtitleMode = mode,
+        )
+        runCatching { api.userApi.updateUserConfiguration(userId = userId, data = updated) }
+        Unit
     }
 
     suspend fun reportStart(plan: PlaybackPlan, position: Double) = report(plan, position, paused = false, kind = ReportKind.Start)
@@ -865,6 +1134,8 @@ class JellyfinLibrary(
 
     companion object {
         const val MAX_BITRATE = 200_000_000
+        private const val ClientName = "Zelefin"
+        private const val DisplayPreferencesId = "zelefin"
 
         private val listFields = listOf(
             ItemFields.OVERVIEW,
@@ -888,14 +1159,14 @@ class JellyfinLibrary(
             socketConnectionFactory = factory
         }
 
-        fun deviceProfile(): DeviceProfile {
+        fun deviceProfile(maxBitrate: Int = MAX_BITRATE): DeviceProfile {
             val videoCodecs = "h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video"
             val audioCodecs = "aac,aac_latm,ac3,eac3,mp3,flac,opus,vorbis,truehd,dts"
             val containers = "mp4,m4v,mov,mkv,matroska,webm,ts,mpegts,avi"
             return DeviceProfile(
                 name = "Zelefin",
-                maxStreamingBitrate = MAX_BITRATE,
-                maxStaticBitrate = MAX_BITRATE,
+                maxStreamingBitrate = maxBitrate,
+                maxStaticBitrate = maxBitrate,
                 maxStaticMusicBitrate = MAX_BITRATE,
                 musicStreamingTranscodingBitrate = MAX_BITRATE,
                 directPlayProfiles = listOf(

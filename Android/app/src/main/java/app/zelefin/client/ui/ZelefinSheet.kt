@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
@@ -67,6 +68,7 @@ fun Modifier.zelefinSheetRise(progress: Animatable<Float, AnimationVector1D>): M
 @Composable
 fun ZelefinSheetSurface(
     progress: Animatable<Float, AnimationVector1D>,
+    canvas: Color = ZelefinSheetCanvas,
     content: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().zelefinSheetRise(progress)) {
@@ -76,9 +78,11 @@ fun ZelefinSheetSurface(
                 .weight(1f)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .background(Color.Black),
+                .background(canvas),
         ) {
-            content()
+            CompositionLocalProvider(LocalZelefinCanvas provides canvas) {
+                content()
+            }
         }
     }
 }

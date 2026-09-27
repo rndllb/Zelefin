@@ -16,6 +16,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import app.zelefin.client.PlaybackPreferences
+import app.zelefin.client.AdaptiveBitrateStore
+import app.zelefin.client.BitrateProbeResult
+import app.zelefin.client.NetworkPathSnapshot
+import app.zelefin.client.PlaybackLanguage
+import app.zelefin.client.PlaybackQuality
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -100,7 +105,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val CardShape = RoundedCornerShape(28.dp)
+private val CardShape = ZelefinCardShape
 private val Caption = Color.White.copy(alpha = 0.55f)
 private val Secondary = Color.White.copy(alpha = 0.72f)
 
@@ -437,7 +442,7 @@ fun SettingsTopicScreen(id: String, state: ZelefinUiState, plugins: PluginsContr
     }
     SettingsPage(title = title, onBack = onBack) {
         when (id) {
-            "playback" -> PlaybackTopic()
+            "playback" -> PlaybackTopic(state)
             "cache" -> CacheTopic()
             "sessions" -> SessionsTopic(state)
             "about" -> AboutTopic(state)
@@ -446,111 +451,175 @@ fun SettingsTopicScreen(id: String, state: ZelefinUiState, plugins: PluginsContr
             "notifications" -> NotificationsTopic(state, plugins)
             "plugins" -> PluginsTopic(state, plugins)
             "network" -> NetworkTopic(state)
-            "interface" -> InterfaceTopic()
+            "interface" -> InterfaceTopic(state)
             else -> Text("Nothing to change here yet.", color = Secondary, fontFamily = ZelefinFont)
         }
     }
 }
 
+/** Mirrors iOS `PlaybackSettingsView`: Languages, Quality, Watching. */
 @Composable
-private fun PlaybackTopic() {
+private fun PlaybackTopic(state: ZelefinUiState) {
+    val model: ZelefinModel = viewModel()
     val context = LocalContext.current
+    val silo = state.session?.usesSilo == true
+    var audio by remember { mutableStateOf(PlaybackPreferences.audioLanguage(context)) }
+    var subtitles by remember { mutableStateOf(PlaybackPreferences.subtitleLanguage(context)) }
+    var adaptive by remember { mutableStateOf(PlaybackPreferences.adaptiveBitrate(context)) }
+    var quality by remember { mutableStateOf(PlaybackPreferences.selectedQuality(context)) }
+    var rate by remember { mutableStateOf(PlaybackPreferences.defaultRate(context)) }
     var autoplay by remember { mutableStateOf(PlaybackPreferences.autoplayNext(context)) }
     var back by remember { mutableStateOf(PlaybackPreferences.skipBackward(context)) }
     var forward by remember { mutableStateOf(PlaybackPreferences.skipForward(context)) }
-    var rate by remember { mutableStateOf(PlaybackPreferences.defaultRate(context)) }
-    var audio by remember { mutableStateOf(PlaybackPreferences.audioLanguage(context)) }
-    var subtitles by remember { mutableStateOf(PlaybackPreferences.subtitleLanguage(context)) }
-    SettingsCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Autoplay next episode", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                Text("Start the next episode when one finishes.", color = Caption, fontFamily = ZelefinFont, fontSize = 13.sp)
-            }
-            Switch(
-                checked = autoplay,
-                onCheckedChange = {
-                    autoplay = it
-                    PlaybackPreferences.setAutoplayNext(context, it)
-                },
-                colors = SwitchDefaults.colors(checkedTrackColor = ZelefinCyan, checkedThumbColor = Color.Black),
-            )
-        }
-    }
-    SettingsHeader("Skip Buttons")
-    SettingsCard {
-        PlaybackChoices("Skip back", PlaybackPreferences.skipIntervals.map { it to "${it}s" }, back) {
-            back = it
-            PlaybackPreferences.setSkipBackward(context, it)
-        }
-        PlaybackChoices("Skip forward", PlaybackPreferences.skipIntervals.map { it to "${it}s" }, forward) {
-            forward = it
-            PlaybackPreferences.setSkipForward(context, it)
-        }
-    }
-    SettingsHeader("Speed")
-    SettingsCard {
-        PlaybackChoices("Default speed", PlaybackPreferences.speeds.map { it to PlaybackPreferences.speedTitle(it) }, rate) {
-            rate = it
-            PlaybackPreferences.setDefaultRate(context, it)
-        }
-    }
+    val languages = remember(context) { PlaybackLanguage.choices(context) }
+
     SettingsHeader("Languages")
     SettingsCard {
-        PlaybackChoices("Audio", listOf(PlaybackPreferences.AUTOMATIC to "Automatic") + PlaybackLanguages, audio) {
-            audio = it
-            PlaybackPreferences.setAudioLanguage(context, it)
-        }
-        PlaybackChoices(
-            "Subtitles",
-            listOf(PlaybackPreferences.AUTOMATIC to "Automatic", PlaybackPreferences.OFF to "Off") + PlaybackLanguages,
-            subtitles,
-        ) {
-            subtitles = it
-            PlaybackPreferences.setSubtitleLanguage(context, it)
-        }
+        SettingsMenuPicker(
+            label = "Audio",
+            choices = (listOf(PlaybackPreferences.AUTOMATIC) + languages).map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
+            selected = audio,
+            onSelect = {
+                audio = it
+                model.applyPlaybackLanguages(it, subtitles)
+            },
+        )
+        SettingsCardDivider()
+        SettingsMenuPicker(
+            label = "Subtitles",
+            choices = (listOf(PlaybackPreferences.AUTOMATIC, PlaybackPreferences.OFF) + languages)
+                .map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
+            selected = subtitles,
+            onSelect = {
+                subtitles = it
+                model.applyPlaybackLanguages(audio, it)
+            },
+        )
     }
-    SettingsFooter("Automatic follows each title's default tracks. You can still switch tracks from the player's More menu.")
+    SettingsFooter("Automatic uses the title default. A language is used when that track exists.")
+
+    SettingsHeader("Quality")
+    SettingsCard {
+        SettingsToggleRow("Adaptive Bitrate", adaptive, {
+            adaptive = it
+            PlaybackPreferences.setAdaptiveBitrate(context, it)
+        })
+        SettingsCardDivider()
+        SettingsMenuPicker(
+            label = if (adaptive) "Maximum Quality" else "Quality",
+            choices = PlaybackQuality.entries.map { SettingsChoice(it, it.title) },
+            selected = quality,
+            onSelect = {
+                quality = it
+                PlaybackPreferences.setSelectedQuality(context, it)
+            },
+        )
+        SettingsCardDivider()
+        PlaybackConnectionTest(model, signedIn = state.session != null, quality = quality)
+    }
+    SettingsFooter(
+        when {
+            adaptive && silo -> "Auto Direct Plays the original file. A lower Maximum Quality is the only start cap. Test Connection measures this path if playback later stalls."
+            adaptive -> "Auto Direct Plays when the file fits this connection. Jellyfin transcodes when it does not. Test Connection measures this path."
+            silo -> "Auto Direct Plays when the file fits this device. Lower quality asks Silo to transcode."
+            else -> "Auto Direct Plays when the file fits this device. Lower quality asks Jellyfin to transcode."
+        },
+    )
+
+    SettingsHeader("Watching")
+    SettingsCard {
+        SettingsMenuPicker(
+            label = "Playback Speed",
+            choices = PlaybackPreferences.speeds.map { SettingsChoice(it, PlaybackPreferences.speedTitle(it)) },
+            selected = rate,
+            onSelect = {
+                rate = it
+                PlaybackPreferences.setDefaultRate(context, it)
+            },
+        )
+        SettingsCardDivider()
+        SettingsToggleRow("Auto Play Next Episode", autoplay, {
+            autoplay = it
+            PlaybackPreferences.setAutoplayNext(context, it)
+        })
+        SettingsCardDivider()
+        SettingsMenuPicker(
+            label = "Skip Backward",
+            choices = PlaybackPreferences.skipIntervals.map { SettingsChoice(it, PlaybackPreferences.intervalTitle(it)) },
+            selected = back,
+            onSelect = {
+                back = it
+                PlaybackPreferences.setSkipBackward(context, it)
+            },
+        )
+        SettingsCardDivider()
+        SettingsMenuPicker(
+            label = "Skip Forward",
+            choices = PlaybackPreferences.skipIntervals.map { SettingsChoice(it, PlaybackPreferences.intervalTitle(it)) },
+            selected = forward,
+            onSelect = {
+                forward = it
+                PlaybackPreferences.setSkipForward(context, it)
+            },
+        )
+    }
+    SettingsFooter("Speed, skip distance, and whether the next episode starts when this one ends.")
 }
 
-private val PlaybackLanguages = listOf(
-    "en" to "English",
-    "es" to "Spanish",
-    "fr" to "French",
-    "de" to "German",
-    "it" to "Italian",
-    "pt" to "Portuguese",
-    "ja" to "Japanese",
-    "ko" to "Korean",
-    "zh" to "Chinese",
-)
-
+/** Connection row, measured / recommended results, and the Test Connection button of the Quality card. */
 @Composable
-private fun <T> PlaybackChoices(title: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    Column(Modifier.padding(vertical = 6.dp)) {
-        Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-        Row(
-            Modifier
-                .padding(top = 8.dp)
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            options.forEach { (value, label) ->
-                val on = value == selected
-                Text(
-                    label,
-                    color = if (on) Color.Black else Color.White,
-                    fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (on) ZelefinCyan else Color.White.copy(alpha = 0.10f))
-                        .clickable { onSelect(value) }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
+private fun PlaybackConnectionTest(model: ZelefinModel, signedIn: Boolean, quality: PlaybackQuality) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var transport by remember { mutableStateOf(NetworkPathSnapshot.current(context).transport) }
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<BitrateProbeResult?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            transport = NetworkPathSnapshot.current(context).transport
+            delay(2_000)
         }
+    }
+    SettingsInfoRow("Connection", transport.title)
+    result?.let { measured ->
+        val recommended = remember(measured, quality) { AdaptiveBitrateStore.recommendedQuality(context, measured) }
+        SettingsCardDivider()
+        SettingsInfoRow("Measured", measuredBitrateLabel(measured.bitsPerSecond))
+        SettingsCardDivider()
+        SettingsInfoRow("Recommended", recommended.title)
+    }
+    error?.let {
+        Text(it, color = Color(0xFFFF6B6B), fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+    }
+    Spacer(Modifier.height(16.dp))
+    SettingsPrimaryButton("Test Connection", busy = testing, enabled = signedIn) {
+        if (!signedIn) {
+            error = "Sign in to test this connection."
+            return@SettingsPrimaryButton
+        }
+        testing = true
+        error = null
+        scope.launch {
+            runCatching { model.testConnection() }
+                .onSuccess { result = it }
+                .onFailure {
+                    result = null
+                    error = it.message ?: "Zelefin could not download the demo file from this server. Check the connection and try again."
+                }
+            transport = NetworkPathSnapshot.current(context).transport
+            testing = false
+        }
+    }
+}
+
+private fun measuredBitrateLabel(bitsPerSecond: Int): String {
+    if (bitsPerSecond <= 0) return "—"
+    val megabits = bitsPerSecond / 1_000_000.0
+    return when {
+        megabits >= 10 -> String.format(java.util.Locale.US, "%.1f Mbps", megabits)
+        megabits >= 1 -> String.format(java.util.Locale.US, "%.2f Mbps", megabits)
+        else -> String.format(java.util.Locale.US, "%.0f kbps", bitsPerSecond / 1_000.0)
     }
 }
 
@@ -819,16 +888,20 @@ private fun SiloRequestsSection(pluginState: PluginsUiState, onSource: (SiloRequ
     )
 }
 
+/** Fixed status colors, independent of the accent (iOS `LoginPalette.success`). */
+private val StatusInstalled = Color(0xFF38C76B)
+private val StatusMissing = Color(0xFFFF6B6B)
+
 @Composable
 private fun PluginStatusRow(title: String, installed: Boolean) {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
         Text(
             if (installed) "Installed" else "Not on this server",
-            color = if (installed) ZelefinCyan else Caption,
+            color = if (installed) StatusInstalled else StatusMissing,
             fontFamily = ZelefinFont,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
         )
     }
 }
@@ -893,7 +966,7 @@ private fun CardDivider() {
 }
 
 @Composable
-private fun SettingsFooter(text: String) {
+internal fun SettingsFooter(text: String) {
     Text(
         text,
         color = Caption,
@@ -1220,112 +1293,10 @@ private fun PlusTopic() {
     )
 }
 
-/** Mirrors the Android-relevant parts of iOS `TabCustomizationView`. */
+/** Mirrors iOS `TabCustomizationView`. */
 @Composable
-private fun InterfaceTopic() {
-    val context = LocalContext.current
-    SettingsHeader("Accent Color")
-    SettingsCard {
-        AccentPreferences.presets.chunked(4).forEach { row ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                row.forEach { preset ->
-                    val selected = preset.id == AccentPreferences.presetId
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { AccentPreferences.select(context, preset.id) }
-                            .padding(vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(44.dp)
-                                .background(preset.color, RoundedCornerShape(10.dp))
-                                .then(if (selected) Modifier.border(2.5.dp, Color.White, RoundedCornerShape(10.dp)) else Modifier),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (selected) Icon(Icons.Outlined.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            preset.name,
-                            color = if (selected) Color.White else Caption,
-                            fontFamily = ZelefinFont,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                        )
-                    }
-                }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-    SettingsFooter("Accent color tints buttons, highlights, and icons throughout the app.")
-
-    SettingsHeader("Home")
-    SettingsCard {
-        SettingsToggle("Featured hero", HomeLayoutPreferences.showsFeatured) { HomeLayoutPreferences.setShowsFeatured(context, it) }
-        CardDivider()
-        SettingsToggle("Combine Continue Watching and Next Up", HomeLayoutPreferences.mergeContinueAndNextUp) {
-            HomeLayoutPreferences.setMergeContinueAndNextUp(context, it)
-        }
-    }
-    SettingsFooter("The featured hero cycles through recently added titles at the top of Home. Combining puts Next Up episodes after Continue Watching in one row.")
-
-    SettingsHeader("Home Rows")
-    SettingsCard {
-        val order = HomeLayoutPreferences.order
-        order.forEachIndexed { index, row ->
-            if (index > 0) CardDivider()
-            val merged = HomeLayoutPreferences.mergeContinueAndNextUp && row == HomeRowKind.NextUp
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(row.title, color = if (merged) Caption else Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                    if (merged) Text("In Continue Watching", color = Caption, fontFamily = ZelefinFont, fontSize = 12.sp)
-                }
-                ReorderButton(Icons.Outlined.KeyboardArrowUp, "Move ${row.title} up", enabled = index > 0) {
-                    HomeLayoutPreferences.move(context, row, -1)
-                }
-                ReorderButton(Icons.Outlined.KeyboardArrowDown, "Move ${row.title} down", enabled = index < order.lastIndex) {
-                    HomeLayoutPreferences.move(context, row, 1)
-                }
-                Switch(
-                    checked = row !in HomeLayoutPreferences.hidden,
-                    onCheckedChange = { HomeLayoutPreferences.setVisible(context, row, it) },
-                    colors = SwitchDefaults.colors(checkedTrackColor = ZelefinCyan, checkedThumbColor = Color.Black),
-                )
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        SettingsButton("Reset Home Layout", primary = false, destructive = false, enabled = true, busy = false) {
-            HomeLayoutPreferences.reset(context)
-        }
-    }
-    SettingsFooter("Turn rows on or off and use the arrows to set their order on Home.")
-
-    SettingsHeader("Dock")
-    SettingsCard {
-        Text(
-            "Home, Movies, Shows, and Library stay in the dock. Search is the separate circle.",
-            color = Secondary,
-            fontFamily = ZelefinFont,
-            fontSize = 15.sp,
-        )
-    }
-}
-
-@Composable
-private fun ReorderButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = description, tint = if (enabled) ZelefinCyan else Caption.copy(alpha = 0.3f), modifier = Modifier.size(22.dp))
-    }
+private fun InterfaceTopic(state: ZelefinUiState) {
+    InterfaceSettings(state)
 }
 
 @Composable
@@ -1334,7 +1305,7 @@ private fun SettingsPage(title: String, onBack: () -> Unit, content: @Composable
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(LocalZelefinCanvas.current)
             .then(topInset)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
@@ -1353,7 +1324,7 @@ private fun SettingsPage(title: String, onBack: () -> Unit, content: @Composable
 }
 
 @Composable
-private fun SettingsHeader(title: String) {
+internal fun SettingsHeader(title: String) {
     Text(
         title,
         color = Caption,
@@ -1379,18 +1350,13 @@ private fun SettingsLink(title: String, icon: ImageVector, subtitle: String, onC
 }
 
 @Composable
-private fun SettingsCard(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-    val haze = LocalZelefinHaze.current
+internal fun SettingsCard(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .then(
-                if (haze != null) {
-                    Modifier.zelefinGlassChrome(haze, CardShape)
-                } else {
-                    Modifier.background(DockFill, CardShape).border(0.5.dp, DockBorder, CardShape)
-                },
-            )
+            .clip(CardShape)
+            .background(ZelefinCardFill)
+            .border(1.dp, ZelefinCardStroke, CardShape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(16.dp),
     ) { content() }

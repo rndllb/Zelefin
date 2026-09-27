@@ -990,10 +990,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
         let method = ItemMapper.playbackMethod(from: source)
         let isLive = item.kind == .liveTV || source.isInfiniteStream == true
-        let url = StreamResumeURL.ensuringStartTimeTicks(
-            try streams.url(itemID: item.id, source: source),
-            method: method,
-            startTime: isLive ? 0 : resume
+        let url = StreamResumeURL.strippingStartTimeTicks(
+            try streams.url(itemID: item.id, source: source)
         )
         let streams = source.mediaStreams ?? []
 
@@ -1023,7 +1021,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
             trickplay: isLive ? nil : dto.flatMap { ItemMapper.trickplay(from: $0, sourceID: source.id) },
             versions: ItemMapper.versions(from: sources),
             isLive: isLive,
-            liveStreamID: source.liveStreamID
+            liveStreamID: source.liveStreamID,
+            clientOwnsPlayhead: true
         )
     }
 

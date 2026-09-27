@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** The user's accent color (Settings → Interface). Named for the default. */
@@ -15,6 +16,17 @@ val ZelefinCyan: Color get() = AccentPreferences.color
 val ZelefinBlack = Color(0xFF000000)
 val ZelefinInk = Color(0xFFF5F5F7)
 val ZelefinMuted = Color(0xFF8E8E93)
+
+/** iOS `systemGroupedBackground` at the elevated (sheet) level in dark mode. */
+val ZelefinSheetCanvas = Color(0xFF1C1C1E)
+
+/** Matches iOS `LoginCardBackground`: white 8% fill, white 12% hairline, 18pt continuous corners. */
+val ZelefinCardFill = Color.White.copy(alpha = 0.08f)
+val ZelefinCardStroke = Color.White.copy(alpha = 0.12f)
+val ZelefinCardShape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+
+/** Background of the surface a page is drawn on: black full screen, grey inside sheets. */
+val LocalZelefinCanvas = androidx.compose.runtime.compositionLocalOf { ZelefinBlack }
 
 val ZelefinFont = FontFamily.Default
 

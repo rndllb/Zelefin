@@ -65,7 +65,18 @@ import app.zelefin.client.downloads.ZelefinDownloads
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class AppTab { Home, Movies, Shows, Library, Search }
+/** [Room] is a custom library pinned to the dock; [ZelefinUiState.dockRoomId] says which one. */
+enum class AppTab { Home, Movies, Shows, Library, Search, Collections, Favorites, Room }
+
+/** customPrefs keys in the "zelefin" display preferences, same as iOS `DisplayPreferencesSync`. */
+private const val SyncTabOrder = "tabOrder"
+private const val SyncMerge = "mergeContinueNextUp"
+private const val SyncHomeRowOrder = "homeRowOrder"
+private const val SyncHomeRowHidden = "homeRowHidden"
+private const val SyncHero = "featuredHeroContent"
+private const val SyncLibraryOrder = "libraryOrder"
+private const val SyncLibraryHidden = "libraryHidden"
+private const val SyncLibraryPageHidden = "libraryPageHidden"
 
 data class LibraryRoom(
     val id: String,
@@ -89,6 +100,7 @@ sealed interface Screen {
 data class ZelefinUiState(
     val screen: Screen = Screen.Connect,
     val tab: AppTab = AppTab.Home,
+    val dockRoomId: String? = null,
     val backend: MediaBackend = MediaBackend.Jellyfin,
     val busy: Boolean = false,
     val message: String? = null,
@@ -152,6 +164,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private var movieCatalogJob: Job? = null
     private var showCatalogJob: Job? = null
     private var overviewJob: Job? = null
+    /** The account whose Library overview is loaded; the tab only reloads it on a cold start or account switch. */
+    private var overviewLoadedFor: String? = null
     private val gridJobs = mutableMapOf<LibraryRoute, Job>()
     private var silo: SiloClient? = null
     private var activePlan: PlaybackPlan? = null
@@ -288,6 +302,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(searchPath = emptyList()) }
             loadSearchGenres()
         }
+        if (tab == AppTab.Collections) ensureBrowseGrid(LibraryRoute.AllCollections)
+        if (tab == AppTab.Favorites) ensureBrowseGrid(LibraryRoute.Favorites)
     }
 
     fun updateSearchTerm(term: String) {
@@ -614,7 +630,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         jellyfinClient().createCollection(name, itemId)
     }
 
-    fun play(item: MediaItem) {
+    /** [bitrateOverride] pins the stream cap (live adaptive steps); null lets Playback settings decide. */
+    fun play(item: MediaItem, bitrateOverride: Int? = null) {
         val returnTo = _state.value.screen.let { if (it is Screen.Player) it.returnTo else it }
         _state.value.session?.let { HomeQueueHideStore.remove(getApplication(), item.id, it.userId) }
         launch("Starting playback…") {
@@ -637,23 +654,39 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 }
                 LocalPlayback.None -> Unit
             }
+            val appContext = getApplication<Application>()
+            val audioLanguage = PlaybackPreferences.audioLanguage(appContext)
+            val subtitleLanguage = PlaybackPreferences.subtitleLanguage(appContext)
             val plan = when (_state.value.session?.backend) {
+                // Like iOS, Silo starts from the original file; only a picked quality (or a live step) caps it.
                 MediaBackend.Silo -> siloClient().playback(
                     item = target,
                     appVersion = "0.1.0",
                     osVersion = Build.VERSION.RELEASE ?: "",
                     model = Build.MODEL ?: "Android",
+                    maxBitrate = bitrateOverride ?: PlaybackPreferences.selectedQuality(appContext).takeIf { it != PlaybackQuality.Auto }?.bits,
+                    audioLanguage = audioLanguage,
+                    subtitleLanguage = subtitleLanguage,
                 )
                 else -> {
                     val userId = UUID.fromString(_state.value.session?.userId)
-                    jellyfinClient().playback(userId, target)
+                    val client = jellyfinClient()
+                    client.playback(userId, target, audioLanguage, subtitleLanguage) { sourceBitrate ->
+                        bitrateOverride ?: run {
+                            AdaptiveBitrateStore.refreshIfNeeded(appContext, client::measureBitrate)
+                            AdaptiveBitrateStore.resolvedBitsPerSecond(appContext, sourceBitrate)
+                        }
+                    }
                 }
             }
             val reported = PlaybackResumePolicy.reportStartPosition(0.0, plan.startTimeSeconds)
             activePlan = plan
             lastReported = reported
             runCatching { report(plan, reported, paused = false, start = true) }
-            val routed = plan.copy(streamUrl = ServerRoute.rewrite(plan.streamUrl))
+            val routed = plan.copy(
+                streamUrl = ServerRoute.rewrite(plan.streamUrl),
+                externalSubtitles = plan.externalSubtitles.map { it.copy(url = ServerRoute.rewrite(it.url)) },
+            )
             _state.update { it.copy(busy = false, screen = Screen.Player(routed, returnTo), message = null) }
         }
     }
@@ -670,6 +703,50 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun playNext(finished: PlaybackPlan, positionSeconds: Double, next: MediaItem) {
         playbackStopped(finished, positionSeconds)
         play(next)
+    }
+
+    /** Restarts the same title at the current spot so a subtitle saved from the player shows up. */
+    fun reloadPlayback(current: PlaybackPlan, positionSeconds: Double) {
+        playbackStopped(current, positionSeconds)
+        play(current.item.copy(playbackPosition = positionSeconds))
+    }
+
+    /** Live adaptive bitrate: re-requests the same title at [bitsPerSecond] from the current spot. */
+    fun reloadPlaybackAtBitrate(current: PlaybackPlan, positionSeconds: Double, bitsPerSecond: Int) {
+        if (!isCurrentPlayback(current) || localPlan != null) return
+        playbackStopped(current, positionSeconds)
+        play(current.item.copy(playbackPosition = positionSeconds), bitrateOverride = bitsPerSecond)
+    }
+
+    /** Settings → Playback → Test Connection. Throws with the iOS copy when nothing downloads. */
+    suspend fun testConnection(): BitrateProbeResult {
+        val session = _state.value.session ?: throw ZelefinException.server("Sign in to test this connection.")
+        val transport = NetworkPathSnapshot.current(getApplication()).transport
+        val size = AdaptiveBitratePolicy.SETTINGS_SAMPLE_BYTES
+        val timeout = AdaptiveBitratePolicy.SETTINGS_PROBE_TIMEOUT_MILLIS
+        val result = if (session.usesSilo) {
+            siloClient().measureBitrate(size, timeout, transport)
+        } else {
+            jellyfinClient().measureBitrate(size, timeout, transport)
+        } ?: throw ZelefinException.server(
+            "Zelefin could not download the demo file from this server. Check the connection and try again.",
+        )
+        AdaptiveBitrateStore.record(result)
+        return result
+    }
+
+    /** Stores the language picks and, on Jellyfin, mirrors them into the user's server configuration. */
+    fun applyPlaybackLanguages(audioCode: String, subtitleCode: String) {
+        val appContext = getApplication<Application>()
+        PlaybackPreferences.setAudioLanguage(appContext, audioCode)
+        PlaybackPreferences.setSubtitleLanguage(appContext, subtitleCode)
+        val session = _state.value.session ?: return
+        if (session.usesSilo) return
+        viewModelScope.launch {
+            runCatching {
+                jellyfinClient().applyPlaybackLanguages(UUID.fromString(session.userId), audioCode, subtitleCode)
+            }
+        }
     }
 
     suspend fun nextEpisode(item: MediaItem): MediaItem? {
@@ -914,6 +991,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         movieCatalogJob?.cancel()
         showCatalogJob?.cancel()
         overviewJob?.cancel()
+        overviewLoadedFor = null
         searchJob?.cancel()
         gridJobs.values.forEach(Job::cancel)
         gridJobs.clear()
@@ -1122,12 +1200,106 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         return JellyfinLibrary(getApplication(), url).probe()
     }
 
-    private suspend fun currentHome(): HomeFeed = visibleHome(
-        when (_state.value.session?.backend) {
-            MediaBackend.Silo -> siloClient().home()
-            else -> jellyfinClient().home(UUID.fromString(_state.value.session?.userId))
-        },
-    )
+    private suspend fun currentHome(): HomeFeed {
+        val hero = app.zelefin.client.ui.HomeLayoutPreferences.heroContent
+        return visibleHome(
+            when (_state.value.session?.backend) {
+                MediaBackend.Silo -> siloHero(siloClient().home(), hero)
+                else -> jellyfinClient().home(
+                    UUID.fromString(_state.value.session?.userId),
+                    JellyfinLibrary.HeroContent.entries.first { it.name == hero.name },
+                )
+            },
+        )
+    }
+
+    /** Silo serves its own hero; Random shuffles recently added, and queue sources use those rows. */
+    private fun siloHero(feed: HomeFeed, hero: app.zelefin.client.ui.FeaturedHeroContent): HomeFeed {
+        val homeHero = app.zelefin.client.ui.HomeHero
+        val picked = when (hero) {
+            app.zelefin.client.ui.FeaturedHeroContent.Random -> homeHero.fromPool((feed.recentMovies + feed.recentShows).shuffled())
+            app.zelefin.client.ui.FeaturedHeroContent.ContinueWatching -> homeHero.fromPool(feed.continueWatching)
+            app.zelefin.client.ui.FeaturedHeroContent.NextUp -> homeHero.fromPool(feed.nextUp)
+            app.zelefin.client.ui.FeaturedHeroContent.RecentlyWatched -> homeHero.fromPool(feed.recentlyWatched)
+            app.zelefin.client.ui.FeaturedHeroContent.Recommendations -> homeHero.fromPool(feed.recommendations.flatMap { it.items })
+            else -> emptyList()
+        }
+        return if (picked.isEmpty()) feed else feed.copy(featured = picked)
+    }
+
+    /** Pulls Interface and Library layout choices from Jellyfin display preferences (iOS `pullDisplayPreferences`). */
+    fun pullDisplayPreferences() {
+        val session = _state.value.session ?: return
+        if (session.backend != MediaBackend.Jellyfin) return
+        viewModelScope.launch {
+            val prefs = runCatching { jellyfinClient().displayPreferenceCustomPrefs(userUuid()) }.getOrNull() ?: return@launch
+            if (_state.value.session?.accountId != session.accountId) return@launch
+            val context = getApplication<Application>()
+            val layout = app.zelefin.client.ui.HomeLayoutPreferences
+            val before = layout.mergeContinueAndNextUp to layout.heroContent
+            app.zelefin.client.ui.TabPreferences.applySyncedOrder(context, prefs[SyncTabOrder])
+            layout.applySynced(
+                context,
+                orderRaw = prefs[SyncHomeRowOrder],
+                hiddenRaw = prefs[SyncHomeRowHidden],
+                merge = prefs[SyncMerge]?.let { it == "true" || it == "1" },
+                hero = prefs[SyncHero],
+            )
+            val libraryOrder = prefs[SyncLibraryOrder]
+            val libraryHidden = prefs[SyncLibraryHidden]
+            val pageHidden = prefs[SyncLibraryPageHidden]
+            if (libraryOrder != null || libraryHidden != null || pageHidden != null) {
+                val current = _state.value.libraryLayout
+                val next = current.copy(
+                    order = libraryOrder?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: current.order,
+                    hidden = libraryHidden?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: current.hidden,
+                    hiddenBlocks = pageHidden?.let(::libraryBlocks) ?: current.hiddenBlocks,
+                )
+                if (next != current) {
+                    layoutStore.save(next)
+                    _state.update { it.copy(libraryLayout = next) }
+                }
+            }
+            if (before != (layout.mergeContinueAndNextUp to layout.heroContent)) refreshLibrary()
+        }
+    }
+
+    /** Pushes Interface and Library layout choices to Jellyfin display preferences (iOS `pushDisplayPreferences`). */
+    fun pushDisplayPreferences() {
+        val session = _state.value.session ?: return
+        if (session.backend != MediaBackend.Jellyfin) return
+        val layout = app.zelefin.client.ui.HomeLayoutPreferences
+        val libraryLayout = _state.value.libraryLayout
+        val prefs = mapOf(
+            SyncTabOrder to app.zelefin.client.ui.DockTab.rawOrder(app.zelefin.client.ui.TabPreferences.order),
+            SyncMerge to if (layout.mergeContinueAndNextUp) "true" else "false",
+            SyncHomeRowOrder to app.zelefin.client.ui.HomeRowKind.rawOrder(layout.order),
+            SyncHomeRowHidden to app.zelefin.client.ui.HomeRowKind.rawHidden(layout.hidden),
+            SyncHero to layout.heroContent.raw,
+            SyncLibraryOrder to libraryLayout.order.joinToString(","),
+            SyncLibraryHidden to libraryLayout.hidden.sorted().joinToString(","),
+            SyncLibraryPageHidden to if (libraryLayout.hiddenBlocks.isEmpty()) {
+                "none"
+            } else {
+                libraryLayout.hiddenBlocks.map { it.name.lowercase() }.sorted().joinToString(",")
+            },
+        )
+        viewModelScope.launch {
+            runCatching { jellyfinClient().updateDisplayPreferenceCustomPrefs(userUuid(), prefs) }
+        }
+    }
+
+    private fun libraryBlocks(raw: String): Set<LibraryPageBlock> = when (raw.trim()) {
+        "" -> setOf(LibraryPageBlock.Collections)
+        "none" -> emptySet()
+        else -> raw.split(',').mapNotNull { token -> LibraryPageBlock.entries.firstOrNull { it.name.lowercase() == token.trim() } }.toSet()
+    }
+
+    /** Opens a custom library pinned to the dock. */
+    fun selectDockRoom(room: LibraryRoom) {
+        _state.update { it.copy(tab = AppTab.Room, dockRoomId = room.id, screen = Screen.Library) }
+        ensureBrowseGrid(LibraryRoute.Room(room))
+    }
 
     private fun visibleHome(feed: HomeFeed): HomeFeed {
         val session = _state.value.session ?: return feed
@@ -1204,12 +1376,14 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         layoutStore.save(layout)
         _state.update { it.copy(libraryLayout = layout) }
         loadRoomDetails()
+        pushDisplayPreferences()
     }
 
     fun resetLibraryLayout() {
         layoutStore.reset()
         _state.update { it.copy(libraryLayout = LibraryLayout()) }
         loadRoomDetails()
+        pushDisplayPreferences()
     }
 
     private fun updateGrid(route: LibraryRoute, transform: LibraryGridState.() -> LibraryGridState) {
@@ -1229,6 +1403,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             is LibraryRoute.Collection -> JellyfinScope(emptyList(), parentId = route.id)
             is LibraryRoute.Person -> JellyfinScope(titles, personIds = listOf(route.id))
             is LibraryRoute.Studio -> JellyfinScope(titles, studioIds = listOf(route.id))
+            LibraryRoute.AllCollections -> JellyfinScope(listOf(org.jellyfin.sdk.model.api.BaseItemKind.BOX_SET))
             else -> JellyfinScope(titles)
         }
     }
@@ -1252,6 +1427,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                             is LibraryRoute.Room -> client.catalog(client.catalogType(route.room.kind), route.room.id, effective)
                             is LibraryRoute.Genre -> client.catalog(null, null, effective.copy(genres = effective.genres + route.genre.name))
                             LibraryRoute.Favorites -> client.catalog(null, null, effective)
+                            LibraryRoute.AllCollections -> client.catalog("collection", null, effective)
                             else -> emptyList()
                         }
                     }
@@ -1286,6 +1462,11 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadLibraryOverview() {
+        val account = _state.value.session?.accountId
+        if (account != null && account == overviewLoadedFor && _state.value.libraries.isNotEmpty()) {
+            loadRoomDetails(onlyMissing = true)
+            return
+        }
         overviewJob?.cancel()
         overviewJob = viewModelScope.launch {
             _state.update { it.copy(librariesLoading = it.libraries.isEmpty()) }
@@ -1307,6 +1488,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 if (silo) siloClient().libraries() else jellyfinClient().libraries(userUuid())
             }.onSuccess { rooms ->
                 val changed = rooms != _state.value.libraries
+                overviewLoadedFor = account
                 _state.update { it.copy(libraries = rooms, librariesLoading = false, message = null) }
                 _state.value.session?.let { snapshots.saveHome(it, _state.value.home, rooms) }
                 if (changed || _state.value.libraryOverview.covers.isEmpty()) loadRoomDetails()
@@ -1317,13 +1499,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadRoomDetails() {
+    private fun loadRoomDetails(onlyMissing: Boolean = false) {
         val state = _state.value
         val silo = state.session?.backend == MediaBackend.Silo
         val rooms = state.libraryLayout.displayed(state.libraries.libraryTabRooms(silo))
         viewModelScope.launch {
             rooms.forEach { room ->
-                launch {
+                if (!onlyMissing || room.id !in state.libraryOverview.roomCounts) launch {
                     val counts = runCatching {
                         if (silo) siloClient().roomCounts(room) else jellyfinClient().roomCounts(userUuid(), room)
                     }.getOrNull() ?: return@launch

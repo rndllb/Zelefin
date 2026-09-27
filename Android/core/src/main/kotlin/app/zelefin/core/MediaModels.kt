@@ -207,6 +207,11 @@ data class HomeFeed(
     val nextUp: List<MediaItem> = emptyList(),
     val recentMovies: List<MediaItem> = emptyList(),
     val recentShows: List<MediaItem> = emptyList(),
+    val upcoming: List<MediaItem> = emptyList(),
+    val recommendations: List<HomeSection> = emptyList(),
+    val collections: List<MediaItem> = emptyList(),
+    val genres: List<MediaItem> = emptyList(),
+    val recentlyWatched: List<MediaItem> = emptyList(),
 )
 
 @Serializable
@@ -277,4 +282,20 @@ data class PlaybackPlan(
     val startTimeSeconds: Double,
     val headers: Map<String, String> = emptyMap(),
     val clientOwnsPlayhead: Boolean = false,
+    val chapters: List<PlaybackChapter> = emptyList(),
+    val externalSubtitles: List<ExternalSubtitle> = emptyList(),
+    /** Bitrate cap this stream was requested at; null for local files. */
+    val appliedBitrate: Int? = null,
+    /** Source file bitrate when the server reports it. */
+    val sourceBitrate: Int? = null,
+)
+
+data class PlaybackChapter(val startSeconds: Double, val name: String)
+
+/** A subtitle file the server delivers beside the stream (saved from Open Subtitles, or extracted for a transcode). */
+data class ExternalSubtitle(
+    val url: String,
+    val mimeType: String,
+    val language: String?,
+    val title: String,
 )

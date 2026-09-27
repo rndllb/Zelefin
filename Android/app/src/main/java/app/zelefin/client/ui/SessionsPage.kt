@@ -68,7 +68,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val SessionCardShape = RoundedCornerShape(28.dp)
+private val SessionCardShape = ZelefinCardShape
 private val SessionCaption = Color.White.copy(alpha = 0.55f)
 private val SessionSecondary = Color.White.copy(alpha = 0.72f)
 
@@ -441,12 +441,9 @@ private fun SessionCard(contentPadding: androidx.compose.ui.unit.Dp = 16.dp, con
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun glassOrFill(haze: ZelefinHazeState?, shape: Shape): Modifier =
-    if (haze != null) {
-        Modifier.zelefinGlassChrome(haze, shape)
-    } else {
-        Modifier.background(DockFill, shape).border(0.5.dp, DockBorder, shape)
-    }
+    Modifier.clip(shape).background(ZelefinCardFill, shape).border(1.dp, ZelefinCardStroke, shape)
 
 @Composable
 private fun ControlButton(icon: ImageVector, description: String, busy: Boolean, large: Boolean = false, onClick: () -> Unit) {

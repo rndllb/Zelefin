@@ -12,6 +12,10 @@ object PlaybackPreferences {
     const val SKIP_FORWARD = "skip-forward-seconds"
     const val DEFAULT_RATE = "default-rate"
 
+    /** Bits per second of the selected [PlaybackQuality]; 0 is Auto. */
+    const val MAX_BITRATE = "max-bitrate"
+    const val ADAPTIVE_BITRATE = "adaptive-bitrate"
+
     /** ISO 639 code, or [AUTOMATIC] for the title default. */
     const val AUDIO_LANGUAGE = "audio-language"
 
@@ -40,11 +44,20 @@ object PlaybackPreferences {
 
     fun setDefaultRate(context: Context, rate: Float) = prefs(context).edit().putFloat(DEFAULT_RATE, resolvedRate(rate)).apply()
 
-    fun audioLanguage(context: Context): String = prefs(context).getString(AUDIO_LANGUAGE, AUTOMATIC) ?: AUTOMATIC
+    fun selectedQuality(context: Context): PlaybackQuality = PlaybackQuality.resolved(prefs(context).getInt(MAX_BITRATE, 0))
+
+    fun setSelectedQuality(context: Context, quality: PlaybackQuality) =
+        prefs(context).edit().putInt(MAX_BITRATE, quality.bits).apply()
+
+    fun adaptiveBitrate(context: Context): Boolean = prefs(context).getBoolean(ADAPTIVE_BITRATE, true)
+
+    fun setAdaptiveBitrate(context: Context, value: Boolean) = prefs(context).edit().putBoolean(ADAPTIVE_BITRATE, value).apply()
+
+    fun audioLanguage(context: Context): String = resolvedLanguage(prefs(context).getString(AUDIO_LANGUAGE, AUTOMATIC))
 
     fun setAudioLanguage(context: Context, code: String) = prefs(context).edit().putString(AUDIO_LANGUAGE, code).apply()
 
-    fun subtitleLanguage(context: Context): String = prefs(context).getString(SUBTITLE_LANGUAGE, AUTOMATIC) ?: AUTOMATIC
+    fun subtitleLanguage(context: Context): String = resolvedLanguage(prefs(context).getString(SUBTITLE_LANGUAGE, AUTOMATIC))
 
     fun setSubtitleLanguage(context: Context, code: String) = prefs(context).edit().putString(SUBTITLE_LANGUAGE, code).apply()
 
@@ -59,6 +72,12 @@ object PlaybackPreferences {
     private fun resolvedInterval(seconds: Int): Int = if (seconds in skipIntervals) seconds else 10
 
     private fun resolvedRate(rate: Float): Float = speeds.firstOrNull { abs(it - rate) < 0.01f } ?: 1f
+
+    /** Older builds and iOS-style values ("automatic", "") all mean the title default. */
+    private fun resolvedLanguage(raw: String?): String = when (val code = raw?.trim()?.lowercase().orEmpty()) {
+        "", AUTOMATIC, "automatic" -> AUTOMATIC
+        else -> code
+    }
 
     private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 }

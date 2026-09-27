@@ -314,7 +314,7 @@ private fun LibraryHome(
             if (sheet.displayed != null) ZelefinSheetScrim(sheet.progress)
         }
         if (sheet.displayed != null) {
-            ZelefinSheetSurface(sheet.progress) {
+            ZelefinSheetSurface(sheet.progress, canvas = ZelefinBlack) {
                 ArrangeSheet(
                     rooms = layout.arranged(eligible),
                     layout = layout,
@@ -583,7 +583,7 @@ private fun CollectionGrid(items: List<MediaItem>, session: SavedSession?, onOpe
 }
 
 @Composable
-private fun LabeledPortrait(title: String, urls: List<String>, modifier: Modifier, onClick: () -> Unit) {
+internal fun LabeledPortrait(title: String, urls: List<String>, modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier
             .aspectRatio(2f / 3f)

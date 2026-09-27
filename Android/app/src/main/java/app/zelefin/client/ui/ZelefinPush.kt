@@ -90,7 +90,7 @@ fun <T> ZelefinPush(
             }
         }
         motion.cover?.let { cover ->
-            Box(Modifier.zelefinPushCover(motion).fillMaxSize().background(Color.Black)) {
+            Box(Modifier.zelefinPushCover(motion).fillMaxSize().background(LocalZelefinCanvas.current)) {
                 content(cover)
             }
         }

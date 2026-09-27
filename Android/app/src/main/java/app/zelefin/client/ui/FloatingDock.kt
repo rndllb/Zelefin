@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -73,8 +75,6 @@ internal val DockFill = Color(0x6628282A)
 internal val DockBorder = Color.White.copy(alpha = 0.16f)
 internal val DockSelectedFill = Color.White.copy(alpha = 0.14f)
 internal val DockInactive = Color.White.copy(alpha = 0.92f)
-
-private val DockTabs = listOf(AppTab.Home, AppTab.Movies, AppTab.Shows, AppTab.Library)
 
 private enum class DockSlot { Tab, Search }
 
@@ -311,6 +311,10 @@ fun ZelefinFloatingDock(
     hazeState: ZelefinHazeState,
     onSelect: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
+    entries: List<DockEntry> = TabPreferences.dockEntries(emptyList()),
+    currentRoomId: String? = null,
+    showsNames: Boolean = TabPreferences.showsNames,
+    onSelectEntry: (DockEntry) -> Unit = { onSelect(it.tab) },
 ) {
     val blur = hazeState.scrollLocks == 0
     val chrome = Modifier.zelefinGlassChrome(hazeState, DockShape, blur)
@@ -326,7 +330,14 @@ fun ZelefinFloatingDock(
                     .then(chrome),
                 contentAlignment = Alignment.Center,
             ) {
-                DockTabBar(currentTab = currentTab, onSelect = onSelect, modifier = Modifier.fillMaxSize())
+                DockTabBar(
+                    entries = entries,
+                    currentTab = currentTab,
+                    currentRoomId = currentRoomId,
+                    showsNames = showsNames,
+                    onSelect = onSelectEntry,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
             DockSearchButton(
                 selected = currentTab == AppTab.Search,
@@ -360,16 +371,19 @@ fun ZelefinFloatingDock(
 
 @Composable
 private fun DockTabBar(
+    entries: List<DockEntry>,
     currentTab: AppTab,
-    onSelect: (AppTab) -> Unit,
+    currentRoomId: String?,
+    showsNames: Boolean,
+    onSelect: (DockEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier.padding(horizontal = 4.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DockTabs.forEach { tab ->
-            val selected = currentTab == tab
+        entries.forEach { entry ->
+            val selected = currentTab == entry.tab && (entry.room == null || entry.room.id == currentRoomId)
             val tint = if (selected) ZelefinCyan else DockInactive
             Box(
                 modifier = Modifier
@@ -377,17 +391,47 @@ private fun DockTabBar(
                     .fillMaxHeight()
                     .clip(DockShape)
                     .background(if (selected) DockSelectedFill else Color.Transparent)
-                    .clickable { onSelect(tab) },
+                    .clickable { onSelect(entry) },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(dockIcon(tab, selected)),
-                    contentDescription = tab.name,
-                    tint = tint,
-                    modifier = Modifier.size(DockIconSize),
-                )
+                androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    DockTabIcon(
+                        tab = entry.tab,
+                        selected = selected,
+                        description = entry.title,
+                        tint = tint,
+                        modifier = Modifier.size(if (showsNames) 22.dp else DockIconSize),
+                    )
+                    if (showsNames) {
+                        Text(
+                            entry.title,
+                            color = tint,
+                            fontFamily = ZelefinFont,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 1.dp, start = 2.dp, end = 2.dp),
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+/** Dock and Interface settings share these glyphs (iOS `TabBarIcon`). */
+@Composable
+internal fun DockTabIcon(tab: AppTab, selected: Boolean, description: String?, tint: Color, modifier: Modifier = Modifier) {
+    if (tab == AppTab.Favorites) {
+        Icon(
+            if (selected) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+            contentDescription = description,
+            tint = tint,
+            modifier = modifier,
+        )
+    } else {
+        Icon(painter = painterResource(dockIcon(tab, selected)), contentDescription = description, tint = tint, modifier = modifier)
     }
 }
 
@@ -444,6 +488,7 @@ private fun dockIcon(tab: AppTab, selected: Boolean): Int = when (tab) {
     AppTab.Home -> if (selected) R.drawable.iconsax_home_filled else R.drawable.iconsax_home
     AppTab.Movies -> if (selected) R.drawable.iconsax_movies_filled else R.drawable.iconsax_movies
     AppTab.Shows -> if (selected) R.drawable.iconsax_shows_filled else R.drawable.iconsax_shows
-    AppTab.Library -> if (selected) R.drawable.iconsax_library_filled else R.drawable.iconsax_library
+    AppTab.Library, AppTab.Room, AppTab.Favorites -> if (selected) R.drawable.iconsax_library_filled else R.drawable.iconsax_library
     AppTab.Search -> if (selected) R.drawable.iconsax_search_filled else R.drawable.iconsax_search
+    AppTab.Collections -> if (selected) R.drawable.iconsax_collections_filled else R.drawable.iconsax_collections
 }

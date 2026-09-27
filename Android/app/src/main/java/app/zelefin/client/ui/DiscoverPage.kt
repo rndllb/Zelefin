@@ -107,6 +107,7 @@ internal fun DiscoverPane(
     onOpenQuery: (DiscoverQuery) -> Unit,
     onSelect: (SeerrTitle) -> Unit,
     onDrag: () -> Unit,
+    onScrollOffset: (Int, Int) -> Unit = { _, _ -> },
 ) {
     LaunchedEffect(Unit) { onLoadHome() }
     LaunchedEffect(term) { onSearch(term) }
@@ -121,6 +122,7 @@ internal fun DiscoverPane(
                 val listState = rememberLazyListState()
                 TrackHazeScroll(listState.isScrollInProgress)
                 LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) onDrag() }
+                TrackOffset({ listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }, onScrollOffset)
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(top = topInset, bottom = bottomInset + 32.dp),
@@ -145,6 +147,7 @@ internal fun DiscoverPane(
             val listState = rememberLazyListState()
             TrackHazeScroll(listState.isScrollInProgress)
             LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) onDrag() }
+            TrackOffset({ listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }, onScrollOffset)
             LazyColumn(
                 state = listState,
                 contentPadding = PaddingValues(top = topInset + 8.dp, bottom = bottomInset + 32.dp),

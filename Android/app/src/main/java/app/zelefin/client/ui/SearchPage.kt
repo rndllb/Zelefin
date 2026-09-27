@@ -1,10 +1,22 @@
 package app.zelefin.client.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -56,12 +68,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -110,7 +125,7 @@ private val HitSubtitle = Color.White.copy(alpha = 0.45f)
 
 /** The Discover scope's content. Null when no request service is set up. */
 private class SearchDiscover(
-    val content: @Composable (term: String, topInset: Dp, bottomInset: Dp, onDrag: () -> Unit) -> Unit,
+    val content: @Composable (term: String, topInset: Dp, bottomInset: Dp, onDrag: () -> Unit, onScrollOffset: (Int, Int) -> Unit) -> Unit,
 )
 
 @Composable
@@ -149,8 +164,9 @@ fun SearchTabPage(
         }
     }
     val discover = if (pluginState.discoverAvailable) {
-        SearchDiscover { term, top, bottom, onDrag ->
+        SearchDiscover { term, top, bottom, onDrag, onScrollOffset ->
             DiscoverPane(
+                onScrollOffset = onScrollOffset,
                 discover = discoverState,
                 plugins = pluginState,
                 term = term,
@@ -243,7 +259,7 @@ fun SearchTabPage(
             if (sheet.displayed != null) ZelefinSheetScrim(sheet.progress)
         }
         sheet.displayed?.let { title ->
-            ZelefinSheetSurface(sheet.progress) {
+            ZelefinSheetSurface(sheet.progress, canvas = ZelefinBlack) {
                 SeerrRequestSheet(
                     title = title,
                     plugins = plugins,
@@ -292,6 +308,7 @@ private fun SearchHome(
     }
     fun cancel() {
         setTerm("")
+        headerVisible = true
         focus.clearFocus()
     }
 
@@ -310,9 +327,13 @@ private fun SearchHome(
     }
     val dismissKeyboard = { focus.clearFocus() }
 
+    // The chrome sits inside the app's blur source, so it frosts this page's own layer instead.
+    val pageGlass = rememberZelefinHazeState()
+    val appGlass = LocalZelefinHaze.current
     Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().zelefinHazeSource(pageGlass)) {
         when {
-            scope == SearchScope.Discover && discover != null -> discover.content(discoverTerm.trim(), headerHeight, bottomInset, dismissKeyboard)
+            scope == SearchScope.Discover && discover != null -> discover.content(discoverTerm.trim(), headerHeight, bottomInset, dismissKeyboard, onScrollOffset)
             !active -> GenreGrid(search.genres, search.genresLoading, headerHeight, bottomInset, onScrollOffset, onGenre)
             term.isEmpty() -> RecentList(
                 recents = search.recents,
@@ -347,7 +368,9 @@ private fun SearchHome(
                 },
             )
         }
+        }
         SearchChrome(
+            glass = SearchGlass(pageGlass, blur = (appGlass?.scrollLocks ?: 0) == 0),
             visible = headerVisible,
             active = active,
             focused = focused,
@@ -377,8 +400,15 @@ private fun SearchHome(
     )
 }
 
+private class SearchGlass(val haze: ZelefinHazeState, val blur: Boolean)
+
+@Composable
+private fun Modifier.searchGlass(glass: SearchGlass, shape: androidx.compose.ui.graphics.Shape): Modifier =
+    zelefinGlassChrome(glass.haze, shape, glass.blur)
+
 @Composable
 private fun SearchChrome(
+    glass: SearchGlass,
     visible: Boolean,
     active: Boolean,
     focused: Boolean,
@@ -400,6 +430,9 @@ private fun SearchChrome(
 ) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(180), label = "searchChrome")
     val shift by animateDpAsState(if (visible) 0.dp else (-160).dp, tween(180), label = "searchChromeShift")
+    val showsScope = focused && discoverAvailable
+    val topPad by animateDpAsState(if (active) 8.dp else 4.dp, SearchSessionMotion(), label = "searchTopPad")
+    val bottomPad by animateDpAsState(if (showsScope) 4.dp else 12.dp, SearchFocusMotion(), label = "searchBottomPad")
     Column(
         modifier
             .fillMaxWidth()
@@ -407,11 +440,14 @@ private fun SearchChrome(
             .graphicsLayer { this.alpha = alpha }
             .statusBarsPadding()
             .padding(horizontal = 16.dp)
-            .padding(top = if (active) 8.dp else 4.dp, bottom = if (active) 4.dp else 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(top = topPad, bottom = bottomPad),
     ) {
-        if (!active) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        AnimatedVisibility(
+            visible = !active,
+            enter = fadeIn(SearchSessionMotion()) + expandVertically(SearchSessionMotion(), expandFrom = Alignment.Top),
+            exit = fadeOut(SearchSessionMotion()) + shrinkVertically(SearchSessionMotion(), shrinkTowards = Alignment.Top),
+        ) {
+            Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Search",
                     color = Color.White,
@@ -426,6 +462,7 @@ private fun SearchChrome(
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SearchField(
+                glass = glass,
                 term = term,
                 prompt = scope.prompt,
                 focusRequester = focusRequester,
@@ -434,16 +471,31 @@ private fun SearchChrome(
                 onTerm = onTerm,
                 onSubmit = onSubmit,
             )
-            if (active) {
+            AnimatedVisibility(
+                visible = active,
+                enter = fadeIn(SearchSessionMotion()) + scaleIn(SearchSessionMotion(), initialScale = 0.6f) + expandHorizontally(SearchSessionMotion()),
+                exit = fadeOut(SearchSessionMotion()) + scaleOut(SearchSessionMotion(), targetScale = 0.6f) + shrinkHorizontally(SearchSessionMotion()),
+            ) {
                 Box(Modifier.size(46.dp).then(if (visible) Modifier.zelefinGlassDisc("search-cancel", "Cancel", Icons.Filled.Close, onCancel) else Modifier))
             }
         }
-        if (focused && discoverAvailable) ScopeBar(scope, onScope)
+        AnimatedVisibility(
+            visible = showsScope,
+            enter = fadeIn(SearchFocusMotion()) + expandVertically(SearchFocusMotion(), expandFrom = Alignment.Top),
+            exit = fadeOut(SearchFocusMotion()) + shrinkVertically(SearchFocusMotion(), shrinkTowards = Alignment.Top),
+        ) {
+            Box(Modifier.padding(top = 10.dp)) { ScopeBar(glass, scope, onScope) }
+        }
     }
 }
 
+/** iOS `.smooth(duration: 0.25)` for the search session, `.easeInOut(0.22)` for focus. */
+private fun <T> SearchSessionMotion() = tween<T>(250, easing = FastOutSlowInEasing)
+private fun <T> SearchFocusMotion() = tween<T>(220, easing = FastOutSlowInEasing)
+
 @Composable
 private fun SearchField(
+    glass: SearchGlass,
     term: String,
     prompt: String,
     focusRequester: FocusRequester,
@@ -452,11 +504,10 @@ private fun SearchField(
     onTerm: (String) -> Unit,
     onSubmit: () -> Unit,
 ) {
-    val haze = LocalZelefinHaze.current
     val shape = RoundedCornerShape(50)
     Row(
         modifier
-            .then(if (haze != null) Modifier.zelefinGlassChrome(haze, shape) else Modifier.clip(shape).background(DockFill))
+            .searchGlass(glass, shape)
             .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { focusRequester.requestFocus() }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -498,46 +549,66 @@ private fun SearchField(
 }
 
 @Composable
-private fun ScopeBar(scope: SearchScope, onScope: (SearchScope) -> Unit) {
-    val haze = LocalZelefinHaze.current
+private fun ScopeBar(glass: SearchGlass, scope: SearchScope, onScope: (SearchScope) -> Unit) {
     val shape = RoundedCornerShape(50)
-    Row(
+    val options = SearchScope.entries
+    val index by animateFloatAsState(options.indexOf(scope).toFloat(), SearchFocusMotion(), label = "scopePill")
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .then(if (haze != null) Modifier.zelefinGlassChrome(haze, shape) else Modifier.clip(shape).background(DockFill))
+            .searchGlass(glass, shape)
             .padding(3.dp),
     ) {
-        SearchScope.entries.forEach { option ->
-            val selected = option == scope
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(34.dp)
-                    .clip(shape)
-                    .background(if (selected) Color.Black.copy(alpha = 0.32f) else Color.Transparent)
-                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onScope(option) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    option.title,
-                    color = if (selected) Color.White else Color.White.copy(alpha = 0.72f),
-                    fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
+        val segment = maxWidth / options.size
+        Box(
+            Modifier
+                .offset(x = segment * index)
+                .width(segment)
+                .height(34.dp)
+                .clip(shape)
+                .background(Color.White.copy(alpha = 0.22f))
+                .border(0.5.dp, Color.White.copy(alpha = 0.28f), shape),
+        )
+        Row {
+            options.forEach { option ->
+                val selected = option == scope
+                val tint by animateColorAsState(
+                    if (selected) Color.White else Color.White.copy(alpha = 0.55f),
+                    SearchFocusMotion(),
+                    label = "scopeTint",
                 )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .clip(shape)
+                        .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onScope(option) }
+                        .semantics { this.selected = selected },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        option.title,
+                        color = tint,
+                        fontFamily = ZelefinFont,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun TrackOffset(offset: () -> Int, onScrollOffset: (Int, Int) -> Unit) {
+internal fun TrackOffset(offset: () -> Int, onScrollOffset: (Int, Int) -> Unit) {
     var previous by remember { mutableIntStateOf(0) }
+    val latestOffset by rememberUpdatedState(offset)
+    val latestOnScroll by rememberUpdatedState(onScrollOffset)
     LaunchedEffect(Unit) {
-        snapshotFlow(offset).collect { value ->
+        snapshotFlow { latestOffset() }.collect { value ->
             val delta = value - previous
             previous = value
-            onScrollOffset(value, delta)
+            latestOnScroll(value, delta)
         }
     }
 }

@@ -174,6 +174,8 @@ fun CachedArtwork(
             .data(url)
             .diskCacheKey(cacheKey)
             .memoryCacheKey(cacheKey)
+            // Drawn before the size resolves, so artwork already in memory never flashes blank on re-entry.
+            .placeholderMemoryCacheKey(cacheKey)
             .crossfade(crossfade)
             .build()
     }

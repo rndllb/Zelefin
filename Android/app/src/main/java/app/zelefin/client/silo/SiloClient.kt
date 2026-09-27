@@ -311,7 +311,19 @@ class SiloClient(
         )
     }
 
-    suspend fun playback(item: MediaItem, appVersion: String, osVersion: String, model: String): PlaybackPlan =
+    /**
+     * [maxBitrate] is the start cap in bits per second; null or the Auto ceiling asks for the
+     * original file. Language codes pick the audio / subtitle track Silo starts with.
+     */
+    suspend fun playback(
+        item: MediaItem,
+        appVersion: String,
+        osVersion: String,
+        model: String,
+        maxBitrate: Int? = null,
+        audioLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
+        subtitleLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
+    ): PlaybackPlan =
         withContext(Dispatchers.IO) {
             val profile = profileId?.trim().orEmpty()
             if (profile.isEmpty()) throw ZelefinException.server("Select a profile before playing.")
@@ -319,6 +331,18 @@ class SiloClient(
             val fileId = playable.mediaSourceId?.toIntOrNull()
                 ?: catalogItem(playable.id)?.mediaSourceId?.toIntOrNull()
                 ?: throw ZelefinException.server("Silo did not return a playable file for this title.")
+            val automatic = app.zelefin.client.PlaybackPreferences.AUTOMATIC
+            val off = app.zelefin.client.PlaybackPreferences.OFF
+            val needsTracks = audioLanguage != automatic || (subtitleLanguage != automatic && subtitleLanguage != off)
+            val tracks = if (needsTracks) streamTracks(playable.id, fileId) else null
+            val audioIndex = if (audioLanguage == automatic) null else tracks?.let { app.zelefin.client.PlaybackLanguage.audioIndex(it.first, audioLanguage) }
+            val subtitleIndex = when (subtitleLanguage) {
+                off -> -1
+                automatic -> null
+                else -> tracks?.let { app.zelefin.client.PlaybackLanguage.subtitleIndex(it.second, subtitleLanguage) }
+            }
+            val capKbps = maxBitrate?.takeIf { it in 1 until app.zelefin.client.PlaybackQuality.MAX_BITRATE }
+                ?.let { (it / 1_000).coerceIn(100, 1_000_000) }
             val body = SiloMapper.playbackStart(
                 fileId = fileId,
                 profileId = profile,
@@ -328,6 +352,9 @@ class SiloClient(
                 osVersion = osVersion,
                 model = model,
                 formFactor = formFactor,
+                bandwidthCapKbps = capKbps,
+                audioIndex = audioIndex,
+                subtitleIndex = subtitleIndex,
             )
             val response = call("/api/v1/playback/start", method = "POST", body = body)
             val json = SiloJson.objectOrNull(response.body)
@@ -351,8 +378,96 @@ class SiloClient(
                 startTimeSeconds = start,
                 headers = streamHeaders(),
                 clientOwnsPlayhead = owns || method == PlaybackMethod.DirectPlay,
+                appliedBitrate = maxBitrate ?: app.zelefin.client.PlaybackQuality.MAX_BITRATE,
+                sourceBitrate = json.obj("playback_plan")?.obj("source")?.let { source ->
+                    source.int("bitrate") ?: source.int("bit_rate") ?: source.int("bitrate_kbps")?.times(1_000)
+                }?.takeIf { it > 0 },
             )
         }
+
+    /** Audio and subtitle tracks for [fileId], read from the catalog versions (like iOS `versions(itemID:)`). */
+    private fun streamTracks(itemId: String, fileId: Int): Pair<List<app.zelefin.client.LanguageTrack>, List<app.zelefin.client.LanguageTrack>>? {
+        val encoded = urlPath(itemId)
+        val paths = listOf(
+            "/api/v2/catalog/items/$encoded/versions",
+            "/api/v2/catalog/items/$encoded",
+            "/api/v1/catalog/items/$encoded/versions",
+            "/api/v1/catalog/items/$encoded",
+        )
+        for (path in paths) {
+            val response = runCatching { call(path) }.getOrNull() ?: continue
+            if (response.status !in 200..299) continue
+            val root = runCatching { SiloJson.parse(response.body) }.getOrNull() ?: continue
+            val versions = mutableListOf<JsonObject>()
+            collectVersions(root, versions)
+            if (versions.isEmpty()) continue
+            val version = versions.firstOrNull { (it.int("file_id") ?: it.int("id")) == fileId } ?: versions.first()
+            fun tracks(key: String) = version.arr(key).orEmpty().mapIndexedNotNull { ordinal, element ->
+                val track = element as? JsonObject ?: return@mapIndexedNotNull null
+                app.zelefin.client.LanguageTrack(
+                    index = track.int("index") ?: ordinal,
+                    language = track.str("language"),
+                    isSelected = track.bool("default") == true,
+                )
+            }
+            return tracks("audio_tracks") to tracks("subtitle_tracks")
+        }
+        return null
+    }
+
+    private fun collectVersions(element: kotlinx.serialization.json.JsonElement, into: MutableList<JsonObject>) {
+        when (element) {
+            is JsonObject -> {
+                if (element.containsKey("audio_tracks") || element.containsKey("subtitle_tracks")) into += element
+                element.values.forEach { collectVersions(it, into) }
+            }
+            is kotlinx.serialization.json.JsonArray -> element.forEach { collectVersions(it, into) }
+            else -> Unit
+        }
+    }
+
+    /** Times a download from Silo, like iOS `bitrateTestBytes`: the probe endpoint, else repeated home fetches. */
+    suspend fun measureBitrate(
+        size: Int,
+        timeoutMillis: Long,
+        transport: app.zelefin.client.NetworkTransport,
+    ): app.zelefin.client.BitrateProbeResult? = withContext(Dispatchers.IO) {
+        val bounded = size.coerceIn(32_000, 8_000_000)
+        val deadline = System.nanoTime() + timeoutMillis * 1_000_000
+        val client = GatewayHttp.client.newBuilder()
+            .callTimeout(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .build()
+        fun fetch(path: String, query: Map<String, String>): Int? {
+            val builder = Request.Builder().url(buildUrl(path, query))
+            identity().forEach { (name, value) -> builder.header(name, value) }
+            if (accessToken.isNotBlank()) builder.header("Authorization", "Bearer $accessToken")
+            profileId?.let { builder.header("X-Profile-Id", it) }
+            profileToken?.let { builder.header("X-Profile-Token", it) }
+            return runCatching {
+                client.newCall(builder.build()).execute().use { response ->
+                    if (response.isSuccessful) response.body?.bytes()?.size else null
+                }
+            }.getOrNull()
+        }
+        val started = System.nanoTime()
+        val direct = fetch("/api/v1/playback/bitrate-test", mapOf("size" to bounded.toString()))
+        if (direct != null && direct >= 16_000) {
+            return@withContext app.zelefin.client.BitrateProbeResult.from(direct, System.nanoTime() - started, transport)
+        }
+        val fallbackStart = System.nanoTime()
+        var collected = 0
+        var round = 0
+        while (collected < bounded && round < 24 && System.nanoTime() < deadline) {
+            round += 1
+            val chunk = fetch(
+                "/api/v2/home/sections",
+                mapOf("image_size" to "large", "_probe" to "${System.currentTimeMillis() / 1000}-$round"),
+            ) ?: break
+            collected += chunk
+        }
+        if (collected < 16_000) return@withContext null
+        app.zelefin.client.BitrateProbeResult.from(collected, System.nanoTime() - fallbackStart, transport)
+    }
 
     suspend fun report(sessionId: String, position: Double, paused: Boolean) = withContext(Dispatchers.IO) {
         val encoded = urlPath(sessionId)

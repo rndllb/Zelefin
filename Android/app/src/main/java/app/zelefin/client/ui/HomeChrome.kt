@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.rememberCoroutineScope
+import app.zelefin.client.BrowsePage
 import app.zelefin.client.HomeShelf
 import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.core.ArtworkUrls
@@ -99,6 +100,7 @@ fun HomeFeedPage(
     onToggleFavorite: (MediaItem) -> Unit,
     onHideFromHome: (suspend (MediaItem, JellyfinEnhancedHomeSurface) -> String?)? = null,
     onSeeAll: (HomeShelf) -> Unit = {},
+    onBrowse: (BrowsePage) -> Unit = {},
 ) {
     var more by remember { mutableStateOf<TitleMoreRequest?>(null) }
     var note by remember { mutableStateOf<MenuNotice?>(null) }
@@ -123,12 +125,25 @@ fun HomeFeedPage(
         }
     }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val featured = if (HomeLayoutPreferences.showsFeatured) feed.featured else emptyList()
-    val continueWatching = if (HomeLayoutPreferences.mergeContinueAndNextUp) {
-        (feed.continueWatching + feed.nextUp).distinctBy { it.id }
-    } else {
-        feed.continueWatching
+    val continueWatching = homeContinueWatching(feed)
+    val rows = HomeLayoutPreferences.order.filter { row ->
+        HomeLayoutPreferences.isVisible(row) && when (row) {
+            HomeRowKind.Featured -> feed.featured.isNotEmpty()
+            HomeRowKind.ContinueWatching -> continueWatching.isNotEmpty()
+            HomeRowKind.NextUp -> feed.nextUp.isNotEmpty()
+            HomeRowKind.Upcoming -> feed.upcoming.isNotEmpty()
+            HomeRowKind.Recommendations -> feed.recommendations.any { it.items.isNotEmpty() }
+            HomeRowKind.RecentlyAddedMovies -> feed.recentMovies.isNotEmpty()
+            HomeRowKind.RecentlyAddedShows -> feed.recentShows.isNotEmpty()
+            HomeRowKind.Collections -> feed.collections.isNotEmpty()
+            HomeRowKind.Genres -> feed.genres.isNotEmpty()
+            HomeRowKind.RecentlyWatched -> feed.recentlyWatched.isNotEmpty()
+        }
     }
+    val featuredFirst = rows.firstOrNull() == HomeRowKind.Featured
+    val hasCatalog = feed.recentMovies.isNotEmpty() || feed.recentShows.isNotEmpty() || feed.continueWatching.isNotEmpty() ||
+        feed.nextUp.isNotEmpty() || feed.featured.isNotEmpty()
+    val rowsHidden = rows.isEmpty() && (hasCatalog || HomeLayoutPreferences.order.none(HomeLayoutPreferences::isVisible))
     Box(Modifier.fillMaxSize()) {
     PullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -149,40 +164,88 @@ fun HomeFeedPage(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            top = if (featured.isEmpty()) statusTop + HomeHeaderHeight else 0.dp,
+            top = if (featuredFirst) 0.dp else statusTop + HomeHeaderHeight,
             bottom = bottomInset,
         ),
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-        if (featured.isNotEmpty()) {
-            item {
-                FeaturedHero(featured, session, onOpen, onPlay, paused = more != null) { item, anchor ->
-                    more = TitleMoreRequest(item, TitleMenuContext.Featured, anchor)
-                }
-            }
+        if (rowsHidden) {
+            item(key = "rows-hidden") { HomeRowsHidden() }
         }
-        HomeLayoutPreferences.visibleRows.forEach { row ->
+        rows.forEach { row ->
             when (row) {
-                HomeRowKind.ContinueWatching -> if (continueWatching.isNotEmpty()) {
-                    item {
-                        HomeRow("Continue Watching", continueWatching, session, landscape = true, onOpen, onSeeAll = { onSeeAll(HomeShelf.ContinueWatching) }) { item, anchor ->
-                            val fromNextUp = feed.continueWatching.none { it.id == item.id }
-                            more = TitleMoreRequest(item, if (fromNextUp) TitleMenuContext.NextUp else TitleMenuContext.ContinueWatching, anchor)
-                        }
+                HomeRowKind.Featured -> item(key = row.raw) {
+                    FeaturedHero(feed.featured, session, onOpen, onPlay, paused = more != null) { item, anchor ->
+                        more = TitleMoreRequest(item, TitleMenuContext.Featured, anchor)
                     }
                 }
-                HomeRowKind.NextUp -> if (feed.nextUp.isNotEmpty()) {
-                    item {
-                        HomeRow("Next Up", feed.nextUp, session, landscape = true, onOpen, onSeeAll = { onSeeAll(HomeShelf.NextUp) }) { item, anchor ->
-                            more = TitleMoreRequest(item, TitleMenuContext.NextUp, anchor)
-                        }
+                HomeRowKind.ContinueWatching -> item(key = row.raw) {
+                    val merged = HomeLayoutPreferences.mergeContinueAndNextUp
+                    HomeRow(
+                        "Continue Watching", continueWatching, session, landscape = true, onOpen,
+                        onSeeAll = { onSeeAll(HomeShelf.ContinueWatching) },
+                        kindLabel = if (merged) ::queueKindLabel else null,
+                    ) { item, anchor ->
+                        val fromNextUp = item.queueKind == app.zelefin.core.PlaybackQueueKind.NextUp ||
+                            feed.continueWatching.none { it.id == item.id }
+                        more = TitleMoreRequest(item, if (fromNextUp) TitleMenuContext.NextUp else TitleMenuContext.ContinueWatching, anchor)
                     }
                 }
-                HomeRowKind.RecentMovies -> if (feed.recentMovies.isNotEmpty()) {
-                    item { HomeRow("Recently Added Movies", feed.recentMovies, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentMovies) }) }
+                HomeRowKind.NextUp -> item(key = row.raw) {
+                    HomeRow("Next Up", feed.nextUp, session, landscape = true, onOpen, onSeeAll = { onSeeAll(HomeShelf.NextUp) }) { item, anchor ->
+                        more = TitleMoreRequest(item, TitleMenuContext.NextUp, anchor)
+                    }
                 }
-                HomeRowKind.RecentShows -> if (feed.recentShows.isNotEmpty()) {
-                    item { HomeRow("Recently Added Shows", feed.recentShows, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentShows) }) }
+                HomeRowKind.Upcoming -> item(key = row.raw) {
+                    HomeRow(
+                        row.title, feed.upcoming, session, landscape = true, onOpen,
+                        onSeeAll = { onBrowse(BrowsePage.Shelf(row.title, feed.upcoming)) },
+                    )
+                }
+                HomeRowKind.Recommendations -> feed.recommendations.filter { it.items.isNotEmpty() }.forEach { section ->
+                    item(key = "${row.raw}-${section.id}") {
+                        HomeRow(
+                            section.title, section.items, session, landscape = false, onOpen,
+                            onSeeAll = { onBrowse(BrowsePage.Shelf(section.title, section.items)) },
+                        )
+                    }
+                }
+                HomeRowKind.RecentlyAddedMovies -> item(key = row.raw) {
+                    HomeRow(row.title, feed.recentMovies, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentMovies) })
+                }
+                HomeRowKind.RecentlyAddedShows -> item(key = row.raw) {
+                    HomeRow(row.title, feed.recentShows, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentShows) })
+                }
+                HomeRowKind.Collections -> item(key = row.raw) {
+                    HomeRow(
+                        "Browse by Collection", feed.collections, session, landscape = false, onOpen,
+                        onSeeAll = { onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.AllCollections)) },
+                        card = { item ->
+                            LabeledPortrait(item.name, artworkCandidates(item, session, landscape = false), Modifier.width(124.dp)) {
+                                onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.Collection(item.id, item.name)))
+                            }
+                        },
+                    )
+                }
+                HomeRowKind.Genres -> item(key = row.raw) {
+                    HomeRow(
+                        "Browse by Genre", feed.genres, session, landscape = false, onOpen,
+                        onSeeAll = { onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.Genres)) },
+                        card = { item ->
+                            val genre = app.zelefin.client.LibraryGenre(item.id, item.name)
+                            Box(Modifier.width(124.dp)) {
+                                GenreCard(genre.name, corner = 10.dp) {
+                                    onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.Genre(genre)))
+                                }
+                            }
+                        },
+                    )
+                }
+                HomeRowKind.RecentlyWatched -> item(key = row.raw) {
+                    HomeRow(
+                        row.title, feed.recentlyWatched, session, landscape = true, onOpen,
+                        onSeeAll = { onBrowse(BrowsePage.Shelf(row.title, feed.recentlyWatched)) },
+                    )
                 }
             }
         }
@@ -215,6 +278,30 @@ fun HomeFeedPage(
 }
 
 private val HomeHeaderHeight = 59.dp
+
+/** Continue Watching, with Next Up folded in when the rows are combined. */
+internal fun homeContinueWatching(feed: HomeFeed): List<MediaItem> =
+    if (HomeLayoutPreferences.mergeContinueAndNextUp) {
+        (feed.continueWatching + feed.nextUp.map { it.copy(queueKind = app.zelefin.core.PlaybackQueueKind.NextUp) })
+            .distinctBy { it.id }
+    } else {
+        feed.continueWatching
+    }
+
+internal fun queueKindLabel(item: MediaItem): String =
+    if (item.queueKind == app.zelefin.core.PlaybackQueueKind.NextUp) "NEXT" else "CONTINUE"
+
+@Composable
+private fun HomeRowsHidden() {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 80.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Home Rows Hidden", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, textAlign = TextAlign.Center)
+        Text("Turn rows back on in Interface settings.", color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 15.sp, textAlign = TextAlign.Center)
+    }
+}
 
 @Composable
 private fun HomeTitleBar(
@@ -507,6 +594,8 @@ private fun HomeRow(
     landscape: Boolean,
     onOpen: (MediaItem) -> Unit,
     onSeeAll: (() -> Unit)? = null,
+    kindLabel: ((MediaItem) -> String?)? = null,
+    card: (@Composable (MediaItem) -> Unit)? = null,
     onMore: ((MediaItem, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
@@ -519,12 +608,14 @@ private fun HomeRow(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-            Icon(
-                Icons.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.45f),
-                modifier = Modifier.size(16.dp),
-            )
+            if (onSeeAll != null) {
+                Icon(
+                    Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.45f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
         val rowState = rememberLazyListState()
         TrackHazeScroll(rowState.isScrollInProgress)
@@ -534,8 +625,11 @@ private fun HomeRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(items, key = { title + it.id }) { item ->
-                if (landscape) LandscapeHomeCard(item, session, { onOpen(item) }, onMore)
-                else PortraitHomeCard(item, session) { onOpen(item) }
+                when {
+                    card != null -> card(item)
+                    landscape -> LandscapeHomeCard(item, session, { onOpen(item) }, onMore, kindLabel?.invoke(item))
+                    else -> PortraitHomeCard(item, session) { onOpen(item) }
+                }
             }
         }
     }
@@ -547,6 +641,7 @@ private fun LandscapeHomeCard(
     session: SavedSession?,
     onClick: () -> Unit,
     onMore: ((MediaItem, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
+    kindLabel: String? = null,
 ) {
     val moreAnchor = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     Box(
@@ -594,6 +689,16 @@ private fun LandscapeHomeCard(
                             .background(Color.White.copy(alpha = 0.75f)),
                     )
                 }
+            }
+            kindLabel?.let { label ->
+                Text(
+                    label,
+                    color = ZelefinCyan,
+                    fontFamily = ZelefinFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                )
             }
             item.continueWatchingCaption?.let { caption ->
                 Text(

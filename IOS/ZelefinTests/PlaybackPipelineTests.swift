@@ -519,19 +519,27 @@ final class DirectPlayEngineTests: XCTestCase {
         )
     }
 
-    func testRemuxURLGetsStartTimeTicksWhenJellyfinOmitsThem() {
-        let url = URL(string: "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a")!
-        let patched = StreamResumeURL.ensuringStartTimeTicks(url, method: .transcode, startTime: 600)
-        XCTAssertTrue(patched.absoluteString.contains("StartTimeTicks=6000000000"))
-
-        let already = URL(string: "https://jellyfin.local/Videos/1/master.m3u8?StartTimeTicks=1")!
+    func testStreamURLDropsStartTimeTicksSoJellyfinSegmentsLoad() {
+        let withTicks = URL(string: "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a&startTimeTicks=6000000000&api_key=k")!
         XCTAssertEqual(
-            StreamResumeURL.ensuringStartTimeTicks(already, method: .transcode, startTime: 600),
-            already
+            StreamResumeURL.strippingStartTimeTicks(withTicks).absoluteString,
+            "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a&api_key=k"
         )
+
+        let clean = URL(string: "https://jellyfin.local/Videos/1/master.m3u8?MediaSourceId=a")!
+        XCTAssertEqual(StreamResumeURL.strippingStartTimeTicks(clean), clean)
+
+        let onlyTicks = URL(string: "https://jellyfin.local/Videos/1/master.m3u8?StartTimeTicks=1")!
         XCTAssertEqual(
-            StreamResumeURL.ensuringStartTimeTicks(url, method: .directPlay, startTime: 600),
-            url
+            StreamResumeURL.strippingStartTimeTicks(onlyTicks).absoluteString,
+            "https://jellyfin.local/Videos/1/master.m3u8"
+        )
+    }
+
+    func testHLSResumeIsClientSeekWhenPlanOwnsPlayhead() {
+        XCTAssertEqual(
+            PlaybackResumePolicy.clientStartPosition(method: .transcode, startTime: 600, clientOwnsPlayhead: true),
+            600
         )
     }
 

@@ -99,7 +99,7 @@ Lock-screen alerts need the [Zelefin plugin](https://github.com/rndllb/Zelefin-P
 - During playback, steps down after a stall and back up when the buffer stays healthy (one quality step at a time; a short hitch while the stream restarts)
 - Settings → Playback: Maximum Quality ceiling, and Test with Demo File to measure this connection
 - Manual quality in the player still wins for that title
-- Movies and episodes resume from the saved playhead (including transcoded streams)
+- Movies and episodes resume from the saved playhead, including transcoded HLS. The player seeks on the device. The stream address does not carry a start time, because Jellyfin copies that value onto every HLS chunk and then rejects the chunk
 - Picture in Picture and AirPlay
 - Playback stats overlay
 - Progress reported back to Jellyfin or Silo
@@ -240,9 +240,11 @@ Phones and tablets, in `Android/`. Jetpack Compose and Media3. Android 8 and lat
 - Pull to refresh and cache-first artwork
 - Movies, Shows, and Library
 - Title page with play and resume, the season carousel, trailers, related titles, cast, collections, and the About and More sheets
-- Playback and resume through Media3, with progress reported back to the server
+- Playback and resume through Media3, with progress reported back to the server. Resume seeks on the device, the same way iOS does
+- Adaptive bitrate, with a maximum quality ceiling in Playback settings
+- Interface settings for the accent color, Home rows, and tab order
 
-Live TV, downloads, SyncPlay, plugins, requests, and the rest of Settings are still iOS-only.
+Live TV is still iOS-only.
 
 Open the `Android/` folder in Android Studio and run `app`.
 

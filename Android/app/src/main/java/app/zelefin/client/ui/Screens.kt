@@ -132,6 +132,8 @@ fun LibraryScreen(
     plugins: app.zelefin.client.PluginsController,
     onHideFromHome: suspend (MediaItem, app.zelefin.client.plugins.JellyfinEnhancedHomeSurface) -> String? = { _, _ -> null },
     onSeeAll: (app.zelefin.client.HomeShelf) -> Unit = {},
+    onBrowse: (app.zelefin.client.BrowsePage) -> Unit = {},
+    onEnsureGrid: (app.zelefin.client.LibraryRoute) -> Unit = {},
 ) {
     val contentBottom = DockContentReserve
     val pluginState by plugins.state.collectAsState()
@@ -157,6 +159,22 @@ fun LibraryScreen(
                     onToggleFavorite,
                     onHideFromHome = if (pluginState.hidesFromHome) onHideFromHome else null,
                     onSeeAll = onSeeAll,
+                    onBrowse = onBrowse,
+                )
+                AppTab.Collections, AppTab.Favorites, AppTab.Room -> DockRoutePage(
+                    state = state,
+                    bottomInset = contentBottom,
+                    onOpen = onOpen,
+                    onBrowse = onBrowse,
+                    onEnsureGrid = onEnsureGrid,
+                    onQuery = onLibraryQuery,
+                    onRefresh = onLibraryRefresh,
+                    onFilters = onLibraryFilters,
+                    onCoversDock = onCoversDock,
+                    onProfile = onProfile,
+                    onSessions = onSessions,
+                    onSettings = onSettings,
+                    onSignOut = onSignOut,
                 )
                 AppTab.Movies -> CatalogBrowsePage(
                     title = "Movies",
@@ -285,8 +303,20 @@ fun PlayerScreen(
     session: app.zelefin.core.SavedSession? = null,
     onLoadNext: suspend (MediaItem) -> MediaItem? = { null },
     onPlayNext: (MediaItem, Double) -> Unit = { _, _ -> },
+    onReload: (Double) -> Unit = {},
+    onAdaptiveBitrate: ((Int, Double) -> Unit)? = null,
 ) {
     val pluginState by plugins.state.collectAsState()
+    var subtitleSearchAt by remember(plan.streamUrl) { mutableStateOf<Double?>(null) }
+    var subtitleSaved by remember(plan.streamUrl) { mutableStateOf(false) }
+    val subtitleSheet = rememberZelefinSheet(subtitleSearchAt)
+    androidx.activity.compose.BackHandler(enabled = subtitleSearchAt != null) { subtitleSearchAt = null }
+    val canAddSubtitles = !plan.streamUrl.startsWith("file:")
+    val addSubtitles: ((Double) -> Unit)? = if (canAddSubtitles && pluginState.showsAddSubtitles(plan.item.kind)) {
+        { position -> subtitleSearchAt = position }
+    } else {
+        null
+    }
     var segments by remember(plan.item.id) { mutableStateOf(emptyList<app.zelefin.client.plugins.SkipSegment>()) }
     LaunchedEffect(plan.item.id) { segments = plugins.skipSegments(plan.item.id) }
     var nextEpisode by remember(plan.item.id) { mutableStateOf<MediaItem?>(null) }
@@ -310,7 +340,25 @@ fun PlayerScreen(
             nextEpisode = nextEpisode,
             nextArtwork = nextArtwork,
             onPlayNext = onPlayNext,
+            onAddSubtitles = addSubtitles,
+            suspended = subtitleSearchAt != null,
+            onAdaptiveBitrate = onAdaptiveBitrate,
         )
+        if (subtitleSheet.displayed != null) {
+            ZelefinSheetScrim(subtitleSheet.progress)
+            ZelefinSheetSurface(subtitleSheet.progress) {
+                OpenSubtitlesSheet(
+                    item = plan.item,
+                    plugins = plugins,
+                    onClose = {
+                        val position = subtitleSearchAt
+                        subtitleSearchAt = null
+                        if (subtitleSaved && position != null) onReload(position)
+                    },
+                    onSaved = { subtitleSaved = true },
+                )
+            }
+        }
     }
 }
 
