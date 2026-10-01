@@ -98,6 +98,10 @@ final class JellyfinByteRangeReader: DirectPlayByteSource, @unchecked Sendable {
         lock.unlock()
 
         guard want > 0 else { return 0 }
+        lock.lock()
+        let closed = isClosed
+        lock.unlock()
+        guard !closed else { return -1 }
         let data = fetch(offset: fetchPos, length: want, seekFill: seekFill)
 
         lock.lock()
@@ -256,6 +260,9 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
     private var session: URLSession!
     private let lock = NSLock()
     private var inflight: [Int: RangeExchange] = [:]
+    /// `URLSession.dataTask` raises an uncaught ObjC exception after `invalidateAndCancel`.
+    /// Pause can overlap a demuxer read with session teardown, so that call must not happen.
+    private var closed = false
 
     init(timeout: TimeInterval) {
         self.timeout = timeout
@@ -331,6 +338,9 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
     }
 
     func close() {
+        lock.lock()
+        closed = true
+        lock.unlock()
         session.invalidateAndCancel()
     }
 
@@ -363,8 +373,13 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
             for (name, value) in headers {
                 request.setValue(value, forHTTPHeaderField: name)
             }
-            let task = session.dataTask(with: request)
             lock.lock()
+            if closed {
+                lock.unlock()
+                exchange.finish()
+                return exchange.snapshot
+            }
+            let task = session.dataTask(with: request)
             inflight[task.taskIdentifier] = exchange
             lock.unlock()
             exchange.task = task

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,9 +24,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import app.zelefin.core.ArtworkDiskKey
 import app.zelefin.core.ArtworkUrls
 import app.zelefin.core.MediaItem
+import app.zelefin.core.MediaKind
 import app.zelefin.core.SavedSession
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -117,6 +122,58 @@ fun artworkCandidates(item: MediaItem, session: SavedSession?, landscape: Boolea
         item.backdropUrl?.let { urls += it }
     }
     return urls.toList()
+}
+
+/** Untagged box sets use Jellyfin’s generated 2×2, which leaves a grey cell for a child with no poster. */
+fun MediaItem.usesGeneratedCollage(): Boolean =
+    kind == MediaKind.Collection && primaryImageTag.isNullOrBlank() && posterUrl.isNullOrBlank()
+
+val LocalCollectionPosters = staticCompositionLocalOf<suspend (String) -> List<MediaItem>> {
+    { _ -> emptyList() }
+}
+
+@Composable
+fun CollectionArtwork(
+    item: MediaItem,
+    session: SavedSession?,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+) {
+    val load = LocalCollectionPosters.current
+    var members by remember(item.id) { mutableStateOf<List<MediaItem>?>(null) }
+    LaunchedEffect(item.id) {
+        members = load(item.id)
+    }
+    val posters = members.orEmpty().filter { !it.primaryImageTag.isNullOrBlank() }.take(4)
+    when {
+        members == null -> Box(modifier.background(Color(0xFF1C1C1E)))
+        posters.isEmpty() -> CachedArtwork(
+            urls = artworkCandidates(item, session, landscape = false),
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
+            modifier = modifier.background(Color(0xFF1C1C1E)),
+        )
+        else -> CollectionCollage(posters, session, modifier)
+    }
+}
+
+@Composable
+private fun CollectionCollage(posters: List<MediaItem>, session: SavedSession?, modifier: Modifier) {
+    val rows = if (posters.size <= 2) listOf(posters) else listOf(posters.take(2), posters.drop(2).take(2))
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        rows.forEach { row ->
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                row.forEach { poster ->
+                    CachedArtwork(
+                        urls = artworkCandidates(poster, session, landscape = false),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF1C1C1E)),
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** Same hairline as Vellum Android `LyraArtwork`: clip, then a 0.5dp white edge at 10%. */

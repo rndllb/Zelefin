@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +55,7 @@ import app.zelefin.client.ui.ProfileScreen
 import app.zelefin.client.ui.ProfilesScreen
 import app.zelefin.client.ui.SettingsScreen
 import app.zelefin.client.ui.SettingsTopicScreen
+import app.zelefin.client.ui.LocalCollectionPosters
 import app.zelefin.client.ui.LocalZelefinGlassHost
 import app.zelefin.client.ui.LocalZelefinHaze
 import app.zelefin.client.ui.ZelefinCyan
@@ -97,6 +100,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val model: ZelefinModel = viewModel()
             val state by model.state.collectAsState()
+            LifecycleEventEffect(Lifecycle.Event.ON_START) { model.refreshLibraryStats() }
             PushEffects(model, state)
             val configuration = LocalConfiguration.current
             val tablet = configuration.smallestScreenWidthDp >= 600
@@ -140,6 +144,7 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalZelefinHaze provides hazeState,
                     LocalZelefinGlassHost provides glassHost,
+                    LocalCollectionPosters provides model::collectionPosterMembers,
                 ) {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
                     Box(
@@ -255,6 +260,7 @@ private fun ZelefinScreen(
             onLibraryBack = model::back,
             onLibraryQuery = model::applyLibraryQuery,
             onLibraryRefresh = model::refreshLibraryGrid,
+            onOverviewRefresh = model::refreshLibraryOverview,
             onLibraryFilters = model::loadLibraryFilters,
             onLibraryLayout = model::updateLibraryLayout,
             onResetLibraryLayout = model::resetLibraryLayout,

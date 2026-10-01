@@ -206,6 +206,7 @@ struct LibraryView: View {
                             LabeledPortraitCard(
                                 title: item.browsingCardTitle,
                                 imageURL: session.library?.artworkURL(for: item, style: .labeledPortrait),
+                                collection: item,
                                 width: size.width,
                                 height: size.height
                             )
@@ -453,9 +454,16 @@ private struct LibraryRoomBand: View {
         }
     }
 
+    private var fanArt: [MediaItem] {
+        let usable = covers.filter { item in
+            !item.usesGeneratedCollage && (item.primaryImageTag != nil || item.posterURL != nil)
+        }
+        return Array((usable.isEmpty ? covers : usable).prefix(4))
+    }
+
     @ViewBuilder
     private var fan: some View {
-        let art = Array(covers.prefix(4))
+        let art = fanArt
         if art.isEmpty {
             Image(systemName: library.libraryKind.systemImage)
                 .font(.system(size: 34, weight: .medium))

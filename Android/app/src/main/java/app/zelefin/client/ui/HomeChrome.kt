@@ -152,7 +152,7 @@ fun HomeFeedPage(
         modifier = Modifier.fillMaxSize(),
         indicator = {
             PullToRefreshDefaults.Indicator(
-                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding(),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = statusTop + HomeHeaderHeight - 36.dp),
                 isRefreshing = isRefreshing,
                 state = refreshState,
                 containerColor = Color(0xFF1C1C1E),
@@ -221,7 +221,7 @@ fun HomeFeedPage(
                         "Browse by Collection", feed.collections, session, landscape = false, onOpen,
                         onSeeAll = { onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.AllCollections)) },
                         card = { item ->
-                            LabeledPortrait(item.name, artworkCandidates(item, session, landscape = false), Modifier.width(124.dp)) {
+                            LabeledPortrait(item.name, artworkCandidates(item, session, landscape = false), Modifier.width(124.dp), item, session) {
                                 onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.Collection(item.id, item.name)))
                             }
                         },

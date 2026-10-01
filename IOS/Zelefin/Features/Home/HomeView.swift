@@ -230,7 +230,8 @@ struct MediaRow: View {
             } else {
                 LabeledPortraitCard(
                     title: item.browsingCardTitle,
-                    imageURL: url
+                    imageURL: url,
+                    collection: item.kind == .collection ? item : nil
                 )
             }
         }
@@ -458,6 +459,7 @@ struct CatalogCardGridView: View {
                                 LabeledPortraitCard(
                                     title: item.browsingCardTitle,
                                     imageURL: session.library?.artworkURL(for: item, style: .labeledPortrait),
+                                    collection: item.kind == .collection ? item : nil,
                                     width: size.width,
                                     height: size.height
                                 )

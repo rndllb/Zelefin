@@ -177,10 +177,6 @@ struct RemoteImagePickerView: View {
     @State private var errorMessage: String?
     @State private var busyID: String?
 
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: CGFloat(kind.gridMinimum)), spacing: 10)]
-    }
-
     var body: some View {
         NavigationStack {
             List {
@@ -219,31 +215,7 @@ struct RemoteImagePickerView: View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
                 SettingsFieldLabel(title: "Artwork")
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(RemoteArtworkKind.allCases) { option in
-                        Button {
-                            kind = option
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: option.systemImage)
-                                    .font(.caption.weight(.bold))
-                                Text(option.title)
-                                    .font(.caption.weight(.bold))
-                                    .lineLimit(1)
-                            }
-                            .foregroundStyle(kind == option ? LoginPalette.actionLabel : LoginPalette.primaryText)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(kind == option ? Color.accentColor : Color.white.opacity(0.08))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(busyID != nil)
-                        .accessibilityAddTraits(kind == option ? .isSelected : [])
-                    }
-                }
+                kindButtons
             }
             .settingsLoginCard()
             .settingsCardRow()
@@ -282,7 +254,7 @@ struct RemoteImagePickerView: View {
                         .settingsLoginCard()
                         .settingsCardRow()
                 }
-                LazyVGrid(columns: columns, spacing: 10) {
+                FixedColumnGrid(minimum: CGFloat(kind.gridMinimum), spacing: 10) {
                     ForEach(images) { image in
                         artworkTile(image)
                     }
@@ -306,6 +278,7 @@ struct RemoteImagePickerView: View {
                     aspectRatio: kind.previewAspectRatio,
                     contentMode: kind == .logo ? .fit : .fill
                 )
+                .aspectRatio(kind.previewAspectRatio, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     if busyID == image.id {
@@ -333,6 +306,47 @@ struct RemoteImagePickerView: View {
         .accessibilityLabel(image.sizeLabel.map { "\(image.provider), \($0)" } ?? image.provider)
     }
 
+    /// Two columns of intrinsic-height buttons. A `LazyVGrid` in this `List` reports the
+    /// proposed row height back as its own, so every type tap adds another empty band.
+    private var kindButtons: some View {
+        let options = Array(RemoteArtworkKind.allCases)
+        let rows = (options.count + 1) / 2
+        return VStack(spacing: 8) {
+            ForEach(0..<rows, id: \.self) { row in
+                HStack(spacing: 8) {
+                    kindButton(options[row * 2])
+                    if row * 2 + 1 < options.count {
+                        kindButton(options[row * 2 + 1])
+                    }
+                }
+            }
+        }
+    }
+
+    private func kindButton(_ option: RemoteArtworkKind) -> some View {
+        Button {
+            kind = option
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: option.systemImage)
+                    .font(.caption.weight(.bold))
+                Text(option.title)
+                    .font(.caption.weight(.bold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(kind == option ? LoginPalette.actionLabel : LoginPalette.primaryText)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 11)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(kind == option ? Color.accentColor : Color.white.opacity(0.08))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(busyID != nil)
+        .accessibilityAddTraits(kind == option ? .isSelected : [])
+    }
+
     private func load() async {
         isLoading = true
         busyID = nil
@@ -358,5 +372,65 @@ struct RemoteImagePickerView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+/// Column grid whose height is the tiles, never the height the parent proposed.
+/// `LazyVGrid` inside a `List` echoes that proposal, so the row grows on every update.
+private struct FixedColumnGrid: Layout {
+    var minimum: CGFloat
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minimum
+        let spec = columns(width: width, count: subviews.count)
+        var height: CGFloat = 0
+        for row in 0..<spec.rows {
+            if row > 0 { height += spacing }
+            height += rowHeight(row: row, spec: spec, subviews: subviews)
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let spec = columns(width: bounds.width, count: subviews.count)
+        var y = bounds.minY
+        for row in 0..<spec.rows {
+            let height = rowHeight(row: row, spec: spec, subviews: subviews)
+            var x = bounds.minX
+            let start = row * spec.count
+            let end = min(start + spec.count, subviews.count)
+            for index in start..<end {
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(width: spec.tileWidth, height: height)
+                )
+                x += spec.tileWidth + spacing
+            }
+            y += height + spacing
+        }
+    }
+
+    private func rowHeight(row: Int, spec: ColumnSpec, subviews: Subviews) -> CGFloat {
+        let start = row * spec.count
+        let end = min(start + spec.count, subviews.count)
+        return (start..<end).reduce(0) { tallest, index in
+            max(tallest, subviews[index].sizeThatFits(ProposedViewSize(width: spec.tileWidth, height: nil)).height)
+        }
+    }
+
+    private func columns(width: CGFloat, count: Int) -> ColumnSpec {
+        let available = max(width, minimum)
+        let countAcross = max(1, Int((available + spacing) / (minimum + spacing)))
+        let tileWidth = (available - spacing * CGFloat(countAcross - 1)) / CGFloat(countAcross)
+        let rows = count == 0 ? 0 : Int(ceil(Double(count) / Double(countAcross)))
+        return ColumnSpec(count: countAcross, rows: rows, tileWidth: tileWidth)
+    }
+
+    private struct ColumnSpec {
+        var count: Int
+        var rows: Int
+        var tileWidth: CGFloat
     }
 }

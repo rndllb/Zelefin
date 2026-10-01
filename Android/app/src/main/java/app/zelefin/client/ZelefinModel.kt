@@ -116,6 +116,7 @@ data class ZelefinUiState(
     val libraryOverview: LibraryOverview = LibraryOverview(),
     val libraryLayout: LibraryLayout = LibraryLayout(),
     val librariesLoading: Boolean = false,
+    val libraryRefreshing: Boolean = false,
     val detail: TitleDetail? = null,
     val quickConnect: QuickConnectHandshake? = null,
     val homeRefreshing: Boolean = false,
@@ -164,7 +165,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private var movieCatalogJob: Job? = null
     private var showCatalogJob: Job? = null
     private var overviewJob: Job? = null
-    /** The account whose Library overview is loaded; the tab only reloads it on a cold start or account switch. */
+    /** The account whose Library rooms are loaded. Counts still refresh on resume and pull. */
     private var overviewLoadedFor: String? = null
     private val gridJobs = mutableMapOf<LibraryRoute, Job>()
     private var silo: SiloClient? = null
@@ -621,6 +622,14 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         return jellyfinClient().collectionEditor(UUID.fromString(session.userId), itemId)
     }
 
+    suspend fun collectionPosterMembers(parentId: String): List<MediaItem> {
+        val session = _state.value.session ?: return emptyList()
+        if (session.usesSilo) return emptyList()
+        return runCatching {
+            jellyfinClient().collectionPosterMembers(UUID.fromString(session.userId), parentId)
+        }.getOrDefault(emptyList())
+    }
+
     suspend fun setCollectionMember(collectionId: String, itemId: String, member: Boolean) {
         val client = jellyfinClient()
         if (member) client.addToCollection(collectionId, itemId) else client.removeFromCollection(collectionId, itemId)
@@ -803,6 +812,19 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Movie, show, and episode totals. Called when the app returns to the foreground. */
+    fun refreshLibraryStats() {
+        if (_state.value.session == null) return
+        viewModelScope.launch {
+            val silo = _state.value.session?.backend == MediaBackend.Silo
+            val counts = runCatching {
+                if (silo) siloClient().serverCounts() else jellyfinClient().serverCounts(userUuid())
+            }.getOrNull()
+            if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
+            if (_state.value.libraries.isNotEmpty()) loadRoomDetails(onlyMissing = false)
+        }
+    }
+
     fun refreshLibrary() {
         plugins.ensureDetected()
         viewModelScope.launch {
@@ -819,6 +841,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess { feed ->
                     _state.update { it.copy(home = feed, homeRefreshing = false, message = null) }
                     _state.value.session?.let { snapshots.saveHome(it, feed, _state.value.libraries) }
+                    refreshLibraryStats()
                 }
                 .onFailure { error -> _state.update { it.copy(homeRefreshing = false, message = error.message) } }
         }
@@ -1359,6 +1382,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshLibraryGrid(route: LibraryRoute) = loadLibraryGrid(route, refreshing = true)
 
+    fun refreshLibraryOverview() = loadLibraryOverview(force = true)
+
     fun loadLibraryFilters(route: LibraryRoute) {
         viewModelScope.launch {
             val items = _state.value.libraryGrids[route]?.items.orEmpty()
@@ -1461,40 +1486,47 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadLibraryOverview() {
+    private fun loadLibraryOverview(force: Boolean = false) {
         val account = _state.value.session?.accountId
-        if (account != null && account == overviewLoadedFor && _state.value.libraries.isNotEmpty()) {
-            loadRoomDetails(onlyMissing = true)
+        if (!force && account != null && account == overviewLoadedFor && _state.value.libraries.isNotEmpty()) {
+            refreshLibraryStats()
             return
         }
         overviewJob?.cancel()
         overviewJob = viewModelScope.launch {
-            _state.update { it.copy(librariesLoading = it.libraries.isEmpty()) }
-            if (_state.value.libraries.isNotEmpty()) loadRoomDetails()
-            val silo = _state.value.session?.backend == MediaBackend.Silo
-            launch {
-                val counts = runCatching {
-                    if (silo) siloClient().serverCounts() else jellyfinClient().serverCounts(userUuid())
-                }.getOrNull()
-                if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
-            }
-            if (!silo) {
-                launch {
-                    val collections = jellyfinClient().collectionPreview(userUuid())
-                    _state.update { it.copy(libraryOverview = it.libraryOverview.copy(collections = collections)) }
+            val job = coroutineContext[Job]
+            if (force) _state.update { it.copy(libraryRefreshing = true) }
+            try {
+                _state.update { it.copy(librariesLoading = it.libraries.isEmpty()) }
+                if (_state.value.libraries.isNotEmpty()) loadRoomDetails()
+                val silo = _state.value.session?.backend == MediaBackend.Silo
+                val countsJob = launch {
+                    val counts = runCatching {
+                        if (silo) siloClient().serverCounts() else jellyfinClient().serverCounts(userUuid())
+                    }.getOrNull()
+                    if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
                 }
-            }
-            runCatching {
-                if (silo) siloClient().libraries() else jellyfinClient().libraries(userUuid())
-            }.onSuccess { rooms ->
-                val changed = rooms != _state.value.libraries
-                overviewLoadedFor = account
-                _state.update { it.copy(libraries = rooms, librariesLoading = false, message = null) }
-                _state.value.session?.let { snapshots.saveHome(it, _state.value.home, rooms) }
-                if (changed || _state.value.libraryOverview.covers.isEmpty()) loadRoomDetails()
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                _state.update { it.copy(librariesLoading = false, message = if (it.libraries.isEmpty()) error.message else it.message) }
+                if (!silo) {
+                    launch {
+                        val collections = jellyfinClient().collectionPreview(userUuid())
+                        _state.update { it.copy(libraryOverview = it.libraryOverview.copy(collections = collections)) }
+                    }
+                }
+                runCatching {
+                    if (silo) siloClient().libraries() else jellyfinClient().libraries(userUuid())
+                }.onSuccess { rooms ->
+                    val changed = rooms != _state.value.libraries
+                    overviewLoadedFor = account
+                    _state.update { it.copy(libraries = rooms, librariesLoading = false, message = null) }
+                    _state.value.session?.let { snapshots.saveHome(it, _state.value.home, rooms) }
+                    if (changed || _state.value.libraryOverview.covers.isEmpty()) loadRoomDetails()
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    _state.update { it.copy(librariesLoading = false, message = if (it.libraries.isEmpty()) error.message else it.message) }
+                }
+                countsJob.join()
+            } finally {
+                if (force && overviewJob == job) _state.update { it.copy(libraryRefreshing = false) }
             }
         }
     }

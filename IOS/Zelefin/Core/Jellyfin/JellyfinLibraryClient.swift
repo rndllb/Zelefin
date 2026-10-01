@@ -709,6 +709,13 @@ class JellyfinLibraryClient: @unchecked Sendable {
         )) ?? []
     }
 
+    /// Children that can fill a collection card. Untagged box sets otherwise show Jellyfin’s
+    /// generated collage, which leaves a grey quadrant for any child without a poster.
+    func collectionPosterMembers(parentID: String) async -> [MediaItem] {
+        let members = await collectionMembers(parentID: parentID)
+        return Array(members.filter { $0.primaryImageTag != nil }.prefix(4))
+    }
+
     func items(personID: String, query: CatalogBrowseQuery = .default, onPage: CatalogPageHandler? = nil) async throws -> [MediaItem] {
         try await pagedMediaItems(query: query, onPage: onPage) { start, limit in
             .init(

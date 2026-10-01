@@ -1286,6 +1286,10 @@ class JellyfinLibrary(
         return memberItems(userId, parent, recursive = true)
     }
 
+    /** Children that can fill a collection card. Untagged box sets otherwise show Jellyfin’s generated collage, which leaves a grey quadrant for any child without a poster. */
+    suspend fun collectionPosterMembers(userId: UUID, parentId: String): List<MediaItem> =
+        collectionMembers(userId, parentId).filter { !it.primaryImageTag.isNullOrBlank() }.take(4)
+
     private suspend fun memberItems(userId: UUID, parentId: UUID, recursive: Boolean): List<MediaItem> = runCatching {
         api.itemsApi.getItems(
             GetItemsRequest(

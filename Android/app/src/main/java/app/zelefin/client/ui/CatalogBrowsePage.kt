@@ -332,12 +332,16 @@ private fun CatalogPoster(item: MediaItem, session: SavedSession?, onClick: () -
             .clickable(onClick = onClick)
             .posterChrome(),
     ) {
-        CachedArtwork(
-            urls = artworkCandidates(item, session, landscape = false),
-            contentDescription = item.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.08f)),
-        )
+        if (item.usesGeneratedCollage()) {
+            CollectionArtwork(item, session, item.name, Modifier.fillMaxSize())
+        } else {
+            CachedArtwork(
+                urls = artworkCandidates(item, session, landscape = false),
+                contentDescription = item.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.08f)),
+            )
+        }
         ItemPosterMarks(item, portrait = true)
     }
 }

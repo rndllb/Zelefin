@@ -913,3 +913,16 @@ final class ExternalSubtitleSidecarTests: XCTestCase {
         )
     }
 }
+
+final class JellyfinByteRangeReaderTests: XCTestCase {
+    func testReadAfterCloseDoesNotAbort() {
+        let url = URL(string: "http://127.0.0.1:9/video.mkv")!
+        guard let reader = JellyfinByteRangeReader(url: url, headers: [:], knownSize: 4096, timeout: 1) else {
+            return XCTFail("reader")
+        }
+        reader.close()
+        var byte: UInt8 = 0
+        let count = withUnsafeMutablePointer(to: &byte) { reader.read($0, size: 1) }
+        XCTAssertEqual(count, -1)
+    }
+}

@@ -598,6 +598,7 @@ struct EpisodeShowcaseCard: View {
 struct LabeledPortraitCard: View {
     let title: String
     let imageURL: URL?
+    var collection: MediaItem? = nil
     var washColor: Color? = nil
     var width: CGFloat? = nil
     var height: CGFloat? = nil
@@ -636,8 +637,12 @@ struct LabeledPortraitCard: View {
             .background {
                 ZStack {
                     fallbackFill
-                    PosterImage(url: imageURL)
-                        .frame(width: fittedWidth, height: fittedHeight)
+                    if let collection, collection.usesGeneratedCollage {
+                        CollectionCover(item: collection, width: fittedWidth, height: fittedHeight)
+                    } else {
+                        PosterImage(url: imageURL)
+                            .frame(width: fittedWidth, height: fittedHeight)
+                    }
                 }
             }
             .overlay {
@@ -672,6 +677,76 @@ struct LabeledPortraitCard: View {
     private var fallbackFill: some View {
         Rectangle()
             .fill(Self.genreWash(for: title))
+    }
+}
+
+extension MediaItem {
+    /// Jellyfin draws an untagged box-set Primary as a 2×2 collage and leaves a grey cell
+    /// when a child has no poster.
+    var usesGeneratedCollage: Bool {
+        kind == .collection && primaryImageTag == nil && posterURL == nil
+    }
+}
+
+private struct CollectionCover: View {
+    @Environment(SessionStore.self) private var session
+    let item: MediaItem
+    let width: CGFloat
+    let height: CGFloat
+    @State private var members: [MediaItem]?
+
+    var body: some View {
+        Group {
+            if let members {
+                let posters = Array(members.prefix(4))
+                if posters.isEmpty {
+                    PosterImage(url: session.library?.primaryURL(for: item))
+                } else {
+                    CollectionCollage(posters: posters)
+                }
+            } else {
+                Color(red: 0.11, green: 0.11, blue: 0.11)
+            }
+        }
+        .frame(width: width, height: height)
+        .task(id: item.id) {
+            guard let client = session.library as? JellyfinLibraryClient else {
+                members = []
+                return
+            }
+            let loaded = await client.collectionPosterMembers(parentID: item.id)
+            guard !Task.isCancelled else { return }
+            members = loaded
+        }
+    }
+}
+
+private struct CollectionCollage: View {
+    @Environment(SessionStore.self) private var session
+    let posters: [MediaItem]
+
+    var body: some View {
+        let rows: [[MediaItem]] = posters.count <= 2
+            ? [posters]
+            : [Array(posters.prefix(2)), Array(posters.dropFirst(2).prefix(2))]
+        GeometryReader { geo in
+            let gaps = CGFloat(max(rows.count - 1, 0))
+            let rowHeight = max(0, (geo.size.height - gaps) / CGFloat(rows.count))
+            VStack(spacing: 1) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 1) {
+                        ForEach(row) { poster in
+                            PosterImage(
+                                url: session.library?.primaryURL(for: poster),
+                                contentMode: .fill,
+                                fill: Color(red: 0.11, green: 0.11, blue: 0.11)
+                            )
+                        }
+                    }
+                    .frame(height: rowHeight)
+                }
+            }
+        }
     }
 }
 

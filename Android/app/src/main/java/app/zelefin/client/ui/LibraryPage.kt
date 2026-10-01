@@ -54,8 +54,12 @@ import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -120,6 +124,8 @@ fun LibraryTabPage(
     onBack: () -> Unit,
     onQuery: (LibraryRoute, CatalogBrowseQuery) -> Unit,
     onRefresh: (LibraryRoute) -> Unit,
+    onOverviewRefresh: () -> Unit,
+    refreshing: Boolean,
     onFilters: (LibraryRoute) -> Unit,
     onLayout: (LibraryLayout) -> Unit,
     onResetLayout: () -> Unit,
@@ -138,7 +144,9 @@ fun LibraryTabPage(
     }
     ZelefinPush(motion) { path ->
         when (val route = path.lastOrNull()) {
-            null -> LibraryHome(state, bottomInset, onRoute, onLayout, onResetLayout, onCoversDock, onProfile, onSessions, onSettings, onSignOut)
+            null -> LibraryHome(
+                state, bottomInset, refreshing, onOverviewRefresh, onRoute, onLayout, onResetLayout, onCoversDock, onProfile, onSessions, onSettings, onSignOut,
+            )
             LibraryRoute.Genres -> GenresPage(state.libraryOverview.genres, state.libraryOverview.genresLoading, bottomInset, onBack) {
                 onRoute(LibraryRoute.Genre(it))
             }
@@ -176,9 +184,12 @@ fun LibraryTabPage(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun LibraryHome(
     state: ZelefinUiState,
     bottomInset: Dp,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     onRoute: (LibraryRoute) -> Unit,
     onLayout: (LibraryLayout) -> Unit,
     onResetLayout: () -> Unit,
@@ -227,6 +238,7 @@ private fun LibraryHome(
                 }
                 else -> {
                     val listState = rememberLazyListState()
+                    val refreshState = rememberPullToRefreshState()
                     TrackHazeScroll(listState.isScrollInProgress)
                     var previousOffset by remember { mutableIntStateOf(0) }
                     val hasStats = overview.counts?.let { it.total > 0 } == true
@@ -248,6 +260,21 @@ private fun LibraryHome(
                                 }
                             }
                     }
+                    PullToRefreshBox(
+                        isRefreshing = refreshing,
+                        onRefresh = onRefresh,
+                        state = refreshState,
+                        modifier = Modifier.fillMaxSize(),
+                        indicator = {
+                            PullToRefreshDefaults.Indicator(
+                                modifier = Modifier.align(Alignment.TopCenter).padding(top = headerHeight - 36.dp),
+                                isRefreshing = refreshing,
+                                state = refreshState,
+                                containerColor = Color(0xFF1C1C1E),
+                                color = ZelefinCyan,
+                            )
+                        },
+                    ) {
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(top = headerHeight, bottom = bottomInset + 32.dp),
@@ -298,6 +325,7 @@ private fun LibraryHome(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -453,7 +481,7 @@ private fun RoomBand(
                     FitText(label, style = RoomCaptionStyle, maxLines = 4, minScale = RoomNameMinScale)
                 }
             }
-            if (showsArtwork) PosterFan(room.kind, covers.take(4), session)
+            if (showsArtwork) PosterFan(room.kind, fanCovers(covers), session)
         }
     }
 }
@@ -517,6 +545,13 @@ private fun FitText(text: String, style: TextStyle, maxLines: Int, minScale: Flo
     }
 }
 
+private fun fanCovers(covers: List<MediaItem>): List<MediaItem> {
+    val usable = covers.filter { cover ->
+        !cover.usesGeneratedCollage() && (cover.primaryImageTag != null || !cover.posterUrl.isNullOrBlank())
+    }
+    return (if (usable.isNotEmpty()) usable else covers).take(4)
+}
+
 @Composable
 private fun PosterFan(kind: LibraryKind, art: List<MediaItem>, session: SavedSession?) {
     val poster = FanPoster
@@ -573,7 +608,7 @@ private fun CollectionGrid(items: List<MediaItem>, session: SavedSession?, onOpe
             items.chunked(count).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     row.forEach { item ->
-                        LabeledPortrait(item.name, artworkCandidates(item, session, landscape = false), Modifier.weight(1f)) { onOpen(item) }
+                        LabeledPortrait(item.name, artworkCandidates(item, session, landscape = false), Modifier.weight(1f), item, session) { onOpen(item) }
                     }
                     repeat(count - row.size) { Spacer(Modifier.weight(1f)) }
                 }
@@ -583,19 +618,30 @@ private fun CollectionGrid(items: List<MediaItem>, session: SavedSession?, onOpe
 }
 
 @Composable
-internal fun LabeledPortrait(title: String, urls: List<String>, modifier: Modifier, onClick: () -> Unit) {
+internal fun LabeledPortrait(
+    title: String,
+    urls: List<String>,
+    modifier: Modifier,
+    item: MediaItem? = null,
+    session: SavedSession? = null,
+    onClick: () -> Unit,
+) {
     Box(
         modifier
             .aspectRatio(2f / 3f)
             .posterChrome()
             .clickable(onClick = onClick),
     ) {
-        CachedArtwork(
-            urls = urls,
-            contentDescription = title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().background(CardFill),
-        )
+        if (item != null && item.usesGeneratedCollage()) {
+            CollectionArtwork(item, session, title, Modifier.fillMaxSize())
+        } else {
+            CachedArtwork(
+                urls = urls,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().background(CardFill),
+            )
+        }
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.82f)),
