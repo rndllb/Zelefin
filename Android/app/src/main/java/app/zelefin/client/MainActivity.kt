@@ -185,6 +185,7 @@ class MainActivity : ComponentActivity() {
                     // Settings pages live in the sheet; their confirms and pickers still need the glass overlay.
                     if (sheetUp) glassHost.content?.invoke()
                     app.zelefin.client.ui.DownloadNoticeAlert()
+                    app.zelefin.client.ui.SessionMessageAlert()
                     if (showDock) {
                         ZelefinFloatingDock(
                             currentTab = state.tab,

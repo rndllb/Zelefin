@@ -9,6 +9,15 @@ class ZelefinMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        val inbound = app.zelefin.client.session.SessionDisplayMessage.fromPush(
+            message.data,
+            message.notification?.title,
+            message.notification?.body,
+        )
+        if (inbound != null) {
+            app.zelefin.client.session.SessionMessageCenter.present(applicationContext, inbound, fromPush = true)
+            return
+        }
         if (!ZelefinPush.isEnabled(applicationContext)) return
         ZelefinPush.show(
             applicationContext,

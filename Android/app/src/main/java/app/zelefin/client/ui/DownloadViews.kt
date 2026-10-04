@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -184,6 +185,32 @@ fun DownloadNoticeAlert() {
         val hazeState = haze ?: return@PresentZelefinOverlay
         val shown = current ?: return@PresentZelefinOverlay
         ZelefinGlassAlert(hazeState = hazeState, title = shown.title, message = shown.message, onDismiss = ZelefinDownloads::dismissNotice)
+    }
+}
+
+/** Jellyfin DisplayMessage while the app is open. Closed-app delivery is the Zelefin plugin push. */
+@Composable
+fun SessionMessageAlert() {
+    val inbound by app.zelefin.client.session.SessionMessageCenter.message.collectAsState()
+    val haze = LocalZelefinHaze.current
+    val current = inbound
+    LaunchedEffect(current?.id) {
+        val timeout = current?.timeoutMs ?: return@LaunchedEffect
+        if (timeout <= 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(timeout.toLong())
+        if (app.zelefin.client.session.SessionMessageCenter.message.value?.id == current.id) {
+            app.zelefin.client.session.SessionMessageCenter.dismiss()
+        }
+    }
+    PresentZelefinOverlay(visible = current != null && haze != null) {
+        val hazeState = haze ?: return@PresentZelefinOverlay
+        val shown = current ?: return@PresentZelefinOverlay
+        ZelefinGlassAlert(
+            hazeState = hazeState,
+            title = shown.alertTitle,
+            message = shown.alertBody ?: shown.text,
+            onDismiss = app.zelefin.client.session.SessionMessageCenter::dismiss,
+        )
     }
 }
 

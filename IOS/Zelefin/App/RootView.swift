@@ -64,6 +64,22 @@ struct RootView: View {
             } message: {
                 Text(session.authNotice ?? "")
             }
+            .alert(
+                session.incomingSessionMessage?.alertTitle ?? "Message",
+                isPresented: Binding(
+                    get: { session.incomingSessionMessage != nil },
+                    set: { if !$0 { session.incomingSessionMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { session.incomingSessionMessage = nil }
+            } message: {
+                if let body = session.incomingSessionMessage?.alertBody {
+                    Text(body)
+                }
+            }
+            .task(id: session.incomingSessionMessage?.id) {
+                await dismissSessionMessageIfTimedOut()
+            }
             .preferredColorScheme(.dark)
             .zelefinAccentTint()
             .task {
@@ -98,6 +114,14 @@ struct RootView: View {
         if LibraryAlertCenter.shared.takePendingScheduledTasks() {
             guard session.isSignedIn else { return }
             profileSheet = .scheduledTasks
+        }
+    }
+
+    private func dismissSessionMessageIfTimedOut() async {
+        guard let message = session.incomingSessionMessage, let timeout = message.timeoutMs, timeout > 0 else { return }
+        try? await Task.sleep(for: .milliseconds(timeout))
+        if session.incomingSessionMessage?.id == message.id {
+            session.incomingSessionMessage = nil
         }
     }
 }
@@ -146,6 +170,10 @@ private struct RootNotificationModifier: ViewModifier {
                 _ = LibraryAlertCenter.shared.takePendingScheduledTasks()
                 guard session.isSignedIn else { return }
                 profileSheet = .scheduledTasks
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinSessionMessage)) { notification in
+                guard let message = notification.object as? SessionDisplayMessage else { return }
+                session.incomingSessionMessage = message
             }
     }
 }

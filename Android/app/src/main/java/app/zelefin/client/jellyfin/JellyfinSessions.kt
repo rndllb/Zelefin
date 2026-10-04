@@ -11,8 +11,10 @@ import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.remoteImageApi
 import org.jellyfin.sdk.api.client.extensions.sessionApi
 import org.jellyfin.sdk.api.client.extensions.syncPlayApi
+import org.jellyfin.sdk.model.api.ClientCapabilitiesDto
 import org.jellyfin.sdk.model.api.GeneralCommandType
 import org.jellyfin.sdk.model.api.ImageType
+import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.JoinGroupRequestDto
 import org.jellyfin.sdk.model.api.MessageCommand
 import org.jellyfin.sdk.model.api.MetadataRefreshMode
@@ -158,6 +160,28 @@ suspend fun JellyfinLibrary.sendSessionMessage(sessionId: String, text: String) 
     if (trimmed.isEmpty()) return@withContext
     sdk.sessionApi.sendMessageCommand(sessionId, MessageCommand(header = "Zelefin", text = trimmed, timeoutMs = 8000))
     Unit
+}
+
+/** Lets Jellyfin send DisplayMessage and other session commands to this device. */
+suspend fun JellyfinLibrary.advertiseSessionCapabilities() = withContext(Dispatchers.IO) {
+    sdk.sessionApi.postFullCapabilities(
+        data = ClientCapabilitiesDto(
+            playableMediaTypes = listOf(MediaType.VIDEO),
+            supportedCommands = listOf(
+                GeneralCommandType.PLAY,
+                GeneralCommandType.PLAY_STATE,
+                GeneralCommandType.PLAY_NEXT,
+                GeneralCommandType.DISPLAY_MESSAGE,
+                GeneralCommandType.MUTE,
+                GeneralCommandType.UNMUTE,
+                GeneralCommandType.TOGGLE_MUTE,
+                GeneralCommandType.VOLUME_UP,
+                GeneralCommandType.VOLUME_DOWN,
+            ),
+            supportsMediaControl = true,
+            supportsPersistentIdentifier = true,
+        ),
+    )
 }
 
 suspend fun JellyfinLibrary.syncPlayGroups(): List<SyncPlayGroup> = withContext(Dispatchers.IO) {

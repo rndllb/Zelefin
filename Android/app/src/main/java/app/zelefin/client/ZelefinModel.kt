@@ -56,6 +56,7 @@ import app.zelefin.client.jellyfin.syncPlaySetQueue
 import app.zelefin.client.plugins.HomeQueueHideStore
 import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.client.push.ZelefinPush
+import app.zelefin.client.session.SessionSocket
 import app.zelefin.client.session.SessionVault
 import app.zelefin.client.session.SnapshotStore
 import app.zelefin.client.silo.SiloClient
@@ -202,6 +203,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private val homeNetworks = HomeNetworkStore(application)
     private var routeJob: Job? = null
     private var pendingSilo: SiloClient? = null
+    private val sessionSocket = SessionSocket(application, viewModelScope)
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = refreshRoute()
         override fun onLost(network: Network) = refreshRoute()
@@ -229,6 +231,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             refreshLibrary()
+            bindSessionSocket(saved)
         }
     }
 
@@ -1042,6 +1045,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** Signs out the current account only; like iOS, the next saved account takes over. */
     fun signOut() {
         val current = _state.value.session
+        sessionSocket.disconnect()
         plugins.unregisterPush(current)
         val remaining = if (current != null) vault.remove(current.accountId) else null
         if (current == null) vault.clear()
@@ -1237,6 +1241,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
         refreshRoute()
         refreshLibrary()
+        bindSessionSocket(session)
     }
 
     /** Uploads a new Jellyfin profile picture and saves the new image tag so every avatar reloads. */
@@ -1293,10 +1298,20 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        sessionSocket.disconnect()
         runCatching {
             getApplication<Application>().getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback)
         }
         super.onCleared()
+    }
+
+    private fun bindSessionSocket(session: SavedSession) {
+        if (session.backend != MediaBackend.Jellyfin) {
+            sessionSocket.disconnect()
+            return
+        }
+        val library = jellyfin ?: return
+        sessionSocket.connect(session, library)
     }
 
     private suspend fun signInJellyfin(url: String, username: String, password: String) {
@@ -1315,6 +1330,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         )
         _state.update { it.copy(busy = false, screen = Screen.Library) }
         refreshLibrary()
+        _state.value.session?.let(::bindSessionSocket)
     }
 
     private suspend fun signInSilo(url: String, username: String, password: String) {

@@ -85,6 +85,24 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let content = notification.request.content
+        let info = content.userInfo
+        if SessionDisplayMessage.isPush(info)
+            || (info[LibraryAlertUserInfo.kind] as? String) == SessionMessageCenter.kind
+        {
+            let inbound = SessionDisplayMessage.fromPush(
+                info,
+                fallbackTitle: content.title,
+                fallbackBody: content.body
+            )
+            DispatchQueue.main.async {
+                if let inbound {
+                    SessionMessageCenter.present(inbound)
+                }
+            }
+            completionHandler([])
+            return
+        }
         // A push already in flight when the switch went off should not still land on screen.
         completionHandler(LibraryAlertSettings.isEnabled ? [.banner, .sound, .list] : [])
     }
@@ -140,6 +158,14 @@ enum LibraryAlertDestination: Equatable, Sendable {
         let kind = userInfo[LibraryAlertUserInfo.kind] as? String
         if kind == LibraryAlert.Kind.scheduledTask.rawValue {
             return .scheduledTasks
+        }
+        if kind == SessionMessageCenter.kind {
+            return nil
+        }
+        if let type = userInfo["type"] as? String,
+           type.caseInsensitiveCompare(SessionMessageCenter.kind) == .orderedSame
+        {
+            return nil
         }
         if let itemID = userInfo[LibraryAlertUserInfo.itemID] as? String, !itemID.isEmpty {
             return .libraryItem(itemID)

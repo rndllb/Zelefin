@@ -139,10 +139,15 @@ class JellyfinLibrary(
     context: Context,
     private val baseUrl: String,
     accessToken: String? = null,
+    deviceId: String = app.zelefin.client.session.SessionVault(context.applicationContext).deviceId,
 ) {
     private val api: ApiClient = jellyfin(context).createApi(
         baseUrl = baseUrl,
         accessToken = accessToken,
+        deviceInfo = org.jellyfin.sdk.model.DeviceInfo(
+            id = deviceId,
+            name = reportedDeviceName(context),
+        ),
         httpClientOptions = HttpClientOptions(requestTimeout = 60.seconds, socketTimeout = 60.seconds),
     )
 
@@ -1264,6 +1269,17 @@ class JellyfinLibrary(
             val factory = OkHttpFactory(GatewayHttp.client)
             apiClientFactory = factory
             socketConnectionFactory = factory
+        }
+
+        private fun reportedDeviceName(context: Context): String {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                val name = android.provider.Settings.Global.getString(
+                    context.contentResolver,
+                    android.provider.Settings.Global.DEVICE_NAME,
+                )
+                if (!name.isNullOrBlank()) return name
+            }
+            return android.os.Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android"
         }
 
         fun deviceProfile(maxBitrate: Int = MAX_BITRATE): DeviceProfile {

@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import app.zelefin.client.BuildConfig
 import app.zelefin.client.MainActivity
 import app.zelefin.client.R
+import app.zelefin.client.session.SessionDisplayMessage
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import java.util.UUID
@@ -181,5 +182,18 @@ object ZelefinPush {
             NotificationManagerCompat.from(context).notify(itemId, requestCode, notification)
         } catch (_: SecurityException) {
         }
+    }
+
+    fun showSessionMessage(context: Context, message: SessionDisplayMessage) {
+        show(
+            context,
+            mapOf(
+                "kind" to SessionDisplayMessage.KIND,
+                "title" to message.alertTitle,
+                "body" to (message.alertBody ?: message.text),
+            ),
+            message.alertTitle,
+            message.alertBody ?: message.text,
+        )
     }
 }

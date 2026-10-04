@@ -66,5 +66,44 @@ final class RemoteControlTests: XCTestCase {
         XCTAssertEqual(RemoteControlProfile.capabilities.isSupportsMediaControl, true)
         XCTAssertEqual(RemoteControlProfile.capabilities.playableMediaTypes, [.video])
         XCTAssertTrue(RemoteControlProfile.capabilities.supportedCommands?.contains(.mute) == true)
+        XCTAssertTrue(RemoteControlProfile.capabilities.supportedCommands?.contains(.displayMessage) == true)
+    }
+
+    func testDisplayMessageParsesGeneralCommandPayload() throws {
+        let json = Data(
+            #"""
+            {"MessageType":"GeneralCommand","Data":{"Name":"DisplayMessage","Arguments":{"Header":"Zelefin","Text":"Server restart in 5 minutes","TimeoutMs":"8000"}}}
+            """#.utf8
+        )
+        let message = SessionDisplayMessage.parse(json: json)
+        XCTAssertEqual(message?.header, "Zelefin")
+        XCTAssertEqual(message?.text, "Server restart in 5 minutes")
+        XCTAssertEqual(message?.timeoutMs, 8000)
+    }
+
+    func testDisplayMessageParsesNumericTimeoutAndAlternateKeys() throws {
+        let json = Data(
+            #"""
+            {"MessageType":"DisplayMessage","Data":{"header":"Admin","text":"Hello","timeoutMs":5000}}
+            """#.utf8
+        )
+        let message = SessionDisplayMessage.parse(json: json)
+        XCTAssertEqual(message?.header, "Admin")
+        XCTAssertEqual(message?.text, "Hello")
+        XCTAssertEqual(message?.timeoutMs, 5000)
+    }
+
+    func testDisplayMessageParsesPluginPush() {
+        let userInfo: [AnyHashable: Any] = [
+            "type": "sessionMessage",
+            "kind": "sessionMessage",
+            "title": "Admin",
+            "body": "Hello from the dashboard"
+        ]
+        XCTAssertTrue(SessionDisplayMessage.isPush(userInfo))
+        let message = SessionDisplayMessage.fromPush(userInfo)
+        XCTAssertEqual(message?.header, "Admin")
+        XCTAssertEqual(message?.text, "Hello from the dashboard")
+        XCTAssertNil(LibraryAlertDestination.parse(userInfo))
     }
 }

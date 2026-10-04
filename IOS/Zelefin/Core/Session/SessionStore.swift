@@ -51,6 +51,7 @@ final class SessionStore {
     var syncPlayGroupName: String?
     var syncPlayPlaylistItemID: String?
     var pendingPlayerItem: MediaItem?
+    var incomingSessionMessage: SessionDisplayMessage?
 
     var canManageSubtitles: Bool {
         RemoteSubtitleOffer.canManageSubtitles(
@@ -813,6 +814,7 @@ final class SessionStore {
         prefetchTask?.cancel()
         prefetchTask = nil
         RemoteControlHub.shared.disconnect()
+        incomingSessionMessage = nil
         session = nil
         client = nil
         library = nil

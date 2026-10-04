@@ -61,6 +61,7 @@ enum RemoteControlProfile {
             .play,
             .playState,
             .playNext,
+            .displayMessage,
             .mute,
             .unmute,
             .toggleMute,
@@ -192,6 +193,10 @@ final class RemoteControlHub {
         case let .string(value): data = Data(value.utf8)
         @unknown default: return
         }
+        let shownDisplayMessage = SessionDisplayMessage.parse(json: data).map {
+            SessionMessageCenter.present($0)
+            return true
+        } ?? false
         guard let payload = try? Self.decoder.decode(OutboundWebSocketMessage.self, from: data) else { return }
         switch payload {
         case let .forceKeepAliveMessage(keep):
@@ -209,7 +214,11 @@ final class RemoteControlHub {
                 apply(action)
             }
         case let .generalCommandMessage(message):
-            if let name = message.data?.name, let action = RemotePlaybackAction.general(name) {
+            if message.data?.name == .displayMessage {
+                if !shownDisplayMessage, let inbound = SessionDisplayMessage.parse(arguments: message.data?.arguments) {
+                    SessionMessageCenter.present(inbound)
+                }
+            } else if let name = message.data?.name, let action = RemotePlaybackAction.general(name) {
                 apply(action)
             }
         case let .playMessage(message):
