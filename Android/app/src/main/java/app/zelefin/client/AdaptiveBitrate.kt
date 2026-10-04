@@ -103,13 +103,12 @@ data class NetworkPathSnapshot(
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkTransport.Cellular
                 else -> NetworkTransport.Other
             }
-            val constrained = runCatching {
-                manager.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
-            }.getOrDefault(false)
             return NetworkPathSnapshot(
                 transport = transport,
                 isExpensive = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
-                isConstrained = constrained,
+                // Data Saver only limits background transfers. Playback is in the foreground, so
+                // that flag must not collapse the cap to 720 kbps and force a transcode.
+                isConstrained = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED),
                 isSatisfied = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
             )
         }
@@ -206,11 +205,15 @@ object AdaptiveBitrateStore {
     }
 
     fun resolvedBitsPerSecond(context: Context, sourceBitrate: Int?): Int {
+        val selected = PlaybackPreferences.selectedQuality(context)
+        if (!PlaybackPreferences.adaptiveBitrate(context)) return selected.bitsPerSecond
         val path = NetworkPathSnapshot.current(context)
+        val measured = lastProbe?.takeIf { AdaptiveBitratePolicy.isCacheValid(it, path) }?.bitsPerSecond
+            ?: return selected.bitsPerSecond
         return AdaptiveBitratePolicy.quality(
-            enabled = PlaybackPreferences.adaptiveBitrate(context),
-            selected = PlaybackPreferences.selectedQuality(context),
-            budgetBitsPerSecond = cachedBudgetBitsPerSecond(path),
+            enabled = true,
+            selected = selected,
+            budgetBitsPerSecond = AdaptiveBitratePolicy.budgetBitsPerSecond(measured, path),
             sourceBitsPerSecond = sourceBitrate,
         ).bitsPerSecond
     }

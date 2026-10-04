@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -53,6 +54,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.zelefin.client.ZelefinModel
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.zelefin.client.BrowsePage
@@ -97,6 +100,10 @@ fun BrowseScreen(
         when (page) {
             is BrowsePage.Library -> {
                 val route = page.route
+                if (route is LibraryRoute.Person) {
+                    PersonDetailPage(route, state, onBack, onOpen) { onEnsureGrid(route) }
+                    return@Box
+                }
                 LaunchedEffect(route) { onEnsureGrid(route) }
                 val grid = state.libraryGrids[route] ?: LibraryGridState()
                 CatalogBrowsePage(
@@ -323,6 +330,108 @@ private fun QueueRow(item: MediaItem, session: SavedSession?, kindLabel: String?
                 .padding(6.dp),
         )
     }
+}
+
+@Composable
+private fun PersonDetailPage(
+    route: LibraryRoute.Person,
+    state: ZelefinUiState,
+    onBack: () -> Unit,
+    onOpen: (MediaItem) -> Unit,
+    onEnsureGrid: () -> Unit,
+) {
+    val model: ZelefinModel = viewModel()
+    val session = state.session
+    val grid = state.libraryGrids[route] ?: LibraryGridState()
+    var profile by remember(route.id) { mutableStateOf<CreditPerson?>(null) }
+    LaunchedEffect(route) { onEnsureGrid() }
+    LaunchedEffect(route.id) { profile = model.loadPerson(route.id) }
+    val shown = profile ?: CreditPerson(id = route.id, name = route.name, roleLabel = "Cast & Crew")
+    val photo = session?.serverUrl?.let { ArtworkUrls.person(it, shown, session.accessToken) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val inset = 16.dp
+        val spacing = 10.dp
+        val count = max(3, ((maxWidth - inset * 2 + spacing) / (124.dp + spacing)).toInt())
+        val gridState = rememberLazyGridState()
+        TrackHazeScroll(gridState.isScrollInProgress)
+        LazyVerticalGrid(
+            state = gridState,
+            columns = GridCells.Fixed(count),
+            contentPadding = PaddingValues(start = inset, end = inset, top = browseTop(), bottom = DockContentReserve),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Box(
+                            Modifier.size(110.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.08f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                shown.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                                color = Color.White,
+                                fontFamily = ZelefinFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 28.sp,
+                            )
+                            if (photo != null) {
+                                CachedArtwork(
+                                    url = photo,
+                                    contentDescription = shown.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+                        Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                shown.name,
+                                color = Color.White,
+                                fontFamily = ZelefinFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 22.sp,
+                            )
+                            shown.birthYear?.let { year ->
+                                Text("Born $year", color = Color.White.copy(alpha = 0.62f), fontFamily = ZelefinFont, fontSize = 15.sp)
+                            }
+                        }
+                    }
+                    shown.overview?.takeIf { it.isNotBlank() }?.let { overview ->
+                        Text(overview, color = Color.White.copy(alpha = 0.88f), fontFamily = ZelefinFont, fontSize = 16.sp)
+                    }
+                    if (!grid.loading && grid.items.isEmpty()) {
+                        Text(
+                            "Nothing for this person in your library.",
+                            color = BrowseCaption,
+                            fontFamily = ZelefinFont,
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            }
+            items(grid.items, key = { it.id }) { item ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(2f / 3f)
+                        .clickable { onOpen(item) }
+                        .posterChrome(),
+                ) {
+                    CachedArtwork(
+                        urls = artworkCandidates(item, session, landscape = false),
+                        contentDescription = item.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.08f)),
+                    )
+                    ItemPosterMarks(item, portrait = true)
+                }
+            }
+        }
+    }
+    BrowseHeader(route.name, onBack)
 }
 
 @Composable

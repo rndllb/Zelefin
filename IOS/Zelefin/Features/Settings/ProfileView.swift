@@ -5,7 +5,6 @@ import PhotosUI
 
 struct ProfileView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirmPassword = ""
@@ -609,34 +608,17 @@ struct ProfileView: View {
         session.usesSilo ? "Add Account" : "Add User"
     }
 
-    @ViewBuilder
     private var addUserRow: some View {
-        if plus.isUnlocked {
-            NavigationLink {
-                AddAccountView()
-            } label: {
-                addUserLabel(trailing: .chevron)
-                    .settingsLoginCard()
-            }
-            .settingsCardRow()
-        } else {
-            Button {
-                plus.request(.extraAccounts)
-            } label: {
-                addUserLabel(trailing: .lock)
-                    .settingsLoginCard()
-            }
-            .buttonStyle(.plain)
-            .settingsCardRow()
+        NavigationLink {
+            AddAccountView()
+        } label: {
+            addUserLabel
+                .settingsLoginCard()
         }
+        .settingsCardRow()
     }
 
-    private enum AddUserTrailing {
-        case chevron
-        case lock
-    }
-
-    private func addUserLabel(trailing: AddUserTrailing) -> some View {
+    private var addUserLabel: some View {
         HStack(spacing: 14) {
             Image(systemName: "person.badge.plus")
                 .font(.body.weight(.medium))
@@ -646,14 +628,7 @@ struct ProfileView: View {
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.primaryText)
             Spacer(minLength: 8)
-            switch trailing {
-            case .chevron:
-                SettingsChevron()
-            case .lock:
-                Image(systemName: "lock.fill")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(LoginPalette.captionText)
-            }
+            SettingsChevron()
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())

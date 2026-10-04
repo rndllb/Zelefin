@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,7 +53,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.outlined.ClosedCaption
@@ -66,9 +66,6 @@ import app.zelefin.core.MediaKind
 enum class TitleMenuContext { Featured, ContinueWatching, NextUp, Episode, Detail }
 
 internal data class MenuNotice(val title: String, val message: String)
-
-internal fun plusNotice(feature: app.zelefin.client.ZelefinPlus.Feature): MenuNotice =
-    app.zelefin.client.ZelefinPlus.notice(feature).let { (title, message) -> MenuNotice(title, message) }
 
 data class TitleMoreRequest(
     val item: MediaItem,
@@ -192,8 +189,8 @@ internal fun TitleMoreOverlay(
                     val target = app.zelefin.client.downloads.DownloadEligibility.playableItem(current.item)
                     when (app.zelefin.client.downloads.ZelefinDownloads.state.value.control(current.item)) {
                         app.zelefin.client.downloads.DownloadControlState.Idle -> {
-                            val notice = target?.let(::startDownload)
-                            if (notice != null) menuNote = notice else onDismiss()
+                            if (target != null) startDownload(target)
+                            onDismiss()
                         }
                         is app.zelefin.client.downloads.DownloadControlState.Downloading -> {
                             app.zelefin.client.downloads.ZelefinDownloads.cancel(current.item)
@@ -207,7 +204,6 @@ internal fun TitleMoreOverlay(
                     onDismiss()
                     onToggleFavorite(current.item)
                 },
-                onNotice = { menuNote = it },
                 onToggleSkipCinema = onToggleSkipCinema,
                 onCollections = onCollections,
                 onAddSubtitles = onAddSubtitles?.let { add ->
@@ -278,7 +274,6 @@ private fun TitleMorePanel(
     onToggleWatched: () -> Unit,
     onDownload: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onNotice: (MenuNotice) -> Unit,
     onToggleSkipCinema: () -> Unit,
     onCollections: (() -> Unit)?,
     onAddSubtitles: (() -> Unit)?,
@@ -299,60 +294,20 @@ private fun TitleMorePanel(
     val showAdminRemote = isAdmin && showRemote
     val showAdmin = showRefresh || showAdminRemote
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val menuWidth = when {
-        onHideFromHome != null -> 320.dp
-        library -> 292.dp
-        else -> 250.dp
-    }
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
+    AnchoredMenuFrame(
+        request.anchor,
+        alignTrailing = true,
+        onDismiss = onDismiss,
+        clearBottom = DockContentReserve,
+    ) {
         Column(
             Modifier
-                .offset {
-                    val width = menuWidth.roundToPx()
-                    val gap = 8.dp.roundToPx()
-                    var rows = 4 + if (showGoTo) 1 else 0
-                    if (onAddSubtitles != null) rows += 1
-                    if (onHideFromHome != null) rows += 1
-                    var rules = 0
-                    if (library) {
-                        rows += 1
-                        if (showRemote) rows += 1
-                        if (showSync) rows += 1
-                        if (showAdmin) {
-                            rules += 1
-                            if (showRefresh) rows += 1
-                            if (showAdminRemote) rows += 2
-                        }
-                        if (showRemote) {
-                            rows += 1
-                            rules += 1
-                        }
-                    }
-                    val natural = rows * 44.dp.roundToPx() + rules * 9.dp.roundToPx() + 12.dp.roundToPx()
-                    val menuHeight = natural.coerceAtMost((screenHeight - 24.dp).roundToPx())
-                    val below = request.anchor.bottom + gap
-                    val dockClear = (screenHeight - DockContentReserve).roundToPx()
-                    val y = if (below + menuHeight > dockClear) {
-                        (request.anchor.top - gap - menuHeight).toInt()
-                    } else {
-                        below.toInt()
-                    }
-                    IntOffset(
-                        x = (request.anchor.right - width).toInt().coerceAtLeast(16.dp.roundToPx()),
-                        y = y.coerceAtLeast(8.dp.roundToPx()),
-                    )
-                }
-                .width(menuWidth)
-                .heightIn(max = screenHeight - 24.dp)
-                .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
+                .zelefinGlassChrome(hazeState, ZelefinMenuShape)
                 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+                .heightIn(max = screenHeight - 24.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = 6.dp),
+                .zelefinMenuWidth()
+                .padding(vertical = 4.dp),
         ) {
             MoreRow(if (item.kind == MediaKind.Episode) "Play Episode" else "Play", Icons.Filled.PlayArrow, onPlay)
             if (showGoTo) {
@@ -395,30 +350,22 @@ private fun TitleMorePanel(
             if (library && onCollections != null) {
                 MoreRow("Add to Collection…", Icons.Outlined.Folder, onClick = onCollections)
                 if (showRemote) {
-                    MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = {
-                        plusGated(app.zelefin.client.ZelefinPlus.Feature.Sessions, onNotice, onPlayElsewhere)
-                    })
+                    MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = { onPlayElsewhere?.invoke() })
                 }
                 if (showSync) {
-                    MoreRow("Play in SyncPlay…", Icons.Outlined.Groups, onClick = {
-                        plusGated(app.zelefin.client.ZelefinPlus.Feature.SyncPlay, onNotice, onSyncPlay)
-                    })
+                    MoreRow("Play in SyncPlay…", Icons.Outlined.Groups, onClick = { onSyncPlay?.invoke() })
                 }
                 if (showAdmin) {
                     MenuHairline()
                     if (showRefresh) {
-                        MoreRow("Refresh Metadata", Icons.Outlined.Refresh, onClick = {
-                            plusGated(app.zelefin.client.ZelefinPlus.Feature.AdminTools, onNotice, onRefreshMetadata)
-                        })
+                        MoreRow("Refresh Metadata", Icons.Outlined.Refresh, dismissOnClick = false, onClick = { onRefreshMetadata?.invoke() })
                     }
                     if (showAdminRemote) {
-                        MoreRow("Edit Images…", Icons.Outlined.Image, onClick = {
-                            plusGated(app.zelefin.client.ZelefinPlus.Feature.AdminTools, onNotice, onEditImages)
-                        })
+                        MoreRow("Edit Images…", Icons.Outlined.Image, onClick = { onEditImages?.invoke() })
                         MoreRow(
                             "Delete from Library…",
                             Icons.Outlined.Delete,
-                            onClick = { plusGated(app.zelefin.client.ZelefinPlus.Feature.AdminTools, onNotice, onDeleteFromLibrary) },
+                            onClick = { onDeleteFromLibrary?.invoke() },
                             destructive = true,
                         )
                     }
@@ -428,16 +375,15 @@ private fun TitleMorePanel(
                     MoreRow(
                         "Skip Cinema Intros",
                         if (skipCinemaIntros) Icons.Outlined.Check else null,
-                        onToggleSkipCinema,
+                        {
+                            onToggleSkipCinema()
+                            onDismiss()
+                        },
                     )
                 }
             }
         }
     }
-}
-
-private fun plusGated(feature: app.zelefin.client.ZelefinPlus.Feature, onNotice: (MenuNotice) -> Unit, action: (() -> Unit)?) {
-    if (!app.zelefin.client.ZelefinPlus.allows(feature)) onNotice(plusNotice(feature)) else action?.invoke()
 }
 
 @Composable
@@ -457,26 +403,40 @@ internal fun MoreRow(
     icon: ImageVector?,
     onClick: () -> Unit,
     destructive: Boolean = false,
+    dismissOnClick: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val tint = if (destructive) Color(0xFFFF453A) else DockInactive
+    val run = LocalMenuAction.current
+    val textTint = if (destructive) Color(0xFFFF453A) else DockInactive
+    val iconTint = if (destructive) Color(0xFFFF453A) else ZelefinCyan
     Row(
         Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .padding(horizontal = 6.dp)
-            .clip(RoundedCornerShape(22.dp))
+            .padding(horizontal = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(if (pressed) DockSelectedFill else Color.Transparent)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 10.dp),
+            .clickable(interactionSource = interaction, indication = null) {
+                if (dismissOnClick) run(onClick) else onClick()
+            }
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = tint, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, modifier = Modifier.weight(1f))
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        } else {
-            Box(Modifier.size(20.dp))
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+            }
         }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            title,
+            color = textTint,
+            fontFamily = ZelefinFont,
+            fontSize = 17.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }

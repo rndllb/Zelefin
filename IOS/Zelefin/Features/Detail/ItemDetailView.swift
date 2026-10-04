@@ -795,6 +795,65 @@ struct ItemDetailView: View {
         )
     }
 
+    /// A fresh title read drops person tags the cached copy already learned; keep those so
+    /// the cast row never blanks between loads.
+    private static func keepingCastPhotos(_ fresh: [CreditPerson], from cached: [CreditPerson]) -> [CreditPerson] {
+        let known = Dictionary(
+            cached.filter { !($0.imageTag ?? "").isEmpty }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        guard !known.isEmpty else { return fresh }
+        return fresh.map { person in
+            guard (person.imageTag ?? "").isEmpty, let hit = known[person.id] else { return person }
+            return Self.person(person, withPhotoFrom: hit)
+        }
+    }
+
+    /// A title lists a person without a Primary tag until Jellyfin has refreshed that person.
+    /// Reading the person item is what makes Jellyfin fetch the portrait on demand, so this does
+    /// what tapping each cast member used to do and fills the row in as each batch lands.
+    private func fillCastPhotos(library: any LibraryServing, for titleID: String) async {
+        let missing = credits.filter { ($0.imageTag ?? "").isEmpty && $0.imageURL == nil && !$0.id.isEmpty }
+        guard !missing.isEmpty else { return }
+        var found: [String: CreditPerson] = [:]
+        let ids = missing.map(\.id)
+        var start = 0
+        while start < ids.count, itemID == titleID {
+            let batch = ids[start ..< min(start + 6, ids.count)]
+            start += batch.count
+            var changed = false
+            await withTaskGroup(of: CreditPerson?.self) { group in
+                for id in batch {
+                    group.addTask { await library.person(id: id) }
+                }
+                for await profile in group {
+                    guard let profile, !(profile.imageTag ?? "").isEmpty else { continue }
+                    found[profile.id] = profile
+                    changed = true
+                }
+            }
+            guard changed, itemID == titleID else { continue }
+            credits = credits.map { person in
+                guard (person.imageTag ?? "").isEmpty, let hit = found[person.id] else { return person }
+                return Self.person(person, withPhotoFrom: hit)
+            }
+            persistSnapshot()
+        }
+    }
+
+    private static func person(_ person: CreditPerson, withPhotoFrom profile: CreditPerson) -> CreditPerson {
+        CreditPerson(
+            id: person.id,
+            name: person.name,
+            roleLabel: person.roleLabel,
+            imageTag: profile.imageTag,
+            rank: person.rank,
+            overview: person.overview ?? profile.overview,
+            birthYear: person.birthYear ?? profile.birthYear,
+            imageURL: person.imageURL
+        )
+    }
+
     private func refreshFromServer() async {
         guard let library = session.library else { return }
         do {
@@ -835,8 +894,9 @@ struct ItemDetailView: View {
             }
 
             related = await fetchedRelated
-            credits = await fetchedCredits
+            credits = Self.keepingCastPhotos(await fetchedCredits, from: credits)
             persistSnapshot()
+            Task { await fillCastPhotos(library: library, for: loaded.id) }
 
             trailers = await fetchedTrailers
             persistSnapshot()

@@ -2,6 +2,7 @@ package app.zelefin.client.ui
 
 import android.app.Activity
 import android.app.PendingIntent
+import android.content.pm.ActivityInfo
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
 import android.content.Context
@@ -40,6 +41,7 @@ object PlayerWindow {
     private var aspect: Rational? = null
     private var playing = false
     private var immersiveHolds = 0
+    private var hdr = false
     private val main = Handler(Looper.getMainLooper())
 
     fun supported(context: Context): Boolean =
@@ -98,6 +100,14 @@ object PlayerWindow {
     fun holdImmersive(activity: Activity) {
         immersiveHolds += 1
         hideBars(activity)
+        applyColorMode(activity)
+    }
+
+    /** An SDR window tone-maps HDR into a dim picture. Match the window to the stream. */
+    fun setHdr(activity: Activity, enabled: Boolean) {
+        if (hdr == enabled) return
+        hdr = enabled
+        applyColorMode(activity)
     }
 
     /** Some releases bring the bars back after PiP or the recents screen. */
@@ -114,7 +124,14 @@ object PlayerWindow {
     fun releaseImmersive(activity: Activity) {
         immersiveHolds = (immersiveHolds - 1).coerceAtLeast(0)
         if (immersiveHolds > 0) return
+        hdr = false
+        applyColorMode(activity)
         WindowCompat.getInsetsController(activity.window, activity.window.decorView).show(WindowInsetsCompat.Type.systemBars())
+    }
+
+    private fun applyColorMode(activity: Activity) {
+        val mode = if (hdr && immersiveHolds > 0) ActivityInfo.COLOR_MODE_HDR else ActivityInfo.COLOR_MODE_DEFAULT
+        if (activity.window.colorMode != mode) activity.window.colorMode = mode
     }
 
     private fun dismiss() {

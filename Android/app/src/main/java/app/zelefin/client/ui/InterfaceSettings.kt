@@ -83,7 +83,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.ZelefinModel
-import app.zelefin.client.ZelefinPlus
 import app.zelefin.client.ZelefinUiState
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
@@ -97,7 +96,6 @@ private const val DockFullNote = "The dock is full. Turn off a tab or library fi
 fun InterfaceSettings(state: ZelefinUiState) {
     val model: ZelefinModel = viewModel()
     val context = LocalContext.current
-    val allowed = ZelefinPlus.allows(ZelefinPlus.Feature.Interface)
     val silo = state.session?.usesSilo == true
     LaunchedEffect(Unit) { model.pullDisplayPreferences() }
 
@@ -107,7 +105,6 @@ fun InterfaceSettings(state: ZelefinUiState) {
     val merged = HomeLayoutPreferences.mergeContinueAndNextUp
     SettingsCard {
         SettingsToggleRow("Combine Continue Watching and Next Up", merged, onChange = { on ->
-            if (!allowed) return@SettingsToggleRow
             HomeLayoutPreferences.setMergeContinueAndNextUp(context, on)
             model.pushDisplayPreferences()
             model.refreshLibrary()
@@ -128,7 +125,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
             choices = FeaturedHeroContent.entries.map { SettingsChoice(it, it.title) },
             selected = HomeLayoutPreferences.heroContent,
             onSelect = { content ->
-                if (!allowed || content == HomeLayoutPreferences.heroContent) return@SettingsMenuPicker
+                if (content == HomeLayoutPreferences.heroContent) return@SettingsMenuPicker
                 HomeLayoutPreferences.setHeroContent(context, content)
                 model.pushDisplayPreferences()
                 model.refreshLibrary()
@@ -141,7 +138,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
     ReorderableCards(
         items = HomeLayoutPreferences.order,
         key = { it.raw },
-        enabled = allowed,
+        enabled = true,
         onCommit = { next ->
             HomeLayoutPreferences.setOrder(context, next)
             model.pushDisplayPreferences()
@@ -152,7 +149,6 @@ fun InterfaceSettings(state: ZelefinUiState) {
             title = row.title,
             checked = row !in HomeLayoutPreferences.hidden,
             onCheckedChange = { on ->
-                if (!allowed) return@ReorderRow
                 HomeLayoutPreferences.setVisible(context, row, on)
                 model.pushDisplayPreferences()
             },
@@ -183,7 +179,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
     SettingsHeader("Tabs")
     SettingsCard {
         SettingsToggleRow("Show Tab Names", TabPreferences.showsNames, onChange = { on ->
-            if (allowed) TabPreferences.setShowsNames(context, on)
+            TabPreferences.setShowsNames(context, on)
         })
     }
     Spacer(Modifier.height(8.dp))
@@ -191,7 +187,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
     ReorderableCards(
         items = visibleTabs,
         key = { it.raw },
-        enabled = allowed,
+        enabled = true,
         onCommit = { next ->
             val full = TabPreferences.order
             val result = next.toMutableList()
@@ -208,7 +204,6 @@ fun InterfaceSettings(state: ZelefinUiState) {
             title = tab.title,
             checked = if (tab.canHide) TabPreferences.isShown(tab) else null,
             onCheckedChange = { on ->
-                if (!allowed) return@ReorderRow
                 if (on && !canEnableAnother) {
                     dockNote = DockFullNote
                 } else {
@@ -238,7 +233,6 @@ fun InterfaceSettings(state: ZelefinUiState) {
                     title = room.name,
                     checked = room.id in TabPreferences.dockLibraryIds,
                     onCheckedChange = { on ->
-                        if (!allowed) return@ReorderRow
                         if (on && !canEnableAnother) dockNote = DockFullNote else TabPreferences.setLibraryPinned(context, room.id, on)
                     },
                     handle = null,
@@ -250,13 +244,13 @@ fun InterfaceSettings(state: ZelefinUiState) {
 
     Spacer(Modifier.height(22.dp))
     SettingsCard {
-        SettingsSecondaryButton("Reset Home Rows", enabled = allowed) {
+        SettingsSecondaryButton("Reset Home Rows") {
             HomeLayoutPreferences.reset(context)
             model.pushDisplayPreferences()
             model.refreshLibrary()
         }
         Spacer(Modifier.height(10.dp))
-        SettingsSecondaryButton("Reset Tabs", enabled = allowed) {
+        SettingsSecondaryButton("Reset Tabs") {
             TabPreferences.reset(context)
             model.pushDisplayPreferences()
         }

@@ -1,16 +1,24 @@
 package app.zelefin.client.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,6 +27,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,12 +45,16 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.res.painterResource
@@ -127,8 +140,173 @@ class GlassDisc(
 val LocalZelefinHaze = staticCompositionLocalOf<ZelefinHazeState?> { null }
 val LocalZelefinGlassHost = staticCompositionLocalOf<ZelefinGlassHost?> { null }
 
-/** Corner radius shared with the dock pill. Overlay menus use this shape. */
+/** Corner radius for alerts and confirms. Action menus use [ZelefinMenuShape]. */
 val ZelefinOverlayShape = RoundedCornerShape(28.dp)
+
+/** iOS context menu and `.pickerStyle(.menu)` corner. */
+val ZelefinMenuShape = RoundedCornerShape(14.dp)
+
+/** Floor for a content-sized menu so a short label still has side room. */
+val ZelefinMenuMinWidth = 220.dp
+
+/** Hug the longest label, but never narrower than [ZelefinMenuMinWidth]. */
+fun Modifier.zelefinMenuWidth(): Modifier =
+    widthIn(min = ZelefinMenuMinWidth).width(IntrinsicSize.Max)
+
+/**
+ * Puts a content-sized menu next to [anchor]. Trailing alignment lines the menu's right edge
+ * up with the button, the way an iOS context menu does. The menu flips above the anchor when
+ * it would cross [clearBottom].
+ */
+@Composable
+fun PlaceAnchoredMenu(
+    anchor: Rect,
+    alignTrailing: Boolean,
+    clearBottom: Dp = 16.dp,
+    scale: Float = 1f,
+    alpha: Float = 1f,
+    content: @Composable () -> Unit,
+) {
+    SubcomposeLayout { constraints ->
+        val margin = 16.dp.roundToPx()
+        val gap = 6.dp.roundToPx()
+        val cap = (constraints.maxWidth - margin * 2).coerceAtLeast(0)
+        val maxHeight = (constraints.maxHeight - margin * 2).coerceAtLeast(0)
+        val placeable = subcompose("menu", content).first().measure(
+            constraints.copy(minWidth = 0, minHeight = 0, maxWidth = cap, maxHeight = maxHeight),
+        )
+        val clear = (constraints.maxHeight - clearBottom.roundToPx()).coerceAtLeast(margin)
+        val below = anchor.bottom.roundToInt() + gap
+        val above = anchor.top.roundToInt() - gap - placeable.height
+        val placedBelow = below + placeable.height <= clear
+        val y = if (placedBelow) below else above
+        val yClamped = y.coerceIn(margin, (constraints.maxHeight - placeable.height - margin).coerceAtLeast(margin))
+        val rawX = if (alignTrailing) anchor.right.roundToInt() - placeable.width else anchor.left.roundToInt()
+        val maxX = (constraints.maxWidth - placeable.width - margin).coerceAtLeast(margin)
+        val x = rawX.coerceIn(margin, maxX)
+        val origin = TransformOrigin(if (alignTrailing) 1f else 0f, if (placedBelow) 0f else 1f)
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            placeable.placeWithLayer(x, yClamped) {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+                transformOrigin = origin
+            }
+        }
+    }
+}
+
+/**
+ * Runs a menu action after the iOS-style close, so a tap can scale the menu away
+ * before the overlay leaves the screen.
+ */
+val LocalMenuAction = staticCompositionLocalOf<(action: () -> Unit) -> Unit> { { action -> action() } }
+
+private class MenuPopState {
+    var open by mutableStateOf(false)
+    var closing by mutableStateOf(false)
+    var pending: (() -> Unit)? = null
+    var delivered = false
+
+    fun run(action: () -> Unit) {
+        if (closing) return
+        pending = action
+        closing = true
+    }
+}
+
+@Composable
+private fun rememberMenuPop(): Triple<Float, Float, (action: () -> Unit) -> Unit> {
+    val state = remember { MenuPopState() }
+    LaunchedEffect(Unit) { state.open = true }
+    val shown = state.open && !state.closing
+    val scale by animateFloatAsState(
+        targetValue = if (shown) 1f else 0.75f,
+        animationSpec = if (shown) {
+            spring(dampingRatio = 0.72f, stiffness = 420f)
+        } else {
+            tween(durationMillis = 180, easing = FastOutSlowInEasing)
+        },
+        label = "menuScale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(durationMillis = if (shown) 160 else 180, easing = FastOutSlowInEasing),
+        label = "menuAlpha",
+        finishedListener = { value ->
+            if (value == 0f && state.closing && !state.delivered) {
+                state.delivered = true
+                val action = state.pending
+                state.pending = null
+                action?.invoke()
+            }
+        },
+    )
+    return Triple(scale, alpha, state::run)
+}
+
+/**
+ * Card and settings menus. Scales from the anchor the way an iOS menu does, then
+ * scales back into it before [onDismiss] or a row action runs.
+ */
+@Composable
+fun AnchoredMenuFrame(
+    anchor: Rect,
+    alignTrailing: Boolean,
+    onDismiss: () -> Unit,
+    clearBottom: Dp = 16.dp,
+    content: @Composable () -> Unit,
+) {
+    val (scale, alpha, run) = rememberMenuPop()
+    CompositionLocalProvider(LocalMenuAction provides run) {
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = { run(onDismiss) },
+                    ),
+            )
+            PlaceAnchoredMenu(anchor, alignTrailing, clearBottom, scale, alpha, content)
+        }
+    }
+}
+
+/** Same open and close as [AnchoredMenuFrame], for a menu that sits in the middle of the screen. */
+@Composable
+fun CenteredMenuFrame(
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val (scale, alpha, run) = rememberMenuPop()
+    CompositionLocalProvider(LocalMenuAction provides run) {
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = { run(onDismiss) },
+                    ),
+            )
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        this.alpha = alpha
+                        transformOrigin = TransformOrigin.Center
+                    },
+            ) {
+                content()
+            }
+        }
+    }
+}
 
 /**
  * Shows one overlay in the same window as the dock, so [zelefinGlassChrome] frosts the page.

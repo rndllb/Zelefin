@@ -101,6 +101,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.5.1")
     implementation("dev.chrisbanes.haze:haze:1.5.4")
     implementation("dev.chrisbanes.haze:haze-materials:1.5.4")
     implementation("com.google.firebase:firebase-messaging:25.1.3")

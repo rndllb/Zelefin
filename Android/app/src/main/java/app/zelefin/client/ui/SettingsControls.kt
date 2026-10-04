@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -43,10 +41,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -209,52 +205,35 @@ private fun <T> SettingsMenuPanel(
     onDismiss: () -> Unit,
     onSelect: (T) -> Unit,
 ) {
-    val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
-    val screenHeight = with(density) { configuration.screenHeightDp.dp.toPx() }
-    val rowHeight = with(density) { 44.dp.toPx() }
-    val maxHeight = (screenHeight * 0.6f)
-    val natural = (choices.size * rowHeight + with(density) { 12.dp.toPx() }).coerceAtMost(maxHeight)
-    val gap = with(density) { 6.dp.toPx() }
-    val margin = with(density) { 16.dp.toPx() }
-    val y = if (anchor.bottom + gap + natural > screenHeight - margin) {
-        (anchor.top - gap - natural).coerceAtLeast(margin)
-    } else {
-        anchor.bottom + gap
-    }
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
-        Column(
-            Modifier
-                .offset { IntOffset(anchor.left.roundToInt().coerceAtLeast(margin.roundToInt()), y.roundToInt()) }
-                .widthIn(min = 220.dp, max = 300.dp)
-                .heightIn(max = with(density) { maxHeight.toDp() })
-                .zelefinGlassChrome(hazeState, RoundedCornerShape(22.dp))
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 6.dp),
-        ) {
-            choices.forEach { choice ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .clickable { onSelect(choice.value) }
-                        .padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.width(26.dp)) {
-                        if (choice.value == selected) {
-                            Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(18.dp))
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    AnchoredMenuFrame(anchor, alignTrailing = false, onDismiss = onDismiss) {
+            val run = LocalMenuAction.current
+            Column(
+                Modifier
+                    .zelefinGlassChrome(hazeState, ZelefinMenuShape)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+                    .heightIn(max = screenHeight * 0.6f)
+                    .verticalScroll(rememberScrollState())
+                    .zelefinMenuWidth()
+                    .padding(vertical = 4.dp),
+            ) {
+                choices.forEach { choice ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .clickable { run { onSelect(choice.value) } }
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.width(22.dp)) {
+                            if (choice.value == selected) {
+                                Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = ZelefinCyan, modifier = Modifier.size(16.dp))
+                            }
                         }
+                        Text(choice.title, color = Color.White, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Text(choice.title, color = Color.White, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-        }
     }
 }

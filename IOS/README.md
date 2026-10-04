@@ -17,7 +17,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 - After a new Jellyfin or Silo sign-in, a one-time setup: preferred audio and subtitle languages, optional Seerr sign-in, and Install Plugin for Jellyfin administrators. Silo skips Seerr and the plugin. Review Demo and restoring a saved account skip this screen
 - Quick Connect from another signed-in Jellyfin device
 - Access Gateway tokens for Cloudflare Zero Trust or Pangolin, sent on every request including artwork and playback
-- Multiple saved accounts on this device, with switch-user and Add User / Add Account from Profile (one account is free; extra logins are Zelefin Plus)
+- Multiple saved accounts on this device, with switch-user and Add User / Add Account from Profile
 - Profile photo (camera or photo library) and password change. On Silo, avatars are presets or a photo when the server stores them
 - Access token on Profile, hidden until you reveal it, with copy
 
@@ -25,7 +25,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 - Featured hero from Interface settings: recently added, random, continue watching, next up, recommendations, recently watched, or favorites
 - Continue Watching and Next Up, or one combined Continue Watching row (Interface settings)
-- Reorder or hide Home rows in Interface settings, including Featured, recommendations, recently added, collections, and genres (Zelefin Plus). Without Plus, Home is Featured, Continue Watching, Recently Added Movies, and Recently Added Shows, in that order
+- Reorder or hide Home rows in Interface settings, including Featured, recommendations, recently added, collections, and genres
 - Because You Watched and Because You Liked rows when Jellyfin returns them
 - Upcoming Episodes
 - Recently added rows per library, collections, and genres
@@ -36,7 +36,7 @@ Playback uses AVPlayer so HDR10, Dolby Vision, and Dolby Atmos stay on Apple’s
 
 ### Browse
 
-- Tabs for Home, Movies, Shows, Live TV, Collections, Library, and Favorites (Live TV, Collections, and Favorites hidden by default). Live TV is Zelefin Plus.
+- Tabs for Home, Movies, Shows, Live TV, Collections, Library, and Favorites (Live TV, Collections, and Favorites hidden by default)
 - Reorder or hide tabs in Interface settings; iPad can also Edit the sidebar
 - Favorites is movies and series marked favorite on the server; it is also listed under Library
 - Movies and Shows load the full catalog, not the first page
@@ -210,14 +210,6 @@ Silo (when this login can administer the server):
 - Drag to reorder tabs, hide any tab except Home, reset to defaults
 - Tab order, Home row layout, and the combined Continue Watching row sync to this Jellyfin user as display preferences, so another Zelefin install on the same account can pick them up
 - About shows Version and Build, plus Privacy Policy and Terms of Use on [zelefin.app](https://zelefin.app)
-
-### Zelefin Plus
-
-Sign in, browse, and Play stay free, including HDR, Dolby Vision, Atmos, and 4K. Zelefin Plus is an annual subscription with a 7-day free trial, or a lifetime purchase. Family Sharing is on. Review Demo is fully unlocked.
-
-Plus unlocks downloads (titles already on this device still play), extra accounts, Home row and tab layout, Live TV, sessions and play on another device, SyncPlay, and admin tools. Intro Skipper, Open Subtitles, Jellyfin Enhanced, Seerr, and the Zelefin notifications plugin stay free.
-
-Settings → Zelefin Plus to subscribe or restore. About → Debug → Plus switches Locked, Trial, Annual, Lifetime, or Fake Store without a purchase. New installs start on Annual until that picker is changed.
 
 ## Open in Xcode
 

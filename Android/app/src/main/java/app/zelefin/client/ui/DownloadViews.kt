@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -62,7 +61,6 @@ import androidx.compose.ui.graphics.vector.PathData
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -70,10 +68,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.zelefin.client.ZelefinPlus
 import app.zelefin.client.downloads.DownloadControlState
 import app.zelefin.client.downloads.DownloadEligibility
 import app.zelefin.client.downloads.DownloadMark
@@ -191,11 +187,8 @@ fun DownloadNoticeAlert() {
     }
 }
 
-/** Returns a notice when Zelefin Plus does not include Downloads; otherwise starts the transfer. */
-internal fun startDownload(target: MediaItem): MenuNotice? {
-    if (!ZelefinPlus.allows(ZelefinPlus.Feature.Downloads)) return plusNotice(ZelefinPlus.Feature.Downloads)
+internal fun startDownload(target: MediaItem) {
     ZelefinDownloads.start(target)
-    return null
 }
 
 /** The Download half of the detail hero's Download / Share capsule. Share stands alone when downloads are off. */
@@ -205,7 +198,6 @@ internal fun DownloadSharePill(
     episodes: List<MediaItem>,
     onShare: () -> Unit,
     onRemove: (MediaItem) -> Unit,
-    onNotice: (MenuNotice) -> Unit,
 ) {
     val downloads by ZelefinDownloads.state.collectAsState()
     val control = downloads.control(item, episodes)
@@ -239,7 +231,7 @@ internal fun DownloadSharePill(
                 trailingIcon = Icons.Outlined.Share,
                 onLeading = {
                     when (ZelefinDownloads.state.value.control(item, episodes)) {
-                        DownloadControlState.Idle -> startDownload(target)?.let(onNotice)
+                        DownloadControlState.Idle -> startDownload(target)
                         is DownloadControlState.Downloading -> ZelefinDownloads.cancel(target)
                         DownloadControlState.Downloaded -> onRemove(target)
                         DownloadControlState.Unavailable -> Unit
@@ -550,31 +542,15 @@ internal fun DownloadedPage(
 
 @Composable
 private fun DownloadedRowMenu(hazeState: ZelefinHazeState, anchor: Rect, onDismiss: () -> Unit, onRemove: () -> Unit) {
-    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val menuWidth = 250.dp
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
-        Column(
-            Modifier
-                .offset {
-                    val width = menuWidth.roundToPx()
-                    val gap = 8.dp.roundToPx()
-                    val height = (44.dp + 12.dp).roundToPx()
-                    val below = anchor.bottom.toInt() + gap
-                    val y = if (below + height > (screenHeight - DockContentReserve).roundToPx()) anchor.top.toInt() - gap - height else below
-                    val x = (anchor.left.toInt()).coerceAtMost(anchor.right.toInt() - width).coerceAtLeast(16.dp.roundToPx())
-                    IntOffset(x, y.coerceAtLeast(8.dp.roundToPx()))
-                }
-                .width(menuWidth)
-                .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
-                .padding(vertical = 6.dp),
-        ) {
-            MoreRow("Remove Download", Icons.Outlined.Delete, onRemove, destructive = true)
-        }
+    AnchoredMenuFrame(anchor, alignTrailing = true, onDismiss = onDismiss, clearBottom = DockContentReserve) {
+            Column(
+                Modifier
+                    .zelefinGlassChrome(hazeState, ZelefinMenuShape)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+                    .zelefinMenuWidth()
+                    .padding(vertical = 4.dp),
+            ) {
+                MoreRow("Remove Download", Icons.Outlined.Delete, onRemove, destructive = true)
+            }
     }
 }

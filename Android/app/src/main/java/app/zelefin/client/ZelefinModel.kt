@@ -1,6 +1,7 @@
 package app.zelefin.client
 
 import android.app.Application
+import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.Uri
@@ -535,18 +536,59 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (next is Screen.Detail && _state.value.detail?.item?.id != next.id) showDetail(next.id, next.returnTo)
     }
 
+    suspend fun loadPerson(id: String): app.zelefin.core.CreditPerson? {
+        val session = _state.value.session ?: return null
+        if (session.backend == MediaBackend.Silo) return null
+        val userId = runCatching { UUID.fromString(session.userId) }.getOrNull() ?: return null
+        return runCatching { jellyfinClient().person(userId, id) }.getOrNull()
+    }
+
+    /** A fresh title read drops person tags the cached copy already learned; keep those so the row never blanks. */
+    private fun TitleDetail.keepingCastPhotos(from: TitleDetail?): TitleDetail {
+        val known = from?.item?.people?.filter { !it.imageTag.isNullOrBlank() }?.associateBy { it.id }.orEmpty()
+        if (known.isEmpty()) return this
+        val people = item.people.map { person ->
+            if (!person.imageTag.isNullOrBlank()) return@map person
+            val cached = known[person.id] ?: return@map person
+            person.copy(imageTag = cached.imageTag, overview = cached.overview ?: person.overview, birthYear = cached.birthYear ?: person.birthYear)
+        }
+        return copy(item = item.copy(people = people))
+    }
+
+    /** Cast portraits arrive once Jellyfin refreshes each person; swap them into the open title as they land. */
+    private suspend fun fillCastPhotos(target: String, people: List<app.zelefin.core.CreditPerson>) {
+        val session = _state.value.session ?: return
+        if (session.backend == MediaBackend.Silo || people.isEmpty()) return
+        val userId = runCatching { UUID.fromString(session.userId) }.getOrNull() ?: return
+        runCatching {
+            jellyfinClient().peopleWithPhotos(userId, people) { updated ->
+                _state.update { state ->
+                    val current = state.detail
+                    if ((state.screen as? Screen.Detail)?.id == target && current?.item?.id == target) {
+                        state.copy(detail = current.copy(item = current.item.copy(people = updated)))
+                    } else {
+                        state
+                    }
+                }
+                _state.value.detail?.takeIf { it.item.id == target }?.let { snapshots.saveDetail(session, it) }
+            }
+        }
+    }
+
     private fun showDetail(target: String, returnTo: Screen) {
         val session = _state.value.session
         val cached = session?.let { snapshots.loadDetail(it, target) } ?: ZelefinDownloads.offlineDetail(target)
         _state.update { it.copy(screen = Screen.Detail(target, returnTo), detail = cached, busy = cached == null, message = null) }
         viewModelScope.launch {
             runCatching { loadDetail(target) }
-                .onSuccess { detail ->
+                .onSuccess { fresh ->
+                    val detail = fresh.keepingCastPhotos(from = cached)
                     _state.value.session?.let { snapshots.saveDetail(it, detail) }
                     _state.update { state ->
                         val showing = state.screen as? Screen.Detail
                         if (showing?.id == target) state.copy(detail = detail, busy = false) else state
                     }
+                    launch { fillCastPhotos(target, detail.item.people) }
                     if (_state.value.session?.backend != MediaBackend.Silo && (_state.value.screen as? Screen.Detail)?.id == target) {
                         val collections = runCatching {
                             jellyfinClient().collectionsContaining(UUID.fromString(_state.value.session?.userId), target)
@@ -681,10 +723,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     val userId = UUID.fromString(_state.value.session?.userId)
                     val client = jellyfinClient()
                     client.playback(userId, target, audioLanguage, subtitleLanguage) { sourceBitrate ->
-                        bitrateOverride ?: run {
-                            AdaptiveBitrateStore.refreshIfNeeded(appContext, client::measureBitrate)
-                            AdaptiveBitrateStore.resolvedBitsPerSecond(appContext, sourceBitrate)
-                        }
+                        bitrateOverride ?: streamingCap(appContext, client, sourceBitrate)
                     }
                 }
             }
@@ -698,6 +737,28 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             )
             _state.update { it.copy(busy = false, screen = Screen.Player(routed, returnTo), message = null) }
         }
+    }
+
+    /**
+     * Auto on a home server Direct Plays. A guessed cap used to sit under the file bitrate, so
+     * Jellyfin answered BitrateExceedsLimit and held PlaybackInfo until the transcode started.
+     * That wait is the long pause before the player appears. A measured remote link can still
+     * cap, and a quality the user picked still wins.
+     */
+    private fun streamingCap(context: Context, client: JellyfinLibrary, sourceBitrate: Int?): Int {
+        val selected = PlaybackPreferences.selectedQuality(context)
+        if (selected == PlaybackQuality.Auto && ServerUrl.isInternalHost(playbackHost())) {
+            return PlaybackQuality.MAX_BITRATE
+        }
+        viewModelScope.launch {
+            runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, client::measureBitrate) }
+        }
+        return AdaptiveBitrateStore.resolvedBitsPerSecond(context, sourceBitrate)
+    }
+
+    private fun playbackHost(): String {
+        val raw = ServerRoute.activeLocal ?: _state.value.session?.serverUrl.orEmpty()
+        return runCatching { java.net.URI(raw).host }.getOrNull().orEmpty()
     }
 
     /** Ignores reports from a player that is still on screen after the next episode took over. */
@@ -718,6 +779,20 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun reloadPlayback(current: PlaybackPlan, positionSeconds: Double) {
         playbackStopped(current, positionSeconds)
         play(current.item.copy(playbackPosition = positionSeconds))
+    }
+
+    /**
+     * The player lost the stream ("Source error"). Ask which server address answers right now,
+     * then open a new playback session from the same spot. Reusing the dead URL does not.
+     */
+    fun recoverPlayback(current: PlaybackPlan, positionSeconds: Double) {
+        playbackStopped(current, positionSeconds)
+        val item = current.item.copy(playbackPosition = positionSeconds)
+        routeJob?.cancel()
+        viewModelScope.launch {
+            refreshRouteNow()
+            play(item)
+        }
     }
 
     /** Live adaptive bitrate: re-requests the same title at [bitsPerSecond] from the current spot. */
@@ -1070,6 +1145,19 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Picks the local address on home Wi-Fi when it answers, and the saved address otherwise. */
+    private suspend fun refreshRouteNow() {
+        val session = _state.value.session
+        if (session == null) {
+            ServerRoute.set(null, null)
+            _state.update { it.copy(localServerUrl = null) }
+            return
+        }
+        val local = HomeNetwork.resolve(getApplication(), homeNetworks.load(session.accountId))
+        if (_state.value.session?.accountId != session.accountId) return
+        ServerRoute.set(session.serverUrl, local)
+        _state.update { it.copy(localServerUrl = local) }
+    }
+
     fun refreshRoute() {
         routeJob?.cancel()
         val session = _state.value.session

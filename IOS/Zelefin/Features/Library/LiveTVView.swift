@@ -3,7 +3,6 @@ import UIKit
 
 struct LiveTVView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     var showsBackButton = false
@@ -22,13 +21,7 @@ struct LiveTVView: View {
     @State private var playingItem: MediaItem?
 
     var body: some View {
-        Group {
-            if plus.isUnlocked {
-                liveTVBody
-            } else {
-                PlusLockedPage(feature: .liveTV)
-            }
-        }
+        liveTVBody
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .liveTVPageChrome(
@@ -56,11 +49,9 @@ struct LiveTVView: View {
             Text(actionError ?? "")
         }
         .task {
-            guard plus.isUnlocked else { return }
             await load()
         }
         .refreshable {
-            guard plus.isUnlocked else { return }
             await load()
         }
     }
@@ -108,11 +99,11 @@ struct LiveTVView: View {
     }
 
     private var chipsInHeader: Bool {
-        plus.isUnlocked && !showsBackButton && tabBarPlacement == .sidebar
+        !showsBackButton && tabBarPlacement == .sidebar
     }
 
     private var showsProgramFilters: Bool {
-        plus.isUnlocked && (section == .onNow || section == .guide || section == .channels)
+        section == .onNow || section == .guide || section == .channels
     }
 
     private var pageHeaderClearance: CGFloat {

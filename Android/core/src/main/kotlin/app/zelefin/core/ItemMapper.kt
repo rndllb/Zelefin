@@ -214,8 +214,8 @@ object ArtworkUrls {
 
     fun person(base: String, person: CreditPerson, token: String?): String? {
         person.imageUrl?.let { return it }
-        val tag = person.imageTag ?: return null
-        return image(base, person.id, "Primary", tag, token, maxHeight = 360, format = "jpg")
+        if (person.id.isBlank()) return null
+        return image(base, person.id, "Primary", person.imageTag, token, maxHeight = 360, format = "jpg")
     }
 
     fun logo(base: String, item: MediaItem, token: String?, maxHeight: Int = 240): String? {

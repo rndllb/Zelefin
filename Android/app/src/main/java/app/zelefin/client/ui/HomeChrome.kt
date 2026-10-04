@@ -180,11 +180,9 @@ fun HomeFeedPage(
                     }
                 }
                 HomeRowKind.ContinueWatching -> item(key = row.raw) {
-                    val merged = HomeLayoutPreferences.mergeContinueAndNextUp
                     HomeRow(
                         "Continue Watching", continueWatching, session, landscape = true, onOpen,
                         onSeeAll = { onSeeAll(HomeShelf.ContinueWatching) },
-                        kindLabel = if (merged) ::queueKindLabel else null,
                     ) { item, anchor ->
                         val fromNextUp = item.queueKind == app.zelefin.core.PlaybackQueueKind.NextUp ||
                             feed.continueWatching.none { it.id == item.id }
@@ -594,7 +592,6 @@ private fun HomeRow(
     landscape: Boolean,
     onOpen: (MediaItem) -> Unit,
     onSeeAll: (() -> Unit)? = null,
-    kindLabel: ((MediaItem) -> String?)? = null,
     card: (@Composable (MediaItem) -> Unit)? = null,
     onMore: ((MediaItem, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
@@ -627,7 +624,7 @@ private fun HomeRow(
             items(items, key = { title + it.id }) { item ->
                 when {
                     card != null -> card(item)
-                    landscape -> LandscapeHomeCard(item, session, { onOpen(item) }, onMore, kindLabel?.invoke(item))
+                    landscape -> LandscapeHomeCard(item, session, { onOpen(item) }, onMore)
                     else -> PortraitHomeCard(item, session) { onOpen(item) }
                 }
             }
@@ -641,7 +638,6 @@ private fun LandscapeHomeCard(
     session: SavedSession?,
     onClick: () -> Unit,
     onMore: ((MediaItem, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
-    kindLabel: String? = null,
 ) {
     val moreAnchor = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     Box(
@@ -689,16 +685,6 @@ private fun LandscapeHomeCard(
                             .background(Color.White.copy(alpha = 0.75f)),
                     )
                 }
-            }
-            kindLabel?.let { label ->
-                Text(
-                    label,
-                    color = ZelefinCyan,
-                    fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                )
             }
             item.continueWatchingCaption?.let { caption ->
                 Text(

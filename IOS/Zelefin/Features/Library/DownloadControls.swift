@@ -168,7 +168,6 @@ struct DetailDownloadSharePill: View {
     var episodes: [MediaItem] = []
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @State private var errorMessage: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
 
@@ -243,7 +242,6 @@ struct DetailDownloadSharePill: View {
             let target = DownloadEligibility.playableItem(from: item, episodes: episodes) ?? item
             removalPrompt = .make(item: target)
         case .idle:
-            guard plus.require(.downloads) else { return }
             await startDownload()
         }
     }
@@ -276,7 +274,6 @@ struct DownloadActionButton: View {
     var episodes: [MediaItem] = []
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @State private var errorMessage: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
 
@@ -312,7 +309,6 @@ struct DownloadActionButton: View {
             let target = DownloadEligibility.playableItem(from: item, episodes: episodes) ?? item
             removalPrompt = .make(item: target)
         case .idle:
-            guard plus.require(.downloads) else { return }
             do {
                 try await downloads.toggle(
                     item: item,

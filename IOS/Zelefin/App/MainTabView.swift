@@ -3,7 +3,6 @@ import UIKit
 
 struct MainTabView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
@@ -133,10 +132,7 @@ struct MainTabView: View {
     private var tabCustomizationBinding: Binding<TabViewCustomization> {
         Binding(
             get: { tabCustomization },
-            set: { newValue in
-                guard plus.require(.interface) else { return }
-                tabCustomization = newValue
-            }
+            set: { tabCustomization = $0 }
         )
     }
 
@@ -567,7 +563,6 @@ enum ProfilePresentation {
 
 struct ProfileMenu: View {
     @Environment(SessionStore.self) private var session
-    private var plus: PlusEntitlement { PlusEntitlement.shared }
     var diameter: CGFloat = 45
     var showsName = false
 
@@ -593,20 +588,11 @@ struct ProfileMenu: View {
                     onProfile: { ProfilePresentation.show(.profile) },
                     onSessions: session.usesSilo
                         ? nil
-                        : {
-                            guard plus.require(.sessions) else { return }
-                            ProfilePresentation.show(.sessions)
-                        },
+                        : { ProfilePresentation.show(.sessions) },
                     onScheduledTasks: session.isAdministrator
-                        ? {
-                            guard plus.require(.adminTools) else { return }
-                            ProfilePresentation.show(.scheduledTasks)
-                        }
+                        ? { ProfilePresentation.show(.scheduledTasks) }
                         : nil,
-                    onAddUser: {
-                        guard plus.require(.extraAccounts) else { return }
-                        ProfilePresentation.show(.addUser)
-                    },
+                    onAddUser: { ProfilePresentation.show(.addUser) },
                     onSettings: { ProfilePresentation.show(.settings) },
                     onSignOut: { Task { await session.signOut() } },
                     onSwitchTo: { account in

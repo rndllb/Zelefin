@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
@@ -312,6 +313,7 @@ fun DetailPage(
                     }
                     Spacer(Modifier.height(20.dp))
                 }
+                item(key = "about") { AboutRow(item) { sheet = DetailSheet.MoreInfo } }
                 extras?.let { loaded ->
                     item(key = "enhanced") {
                         TitleEnhancedExtras(
@@ -326,7 +328,6 @@ fun DetailPage(
                         )
                     }
                 }
-                item(key = "about") { AboutRow(item) { sheet = DetailSheet.MoreInfo } }
                 item(key = "information") { FactsBlock("Information", detail.moreInfo.information) }
                 item(key = "languages") { FactsBlock("Languages", detail.moreInfo.languages) }
                 item(key = "file") { FactsBlock("File", detail.moreInfo.file) }
@@ -353,7 +354,6 @@ fun DetailPage(
                         episodes = detail.episodes,
                         onShare = { shareTitle(context, item, session) },
                         onRemove = { downloadRemoval = it },
-                        onNotice = { note = it },
                     )
                 }
             }
@@ -678,29 +678,36 @@ private fun SeasonMenu(
     onDismiss: () -> Unit,
 ) {
     val haze = LocalZelefinHaze.current ?: return
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, onClick = onDismiss))
+    CenteredMenuFrame(onDismiss) {
+        val run = LocalMenuAction.current
         Column(
             Modifier
-                .align(Alignment.Center)
-                .widthIn(max = 280.dp)
-                .fillMaxWidth(0.72f)
-                .zelefinGlassChrome(haze, ZelefinOverlayShape)
-                .padding(vertical = 8.dp),
+                .widthIn(max = 250.dp)
+                .zelefinGlassChrome(haze, ZelefinMenuShape)
+                .zelefinMenuWidth()
+                .padding(vertical = 4.dp),
         ) {
             seasons.forEach { season ->
                 val selected = season.id == selectedId
-                Text(
-                    season.seasonMenuTitle,
-                    color = if (selected) ZelefinCyan else Color.White,
-                    fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 17.sp,
-                    modifier = Modifier
+                Row(
+                    Modifier
                         .fillMaxWidth()
-                        .clickable { onSelect(season.id) }
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                )
+                        .clickable { run { onSelect(season.id) } }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.width(22.dp)) {
+                        if (selected) {
+                            Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = ZelefinCyan, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                    Text(
+                        season.seasonMenuTitle,
+                        color = Color.White,
+                        fontFamily = ZelefinFont,
+                        fontSize = 17.sp,
+                    )
+                }
             }
         }
     }

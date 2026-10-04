@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Shared sign-in canvas colors. Plus uses the same black field and cyan action.
+/// Shared sign-in canvas colors.
 enum LoginPalette {
     static let cyan = AccentPreferences.cyan.color
     static let cobalt = Color(red: 0.0, green: 0.22, blue: 0.98)

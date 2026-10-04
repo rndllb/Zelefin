@@ -2,7 +2,6 @@ import SwiftUI
 
 struct TabCustomizationView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(HomeLayoutPreferences.mergeContinueAndNextUpKey) private var mergeContinueAndNextUp = false
@@ -90,7 +89,7 @@ struct TabCustomizationView: View {
             } footer: {
                 Text(homeRowsFooterCopy)
             }
-            .environment(\.editMode, .constant(plus.isUnlocked ? .active : .inactive))
+            .environment(\.editMode, .constant(.active))
 
             Section {
                 if UIDevice.current.userInterfaceIdiom != .pad {
@@ -161,13 +160,11 @@ struct TabCustomizationView: View {
             Section {
                 VStack(alignment: .leading, spacing: 0) {
                     SettingsSecondaryButton(title: "Reset Home Rows") {
-                        guard plus.require(.interface) else { return }
                         homeRowOrder = HomeRowKind.defaultOrderRaw
                         homeRowHidden = ""
                         featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
                     }
                     SettingsSecondaryButton(title: "Reset Tabs") {
-                        guard plus.require(.interface) else { return }
                         tabOrderRaw = AppTab.defaultOrderRaw
                         tabCustomization = AppTab.defaultCustomization()
                     }
@@ -218,10 +215,7 @@ struct TabCustomizationView: View {
             : (showsTabNames
                 ? "Each dock icon shows its name. The iPhone dock holds 5 tabs, including Search. "
                 : "The dock shows icons only. Turn Show Tab Names on to put a name under each icon. The iPhone dock holds 5 tabs, including Search. ")
-        if plus.isUnlocked {
-            return names + "Drag to reorder. Turn off a tab to hide it from the tab bar. On iPad, you can also tap Edit at the top of the sidebar."
-        }
-        return names + "Zelefin Plus lets you reorder and hide tabs."
+        return names + "Drag to reorder. Turn off a tab to hide it from the tab bar. On iPad, you can also tap Edit at the top of the sidebar."
     }
 
     private var homeFooterCopy: String {
@@ -233,9 +227,7 @@ struct TabCustomizationView: View {
     }
 
     private var homeRowsFooterCopy: String {
-        if !plus.isUnlocked {
-            "Without Plus, Home is Featured, Continue Watching, Recently Added Movies, and Recently Added Shows, in that order. Plus turns on the other rows and lets you reorder."
-        } else if mergeContinueAndNextUp {
+        if mergeContinueAndNextUp {
             "Drag to reorder. Turn off a row to hide it from Home. Next Up only appears when Combine Continue Watching and Next Up is off."
         } else {
             "Drag to reorder. Turn off a row to hide it from Home."
@@ -243,33 +235,20 @@ struct TabCustomizationView: View {
     }
 
     private var displayedHomeRows: [HomeRowKind] {
-        if plus.isUnlocked {
-            return HomeRowKind.ordered(from: homeRowOrder)
-        }
-        let extras = HomeRowKind.allCases.filter { !$0.isIncludedInFreeLayout }
-        return HomeRowKind.freeOrder + extras
+        HomeRowKind.ordered(from: homeRowOrder)
     }
 
     private var gatedMergeBinding: Binding<Bool> {
         Binding(
             get: { mergeContinueAndNextUp },
-            set: { newValue in
-                guard plus.require(.interface) else { return }
-                mergeContinueAndNextUp = newValue
-            }
+            set: { mergeContinueAndNextUp = $0 }
         )
     }
 
     private func homeRowVisibilityBinding(for row: HomeRowKind) -> Binding<Bool> {
         Binding(
-            get: {
-                if plus.isUnlocked {
-                    return !HomeRowKind.hidden(from: homeRowHidden).contains(row)
-                }
-                return row.isIncludedInFreeLayout
-            },
+            get: { !HomeRowKind.hidden(from: homeRowHidden).contains(row) },
             set: { isOn in
-                guard plus.require(.interface) else { return }
                 var hidden = HomeRowKind.hidden(from: homeRowHidden)
                 if isOn {
                     hidden.remove(row)
@@ -282,7 +261,6 @@ struct TabCustomizationView: View {
     }
 
     private func moveHomeRows(from offsets: IndexSet, to destination: Int) {
-        guard plus.require(.interface) else { return }
         var order = HomeRowKind.ordered(from: homeRowOrder)
         order.move(fromOffsets: offsets, toOffset: destination)
         homeRowOrder = HomeRowKind.raw(from: order)
@@ -315,7 +293,6 @@ struct TabCustomizationView: View {
         Binding(
             get: { DockLibraryPreferences.ids(from: dockLibraryIDsRaw).contains(library.id) },
             set: { isOn in
-                guard plus.require(.interface) else { return }
                 var ids = DockLibraryPreferences.ids(from: dockLibraryIDsRaw)
                 let alreadyOn = ids.contains(library.id)
                 if isOn, !alreadyOn, !canEnableAnotherDockItem {
@@ -335,7 +312,6 @@ struct TabCustomizationView: View {
         Binding(
             get: { tabCustomization[sidebarVisibility: tab.customizationID] != .hidden },
             set: { isOn in
-                guard plus.require(.interface) else { return }
                 let alreadyOn = tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
                 if isOn, !alreadyOn, !canEnableAnotherDockItem {
                     return
@@ -346,7 +322,6 @@ struct TabCustomizationView: View {
     }
 
     private func moveTabs(from offsets: IndexSet, to destination: Int) {
-        guard plus.require(.interface) else { return }
         var order = AppTab.ordered(from: tabOrderRaw)
         order.move(fromOffsets: offsets, toOffset: destination)
         tabOrderRaw = AppTab.raw(from: order)

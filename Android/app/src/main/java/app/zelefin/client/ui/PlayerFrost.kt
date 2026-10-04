@@ -2,7 +2,10 @@ package app.zelefin.client.ui
 
 import android.graphics.Bitmap
 import android.os.Build
-import android.view.TextureView
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import android.view.SurfaceView
 import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,13 +38,15 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 /**
- * Haze only samples what Compose draws, and the video comes from a TextureView it can't see.
+ * Haze only samples what Compose draws, and the video is a SurfaceView it can't see.
  * The player grabs a tiny copy of the current frame instead, and each control paints that copy
  * blurred behind itself, so the controls frost the picture like the dock frosts the app.
  */
 internal object PlayerFrost {
     private val buffers = arrayOfNulls<Bitmap>(2)
     private var next = 0
+    private var copying = false
+    private val main = Handler(Looper.getMainLooper())
 
     var frame by mutableStateOf<ImageBitmap?>(null)
         private set
@@ -50,24 +55,31 @@ internal object PlayerFrost {
     var version by mutableIntStateOf(0)
         private set
 
-    fun capture(texture: TextureView) {
-        if (!texture.isAvailable || texture.width <= 0 || texture.height <= 0) return
-        val width = (texture.width / Downscale).coerceAtLeast(8)
-        val height = (texture.height / Downscale).coerceAtLeast(8)
+    fun capture(surface: SurfaceView) {
+        if (copying || !surface.holder.surface.isValid || surface.width <= 0 || surface.height <= 0) return
+        val width = (surface.width / Downscale).coerceAtLeast(8)
+        val height = (surface.height / Downscale).coerceAtLeast(8)
         val bitmap = buffers[next]?.takeIf { it.width == width && it.height == height }
             ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { buffers[next] = it }
-        texture.getBitmap(bitmap)
-        val location = IntArray(2)
-        texture.getLocationInWindow(location)
-        bounds = Rect(
-            location[0].toFloat(),
-            location[1].toFloat(),
-            (location[0] + texture.width).toFloat(),
-            (location[1] + texture.height).toFloat(),
-        )
-        frame = bitmap.asImageBitmap()
-        next = 1 - next
-        version += 1
+        copying = true
+        val copied = runCatching {
+            PixelCopy.request(surface, bitmap, { result ->
+                copying = false
+                if (result != PixelCopy.SUCCESS || surface.width <= 0) return@request
+                val location = IntArray(2)
+                surface.getLocationInWindow(location)
+                bounds = Rect(
+                    location[0].toFloat(),
+                    location[1].toFloat(),
+                    (location[0] + surface.width).toFloat(),
+                    (location[1] + surface.height).toFloat(),
+                )
+                frame = bitmap.asImageBitmap()
+                next = 1 - next
+                version += 1
+            }, main)
+        }
+        if (copied.isFailure) copying = false
     }
 
     fun clear() {
@@ -80,11 +92,11 @@ internal object PlayerFrost {
 
 /** Keeps [PlayerFrost] fed while any frosted control is on screen. */
 @Composable
-internal fun PlayerFrostCapture(texture: TextureView?, active: Boolean, playing: Boolean) {
-    LaunchedEffect(texture, active, playing) {
-        if (texture == null || !active) return@LaunchedEffect
+internal fun PlayerFrostCapture(surface: SurfaceView?, active: Boolean, playing: Boolean) {
+    LaunchedEffect(surface, active, playing) {
+        if (surface == null || !active) return@LaunchedEffect
         while (true) {
-            PlayerFrost.capture(texture)
+            PlayerFrost.capture(surface)
             delay(if (playing) 66 else 400)
         }
     }

@@ -1063,54 +1063,6 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertEqual(feed.map(\.id), ["library-shows", "featured", "recommend-1", "continue"])
     }
 
-    func testFreeHomeFeedLocksOrderAndDropsPlusRows() {
-        let featured = [Self.item(id: "f1", queueKind: .resume)]
-        let continueRow = HomeSection(
-            id: "continue",
-            title: "Continue Watching",
-            style: .landscape,
-            items: [Self.item(id: "r1", queueKind: .resume)]
-        )
-        let nextUp = HomeSection(
-            id: "next-up",
-            title: "Next Up",
-            style: .landscape,
-            items: [Self.item(id: "n1", queueKind: .resume)]
-        )
-        let movies = HomeSection(
-            id: "library-1",
-            title: "Recently Added Movies",
-            style: .portrait,
-            items: [Self.item(id: "m1", queueKind: .resume)]
-        )
-        let shows = HomeSection(
-            id: "library-shows",
-            title: "Recently Added Shows",
-            style: .portrait,
-            items: [Self.item(id: "s1", queueKind: .resume)]
-        )
-        let recommended = HomeSection(
-            id: "recommend-1",
-            title: "Because You Watched Dune",
-            style: .portrait,
-            items: [Self.item(id: "x1", queueKind: .resume)]
-        )
-        let extra = HomeSection(
-            id: "custom-row",
-            title: "Custom",
-            style: .portrait,
-            items: [Self.item(id: "c1", queueKind: .resume)]
-        )
-        let feed = HomeLayoutPreferences.feed(
-            featured: featured,
-            sections: [recommended, shows, nextUp, extra, movies, continueRow],
-            order: [.genres, .recentlyAddedShows, .featured],
-            hidden: [.continueWatching, .recentlyAddedMovies],
-            isPlus: false
-        )
-        XCTAssertEqual(feed.map(\.id), ["featured", "continue", "library-1", "library-shows"])
-    }
-
     func testHomeFeedSkipsEmptyFeaturedAndKeepsUnknownRowsLast() {
         let extra = HomeSection(
             id: "custom-row",

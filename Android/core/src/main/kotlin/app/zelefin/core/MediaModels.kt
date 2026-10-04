@@ -190,6 +190,8 @@ data class CreditPerson(
     val roleLabel: String,
     val imageTag: String? = null,
     val imageUrl: String? = null,
+    val overview: String? = null,
+    val birthYear: Int? = null,
 )
 
 @Serializable

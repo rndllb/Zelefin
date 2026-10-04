@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -307,6 +308,7 @@ fun PlayerScreen(
     onLoadNext: suspend (MediaItem) -> MediaItem? = { null },
     onPlayNext: (MediaItem, Double) -> Unit = { _, _ -> },
     onReload: (Double) -> Unit = {},
+    onRecover: (Double) -> Unit = {},
     onAdaptiveBitrate: ((Int, Double) -> Unit)? = null,
 ) {
     val pluginState by plugins.state.collectAsState()
@@ -327,6 +329,8 @@ fun PlayerScreen(
         if (plan.item.kind == app.zelefin.core.MediaKind.Episode) nextEpisode = runCatching { onLoadNext(plan.item) }.getOrNull()
     }
     val nextArtwork = remember(nextEpisode, session) { nextEpisode?.let { artworkCandidates(it, session, landscape = true) }.orEmpty() }
+    var sourceRetries by remember(plan.item.id) { mutableIntStateOf(0) }
+    val remote = !plan.streamUrl.startsWith("file:")
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         PlayerSurface(
             plan = plan,
@@ -346,6 +350,15 @@ fun PlayerScreen(
             onAddSubtitles = addSubtitles,
             suspended = subtitleSearchAt != null,
             onAdaptiveBitrate = onAdaptiveBitrate,
+            onRecover = if (remote && sourceRetries < 1) {
+                { position ->
+                    sourceRetries += 1
+                    onRecover(position)
+                }
+            } else {
+                null
+            },
+            onRetryStream = if (remote) onRecover else null,
         )
         if (subtitleSheet.displayed != null) {
             ZelefinSheetScrim(subtitleSheet.progress)

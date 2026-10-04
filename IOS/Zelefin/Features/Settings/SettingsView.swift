@@ -4,7 +4,6 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @State private var showsLibraryScanConfirm = false
     @State private var libraryScanMessage: String?
     @State private var cacheSubtitle: String?
@@ -69,10 +68,10 @@ struct SettingsView: View {
                 NotificationSettingsView()
             }
             if !session.usesSilo {
-                settingsRow("Sessions", systemImage: "play.tv", feature: .sessions) {
+                settingsRow("Sessions", systemImage: "play.tv") {
                     SessionsView()
                 }
-                settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle, feature: .syncPlay) {
+                settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle) {
                     SyncPlayView()
                 }
             }
@@ -98,31 +97,31 @@ struct SettingsView: View {
     private var serverSection: some View {
         if session.canAdministerSilo {
             Section {
-                settingsRow("Accounts", systemImage: "person.2", subtitle: "Logins, roles, and passwords", feature: .adminTools) {
+                settingsRow("Accounts", systemImage: "person.2", subtitle: "Logins, roles, and passwords") {
                     SiloUsersView()
                 }
-                settingsRow("Invitations", systemImage: "envelope.badge", subtitle: "Invite people to this server", feature: .adminTools) {
+                settingsRow("Invitations", systemImage: "envelope.badge", subtitle: "Invite people to this server") {
                     SiloInvitationsView()
                 }
-                settingsRow("Sessions", systemImage: "play.tv", subtitle: "Who is playing right now", feature: .adminTools) {
+                settingsRow("Sessions", systemImage: "play.tv", subtitle: "Who is playing right now") {
                     SiloSessionsView()
                 }
-                settingsRow("Devices", systemImage: "iphone", subtitle: "Signed-in devices", feature: .adminTools) {
+                settingsRow("Devices", systemImage: "iphone", subtitle: "Signed-in devices") {
                     SiloDevicesView()
                 }
-                settingsRow("Libraries", systemImage: "rectangle.stack", subtitle: "Scan one library or all of them", feature: .adminTools) {
+                settingsRow("Libraries", systemImage: "rectangle.stack", subtitle: "Scan one library or all of them") {
                     SiloLibrariesAdminView()
                 }
-                settingsRow("Nodes", systemImage: "server.rack", subtitle: "Stream and transcode workers", feature: .adminTools) {
+                settingsRow("Nodes", systemImage: "server.rack", subtitle: "Stream and transcode workers") {
                     SiloNodesView()
                 }
-                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress", feature: .adminTools) {
+                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress") {
                     SiloTasksView()
                 }
-                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Administrator audit trail", feature: .adminTools) {
+                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Administrator audit trail") {
                     SiloAuditLogView()
                 }
-                settingsRow("Server Logs", systemImage: "scroll", subtitle: "Operational output", feature: .adminTools) {
+                settingsRow("Server Logs", systemImage: "scroll", subtitle: "Operational output") {
                     SiloOperationalLogView()
                 }
                 scanLibrariesRow
@@ -133,19 +132,19 @@ struct SettingsView: View {
             }
         } else if session.isAdministrator, !session.usesSilo {
             Section {
-                settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls", feature: .adminTools) {
+                settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls") {
                     UserManagementView()
                 }
-                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress", feature: .adminTools) {
+                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress") {
                     ScheduledTasksView()
                 }
-                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Sign-ins, scans, and failures", feature: .adminTools) {
+                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Sign-ins, scans, and failures") {
                     ActivityLogView()
                 }
-                settingsRow("Backups", systemImage: "externaldrive.badge.timemachine", subtitle: "Archive and restore this server", feature: .adminTools) {
+                settingsRow("Backups", systemImage: "externaldrive.badge.timemachine", subtitle: "Archive and restore this server") {
                     ServerBackupsView()
                 }
-                settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen", feature: .adminTools) {
+                settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
                     ServerBrandingView()
                 }
                 scanLibrariesRow
@@ -159,7 +158,6 @@ struct SettingsView: View {
 
     private var scanLibrariesRow: some View {
         Button {
-            guard plus.require(.adminTools) else { return }
             showsLibraryScanConfirm = true
         } label: {
             settingsRowLabel(
@@ -192,7 +190,6 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
-            plusRow
             settingsRow("About", systemImage: "info.circle", subtitle: DeviceIdentity.versionAndBuild) {
                 SettingsAboutView()
             }
@@ -201,56 +198,25 @@ struct SettingsView: View {
         }
     }
 
-    private var plusRow: some View {
-        Button {
-            plus.request(.downloads)
-        } label: {
-            settingsRowLabel(
-                "Zelefin Plus",
-                systemImage: "star.circle",
-                subtitle: plus.status.settingsLabel,
-                trailing: .chevron
-            )
-            .settingsLoginCard()
-        }
-        .buttonStyle(.plain)
-        .settingsCardRow()
-    }
-
     @ViewBuilder
     private func settingsRow<Destination: View>(
         _ title: String,
         systemImage: String,
         subtitle: String? = nil,
-        feature: PlusFeature? = nil,
         @ViewBuilder destination: () -> Destination
     ) -> some View {
-        if let feature, !plus.isUnlocked {
-            
-            
-            Button {
-                plus.request(feature)
-            } label: {
-                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, trailing: .lock)
-                    .settingsLoginCard()
-            }
-            .buttonStyle(.plain)
-            .settingsCardRow()
-        } else {
-            NavigationLink {
-                destination()
-            } label: {
-                settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, trailing: .chevron)
-                    .settingsLoginCard()
-            }
-            .settingsCardRow()
+        NavigationLink {
+            destination()
+        } label: {
+            settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, trailing: .chevron)
+                .settingsLoginCard()
         }
+        .settingsCardRow()
     }
 
     private enum SettingsRowTrailing {
         case none
         case chevron
-        case lock
     }
 
     private func settingsRowLabel(
@@ -280,10 +246,6 @@ struct SettingsView: View {
                 EmptyView()
             case .chevron:
                 SettingsChevron()
-            case .lock:
-                Image(systemName: "lock.fill")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(LoginPalette.captionText)
             }
         }
         .padding(.vertical, 2)
@@ -348,7 +310,6 @@ enum ZelefinSite {
 }
 
 struct SettingsAboutView: View {
-    @Environment(PlusEntitlement.self) private var plus
     @State private var legalPage: LegalPage?
 
     var body: some View {
@@ -381,28 +342,6 @@ struct SettingsAboutView: View {
                 }
                 .settingsLoginCard()
                 .settingsCardRow()
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    SettingsFieldLabel(title: "Plus")
-                    Picker("Plus", selection: Binding(
-                        get: { plus.debugOverride },
-                        set: { plus.debugOverride = $0 }
-                    )) {
-                        ForEach(PlusDebugOverride.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(AccentPreferences.current)
-                }
-                .settingsLoginCard()
-                .settingsCardRow()
-            } header: {
-                Text("Debug")
-            } footer: {
-                Text("Locked makes Plus features ask you to pay. Then tap Live TV, a download, or an extra Home row. Fake Store is only for trying a pretend purchase. New installs start on Annual until this is changed.")
             }
         }
         .zelefinSettingsChrome(title: "About")

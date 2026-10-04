@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -42,19 +41,17 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.ZelefinModel
-import app.zelefin.client.ZelefinPlus
 import app.zelefin.core.SavedSession
 import app.zelefin.core.ServerUrl
 
 const val AddAccountTopicId = "add-account"
 
-private val MenuWidth = 250.dp
 private val Destructive = Color(0xFFFF453A)
 
 @Composable
@@ -68,17 +65,15 @@ fun AccountAvatarMenu(
     val model: ZelefinModel = viewModel()
     val appState by model.state.collectAsState()
     var open by remember { mutableStateOf(false) }
-    var plusNote by remember { mutableStateOf(false) }
     val anchor = remember { mutableStateOf(Rect.Zero) }
     val haze = LocalZelefinHaze.current
     val showSessions = session?.usesSilo != true
     val addLabel = if (session?.usesSilo == true) "Add Account" else "Add User"
     val others = appState.accounts.filter { it.accountId != session?.accountId }
 
-    PresentZelefinOverlay(visible = haze != null && (open || plusNote)) {
+    PresentZelefinOverlay(visible = haze != null && open) {
         val hazeState = haze ?: return@PresentZelefinOverlay
-        if (open) {
-            DockGlassMenu(
+        DockGlassMenu(
                 hazeState = hazeState,
                 anchor = anchor.value,
                 showSessions = showSessions,
@@ -99,12 +94,8 @@ fun AccountAvatarMenu(
                 },
                 onAdd = {
                     open = false
-                    if (ZelefinPlus.allows(ZelefinPlus.Feature.ExtraAccounts)) {
-                        model.resetAddAccount()
-                        model.openSettingsTopic(AddAccountTopicId)
-                    } else {
-                        plusNote = true
-                    }
+                    model.resetAddAccount()
+                    model.openSettingsTopic(AddAccountTopicId)
                 },
                 onSettings = {
                     open = false
@@ -115,15 +106,6 @@ fun AccountAvatarMenu(
                     onSignOut()
                 },
             )
-        } else {
-            val (title, message) = ZelefinPlus.notice(ZelefinPlus.Feature.ExtraAccounts)
-            ZelefinGlassAlert(
-                hazeState = hazeState,
-                title = title,
-                message = message,
-                onDismiss = { plusNote = false },
-            )
-        }
     }
 
     AccountAvatar(
@@ -148,26 +130,13 @@ private fun DockGlassMenu(
     onSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
+    AnchoredMenuFrame(anchor, alignTrailing = true, onDismiss = onDismiss) {
         Column(
             Modifier
-                .offset {
-                    val width = MenuWidth.roundToPx()
-                    val gap = 8.dp.roundToPx()
-                    IntOffset(
-                        x = (anchor.right - width).toInt().coerceAtLeast(16.dp.roundToPx()),
-                        y = (anchor.bottom + gap).toInt(),
-                    )
-                }
-                .width(MenuWidth)
-                .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
+                .zelefinGlassChrome(hazeState, ZelefinMenuShape)
                 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
-                .padding(vertical = 6.dp),
+                .zelefinMenuWidth()
+                .padding(vertical = 4.dp),
         ) {
             GlassMenuRow("Profile", Icons.Outlined.AccountCircle, onProfile)
             if (showSessions) GlassMenuRow("Sessions", Icons.Outlined.LiveTv, onSessions)
@@ -199,23 +168,24 @@ private fun GlassMenuDivider() {
 private fun GlassAccountRow(account: SavedSession, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val run = LocalMenuAction.current
     Row(
         Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .padding(horizontal = 6.dp)
-            .clip(RoundedCornerShape(26.dp))
+            .height(48.dp)
+            .padding(horizontal = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(if (pressed) DockSelectedFill else Color.Transparent)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .clickable(interactionSource = interaction, indication = null) { run(onClick) }
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(account.userName, color = DockInactive, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1)
-            Text(account.displayServer, color = DockInactive.copy(alpha = 0.6f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 1)
-        }
-        Spacer(Modifier.width(10.dp))
         AccountAvatarImage(account, 28.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(account.userName, color = DockInactive, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(account.displayServer, color = DockInactive.copy(alpha = 0.6f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -339,20 +309,31 @@ private fun GlassMenuRow(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val tint = if (destructive) Destructive else DockInactive
+    val run = LocalMenuAction.current
+    val textTint = if (destructive) Destructive else DockInactive
+    val iconTint = if (destructive) Destructive else ZelefinCyan
     Row(
         Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .padding(horizontal = 6.dp)
-            .clip(RoundedCornerShape(22.dp))
+            .padding(horizontal = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(if (pressed) DockSelectedFill else Color.Transparent)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .clickable(interactionSource = interaction, indication = null) { run(onClick) }
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = tint, fontFamily = ZelefinFont, fontSize = 17.sp, modifier = Modifier.weight(1f))
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(
+            title,
+            color = textTint,
+            fontFamily = ZelefinFont,
+            fontSize = 17.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

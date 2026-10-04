@@ -334,6 +334,7 @@ private fun ZelefinScreen(
             onLoadNext = model::nextEpisode,
             onPlayNext = { next, position -> model.playNext(screen.plan, position, next) },
             onReload = { position -> model.reloadPlayback(screen.plan, position) },
+            onRecover = { position -> model.recoverPlayback(screen.plan, position) },
             onAdaptiveBitrate = { bitsPerSecond, position -> model.reloadPlaybackAtBitrate(screen.plan, position, bitsPerSecond) },
         )
     }

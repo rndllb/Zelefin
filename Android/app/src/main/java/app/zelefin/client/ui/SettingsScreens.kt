@@ -43,7 +43,6 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -93,7 +92,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.ZelefinModel
-import app.zelefin.client.ZelefinPlus
 import app.zelefin.client.network.HomeNetwork
 import app.zelefin.client.network.HomeNetworkProfile
 import app.zelefin.core.ArtworkDiskKey
@@ -150,7 +148,6 @@ fun SettingsScreen(
         SettingsLink("Cache", Icons.Outlined.Storage, "Posters and saved home data") { onTopic("cache") }
         SettingsLink("Interface", Icons.Outlined.Settings, "Accent color and Home rows") { onTopic("interface") }
         SettingsHeader("Zelefin")
-        SettingsLink("Zelefin Plus", Icons.Outlined.Star, if (ZelefinPlus.UNLOCKED) "Included" else "Free") { onTopic("plus") }
         SettingsLink("About", Icons.Outlined.Info, "0.1.0 (6)") { onTopic("about") }
     }
 }
@@ -435,7 +432,6 @@ fun SettingsTopicScreen(id: String, state: ZelefinUiState, plugins: PluginsContr
         "network" -> "Network"
         "cache" -> "Cache"
         "interface" -> "Interface"
-        "plus" -> "Zelefin Plus"
         "about" -> "About"
         AddAccountTopicId -> if (state.session?.usesSilo == true) "Add Account" else "Add User"
         else -> "Settings"
@@ -446,7 +442,6 @@ fun SettingsTopicScreen(id: String, state: ZelefinUiState, plugins: PluginsContr
             "cache" -> CacheTopic()
             "sessions" -> SessionsTopic(state)
             "about" -> AboutTopic(state)
-            "plus" -> PlusTopic()
             AddAccountTopicId -> AddAccountTopic(state)
             "notifications" -> NotificationsTopic(state, plugins)
             "plugins" -> PluginsTopic(state, plugins)
@@ -1242,55 +1237,6 @@ private fun NetworkTopic(state: ZelefinUiState) {
         }
     }
     SettingsFooter("Needed when the server sits behind Cloudflare Zero Trust or Pangolin. Zelefin sends these with every request.")
-}
-@Composable
-private fun PlusTopic() {
-    SettingsCard {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(Icons.Outlined.Star, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Zelefin Plus", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text(if (ZelefinPlus.UNLOCKED) "Included on Android" else "Free", color = Secondary, fontFamily = ZelefinFont, fontSize = 14.sp)
-            }
-        }
-    }
-    SettingsHeader("Included")
-    SettingsCard {
-        val features = listOf(
-            ZelefinPlus.Feature.Downloads to "Save movies and episodes to watch offline.",
-            ZelefinPlus.Feature.ExtraAccounts to "Keep more than one user on this phone and switch in a tap.",
-            ZelefinPlus.Feature.Sessions to "See and control what’s playing on other devices.",
-            ZelefinPlus.Feature.SyncPlay to "Watch together in sync with other Jellyfin users.",
-            ZelefinPlus.Feature.AdminTools to "Users, scheduled tasks, and library scans for administrators.",
-        )
-        features.forEachIndexed { index, (feature, detail) ->
-            if (index > 0) CardDivider()
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        feature.title.replaceFirstChar { it.uppercase() },
-                        color = Color.White,
-                        fontFamily = ZelefinFont,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
-                    )
-                    Text(detail, color = Caption, fontFamily = ZelefinFont, fontSize = 13.sp)
-                }
-                if (ZelefinPlus.allows(feature)) {
-                    Icon(Icons.Outlined.Check, contentDescription = "Included", tint = ZelefinCyan, modifier = Modifier.size(20.dp))
-                } else {
-                    Icon(Icons.Outlined.Lock, contentDescription = "Plus", tint = Caption, modifier = Modifier.size(18.dp))
-                }
-            }
-        }
-    }
-    SettingsFooter(
-        if (ZelefinPlus.UNLOCKED) {
-            "Everything in Zelefin Plus is included on Android for now. Sign in, browsing, and playback are always free."
-        } else {
-            "Sign in, browsing, and playback are always free."
-        },
-    )
 }
 
 /** Mirrors iOS `TabCustomizationView`. */

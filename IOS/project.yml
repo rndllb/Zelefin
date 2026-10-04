@@ -37,7 +37,6 @@ targets:
       - path: Zelefin
         excludes:
           - "**/*.md"
-          - "**/*.storekit"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.zelefin.client
@@ -107,5 +106,3 @@ schemes:
     test:
       targets:
         - ZelefinTests
-    run:
-      storeKitConfiguration: Zelefin/Zelefin.storekit

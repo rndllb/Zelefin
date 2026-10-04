@@ -89,7 +89,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -98,7 +97,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
@@ -869,31 +867,18 @@ private fun RecentMenu(
     PresentZelefinOverlay(visible = request != null && haze != null) {
         val hazeState = haze ?: return@PresentZelefinOverlay
         val current = request ?: return@PresentZelefinOverlay
-        val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-        val menuWidth = 250.dp
-        Box(Modifier.fillMaxSize()) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-            )
+        AnchoredMenuFrame(
+            current.anchor,
+            alignTrailing = true,
+            onDismiss = onDismiss,
+            clearBottom = DockContentReserve,
+        ) {
             Column(
                 Modifier
-                    .offset {
-                        val width = menuWidth.roundToPx()
-                        val gap = 8.dp.roundToPx()
-                        val height = 3 * 44.dp.roundToPx() + 12.dp.roundToPx()
-                        val below = current.anchor.bottom + gap
-                        val y = if (below + height > screenHeight.roundToPx()) current.anchor.top - gap - height else below
-                        IntOffset(
-                            x = (current.anchor.right - width).toInt().coerceAtLeast(16.dp.roundToPx()),
-                            y = y.toInt().coerceAtLeast(8.dp.roundToPx()),
-                        )
-                    }
-                    .width(menuWidth)
-                    .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
+                    .zelefinGlassChrome(hazeState, ZelefinMenuShape)
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
-                    .padding(vertical = 6.dp),
+                    .zelefinMenuWidth()
+                    .padding(vertical = 4.dp),
             ) {
                 MoreRow("Play", Icons.Filled.PlayArrow, {
                     onDismiss()

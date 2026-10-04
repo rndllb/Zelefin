@@ -116,12 +116,14 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.R
+import app.zelefin.client.network.GatewayHttp
 import app.zelefin.client.plugins.SkipPrompt
 import app.zelefin.client.plugins.SkipSegment
 import app.zelefin.core.MediaItem
@@ -165,6 +167,8 @@ fun PlayerSurface(
     onAddSubtitles: ((Double) -> Unit)? = null,
     suspended: Boolean = false,
     onAdaptiveBitrate: ((Int, Double) -> Unit)? = null,
+    onRecover: ((Double) -> Unit)? = null,
+    onRetryStream: ((Double) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -174,11 +178,12 @@ fun PlayerSurface(
     // A server-owned transcode starts its stream at the resume point, so stream time 0 is media time startTimeSeconds.
     val streamOffset = if (clientStart == null) plan.startTimeSeconds else 0.0
     val player = remember(plan.streamUrl) {
-        val dataSource = DefaultHttpDataSource.Factory()
+        // GatewayHttp retries a dead socket and sends each request to whichever address is
+        // answering. HttpURLConnection kept the dead one until the process was killed.
+        val http = OkHttpDataSource.Factory(GatewayHttp.playback)
             .setDefaultRequestProperties(plan.headers)
-            .setAllowCrossProtocolRedirects(true)
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context, dataSource)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http)))
             .build()
             .apply {
                 trackSelectionParameters = preferredLanguages(context, trackSelectionParameters)
@@ -200,6 +205,8 @@ fun PlayerSurface(
     val currentOnProgress by rememberUpdatedState(onProgress)
     val currentOnStopped by rememberUpdatedState(onStopped)
     val currentOnClose by rememberUpdatedState(onClose)
+    val currentOnRecover by rememberUpdatedState(onRecover)
+    val currentOnRetryStream by rememberUpdatedState(onRetryStream)
     LiveAdaptiveMonitor(player, plan, mediaSeconds, onAdaptiveBitrate)
     DisposableEffect(player) {
         onDispose {
@@ -218,6 +225,7 @@ fun PlayerSurface(
     var positionMs by remember(player) { mutableLongStateOf(0L) }
     var durationMs by remember(player) { mutableLongStateOf(C.TIME_UNSET) }
     var playbackError by remember(player) { mutableStateOf<String?>(null) }
+    var recovering by remember(player) { mutableStateOf(false) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(value: Boolean) {
@@ -225,7 +233,13 @@ fun PlayerSurface(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = error.localizedMessage ?: error.errorCodeName
+                val recover = currentOnRecover
+                if (!recovering && recover != null && isRecoverableSource(error)) {
+                    recovering = true
+                    recover(mediaSeconds())
+                } else if (!recovering) {
+                    playbackError = playbackFailureCopy(error)
+                }
             }
 
             override fun onPlayWhenReadyChanged(value: Boolean, reason: Int) {
@@ -253,12 +267,21 @@ fun PlayerSurface(
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
+    LaunchedEffect(tracks, activity) {
+        activity?.let { PlayerWindow.setHdr(it, tracks.isHdrVideo()) }
+    }
     LaunchedEffect(player) {
         while (true) {
             positionMs = player.currentPosition
             durationMs = player.duration
             delay(250)
         }
+    }
+    LaunchedEffect(player, recovering) {
+        if (!recovering) return@LaunchedEffect
+        delay(20_000)
+        recovering = false
+        playbackError = "The connection to the server dropped."
     }
     LaunchedEffect(player) {
         while (true) {
@@ -495,7 +518,7 @@ fun PlayerSurface(
     val showChrome = chromeVisible && !locked && !inPip && !suspended
     val frostActive = !inPip && !suspended &&
         (showChrome || menuPage != null || prompt != null || upNextVisible || lockHint || playbackError != null)
-    PlayerFrostCapture(playerView?.videoSurfaceView as? android.view.TextureView, frostActive, isPlaying)
+    PlayerFrostCapture(playerView?.videoSurfaceView as? android.view.SurfaceView, frostActive, isPlaying)
     DisposableEffect(Unit) { onDispose { PlayerFrost.clear() } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -527,7 +550,7 @@ fun PlayerSurface(
                     }
                 },
         )
-        if (buffering && !showChrome && !inPip) {
+        if ((recovering || (buffering && !showChrome)) && !inPip) {
             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(44.dp))
         }
         AnimatedVisibility(visible = showChrome, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
@@ -663,13 +686,19 @@ fun PlayerSurface(
                 Text("Tap to Unlock", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             }
         }
-        playbackError?.takeIf { !inPip }?.let { message ->
+        playbackError?.takeIf { !inPip && !recovering }?.let { message ->
             PlaybackErrorCard(
                 message = message,
                 onRetry = {
                     playbackError = null
-                    player.prepare()
-                    player.play()
+                    val retry = currentOnRetryStream
+                    if (retry != null) {
+                        recovering = true
+                        retry(mediaSeconds())
+                    } else {
+                        player.prepare()
+                        player.play()
+                    }
                 },
                 onClose = onClose,
                 modifier = Modifier.align(Alignment.Center),
@@ -1070,6 +1099,36 @@ private fun UpNextCard(item: MediaItem, artwork: List<String>, status: String, o
     }
 }
 
+/** A dropped socket or a dead server stream. A new session can replace it; a decoder failure cannot. */
+private fun isRecoverableSource(error: PlaybackException): Boolean {
+    val code = error.errorCode
+    return code == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+        code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+        code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+        code == PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE ||
+        code == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+        code == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+        code == PlaybackException.ERROR_CODE_IO_NO_PERMISSION ||
+        code == PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED ||
+        code == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
+        code == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+        code == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+        code == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+        code == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED
+}
+
+private fun playbackFailureCopy(error: PlaybackException): String = when (error.errorCode) {
+    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+    -> "The server closed this stream."
+    PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+    PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+    PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+    -> "This file couldn't be read from the server."
+    else -> "The connection to the server dropped."
+}
+
 @Composable
 private fun PlaybackErrorCard(message: String, onRetry: () -> Unit, onClose: () -> Unit, modifier: Modifier) {
     Column(
@@ -1162,7 +1221,7 @@ private fun PlayerMenuPanel(
                 .padding(top = 60.dp, end = 16.dp, start = 16.dp)
                 .width(320.dp)
                 .heightIn(max = (screenHeight - 76.dp).coerceAtLeast(180.dp))
-                .playerGlass(ZelefinOverlayShape)
+                .playerGlass(RoundedCornerShape(22.dp))
                 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
         ) {
             Row(
@@ -1429,6 +1488,16 @@ private fun playerTracks(tracks: Tracks, type: Int): List<PlayerTrack> {
             title
         }
         PlayerTrack(shown, group, index, group.isTrackSelected(index))
+    }
+}
+
+private fun Tracks.isHdrVideo(): Boolean = groups.any { group ->
+    group.type == C.TRACK_TYPE_VIDEO && (0 until group.length).any { index ->
+        if (!group.isTrackSelected(index)) return@any false
+        val format = group.getTrackFormat(index)
+        format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION ||
+            format.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 ||
+            format.colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG
     }
 }
 

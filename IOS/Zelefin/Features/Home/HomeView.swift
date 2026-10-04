@@ -2,7 +2,6 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(PlusEntitlement.self) private var plus
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
     @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = ""
@@ -13,8 +12,7 @@ struct HomeView: View {
             featured: session.homeLayout.featured,
             sections: session.homeLayout.sections,
             order: HomeRowKind.ordered(from: homeRowOrder),
-            hidden: HomeRowKind.hidden(from: homeRowHidden),
-            isPlus: plus.isUnlocked
+            hidden: HomeRowKind.hidden(from: homeRowHidden)
         )
     }
 

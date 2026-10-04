@@ -864,6 +864,57 @@ class JellyfinLibrary(
         )
     }
 
+    /**
+     * A title lists a person without a Primary tag until Jellyfin has refreshed that person.
+     * Reading the person item is what makes Jellyfin fetch the portrait on demand, so this does
+     * what tapping each cast member used to do and reports every batch so the row fills in.
+     */
+    suspend fun peopleWithPhotos(
+        userId: UUID,
+        people: List<CreditPerson>,
+        onBatch: suspend (List<CreditPerson>) -> Unit,
+    ) {
+        val missing = people.filter { it.imageTag.isNullOrBlank() && it.imageUrl.isNullOrBlank() && it.id.isNotBlank() }
+        if (missing.isEmpty()) return
+        val found = mutableMapOf<String, CreditPerson>()
+        for (batch in missing.chunked(6)) {
+            val rows = coroutineScope {
+                batch.map { person ->
+                    async { person.id to runCatching { person(userId, person.id) }.getOrNull() }
+                }.awaitAll()
+            }
+            var changed = false
+            rows.forEach { (id, profile) ->
+                if (profile != null && !profile.imageTag.isNullOrBlank()) {
+                    found[id] = profile
+                    changed = true
+                }
+            }
+            if (!changed) continue
+            onBatch(
+                people.map { person ->
+                    val profile = found[person.id] ?: return@map person
+                    person.copy(imageTag = profile.imageTag, overview = profile.overview, birthYear = profile.birthYear)
+                },
+            )
+        }
+    }
+
+    suspend fun person(userId: UUID, id: String): CreditPerson? = withContext(Dispatchers.IO) {
+        val dto = runCatching { api.userLibraryApi.getItem(UUID.fromString(id), userId).content }.getOrNull() ?: return@withContext null
+        val snapshot = dto.toSnapshot()
+        val personName = snapshot.name?.trim().orEmpty()
+        if (personName.isEmpty()) return@withContext null
+        CreditPerson(
+            id = snapshot.id ?: id,
+            name = personName,
+            roleLabel = "Cast & Crew",
+            imageTag = snapshot.primaryImageTag,
+            overview = snapshot.overview?.trim()?.ifEmpty { null },
+            birthYear = snapshot.productionYear,
+        )
+    }
+
     private suspend fun trailers(userId: UUID, itemId: UUID, dto: org.jellyfin.sdk.model.api.BaseItemDto): List<TitleTrailer> {
         val local = runCatching { api.userLibraryApi.getLocalTrailers(itemId = itemId, userId = userId).content }
             .getOrDefault(emptyList())
