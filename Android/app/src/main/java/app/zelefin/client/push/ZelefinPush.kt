@@ -150,7 +150,7 @@ object ZelefinPush {
 
     /** Draws an alert while Zelefin is in the foreground; Android draws it itself while the app is closed. */
     fun show(context: Context, data: Map<String, String>, fallbackTitle: String?, fallbackBody: String?) {
-        if (!permissionGranted(context)) return
+        if (!isEnabled(context) || !permissionGranted(context)) return
         ensureChannel(context)
         val title = data["title"]?.takeIf { it.isNotBlank() } ?: fallbackTitle ?: "Zelefin"
         val subtitle = data["subtitle"]?.takeIf { it.isNotBlank() }

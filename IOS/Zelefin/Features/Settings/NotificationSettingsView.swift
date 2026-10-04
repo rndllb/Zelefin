@@ -24,7 +24,8 @@ struct NotificationSettingsView: View {
             await refreshAuthorization()
         }
         .onChange(of: isEnabled) { _, enabled in
-            guard session.companionAvailable else { return }
+            // Turning off must reach the plugin even before detection has finished.
+            if enabled, !session.companionAvailable { return }
             Task { await handleMasterToggle(enabled) }
         }
     }
@@ -147,6 +148,8 @@ struct NotificationSettingsView: View {
                 _ = await PushNotificationCenter.requestPermissionIfNeeded()
                 await session.registerCompanionPushIfNeeded()
             }
+        } else {
+            await session.unregisterCompanionPush()
         }
     }
 

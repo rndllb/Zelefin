@@ -124,6 +124,7 @@ class PluginsController(
     private val application: Application,
     private val scope: CoroutineScope,
     private val session: () -> SavedSession?,
+    private val allSessions: () -> List<SavedSession> = { listOfNotNull(session()) },
     private val siloIdentity: () -> Map<String, String>,
     private val tmdbCatalog: suspend () -> JellyfinTmdbCatalog,
 ) {
@@ -228,7 +229,19 @@ class PluginsController(
     fun setPushEnabled(enabled: Boolean) {
         ZelefinPush.setEnabled(application, enabled)
         _state.update { it.copy(pushEnabled = enabled, pushMessage = null) }
-        if (enabled) registerPush() else unregisterPush()
+        if (enabled) {
+            registerPush()
+            return
+        }
+        // Every signed-in account may have registered this phone; the plugin must forget all of them.
+        val servers = (allSessions() + listOfNotNull(session()))
+            .filter { it.backend == MediaBackend.Jellyfin }
+            .distinctBy { it.serverUrl to it.accessToken }
+        if (servers.isEmpty()) {
+            _state.update { it.copy(pushRegistered = false) }
+            return
+        }
+        servers.forEach { unregisterPush(it) }
     }
 
     fun sendTestPush() {

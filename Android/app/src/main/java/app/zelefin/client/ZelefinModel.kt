@@ -157,6 +157,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         application = application,
         scope = viewModelScope,
         session = { _state.value.session },
+        allSessions = { vault.accounts() },
         siloIdentity = { siloClient().identity() },
         tmdbCatalog = { jellyfinClient().tmdbCatalog(userUuid()) },
     )

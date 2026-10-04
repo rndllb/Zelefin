@@ -85,7 +85,8 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound, .list])
+        // A push already in flight when the switch went off should not still land on screen.
+        completionHandler(LibraryAlertSettings.isEnabled ? [.banner, .sound, .list] : [])
     }
 
     nonisolated func userNotificationCenter(

@@ -1285,7 +1285,7 @@ final class SessionStore {
     }
 
     func registerPushToken(_ token: String) async {
-        guard companionAvailable, let client else { return }
+        guard companionAvailable, LibraryAlertSettings.isEnabled, let client else { return }
         await ZelefinCompanionClient(client: client).registerDevice(token: token)
     }
 
@@ -1294,7 +1294,15 @@ final class SessionStore {
         await registerCompanionPush()
     }
 
+    /// Removes this phone from the plugin so it stops sending alerts here. The Notifications
+    /// switch calls this; the plugin only knows the switch is off once the row is gone.
+    func unregisterCompanionPush() async {
+        guard let client else { return }
+        await ZelefinCompanionClient(client: client).deleteDevice()
+    }
+
     private func registerCompanionPush() async {
+        guard LibraryAlertSettings.isEnabled else { return }
         _ = await PushNotificationCenter.requestPermissionIfNeeded()
         if let token = PushNotificationCenter.storedToken {
             await registerPushToken(token)
