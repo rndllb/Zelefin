@@ -92,6 +92,61 @@ object JellyfinPlugins {
     }
 }
 
+/**
+ * Mirrors iOS `ZelefinPluginInstaller`: adds the Zelefin catalog to Jellyfin's plugin
+ * repositories when missing, installs the plugin from it, and can restart the server so it loads.
+ * Every call needs an administrator token.
+ */
+class ZelefinPluginInstaller(private val baseUrl: String, private val accessToken: String) {
+    suspend fun install() {
+        ensureRepository()
+        val path = "/Packages/Installed/${PluginHttp.segment(PACKAGE_NAME)}" +
+            "?assemblyGuid=$ASSEMBLY_GUID&repositoryUrl=${PluginHttp.segment(REPOSITORY_URL)}"
+        val response = PluginHttp.send(baseUrl, accessToken, "POST", path)
+        if (!response.isSuccess) throw ZelefinException.server(failureMessage(response, "Jellyfin could not install the Zelefin plugin"))
+    }
+
+    suspend fun restartServer() {
+        val response = PluginHttp.send(baseUrl, accessToken, "POST", "/System/Restart")
+        if (!response.isSuccess) throw ZelefinException.server(failureMessage(response, "Jellyfin could not restart"))
+    }
+
+    private suspend fun ensureRepository() {
+        val response = PluginHttp.send(baseUrl, accessToken, "GET", "/Repositories")
+        if (!response.isSuccess) throw ZelefinException.server(failureMessage(response, "Jellyfin could not list its plugin catalogs"))
+        val current = PluginJson.parse(response.body) as? JsonArray ?: JsonArray(emptyList())
+        val present = current.any { row ->
+            (row as? JsonObject)?.let { PluginJson.string(it, "Url") }?.let(::normalize) == normalize(REPOSITORY_URL)
+        }
+        if (present) return
+        val next = JsonArray(
+            current + JsonObject(
+                mapOf(
+                    "Name" to JsonPrimitive(REPOSITORY_NAME),
+                    "Url" to JsonPrimitive(REPOSITORY_URL),
+                    "Enabled" to JsonPrimitive(true),
+                ),
+            ),
+        )
+        val saved = PluginHttp.send(baseUrl, accessToken, "POST", "/Repositories", jsonBody = next.toString())
+        if (!saved.isSuccess) throw ZelefinException.server(failureMessage(saved, "Jellyfin could not add the Zelefin catalog"))
+    }
+
+    private fun normalize(url: String) = url.trim().trimEnd('/').lowercase()
+
+    private fun failureMessage(response: PluginResponse, prefix: String): String = when (response.status) {
+        401, 403 -> "$prefix. Sign in as a Jellyfin administrator."
+        else -> "$prefix (HTTP ${response.status})."
+    }
+
+    companion object {
+        const val REPOSITORY_NAME = "Zelefin"
+        const val REPOSITORY_URL = "https://raw.githubusercontent.com/rndllb/Zelefin-Plugin/main/manifest.json"
+        const val PACKAGE_NAME = "Zelefin"
+        const val ASSEMBLY_GUID = "b18e5910-21dd-49fe-a150-bb21ec3755e8"
+    }
+}
+
 internal class PluginResponse(val status: Int, val body: String, val headers: Map<String, String>) {
     val isSuccess: Boolean get() = status in 200..299
     val isGatewayChallenge: Boolean get() = AccessGateway.isChallenge(status, headers, body)

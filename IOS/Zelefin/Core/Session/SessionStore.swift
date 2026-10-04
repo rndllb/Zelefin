@@ -1177,10 +1177,10 @@ final class SessionStore {
         PlaybackPreferences.subtitleLanguageCode = subtitleCode
         guard !usesSilo, let client, let userID = session?.userID else { return }
         var config = (try? await client.send(Paths.getCurrentUser).value.configuration) ?? UserConfiguration()
-        let audio = audioCode == PlaybackLanguage.automaticCode ? "" : audioCode
+        let audio = audioCode == PlaybackLanguage.automaticCode ? "" : ServerLanguageCode.toServer(audioCode)
         let subtitle = (subtitleCode == PlaybackLanguage.automaticCode || subtitleCode == PlaybackLanguage.offCode)
             ? ""
-            : subtitleCode
+            : ServerLanguageCode.toServer(subtitleCode)
         config.audioLanguagePreference = audio
         config.isPlayDefaultAudioTrack = audio.isEmpty
         config.subtitleLanguagePreference = subtitle
@@ -1188,6 +1188,26 @@ final class SessionStore {
             ? SubtitlePlaybackMode.none
             : subtitle.isEmpty ? .default : .smart
         _ = try? await client.send(Paths.updateUserConfiguration(userID: userID, config))
+    }
+
+    func jellyfinPlaybackPreferences() async throws -> JellyfinPlaybackPreferences {
+        guard !usesSilo, let client else {
+            throw ZelefinError.server("Sign in to a Jellyfin server to change these settings.")
+        }
+        let config = try await client.send(Paths.getCurrentUser).value.configuration ?? UserConfiguration()
+        return JellyfinPlaybackPreferences(configuration: config)
+    }
+
+    /// Jellyfin picks the starting streams from these, so the device-side language picks
+    /// step aside; otherwise an older local pick would override what the user just chose.
+    func saveJellyfinPlaybackPreferences(_ preferences: JellyfinPlaybackPreferences) async throws {
+        guard !usesSilo, let client, let userID = session?.userID else {
+            throw ZelefinError.server("Sign in to a Jellyfin server to change these settings.")
+        }
+        let current = try await client.send(Paths.getCurrentUser).value.configuration ?? UserConfiguration()
+        _ = try await client.send(Paths.updateUserConfiguration(userID: userID, preferences.applying(to: current)))
+        PlaybackPreferences.audioLanguageCode = PlaybackLanguage.automaticCode
+        PlaybackPreferences.subtitleLanguageCode = PlaybackLanguage.automaticCode
     }
 
     func installZelefinPlugin() async throws {

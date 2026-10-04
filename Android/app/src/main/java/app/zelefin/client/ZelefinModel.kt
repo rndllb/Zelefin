@@ -28,6 +28,7 @@ import app.zelefin.client.jellyfin.refreshItemMetadata
 import app.zelefin.client.jellyfin.remoteArtwork
 import app.zelefin.client.jellyfin.reportedDeviceId
 import app.zelefin.client.jellyfin.syncPlayCreateGroup
+import app.zelefin.client.jellyfin.scanLibraries
 import app.zelefin.client.jellyfin.syncPlayGroups
 import app.zelefin.client.jellyfin.syncPlayJoinGroup
 import app.zelefin.client.jellyfin.syncPlaySetQueue
@@ -723,7 +724,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 else -> {
                     val userId = UUID.fromString(_state.value.session?.userId)
                     val client = jellyfinClient()
-                    client.playback(userId, target, audioLanguage, subtitleLanguage) { sourceBitrate ->
+                    // The user's Jellyfin account settings (Settings → Playback) decide the starting
+                    // streams, so the device-side language picks only apply to Silo.
+                    client.playback(userId, target, PlaybackPreferences.AUTOMATIC, PlaybackPreferences.AUTOMATIC) { sourceBitrate ->
                         bitrateOverride ?: streamingCap(appContext, client, sourceBitrate)
                     }
                 }
@@ -832,6 +835,32 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 jellyfinClient().applyPlaybackLanguages(UUID.fromString(session.userId), audioCode, subtitleCode)
             }
         }
+    }
+
+    /** Admin-only: starts a scan of every Jellyfin library. */
+    suspend fun scanLibraries() {
+        val session = _state.value.session
+        if (session == null || session.usesSilo) throw ZelefinException.server("Sign in to a Jellyfin server to scan its libraries.")
+        jellyfinClient().scanLibraries()
+    }
+
+    suspend fun jellyfinPlaybackPreferences(): JellyfinPlaybackPreferences {
+        val session = _state.value.session
+        if (session == null || session.usesSilo) throw ZelefinException.server("Sign in to a Jellyfin server to change these settings.")
+        return jellyfinClient().playbackPreferences()
+    }
+
+    /**
+     * Jellyfin picks the starting streams from these, so the device-side language picks step
+     * aside; otherwise an older local pick would override what the user just chose.
+     */
+    suspend fun saveJellyfinPlaybackPreferences(preferences: JellyfinPlaybackPreferences) {
+        val session = _state.value.session
+        if (session == null || session.usesSilo) throw ZelefinException.server("Sign in to a Jellyfin server to change these settings.")
+        jellyfinClient().savePlaybackPreferences(UUID.fromString(session.userId), preferences)
+        val appContext = getApplication<Application>()
+        PlaybackPreferences.setAudioLanguage(appContext, PlaybackPreferences.AUTOMATIC)
+        PlaybackPreferences.setSubtitleLanguage(appContext, PlaybackPreferences.AUTOMATIC)
     }
 
     suspend fun nextEpisode(item: MediaItem): MediaItem? {

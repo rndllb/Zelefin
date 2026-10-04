@@ -20,8 +20,13 @@ import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.AdaptiveBitrateStore
 import app.zelefin.client.BitrateProbeResult
 import app.zelefin.client.NetworkPathSnapshot
+import app.zelefin.client.JellyfinPlaybackPreferences
 import app.zelefin.client.PlaybackLanguage
 import app.zelefin.client.PlaybackQuality
+import app.zelefin.client.SubtitlePlaybackModeChoices
+import app.zelefin.client.summary
+import app.zelefin.client.title
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +48,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
@@ -116,6 +122,31 @@ fun SettingsScreen(
     onTopic: (String) -> Unit,
 ) {
     val session = state.session
+    val model: ZelefinModel = viewModel()
+    val pluginState by model.plugins.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    val haze = LocalZelefinHaze.current
+    var confirmScan by remember { mutableStateOf(false) }
+    var scanMessage by remember(session?.accountId) { mutableStateOf<String?>(null) }
+    PresentZelefinOverlay(visible = confirmScan && haze != null) {
+        val hazeState = haze ?: return@PresentZelefinOverlay
+        ZelefinGlassConfirm(
+            hazeState = hazeState,
+            title = "Scan all libraries?",
+            message = "Jellyfin will look for new files and refresh metadata. This can take a while on a large server.",
+            confirmLabel = "Scan",
+            destructive = false,
+            onConfirm = {
+                confirmScan = false
+                scope.launch {
+                    scanMessage = runCatching { model.scanLibraries() }
+                        .map { "Scan started. Jellyfin is looking for new files." }
+                        .getOrElse { it.message ?: "Jellyfin could not start the scan." }
+                }
+            },
+            onDismiss = { confirmScan = false },
+        )
+    }
     SettingsPage(title = "Settings", onBack = onBack) {
         SettingsCard(onClick = onProfile) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -140,6 +171,15 @@ fun SettingsScreen(
         SettingsHeader("Playback")
         SettingsLink("Playback", Icons.Outlined.PlayArrow, "Resume, skip, and the next episode") { onTopic("playback") }
         SettingsLink("Plugins", Icons.Outlined.Settings, "Intro Skipper and server plugins") { onTopic("plugins") }
+        if (session != null && !session.usesSilo && pluginState.isAdmin) {
+            SettingsHeader("Server")
+            SettingsLink(
+                "Scan Libraries",
+                Icons.Outlined.Refresh,
+                scanMessage ?: "Look for new files and refresh metadata",
+            ) { confirmScan = true }
+            SettingsFooter("Administer this Jellyfin server.")
+        }
         SettingsHeader("This Device")
         SettingsLink(
             "Network",
@@ -469,30 +509,34 @@ private fun PlaybackTopic(state: ZelefinUiState) {
     var forward by remember { mutableStateOf(PlaybackPreferences.skipForward(context)) }
     val languages = remember(context) { PlaybackLanguage.choices(context) }
 
-    SettingsHeader("Languages")
-    SettingsCard {
-        SettingsMenuPicker(
-            label = "Audio",
-            choices = (listOf(PlaybackPreferences.AUTOMATIC) + languages).map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
-            selected = audio,
-            onSelect = {
-                audio = it
-                model.applyPlaybackLanguages(it, subtitles)
-            },
-        )
-        SettingsCardDivider()
-        SettingsMenuPicker(
-            label = "Subtitles",
-            choices = (listOf(PlaybackPreferences.AUTOMATIC, PlaybackPreferences.OFF) + languages)
-                .map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
-            selected = subtitles,
-            onSelect = {
-                subtitles = it
-                model.applyPlaybackLanguages(audio, it)
-            },
-        )
+    if (silo) {
+        SettingsHeader("Languages")
+        SettingsCard {
+            SettingsMenuPicker(
+                label = "Audio",
+                choices = (listOf(PlaybackPreferences.AUTOMATIC) + languages).map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
+                selected = audio,
+                onSelect = {
+                    audio = it
+                    model.applyPlaybackLanguages(it, subtitles)
+                },
+            )
+            SettingsCardDivider()
+            SettingsMenuPicker(
+                label = "Subtitles",
+                choices = (listOf(PlaybackPreferences.AUTOMATIC, PlaybackPreferences.OFF) + languages)
+                    .map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
+                selected = subtitles,
+                onSelect = {
+                    subtitles = it
+                    model.applyPlaybackLanguages(audio, it)
+                },
+            )
+        }
+        SettingsFooter("Automatic uses the title default. A language is used when that track exists.")
+    } else {
+        JellyfinPlaybackPreferencesSections(model, languages)
     }
-    SettingsFooter("Automatic uses the title default. A language is used when that track exists.")
 
     SettingsHeader("Quality")
     SettingsCard {
@@ -560,6 +604,100 @@ private fun PlaybackTopic(state: ZelefinUiState) {
         )
     }
     SettingsFooter("Speed, skip distance, and whether the next episode starts when this one ends.")
+}
+
+/**
+ * Mirrors the iOS Audio and Subtitles sections of `PlaybackSettingsView`: the signed-in user's
+ * Jellyfin settings (preferred languages, play default audio track, subtitle mode), which the
+ * server uses to pick the streams a title starts on.
+ */
+@Composable
+private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: List<String>) {
+    val scope = rememberCoroutineScope()
+    var preferences by remember { mutableStateOf<JellyfinPlaybackPreferences?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    suspend fun load() {
+        loading = true
+        runCatching { model.jellyfinPlaybackPreferences() }
+            .onSuccess {
+                preferences = it
+                error = null
+            }
+            .onFailure { error = "Zelefin could not load your Jellyfin playback settings. ${it.message.orEmpty()}".trim() }
+        loading = false
+    }
+    LaunchedEffect(Unit) { load() }
+
+    fun update(change: (JellyfinPlaybackPreferences) -> JellyfinPlaybackPreferences) {
+        val current = preferences ?: return
+        val next = change(current)
+        if (next == current) return
+        preferences = next
+        scope.launch {
+            runCatching { model.saveJellyfinPlaybackPreferences(next) }
+                .onSuccess { error = null }
+                .onFailure {
+                    error = "Jellyfin did not save that change. ${it.message.orEmpty()}".trim()
+                    load()
+                }
+        }
+    }
+
+    fun languageChoices(current: String?): List<SettingsChoice<String>> {
+        val codes = (listOf(JellyfinPlaybackPreferences.ANY_LANGUAGE) + languages).toMutableList()
+        if (!current.isNullOrEmpty() && current !in codes) codes += current
+        return codes.map { SettingsChoice(it, PlaybackLanguage.displayName(it)) }
+    }
+
+    val ready = preferences != null
+    val shown = preferences ?: JellyfinPlaybackPreferences()
+    val dimmed = Modifier.alpha(if (ready) 1f else 0.55f)
+
+    SettingsHeader(if (loading) "Audio…" else "Audio")
+    SettingsCard {
+        Column(dimmed) {
+            SettingsMenuPicker(
+                label = "Preferred Language",
+                choices = languageChoices(preferences?.audioLanguage),
+                selected = shown.audioLanguage,
+                onSelect = { code -> if (ready) update { it.copy(audioLanguage = code) } },
+            )
+            SettingsCardDivider()
+            SettingsToggleRow("Play Default Audio Track", shown.playDefaultAudioTrack, { on -> if (ready) update { it.copy(playDefaultAudioTrack = on) } })
+        }
+        error?.let {
+            Text(it, color = Color(0xFFFF6B6B), fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+        }
+    }
+    SettingsFooter(
+        if (shown.playDefaultAudioTrack) {
+            "The file’s default audio track plays even when a track in your preferred language exists. Saved to your Jellyfin account."
+        } else {
+            "Titles start on the audio track in your preferred language when the file has one. Saved to your Jellyfin account."
+        },
+    )
+
+    SettingsHeader("Subtitles")
+    SettingsCard {
+        Column(dimmed) {
+            SettingsMenuPicker(
+                label = "Preferred Language",
+                choices = languageChoices(preferences?.subtitleLanguage),
+                selected = shown.subtitleLanguage,
+                onSelect = { code -> if (ready) update { it.copy(subtitleLanguage = code) } },
+            )
+            SettingsCardDivider()
+            SettingsMenuPicker(
+                label = "Subtitle Mode",
+                choices = SubtitlePlaybackModeChoices.map { SettingsChoice(it, it.title) },
+                selected = shown.subtitleMode,
+                onSelect = { mode -> if (ready) update { it.copy(subtitleMode = mode) } },
+            )
+        }
+    }
+    SettingsFooter(shown.subtitleMode.summary)
 }
 
 /** Connection row, measured / recommended results, and the Test Connection button of the Quality card. */
@@ -656,11 +794,17 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
     }
 
     if (!pluginState.companionAvailable) {
+        val silo = state.session?.usesSilo == true
+        val canInstall = !silo && pluginState.isAdmin
         SettingsCard {
-            PluginStatusRow("Zelefin plugin", installed = false)
+            PluginStatusRow(
+                "Zelefin plugin",
+                installed = pluginState.pluginNeedsRestart,
+                installedLabel = "Restart needed",
+            )
             Text(
                 when {
-                    state.session?.usesSilo == true ->
+                    silo ->
                         "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. This Silo server cannot install that plugin, so notifications are not available here."
                     pluginState.detecting -> "Checking this server for the Zelefin plugin…"
                     else ->
@@ -671,21 +815,46 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
                 fontSize = 14.sp,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            if (state.session?.usesSilo != true && !pluginState.isAdmin && !pluginState.detecting) {
+            if (canInstall) {
+                Spacer(Modifier.height(14.dp))
+                SettingsPrimaryButton(
+                    if (pluginState.pluginInstalling) "Installing…" else "Install Plugin",
+                    busy = pluginState.pluginInstalling,
+                    enabled = !pluginState.pluginInstalling && !pluginState.pluginNeedsRestart,
+                    onClick = plugins::installZelefinPlugin,
+                )
+                if (pluginState.pluginNeedsRestart) {
+                    Spacer(Modifier.height(10.dp))
+                    SettingsSecondaryButton(
+                        if (pluginState.pluginRestarting) "Restarting…" else "Restart Jellyfin",
+                        enabled = !pluginState.pluginRestarting,
+                        onClick = plugins::restartJellyfin,
+                    )
+                }
+            } else if (!silo && !pluginState.detecting) {
                 Text(
-                    "Ask a server administrator to add the Zelefin catalog in Jellyfin and install the plugin, or sign in with an admin account.",
+                    "Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account.",
                     color = Caption,
                     fontFamily = ZelefinFont,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(top = 10.dp),
                 )
             }
+            pluginState.pluginInstallMessage?.let { message ->
+                Text(
+                    message,
+                    color = if (message.contains("could not") || message.contains("Sign in as")) Color(0xFFFF6B6B) else Secondary,
+                    fontFamily = ZelefinFont,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
         }
         SettingsFooter(
-            if (state.session?.usesSilo == true) {
-                "Connect a Jellyfin server with the Zelefin plugin to receive notifications."
-            } else {
-                "In Jellyfin, open Dashboard → Plugins → Catalog, install Zelefin, then restart Jellyfin. You do not set up Firebase or paste a key on the server."
+            when {
+                silo -> "Connect a Jellyfin server with the Zelefin plugin to receive notifications."
+                canInstall -> "After install, restart Jellyfin so the plugin can load. You do not set up Firebase or paste a key on the server."
+                else -> "In Jellyfin, open Dashboard → Plugins → Catalog, install Zelefin, then restart Jellyfin. You do not set up Firebase or paste a key on the server."
             },
         )
         return
@@ -892,11 +1061,11 @@ private val StatusInstalled = Color(0xFF38C76B)
 private val StatusMissing = Color(0xFFFF6B6B)
 
 @Composable
-private fun PluginStatusRow(title: String, installed: Boolean) {
+private fun PluginStatusRow(title: String, installed: Boolean, installedLabel: String = "Installed") {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
         Text(
-            if (installed) "Installed" else "Not on this server",
+            if (installed) installedLabel else "Not on this server",
             color = if (installed) StatusInstalled else StatusMissing,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,

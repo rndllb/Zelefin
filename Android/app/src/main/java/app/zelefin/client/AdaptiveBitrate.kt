@@ -304,7 +304,8 @@ object PlaybackLanguage {
     }
 
     fun displayName(code: String): String = when (code) {
-        PlaybackPreferences.AUTOMATIC, "" -> "Automatic"
+        PlaybackPreferences.AUTOMATIC -> "Automatic"
+        "" -> "Any Language"
         PlaybackPreferences.OFF -> "Off"
         else -> {
             val name = Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault()).trim()
@@ -343,10 +344,10 @@ object PlaybackLanguage {
     }
 
     /** Jellyfin and Silo usually tag streams with ISO 639-2 codes ("eng"), the picker stores 639-1 ("en"). */
-    private fun alias(code: String): String? {
+    fun alias(code: String): String? {
         if (code.length != 3) return null
         return runCatching {
-            Locale.getAvailableLocales().firstOrNull { it.isO3Language == code }?.language
+            Locale.getAvailableLocales().firstOrNull { it.isO3Language == code }?.language?.ifEmpty { null }
         }.getOrNull()
     }
 }

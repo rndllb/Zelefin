@@ -29,6 +29,7 @@ import app.zelefin.client.plugins.SiloRequestSource
 import app.zelefin.client.plugins.SkipSegment
 import app.zelefin.client.plugins.TmdbUserReview
 import app.zelefin.client.plugins.ZelefinCompanionClient
+import app.zelefin.client.plugins.ZelefinPluginInstaller
 import app.zelefin.client.push.ZelefinPush
 import app.zelefin.core.MediaBackend
 import app.zelefin.core.SavedSession
@@ -65,6 +66,11 @@ data class PluginsUiState(
     val pushRegistered: Boolean = false,
     val pushBusy: Boolean = false,
     val pushMessage: String? = null,
+    val pluginInstalling: Boolean = false,
+    val pluginRestarting: Boolean = false,
+    /** Installed in this session but not yet loaded; Jellyfin needs a restart. */
+    val pluginNeedsRestart: Boolean = false,
+    val pluginInstallMessage: String? = null,
 ) {
     val companionAvailable: Boolean get() = backend == MediaBackend.Jellyfin && jellyfin.companion
 
@@ -262,6 +268,62 @@ class PluginsController(
                     pushBusy = false,
                     pushRegistered = error == null || it.pushRegistered,
                     pushMessage = error ?: "Sent. It should arrive in a few seconds.",
+                )
+            }
+        }
+    }
+
+    /** Mirrors iOS `SessionStore.installZelefinPlugin()` and the Notifications settings install button. */
+    fun installZelefinPlugin() {
+        val current = session() ?: return
+        if (current.backend != MediaBackend.Jellyfin || !_state.value.isAdmin) {
+            _state.update { it.copy(pluginInstallMessage = "Sign in as a Jellyfin administrator to install the Zelefin plugin.") }
+            return
+        }
+        _state.update { it.copy(pluginInstalling = true, pluginInstallMessage = null) }
+        scope.launch {
+            val result = runCatching { ZelefinPluginInstaller(current.serverUrl, current.accessToken).install() }
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            if (result.isSuccess) {
+                val detected = runCatching {
+                    JellyfinPlugins.detect(current.serverUrl, current.accessToken, current.userId, isAdmin = true, canManageSubtitles = _state.value.canManageSubtitles)
+                }.getOrNull()
+                val loaded = detected?.companion == true
+                _state.update {
+                    it.copy(
+                        jellyfin = detected ?: it.jellyfin,
+                        pluginInstalling = false,
+                        pluginNeedsRestart = !loaded,
+                        pluginInstallMessage = if (loaded) "Installed." else "Installed. Restart Jellyfin so the plugin can load.",
+                    )
+                }
+                if (loaded) registerPush()
+            } else {
+                _state.update {
+                    it.copy(
+                        pluginInstalling = false,
+                        pluginInstallMessage = result.exceptionOrNull()?.message ?: "Jellyfin could not install the Zelefin plugin.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun restartJellyfin() {
+        val current = session() ?: return
+        if (current.backend != MediaBackend.Jellyfin || !_state.value.isAdmin) return
+        _state.update { it.copy(pluginRestarting = true) }
+        scope.launch {
+            val result = runCatching { ZelefinPluginInstaller(current.serverUrl, current.accessToken).restartServer() }
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            _state.update {
+                it.copy(
+                    pluginRestarting = false,
+                    pluginInstallMessage = if (result.isSuccess) {
+                        "Jellyfin is restarting. Reopen Zelefin in a minute if the library does not load."
+                    } else {
+                        result.exceptionOrNull()?.message ?: "Jellyfin could not restart."
+                    },
                 )
             }
         }

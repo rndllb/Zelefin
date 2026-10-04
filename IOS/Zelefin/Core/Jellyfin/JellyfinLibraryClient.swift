@@ -945,8 +945,12 @@ class JellyfinLibraryClient: @unchecked Sendable {
         let preferredTracks = (audioIndex == nil || subtitleIndex == nil)
             ? await streamTracks(for: item.id)
             : (audio: [], subtitles: [])
-        let resolvedAudio = audioIndex ?? PlaybackLanguage.audioIndex(in: preferredTracks.audio)
-        let resolvedSubtitle = subtitleIndex ?? PlaybackLanguage.subtitleIndex(in: preferredTracks.subtitles)
+        // The user's Jellyfin account settings (Settings → Playback) decide the starting
+        // streams here, so the device-side language picks only apply to Silo.
+        let resolvedAudio = audioIndex
+            ?? PlaybackLanguage.audioIndex(in: preferredTracks.audio, preference: PlaybackLanguage.automaticCode)
+        let resolvedSubtitle = subtitleIndex
+            ?? PlaybackLanguage.subtitleIndex(in: preferredTracks.subtitles, preference: PlaybackLanguage.automaticCode)
         let profile = AVDeviceProfileFactory.make(
             preferFMP4InHLS: PlaybackPreferences.effectivePreferFMP4InHLS,
             maxBitrate: bitrate

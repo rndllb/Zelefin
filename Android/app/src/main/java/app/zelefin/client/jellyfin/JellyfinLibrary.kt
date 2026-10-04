@@ -955,7 +955,9 @@ class JellyfinLibrary(
             app.zelefin.client.LanguageTrack(
                 index = stream.index,
                 language = stream.language,
-                isSelected = if (defaultIndex != null) stream.index == defaultIndex else stream.isDefault,
+                // A user-scoped source already applied the user's Jellyfin settings; a null default
+                // there means "none", not "fall back to the file's flag".
+                isSelected = if (firstSource != null) stream.index == defaultIndex else stream.isDefault,
             )
         }
         val audioIndex = app.zelefin.client.PlaybackLanguage.audioIndex(
@@ -1122,8 +1124,8 @@ class JellyfinLibrary(
         val automatic = app.zelefin.client.PlaybackPreferences.AUTOMATIC
         val off = app.zelefin.client.PlaybackPreferences.OFF
         val current = runCatching { api.userApi.getCurrentUser().content.configuration }.getOrNull() ?: return@withContext
-        val audio = if (audioCode == automatic) "" else audioCode
-        val subtitle = if (subtitleCode == automatic || subtitleCode == off) "" else subtitleCode
+        val audio = if (audioCode == automatic) "" else app.zelefin.client.ServerLanguageCode.toServer(audioCode)
+        val subtitle = if (subtitleCode == automatic || subtitleCode == off) "" else app.zelefin.client.ServerLanguageCode.toServer(subtitleCode)
         val mode = when {
             subtitleCode == off -> org.jellyfin.sdk.model.api.SubtitlePlaybackMode.NONE
             subtitle.isEmpty() -> org.jellyfin.sdk.model.api.SubtitlePlaybackMode.DEFAULT
@@ -1136,6 +1138,20 @@ class JellyfinLibrary(
             subtitleMode = mode,
         )
         runCatching { api.userApi.updateUserConfiguration(userId = userId, data = updated) }
+        Unit
+    }
+
+    /** The signed-in user's Jellyfin audio and subtitle settings (Settings → Playback). */
+    suspend fun playbackPreferences(): app.zelefin.client.JellyfinPlaybackPreferences = withContext(Dispatchers.IO) {
+        val configuration = api.userApi.getCurrentUser().content.configuration
+            ?: throw ZelefinException.server("Jellyfin did not return this user's settings.")
+        app.zelefin.client.JellyfinPlaybackPreferences.from(configuration)
+    }
+
+    suspend fun savePlaybackPreferences(userId: UUID, preferences: app.zelefin.client.JellyfinPlaybackPreferences) = withContext(Dispatchers.IO) {
+        val current = api.userApi.getCurrentUser().content.configuration
+            ?: throw ZelefinException.server("Jellyfin did not return this user's settings.")
+        api.userApi.updateUserConfiguration(userId = userId, data = preferences.applyTo(current))
         Unit
     }
 

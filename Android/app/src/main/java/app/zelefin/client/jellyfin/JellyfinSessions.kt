@@ -202,6 +202,12 @@ suspend fun JellyfinLibrary.refreshItemMetadata(itemId: String) = withContext(Di
     Unit
 }
 
+/** Asks Jellyfin to scan every library for new files and refresh metadata, like iOS `scanLibraries()`. */
+suspend fun JellyfinLibrary.scanLibraries() = withContext(Dispatchers.IO) {
+    sdk.libraryApi.refreshLibrary()
+    Unit
+}
+
 suspend fun JellyfinLibrary.deleteLibraryItem(itemId: String) = withContext(Dispatchers.IO) {
     sdk.libraryApi.deleteItem(UUID.fromString(itemId))
     Unit

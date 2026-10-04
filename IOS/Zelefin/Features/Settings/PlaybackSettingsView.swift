@@ -1,3 +1,4 @@
+import JellyfinAPI
 import SwiftUI
 
 struct PlaybackSettingsView: View {
@@ -17,20 +18,156 @@ struct PlaybackSettingsView: View {
     @State private var testError: String?
     @State private var testResult: BitrateProbeResult?
 
+    @State private var serverPreferences: JellyfinPlaybackPreferences?
+    @State private var isLoadingServerPreferences = false
+    @State private var serverPreferencesError: String?
+
     var body: some View {
         Form {
-            languageSection
+            if session.usesSilo {
+                languageSection
+            } else {
+                serverAudioSection
+                serverSubtitleSection
+            }
             qualitySection
             watchingSection
             playerSection
         }
         .zelefinSettingsChrome(title: "Playback")
+        .task {
+            if !session.usesSilo {
+                await loadServerPreferences()
+            }
+        }
         .onChange(of: useNativeVideoPlayer) {
             if !useNativeVideoPlayer {
                 preferFMP4InHLS = true
             }
         }
     }
+
+    // MARK: Jellyfin user settings
+
+    private var serverAudioSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsFieldLabel(title: "Preferred Language")
+                    .padding(.bottom, 8)
+                Picker("Preferred Language", selection: serverBinding(\.audioLanguage)) {
+                    ForEach(serverLanguageChoices(including: serverPreferences?.audioLanguage), id: \.self) { code in
+                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+                SettingsCardDivider()
+                Toggle("Play Default Audio Track", isOn: serverBinding(\.playDefaultAudioTrack))
+                    .tint(AccentPreferences.current)
+                    .font(.body.weight(.semibold))
+                if let serverPreferencesError {
+                    SettingsStatusText(text: serverPreferencesError, isError: true)
+                        .padding(.top, 12)
+                }
+            }
+            .settingsLoginCard()
+            .settingsCardRow()
+            .disabled(serverPreferences == nil)
+            .opacity(serverPreferences == nil ? 0.55 : 1)
+        } header: {
+            HStack {
+                Text("Audio")
+                if isLoadingServerPreferences {
+                    ProgressView().controlSize(.mini)
+                }
+            }
+        } footer: {
+            Text(
+                serverPreferences?.playDefaultAudioTrack == true
+                    ? "The file’s default audio track plays even when a track in your preferred language exists. Saved to your Jellyfin account."
+                    : "Titles start on the audio track in your preferred language when the file has one. Saved to your Jellyfin account."
+            )
+        }
+    }
+
+    private var serverSubtitleSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsFieldLabel(title: "Preferred Language")
+                    .padding(.bottom, 8)
+                Picker("Preferred Language", selection: serverBinding(\.subtitleLanguage)) {
+                    ForEach(serverLanguageChoices(including: serverPreferences?.subtitleLanguage), id: \.self) { code in
+                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+                SettingsCardDivider()
+                SettingsFieldLabel(title: "Subtitle Mode")
+                    .padding(.bottom, 8)
+                Picker("Subtitle Mode", selection: serverBinding(\.subtitleMode)) {
+                    ForEach(SubtitlePlaybackMode.choices, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(AccentPreferences.current)
+            }
+            .settingsLoginCard()
+            .settingsCardRow()
+            .disabled(serverPreferences == nil)
+            .opacity(serverPreferences == nil ? 0.55 : 1)
+        } header: {
+            Text("Subtitles")
+        } footer: {
+            Text((serverPreferences?.subtitleMode ?? .default).summary)
+        }
+    }
+
+    private func serverBinding<Value>(_ keyPath: WritableKeyPath<JellyfinPlaybackPreferences, Value>) -> Binding<Value> {
+        Binding(
+            get: { (serverPreferences ?? JellyfinPlaybackPreferences())[keyPath: keyPath] },
+            set: { newValue in
+                guard var updated = serverPreferences else { return }
+                updated[keyPath: keyPath] = newValue
+                guard updated != serverPreferences else { return }
+                serverPreferences = updated
+                Task { await saveServerPreferences(updated) }
+            }
+        )
+    }
+
+    /// A code the server already holds stays selectable even when the picker list lacks it.
+    private func serverLanguageChoices(including current: String?) -> [String] {
+        var codes = [JellyfinPlaybackPreferences.anyLanguage] + SubtitleSearchLanguage.choices.map(\.code)
+        if let current, !current.isEmpty, !codes.contains(current) {
+            codes.append(current)
+        }
+        return codes
+    }
+
+    private func loadServerPreferences() async {
+        isLoadingServerPreferences = true
+        defer { isLoadingServerPreferences = false }
+        do {
+            serverPreferences = try await session.jellyfinPlaybackPreferences()
+            serverPreferencesError = nil
+        } catch {
+            serverPreferencesError = "Zelefin could not load your Jellyfin playback settings. \(error.localizedDescription)"
+        }
+    }
+
+    private func saveServerPreferences(_ preferences: JellyfinPlaybackPreferences) async {
+        do {
+            try await session.saveJellyfinPlaybackPreferences(preferences)
+            serverPreferencesError = nil
+        } catch {
+            serverPreferencesError = "Jellyfin did not save that change. \(error.localizedDescription)"
+            await loadServerPreferences()
+        }
+    }
+
+    // MARK: Device language picks (Silo)
 
     private var languageSection: some View {
         Section {
