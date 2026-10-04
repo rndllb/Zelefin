@@ -181,6 +181,11 @@ suspend fun JellyfinLibrary.syncPlayJoinGroup(id: String) = withContext(Dispatch
     Unit
 }
 
+suspend fun JellyfinLibrary.syncPlayLeaveGroup() = withContext(Dispatchers.IO) {
+    sdk.syncPlayApi.syncPlayLeaveGroup()
+    Unit
+}
+
 suspend fun JellyfinLibrary.syncPlaySetQueue(item: MediaItem) = withContext(Dispatchers.IO) {
     val start = item.playbackPosition.takeIf { it > 5 } ?: 0.0
     sdk.syncPlayApi.syncPlaySetNewQueue(

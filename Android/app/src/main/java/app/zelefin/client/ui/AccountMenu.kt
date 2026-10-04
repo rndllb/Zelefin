@@ -385,12 +385,15 @@ fun AccountAvatar(
     }
 }
 
-fun avatarImageUrl(session: SavedSession): String? {
+fun avatarImageUrl(session: SavedSession): String? =
+    userAvatarUrl(session, session.userId, session.userImageTag)
+
+fun userAvatarUrl(session: SavedSession, userId: String, tag: String?): String? {
     if (session.usesSilo) return null
-    val tag = session.userImageTag?.takeIf { it.isNotBlank() }?.let { "&tag=$it" }.orEmpty()
+    val stamped = tag?.takeIf { it.isNotBlank() }?.let { "&tag=$it" }.orEmpty()
     return ServerUrl.resolve(
         session.serverUrl,
-        "/Users/${session.userId}/Images/Primary?quality=90&maxHeight=180$tag",
+        "/Users/$userId/Images/Primary?quality=90&maxHeight=180$stamped",
         session.accessToken,
     )
 }

@@ -28,9 +28,30 @@ import app.zelefin.client.jellyfin.refreshItemMetadata
 import app.zelefin.client.jellyfin.remoteArtwork
 import app.zelefin.client.jellyfin.reportedDeviceId
 import app.zelefin.client.jellyfin.syncPlayCreateGroup
+import app.zelefin.client.jellyfin.activityLog
+import app.zelefin.client.jellyfin.adminMediaFolders
+import app.zelefin.client.jellyfin.adminUser
+import app.zelefin.client.jellyfin.adminUsers
+import app.zelefin.client.jellyfin.createServerBackup
+import app.zelefin.client.jellyfin.deleteSplashscreen
+import app.zelefin.client.jellyfin.deleteUserImage
+import app.zelefin.client.jellyfin.parentalRatings
+import app.zelefin.client.jellyfin.renameUser
+import app.zelefin.client.jellyfin.resetUserPassword
+import app.zelefin.client.jellyfin.restoreServerBackup
 import app.zelefin.client.jellyfin.scanLibraries
+import app.zelefin.client.jellyfin.scheduledTasks
+import app.zelefin.client.jellyfin.serverBackups
+import app.zelefin.client.jellyfin.serverBranding
+import app.zelefin.client.jellyfin.setUserPassword
+import app.zelefin.client.jellyfin.startScheduledTask
+import app.zelefin.client.jellyfin.stopScheduledTask
 import app.zelefin.client.jellyfin.syncPlayGroups
+import app.zelefin.client.jellyfin.updateServerBranding
+import app.zelefin.client.jellyfin.updateUserPolicy
+import app.zelefin.client.jellyfin.uploadSplashscreen
 import app.zelefin.client.jellyfin.syncPlayJoinGroup
+import app.zelefin.client.jellyfin.syncPlayLeaveGroup
 import app.zelefin.client.jellyfin.syncPlaySetQueue
 import app.zelefin.client.plugins.HomeQueueHideStore
 import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
@@ -135,6 +156,8 @@ data class ZelefinUiState(
     val accounts: List<SavedSession> = emptyList(),
     val addAccount: AddAccountState = AddAccountState(),
     val localServerUrl: String? = null,
+    val syncPlayGroupId: String? = null,
+    val syncPlayGroupName: String? = null,
 )
 
 /** Settings → Add User / Add Account. [pending] is set while a Silo login waits for a household profile. */
@@ -443,12 +466,30 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val client = jellyfinClient()
         if (joinGroupId != null) {
             client.syncPlayJoinGroup(joinGroupId)
+            val name = runCatching { client.syncPlayGroups().firstOrNull { it.id == joinGroupId }?.name }.getOrNull()
+            _state.update { it.copy(syncPlayGroupId = joinGroupId, syncPlayGroupName = name ?: it.syncPlayGroupName) }
         } else {
             val name = newGroupName?.trim()?.takeIf { it.isNotEmpty() } ?: "${_state.value.session?.userName ?: "Zelefin"}’s group"
-            client.syncPlayCreateGroup(name)
+            val group = client.syncPlayCreateGroup(name)
+            _state.update { it.copy(syncPlayGroupId = group.id, syncPlayGroupName = group.name) }
         }
         client.syncPlaySetQueue(item)
         play(item)
+    }
+
+    suspend fun createSyncPlayGroup(name: String) {
+        val group = jellyfinClient().syncPlayCreateGroup(name.trim())
+        _state.update { it.copy(syncPlayGroupId = group.id, syncPlayGroupName = group.name) }
+    }
+
+    suspend fun joinSyncPlayGroup(group: SyncPlayGroup) {
+        jellyfinClient().syncPlayJoinGroup(group.id)
+        _state.update { it.copy(syncPlayGroupId = group.id, syncPlayGroupName = group.name) }
+    }
+
+    suspend fun leaveSyncPlayGroup() {
+        jellyfinClient().syncPlayLeaveGroup()
+        _state.update { it.copy(syncPlayGroupId = null, syncPlayGroupName = null) }
     }
 
     suspend fun refreshMetadata(item: MediaItem) {
@@ -507,8 +548,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val current = _state.value.screen
         if (current is Screen.Player) return
         val backTo = when (current) {
-            is Screen.Settings -> current
-            is Screen.SettingsTopic -> current.backTo
+            is Screen.Settings, is Screen.SettingsTopic -> current
             else -> current
         }
         _state.update { it.copy(screen = Screen.SettingsTopic(id, backTo), message = null) }
@@ -842,6 +882,53 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val session = _state.value.session
         if (session == null || session.usesSilo) throw ZelefinException.server("Sign in to a Jellyfin server to scan its libraries.")
         jellyfinClient().scanLibraries()
+    }
+
+    suspend fun activityLog() = jellyfinClient().activityLog()
+    suspend fun serverBackups() = jellyfinClient().serverBackups()
+    suspend fun createServerBackup() = jellyfinClient().createServerBackup()
+    suspend fun restoreServerBackup(backup: app.zelefin.client.jellyfin.ServerBackup) = jellyfinClient().restoreServerBackup(backup)
+    suspend fun serverBranding() = jellyfinClient().serverBranding()
+    suspend fun updateServerBranding(branding: app.zelefin.client.jellyfin.ServerBranding) = jellyfinClient().updateServerBranding(branding)
+    suspend fun uploadSplashscreen(jpeg: ByteArray) = jellyfinClient().uploadSplashscreen(jpeg)
+    suspend fun deleteSplashscreen() = jellyfinClient().deleteSplashscreen()
+    suspend fun scheduledTasks() = jellyfinClient().scheduledTasks()
+    suspend fun startScheduledTask(id: String) = jellyfinClient().startScheduledTask(id)
+    suspend fun stopScheduledTask(id: String) = jellyfinClient().stopScheduledTask(id)
+    suspend fun adminUsers() = jellyfinClient().adminUsers()
+    suspend fun adminUser(id: String) = jellyfinClient().adminUser(id)
+    suspend fun adminMediaFolders() = jellyfinClient().adminMediaFolders()
+    suspend fun parentalRatings() = jellyfinClient().parentalRatings()
+    suspend fun updateUserPolicy(userId: String, policy: org.jellyfin.sdk.model.api.UserPolicy) = jellyfinClient().updateUserPolicy(userId, policy)
+    suspend fun renameUser(account: app.zelefin.client.jellyfin.ServerUserAccount, name: String) {
+        jellyfinClient().renameUser(account, name)
+        val session = _state.value.session ?: return
+        if (session.userId == account.id) {
+            val updated = session.copy(userName = name.trim())
+            vault.save(updated)
+            _state.update { it.copy(session = updated, accounts = vault.accounts()) }
+        }
+    }
+    suspend fun resetUserPassword(userId: String) = jellyfinClient().resetUserPassword(userId)
+    suspend fun setUserPassword(userId: String, password: String) = jellyfinClient().setUserPassword(userId, password)
+    suspend fun deleteUserImage(userId: String) {
+        jellyfinClient().deleteUserImage(userId)
+        refreshEditedUserPhoto(userId, null)
+    }
+    suspend fun uploadUserPhoto(userId: String, uri: Uri) {
+        val session = _state.value.session ?: throw ZelefinException.missingUser()
+        val jpeg = AccountPhoto.jpeg(getApplication(), uri)
+        AccountPhoto.upload(session, jpeg, userId)
+        val tag = if (userId == session.userId) AccountPhoto.imageTag(session) else jellyfinClient().adminUser(userId).primaryImageTag
+        refreshEditedUserPhoto(userId, tag)
+    }
+
+    private fun refreshEditedUserPhoto(userId: String, tag: String?) {
+        val session = _state.value.session ?: return
+        if (session.userId != userId) return
+        val updated = session.copy(userImageTag = tag ?: session.userImageTag)
+        vault.save(updated)
+        _state.update { it.copy(session = updated, accounts = vault.accounts()) }
     }
 
     suspend fun jellyfinPlaybackPreferences(): JellyfinPlaybackPreferences {

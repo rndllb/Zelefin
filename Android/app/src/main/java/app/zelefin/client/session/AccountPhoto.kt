@@ -55,11 +55,11 @@ object AccountPhoto {
     }
 
     /** Uploads to `/UserImage` (Jellyfin 10.9+), falling back to the older `/Users/{id}/Images/Primary`. */
-    suspend fun upload(session: SavedSession, jpeg: ByteArray) = withContext(Dispatchers.IO) {
+    suspend fun upload(session: SavedSession, jpeg: ByteArray, userId: String = session.userId) = withContext(Dispatchers.IO) {
         val body = Base64.encodeToString(jpeg, Base64.NO_WRAP)
         val paths = listOf(
-            "/UserImage?userId=${session.userId}",
-            "/Users/${session.userId}/Images/Primary",
+            "/UserImage?userId=$userId",
+            "/Users/$userId/Images/Primary",
         )
         var lastStatus = 0
         for (path in paths) {

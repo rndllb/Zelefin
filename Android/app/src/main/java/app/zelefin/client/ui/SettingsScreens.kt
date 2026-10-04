@@ -47,8 +47,14 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.Brush
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
@@ -167,12 +173,18 @@ fun SettingsScreen(
         SettingsLink("Notifications", Icons.Outlined.Notifications, "Lock-screen alerts from your server") { onTopic("notifications") }
         if (session?.usesSilo != true) {
             SettingsLink("Sessions", Icons.Outlined.PlayArrow, "Devices signed in to Jellyfin") { onTopic("sessions") }
+            SettingsLink("SyncPlay", Icons.Outlined.Groups, "Watch together from this phone") { onTopic("syncplay") }
         }
         SettingsHeader("Playback")
         SettingsLink("Playback", Icons.Outlined.PlayArrow, "Resume, skip, and the next episode") { onTopic("playback") }
         SettingsLink("Plugins", Icons.Outlined.Settings, "Intro Skipper and server plugins") { onTopic("plugins") }
         if (session != null && !session.usesSilo && pluginState.isAdmin) {
             SettingsHeader("Server")
+            SettingsLink("Users", Icons.Outlined.People, "Permissions, libraries, and parental controls") { onTopic("users") }
+            SettingsLink("Scheduled Tasks", Icons.Outlined.Schedule, "Start, cancel, and watch progress") { onTopic("scheduled-tasks") }
+            SettingsLink("Activity Log", Icons.AutoMirrored.Outlined.List, "Sign-ins, scans, and failures") { onTopic("activity") }
+            SettingsLink("Backups", Icons.Outlined.Inventory2, "Archive and restore this server") { onTopic("backups") }
+            SettingsLink("Branding", Icons.Outlined.Brush, "Login disclaimer and splashscreen") { onTopic("branding") }
             SettingsLink(
                 "Scan Libraries",
                 Icons.Outlined.Refresh,
@@ -474,8 +486,18 @@ fun SettingsTopicScreen(id: String, state: ZelefinUiState, plugins: PluginsContr
         "cache" -> "Cache"
         "interface" -> "Interface"
         "about" -> "About"
+        "syncplay" -> "SyncPlay"
+        "users" -> "Users"
+        "scheduled-tasks" -> "Scheduled Tasks"
+        "activity" -> "Activity Log"
+        "backups" -> "Backups"
+        "branding" -> "Branding"
         AddAccountTopicId -> if (state.session?.usesSilo == true) "Add Account" else "Add User"
-        else -> "Settings"
+        else -> when {
+            id.startsWith("user:") -> "User"
+            id.startsWith("scheduled-task:") -> "Task"
+            else -> "Settings"
+        }
     }
     SettingsPage(title = title, onBack = onBack) {
         when (id) {
@@ -488,7 +510,17 @@ fun SettingsTopicScreen(id: String, state: ZelefinUiState, plugins: PluginsContr
             "plugins" -> PluginsTopic(state, plugins)
             "network" -> NetworkTopic(state)
             "interface" -> InterfaceTopic(state)
-            else -> Text("Nothing to change here yet.", color = Secondary, fontFamily = ZelefinFont)
+            "syncplay" -> SyncPlayTopic(state)
+            "users" -> UsersTopic()
+            "scheduled-tasks" -> ScheduledTasksTopic()
+            "activity" -> ActivityLogTopic()
+            "backups" -> BackupsTopic()
+            "branding" -> BrandingTopic(state)
+            else -> when {
+                id.startsWith("user:") -> UserEditorTopic(id.removePrefix("user:"), state)
+                id.startsWith("scheduled-task:") -> ScheduledTaskDetailTopic(id.removePrefix("scheduled-task:"))
+                else -> Text("Nothing to change here yet.", color = Secondary, fontFamily = ZelefinFont)
+            }
         }
     }
 }
