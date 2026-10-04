@@ -165,17 +165,28 @@ enum ItemMapper {
         )
     }
 
-    static func tracks(from streams: [MediaStream]?, kind: MediaTrack.Kind) -> [MediaTrack] {
+    /// `source` is the user-scoped media source. Jellyfin resolves the user's audio and
+    /// subtitle settings (preferred language, play default audio track, subtitle mode) into its
+    /// `defaultAudioStreamIndex` / `defaultSubtitleStreamIndex`, so when it is present those win
+    /// over the file's own default flags.
+    static func tracks(from streams: [MediaStream]?, kind: MediaTrack.Kind, source: MediaSourceInfo? = nil) -> [MediaTrack] {
         let wanted: MediaStreamType = kind == .audio ? .audio : .subtitle
+        let serverDefault: Int?? = source.map { kind == .audio ? $0.defaultAudioStreamIndex : $0.defaultSubtitleStreamIndex }
         return (streams ?? []).compactMap { stream in
             guard stream.type == wanted, let index = stream.index else { return nil }
+            let isSelected: Bool
+            if let serverDefault {
+                isSelected = serverDefault == index
+            } else {
+                isSelected = stream.isDefault == true
+            }
             return MediaTrack(
                 id: index,
                 kind: kind,
                 language: stream.language,
                 title: stream.displayTitle ?? stream.title ?? stream.language ?? "Track \(index)",
                 codec: stream.codec,
-                isSelected: stream.isDefault == true,
+                isSelected: isSelected,
                 isDefault: stream.isDefault ?? false
             )
         }

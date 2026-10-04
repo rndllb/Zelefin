@@ -47,6 +47,11 @@ final class PlayerModel {
 
     var selectedAudioID: Int?
     var selectedSubtitleID: Int?
+    /// What Jellyfin chose for this user's settings; applied once the engine lists its tracks.
+    private let serverAudioID: Int?
+    private let serverSubtitleID: Int?
+    private var startedOnServerAudio = false
+    private var startedOnServerSubtitle = false
     var isFinished = false
     var skipSegments: [SkipSegment] = []
     var skipPrompt: SkipSegment?
@@ -76,8 +81,10 @@ final class PlayerModel {
         self.plan = plan
         self.reporter = reporter
         self.pipeline = PlaybackPipelineResolver.pipeline(for: plan)
-        self.selectedAudioID = plan.audioTracks.first(where: \.isSelected)?.id ?? plan.audioTracks.first?.id
-        self.selectedSubtitleID = plan.subtitleTracks.first(where: \.isSelected)?.id
+        self.serverAudioID = plan.audioTracks.first(where: \.isSelected)?.id
+        self.serverSubtitleID = plan.subtitleTracks.first(where: \.isSelected)?.id
+        self.selectedAudioID = serverAudioID ?? plan.audioTracks.first?.id
+        self.selectedSubtitleID = serverSubtitleID
         self.duration = plan.item.runtime ?? 0
         self.audioOptions = plan.audioTracks.map(PlaybackTrackOption.init)
         self.subtitleOptions = plan.subtitleTracks.map(PlaybackTrackOption.init)
@@ -708,6 +715,15 @@ final class PlayerModel {
                     if self.audioOptions != options {
                         self.audioOptions = options
                     }
+                    // Start on the audio stream Jellyfin chose for this user, not the file's flag.
+                    if !self.startedOnServerAudio {
+                        self.startedOnServerAudio = true
+                        if let wanted = self.serverAudioID,
+                           tracks.contains(where: { $0.id == wanted }),
+                           engine.activeAudioTrackIndex != wanted {
+                            engine.selectAudioTrack(index: wanted)
+                        }
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -720,6 +736,16 @@ final class PlayerModel {
                     let options = tracks.map(PlaybackTrackOption.init)
                     if self.subtitleOptions != options {
                         self.subtitleOptions = options
+                    }
+                    if !self.startedOnServerSubtitle {
+                        self.startedOnServerSubtitle = true
+                        // The server resolved the user's subtitle mode to none, so a default-flagged
+                        // track in the file must not come up on its own.
+                        if self.serverSubtitleID == nil {
+                            self.selectedSubtitleID = nil
+                            engine.clearSubtitle()
+                            return
+                        }
                     }
                     if let wanted = self.selectedSubtitleID {
                         self.applySubtitleSelection(wanted)

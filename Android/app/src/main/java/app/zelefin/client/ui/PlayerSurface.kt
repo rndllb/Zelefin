@@ -121,6 +121,7 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import app.zelefin.client.PlaybackLanguage
 import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.R
 import app.zelefin.client.network.GatewayHttp
@@ -193,6 +194,7 @@ fun PlayerSurface(
                         .setMimeType(subtitle.mimeType)
                         .setLanguage(subtitle.language)
                         .setLabel(subtitle.title)
+                        .apply { subtitle.id?.let(::setId) }
                         .build()
                 }
                 setMediaItem(ExoItem.Builder().setUri(plan.streamUrl).setSubtitleConfigurations(subtitles).build())
@@ -227,6 +229,7 @@ fun PlayerSurface(
     var playbackError by remember(player) { mutableStateOf<String?>(null) }
     var recovering by remember(player) { mutableStateOf(false) }
     DisposableEffect(player) {
+        var startedWithServerChoice = false
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
@@ -252,6 +255,10 @@ fun PlayerSurface(
 
             override fun onTracksChanged(value: Tracks) {
                 tracks = value
+                if (!startedWithServerChoice && value.groups.isNotEmpty()) {
+                    startedWithServerChoice = true
+                    applyServerTrackChoice(player, value, plan)
+                }
             }
 
             override fun onPlaybackParametersChanged(parameters: PlaybackParameters) {
@@ -1455,6 +1462,46 @@ private fun clock(seconds: Double): String {
     val minutes = (total % 3600) / 60
     val secs = total % 60
     return if (hours > 0) String.format(Locale.US, "%d:%02d:%02d", hours, minutes, secs) else String.format(Locale.US, "%d:%02d", minutes, secs)
+}
+
+/**
+ * Starts the stream on the tracks Jellyfin picked for this user (preferred audio language,
+ * "play default audio track", subtitle mode). ExoPlayer otherwise follows the phone's locale
+ * and the file's own flags, which is why a Direct Play ignored the user's server settings.
+ */
+private fun applyServerTrackChoice(player: Player, tracks: Tracks, plan: PlaybackPlan) {
+    val builder = player.trackSelectionParameters.buildUpon()
+    var changed = false
+    plan.audioChoice?.let { choice ->
+        val groups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        val group = groups.getOrNull(choice.ordinal)?.takeIf { groups.size > 1 }
+            ?: groups.firstOrNull { PlaybackLanguage.matches(it.getTrackFormat(0).language, choice.language.orEmpty()) }
+        if (group != null && group.length > 0) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+            changed = true
+        }
+    }
+    val subtitle = plan.subtitleChoice
+    if (subtitle != null) {
+        val text = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        val sideloaded = text.filter { it.getTrackFormat(0).id?.startsWith("jf-ext-") == true }
+        val embedded = text - sideloaded.toSet()
+        val group = when {
+            subtitle.externalId != null -> sideloaded.firstOrNull { it.getTrackFormat(0).id == subtitle.externalId }
+            else -> embedded.getOrNull(subtitle.ordinal)
+                ?: embedded.firstOrNull { PlaybackLanguage.matches(it.getTrackFormat(0).language, subtitle.language.orEmpty()) }
+        }
+        if (group != null && group.length > 0) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+            changed = true
+        }
+    } else if (plan.subtitlesOff) {
+        builder.clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        changed = true
+    }
+    if (changed) player.trackSelectionParameters = builder.build()
 }
 
 private fun preferredLanguages(context: Context, current: TrackSelectionParameters): TrackSelectionParameters {

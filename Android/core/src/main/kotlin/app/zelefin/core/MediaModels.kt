@@ -290,6 +290,23 @@ data class PlaybackPlan(
     val appliedBitrate: Int? = null,
     /** Source file bitrate when the server reports it. */
     val sourceBitrate: Int? = null,
+    /** Audio stream Jellyfin chose for this user; null leaves it to the player. */
+    val audioChoice: TrackChoice? = null,
+    /** Subtitle stream Jellyfin chose for this user. */
+    val subtitleChoice: TrackChoice? = null,
+    /** True when the server resolved the user's subtitle settings to no subtitles at all. */
+    val subtitlesOff: Boolean = false,
+)
+
+/**
+ * A stream Jellyfin's user settings (preferred language, play default audio track, subtitle
+ * mode) selected. The player cannot see Jellyfin's stream indices, so this carries the track's
+ * position among streams of its type plus its language, and the sideload id for a subtitle file.
+ */
+data class TrackChoice(
+    val ordinal: Int,
+    val language: String?,
+    val externalId: String? = null,
 )
 
 data class PlaybackChapter(val startSeconds: Double, val name: String)
@@ -300,4 +317,6 @@ data class ExternalSubtitle(
     val mimeType: String,
     val language: String?,
     val title: String,
+    /** Stable id handed to the player so the chosen file can be found among its text tracks. */
+    val id: String? = null,
 )

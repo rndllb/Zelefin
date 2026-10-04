@@ -923,10 +923,11 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
     func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
         let dto = try? await client.send(Paths.getItem(itemID: itemID, userID: userID)).value
-        let streams = dto?.mediaStreams ?? dto?.mediaSources?.first?.mediaStreams
+        let source = dto?.mediaSources?.first
+        let streams = source?.mediaStreams ?? dto?.mediaStreams
         return (
-            ItemMapper.tracks(from: streams, kind: .audio),
-            ItemMapper.tracks(from: streams, kind: .subtitle)
+            ItemMapper.tracks(from: streams, kind: .audio, source: source),
+            ItemMapper.tracks(from: streams, kind: .subtitle, source: source)
         )
     }
 
@@ -1001,6 +1002,12 @@ class JellyfinLibraryClient: @unchecked Sendable {
             try streams.url(itemID: item.id, source: source)
         )
         let streams = source.mediaStreams ?? []
+        // The response echoes what the server settled on for this user, so the player
+        // starts there instead of on the file's own flags.
+        let chosenAudio = resolvedAudio ?? source.defaultAudioStreamIndex
+        let chosenSubtitle: Int? = resolvedSubtitle == -1
+            ? nil
+            : (resolvedSubtitle ?? source.defaultSubtitleStreamIndex).flatMap { $0 < 0 ? nil : $0 }
 
         return PlaybackPlan(
             item: item,
@@ -1017,11 +1024,11 @@ class JellyfinLibraryClient: @unchecked Sendable {
             extraHTTPHeaders: source.requiredHTTPHeaders ?? [:],
             audioTracks: PlaybackLanguage.selecting(
                 ItemMapper.tracks(from: streams, kind: .audio),
-                selectedID: resolvedAudio
+                selectedID: chosenAudio
             ),
             subtitleTracks: PlaybackLanguage.selecting(
                 ItemMapper.tracks(from: streams, kind: .subtitle),
-                selectedID: resolvedSubtitle == -1 ? nil : resolvedSubtitle
+                selectedID: chosenSubtitle
             ),
             externalSubtitles: self.streams.externalSubtitles(itemID: item.id, source: source),
             chapters: isLive ? [] : (dto.map(ItemMapper.chapters(from:)) ?? []),

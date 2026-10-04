@@ -1031,8 +1031,17 @@ class JellyfinLibrary(
                     mimeType = mime,
                     language = stream.language,
                     title = stream.displayTitle ?: stream.title ?: stream.language ?: "Subtitle",
+                    id = externalSubtitleId(stream.index),
                 )
             }
+        // The server echoes the streams it settled on after applying this user's Jellyfin
+        // settings, so these are what the player must start with on a Direct Play too.
+        val chosenAudio = source.defaultAudioStreamIndex ?: audioIndex
+        val chosenSubtitle = when {
+            subtitleIndex == -1 -> -1
+            else -> source.defaultSubtitleStreamIndex ?: subtitleIndex
+        }
+        val sourceStreams = source.mediaStreams ?: streams
         PlaybackPlan(
             item = target,
             streamUrl = url,
@@ -1048,6 +1057,37 @@ class JellyfinLibrary(
             externalSubtitles = externalSubtitles,
             appliedBitrate = maxBitrate,
             sourceBitrate = source.bitrate?.takeIf { it > 0 } ?: sourceBitrate,
+            // A transcode or remux already carries only the chosen audio; only a Direct Play needs steering.
+            audioChoice = if (method == PlaybackMethod.DirectPlay) trackChoice(sourceStreams, MediaStreamType.AUDIO, chosenAudio) else null,
+            subtitleChoice = if (chosenSubtitle == -1) {
+                null
+            } else {
+                trackChoice(sourceStreams, MediaStreamType.SUBTITLE, chosenSubtitle)
+                    ?.takeIf { method == PlaybackMethod.DirectPlay || it.externalId != null }
+            },
+            subtitlesOff = chosenSubtitle == -1 || chosenSubtitle == null,
+        )
+    }
+
+    private fun externalSubtitleId(index: Int) = "jf-ext-$index"
+
+    private fun trackChoice(
+        streams: List<org.jellyfin.sdk.model.api.MediaStream>,
+        type: MediaStreamType,
+        index: Int?,
+    ): app.zelefin.core.TrackChoice? {
+        index ?: return null
+        val ofType = streams.filter { it.type == type }.sortedBy { it.index }
+        val ordinal = ofType.indexOfFirst { it.index == index }
+        if (ordinal < 0) return null
+        val stream = ofType[ordinal]
+        val sideloaded = type == MediaStreamType.SUBTITLE &&
+            (stream.deliveryMethod == SubtitleDeliveryMethod.EXTERNAL || stream.isExternal)
+        return app.zelefin.core.TrackChoice(
+            // Embedded tracks keep file order in both ffmpeg and the player, so count only those.
+            ordinal = ofType.take(ordinal).count { !(type == MediaStreamType.SUBTITLE && (it.deliveryMethod == SubtitleDeliveryMethod.EXTERNAL || it.isExternal)) },
+            language = stream.language,
+            externalId = if (sideloaded) externalSubtitleId(stream.index) else null,
         )
     }
 
