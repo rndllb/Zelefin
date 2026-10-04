@@ -32,10 +32,7 @@ struct PlayerView: View {
             if let model {
                 playerSurface(model)
             } else {
-                ProgressView().tint(.white)
-            }
-            if model == nil {
-                loadingClose
+                loadingSurface
             }
             if let message = fallbackError {
                 errorOverlay(message)
@@ -128,6 +125,38 @@ struct PlayerView: View {
         .padding(.top, 12)
     }
 
+    private var loadingArtworkURL: URL? {
+        session.library?.backdropURL(for: activeItem)
+    }
+
+    private var loadingPosterURL: URL? {
+        session.library?.primaryURL(for: activeItem)
+    }
+
+    private var loadingSurface: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            HeroArtwork(
+                url: loadingArtworkURL,
+                placeholderURL: loadingPosterURL
+            )
+            .overlay(Color.black.opacity(0.46))
+            .ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView()
+                    .tint(.white)
+                    .controlSize(.large)
+                Text(activeItem.name)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .padding(.horizontal, 28)
+            }
+            loadingClose
+        }
+    }
+
     private func prepareAndStart() async {
         if let local = downloads.playbackPlan(for: activeItem, account: session.session) {
             guard !Task.isCancelled else { return }
@@ -142,24 +171,41 @@ struct PlayerView: View {
         }
         do {
             let launch = session.launchOptions(for: item.id)
+            let maxBitrate = streamingBitrate(for: launch)
+            appliedBitrate = maxBitrate
+            let featureStart = resumeOverride ?? item.playbackPosition
+            let planTask = Task {
+                try await library.playbackPlan(
+                    for: item,
+                    audioIndex: launch.audioIndex,
+                    subtitleIndex: launch.subtitleStreamIndex,
+                    maxBitrate: maxBitrate,
+                    startTime: featureStart,
+                    mediaSourceID: launch.mediaSourceID
+                )
+            }
             if cinemaQueue.isEmpty, !launch.skipCinemaIntros {
                 let intros = await library.cinemaIntros(for: item.id)
                 if !intros.isEmpty {
+                    planTask.cancel()
                     cinemaQueue = intros + [item]
                     cinemaIndex = 0
                     activeItem = intros[0]
                 }
             }
-            let maxBitrate = await streamingBitrate(for: launch)
-            appliedBitrate = maxBitrate
-            var plan = try await library.playbackPlan(
-                for: activeItem,
-                audioIndex: isCinemaBumper ? nil : launch.audioIndex,
-                subtitleIndex: isCinemaBumper ? nil : launch.subtitleStreamIndex,
-                maxBitrate: maxBitrate,
-                startTime: isCinemaBumper ? 0 : (resumeOverride ?? activeItem.playbackPosition),
-                mediaSourceID: isCinemaBumper ? nil : launch.mediaSourceID
-            )
+            var plan: PlaybackPlan
+            if isCinemaBumper {
+                plan = try await library.playbackPlan(
+                    for: activeItem,
+                    allowDirectPlay: true,
+                    maxBitrate: maxBitrate,
+                    startTime: 0,
+                    mediaSourceID: nil
+                )
+            } else {
+                plan = try await planTask.value
+                activeItem = item
+            }
             resumeOverride = nil
             if PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
                 url: plan.streamURL,
@@ -191,11 +237,18 @@ struct PlayerView: View {
         }
     }
 
-    private func streamingBitrate(for launch: PlaybackLaunchOptions) async -> Int {
+    /// Same rule as Android: Auto on a home server Direct Plays immediately. A 750KB
+    /// BitrateTest used to run first and hold Play for up to four seconds.
+    private func streamingBitrate(for launch: PlaybackLaunchOptions) -> Int {
         if let liveBitrateOverride {
             return liveBitrateOverride
         }
-        await session.adaptiveBitrate.refreshIfNeeded(library: session.library)
+        Task { await session.adaptiveBitrate.refreshIfNeeded(library: session.library) }
+        if launch.resolvedQuality == .auto,
+           let host = session.activeServerURL?.host,
+           ServerURL.isInternalHost(host) {
+            return PlaybackQuality.auto.bitsPerSecond
+        }
         return session.adaptiveBitrate.resolvedBitsPerSecond(
             sourceBitrate: activeItem.sourceBitrate,
             launch: launch
@@ -279,7 +332,7 @@ struct PlayerView: View {
         guard model?.plan.streamURL.isFileURL != true else { return }
         let launch = session.launchOptions(for: activeItem.id)
         if let override = launch.quality, override != .auto { return }
-        let next = await streamingBitrate(for: launch)
+        let next = streamingBitrate(for: launch)
         let previous = appliedBitrate ?? launch.resolvedQuality.bitsPerSecond
         guard PlaybackQuality.atOrBelow(next) != PlaybackQuality.atOrBelow(previous) else { return }
         let skip = model?.skipSegments ?? []
@@ -305,21 +358,19 @@ struct PlayerView: View {
         }
         if let skipSegments {
             created.skipSegments = skipSegments
+        } else if created.plan.isLive != true,
+           OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
+           let client = session.client,
+           !session.usesSilo {
+            Task {
+                let skipper = IntroSkipperClient(client: client)
+                guard await skipper.isInstalled() else { return }
+                created.skipSegments = await skipper.segments(for: plan.item.id)
+            }
         }
         model = created
         await Task.yield()
         do {
-            if skipSegments == nil,
-               created.plan.isLive != true,
-               OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
-               let client = session.client,
-               !session.usesSilo {
-                let skipper = IntroSkipperClient(client: client)
-                if await skipper.isInstalled() {
-                    try Task.checkCancellation()
-                    created.skipSegments = await skipper.segments(for: plan.item.id)
-                }
-            }
             try Task.checkCancellation()
             await created.start()
             if session.syncPlayGroupID != nil {
@@ -393,7 +444,7 @@ struct PlayerView: View {
             let remux = try await library.playbackPlan(
                 for: activeItem,
                 allowDirectPlay: false,
-                maxBitrate: await streamingBitrate(for: launch),
+                maxBitrate: streamingBitrate(for: launch),
                 startTime: resumeOverride ?? activeItem.playbackPosition,
                 mediaSourceID: isCinemaBumper ? nil : launch.mediaSourceID
             )
@@ -447,36 +498,35 @@ struct PlayerView: View {
                 if model.showsPlaybackStats {
                     PlaybackStatsOverlay(snapshot: model.playbackStats)
                 }
-                AVKitPlaybackChrome(
-                    model: model,
-                    title: model.plan.item.name,
-                    quality: session.launchOptions(for: item.id).resolvedQuality,
-                    canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
-                    onClose: { dismiss() },
-                    onQualityChange: { quality in
-                        Task { await changeQuality(quality) }
-                    },
-                    onAddSubtitles: {
-                        subtitleSearchFileID = model.plan.mediaSourceID
-                        subtitleSearchItem = activeItem
-                    },
-                    onAudioChange: { id in
-                        model.selectAudio(id: id)
-                        session.updateLaunchOptions(for: activeItem.id) { $0.audioIndex = id }
-                    },
-                    onSubtitleChange: { id in
-                        model.selectSubtitle(id: id)
-                        session.updateLaunchOptions(for: activeItem.id) { options in
-                            options.subtitlesDisabled = id == nil
-                            options.subtitleIndex = id
-                        }
-                    },
-                    onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
-                )
-                if !model.hasFirstFrame || model.isBuffering {
-                    ProgressView()
-                        .tint(.white)
-                        .allowsHitTesting(false)
+                if model.hasFirstFrame {
+                    AVKitPlaybackChrome(
+                        model: model,
+                        title: model.plan.item.name,
+                        quality: session.launchOptions(for: item.id).resolvedQuality,
+                        canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
+                        onClose: { dismiss() },
+                        onQualityChange: { quality in
+                            Task { await changeQuality(quality) }
+                        },
+                        onAddSubtitles: {
+                            subtitleSearchFileID = model.plan.mediaSourceID
+                            subtitleSearchItem = activeItem
+                        },
+                        onAudioChange: { id in
+                            model.selectAudio(id: id)
+                            session.updateLaunchOptions(for: activeItem.id) { $0.audioIndex = id }
+                        },
+                        onSubtitleChange: { id in
+                            model.selectSubtitle(id: id)
+                            session.updateLaunchOptions(for: activeItem.id) { options in
+                                options.subtitlesDisabled = id == nil
+                                options.subtitleIndex = id
+                            }
+                        },
+                        onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
+                    )
+                } else {
+                    loadingSurface
                 }
             }
         } else if let player = model.player {
@@ -495,7 +545,7 @@ struct PlayerView: View {
             )
             .ignoresSafeArea()
         } else {
-            ProgressView().tint(.white)
+            loadingSurface
         }
     }
 

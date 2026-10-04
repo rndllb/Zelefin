@@ -11,6 +11,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
     private let serverCapabilities: OSAllocatedUnfairLock<JellyfinServerCapabilities>
     /// `nil` until version is known or the first collections lookup probes `/Items/{id}/Collections`.
     private let hasItemCollectionsEndpoint: OSAllocatedUnfairLock<Bool?>
+    private let cinemaIntroCache = OSAllocatedUnfairLock<[String: [MediaItem]]>(initialState: [:])
 
     init(client: JellyfinClient, userID: String, serverVersion: String? = nil) {
         self.client = client
@@ -941,16 +942,12 @@ class JellyfinLibraryClient: @unchecked Sendable {
         mediaSourceID: String?
     ) async throws -> PlaybackPlan {
         let bitrate = maxBitrate ?? PlaybackPreferences.maxStreamingBitrate
-        let resume = await resolvedResumePosition(requested: startTime, item: item)
-        let preferredTracks = (audioIndex == nil || subtitleIndex == nil)
-            ? await streamTracks(for: item.id)
-            : (audio: [], subtitles: [])
-        // The user's Jellyfin account settings (Settings → Playback) decide the starting
-        // streams here, so the device-side language picks only apply to Silo.
+        let resume = resolvedResumePosition(requested: startTime, item: item)
+        // Leave audio/subtitle nil so PlaybackInfo applies the user's Jellyfin settings.
+        // An extra getItem here used to stall Play while we guessed the same streams the
+        // server already returns on the PlaybackInfo response.
         let resolvedAudio = audioIndex
-            ?? PlaybackLanguage.audioIndex(in: preferredTracks.audio, preference: PlaybackLanguage.automaticCode)
         let resolvedSubtitle = subtitleIndex
-            ?? PlaybackLanguage.subtitleIndex(in: preferredTracks.subtitles, preference: PlaybackLanguage.automaticCode)
         let profile = AVDeviceProfileFactory.make(
             preferFMP4InHLS: PlaybackPreferences.effectivePreferFMP4InHLS,
             maxBitrate: bitrate
@@ -1044,12 +1041,9 @@ class JellyfinLibraryClient: @unchecked Sendable {
         )
     }
 
-    private func resolvedResumePosition(requested: TimeInterval?, item: MediaItem) async -> TimeInterval {
+    private func resolvedResumePosition(requested: TimeInterval?, item: MediaItem) -> TimeInterval {
         if item.kind == .liveTV { return 0 }
-        let local = requested ?? item.playbackPosition
-        if local > PlaybackResumePolicy.threshold { return local }
-        guard let fresh = try? await self.item(id: item.id).playbackPosition else { return local }
-        return max(local, fresh)
+        return requested ?? item.playbackPosition
     }
 
     private func resumeItems() async throws -> [MediaItem] {
@@ -1643,8 +1637,13 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     func cinemaIntros(for itemID: String) async -> [MediaItem] {
+        if let cached = cinemaIntroCache.withLock({ $0[itemID] }) {
+            return cached
+        }
         let result = try? await client.send(Paths.getIntros(itemID: itemID, userID: userID)).value
-        return (result?.items ?? []).compactMap(ItemMapper.mediaItem(from:)).filter { $0.id != itemID }
+        let items = (result?.items ?? []).compactMap(ItemMapper.mediaItem(from:)).filter { $0.id != itemID }
+        cinemaIntroCache.withLock { $0[itemID] = items }
+        return items
     }
 
     func movieRecommendationsIgnoringErrors() async -> [HomeSection] {

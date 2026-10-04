@@ -184,15 +184,22 @@ struct AVKitPlaybackChrome: View {
                 model.togglePlayPause()
                 revealControls()
             } label: {
-                Image(systemName: model.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: playSymbolSize, weight: .regular))
-                    .foregroundStyle(.white)
-                    .frame(width: playHitSize, height: playHitSize)
-                    .contentShape(Circle())
+                ZStack {
+                    if model.isBuffering {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: model.isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: playSymbolSize, weight: .regular))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: playHitSize, height: playHitSize)
+                .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .avkitGlassCircle()
-            .accessibilityLabel(model.isPaused ? "Play" : "Pause")
+            .accessibilityLabel(model.isBuffering ? "Loading" : (model.isPaused ? "Play" : "Pause"))
             iconButton(
                 PlaybackSkipInterval.resolved(Int(PlaybackPreferences.skipForward)).forwardSymbol,
                 label: "Skip forward \(Int(PlaybackPreferences.skipForward)) seconds",
