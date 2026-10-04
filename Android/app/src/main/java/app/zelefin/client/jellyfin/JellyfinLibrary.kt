@@ -1204,7 +1204,7 @@ class JellyfinLibrary(
 
         fun jellyfin(context: Context) = createJellyfin {
             this.context = context.applicationContext
-            clientInfo = ClientInfo(name = "Zelefin", version = "0.1.0")
+            clientInfo = ClientInfo(name = "Zelefin", version = app.zelefin.client.BuildConfig.VERSION_NAME)
             val factory = OkHttpFactory(GatewayHttp.client)
             apiClientFactory = factory
             socketConnectionFactory = factory

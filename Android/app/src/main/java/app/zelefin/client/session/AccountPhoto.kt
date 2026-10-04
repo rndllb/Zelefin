@@ -67,7 +67,7 @@ object AccountPhoto {
             val request = Request.Builder()
                 .url(url)
                 .post(body.toRequestBody("image/jpeg".toMediaType()))
-                .header("Authorization", "MediaBrowser Client=\"Zelefin\", Device=\"${Build.MODEL ?: "Android"}\", DeviceId=\"${session.deviceId}\", Version=\"0.1.0\", Token=\"${session.accessToken}\"")
+                .header("Authorization", "MediaBrowser Client=\"Zelefin\", Device=\"${Build.MODEL ?: "Android"}\", DeviceId=\"${session.deviceId}\", Version=\"${app.zelefin.client.BuildConfig.VERSION_NAME}\", Token=\"${session.accessToken}\"")
                 .header("X-Emby-Token", session.accessToken)
                 .build()
             GatewayHttp.client.newCall(request).execute().use { response ->

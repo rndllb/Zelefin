@@ -713,7 +713,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 // Like iOS, Silo starts from the original file; only a picked quality (or a live step) caps it.
                 MediaBackend.Silo -> siloClient().playback(
                     item = target,
-                    appVersion = "0.1.0",
+                    appVersion = BuildConfig.VERSION_NAME,
                     osVersion = Build.VERSION.RELEASE ?: "",
                     model = Build.MODEL ?: "Android",
                     maxBitrate = bitrateOverride ?: PlaybackPreferences.selectedQuality(appContext).takeIf { it != PlaybackQuality.Auto }?.bits,
@@ -1770,7 +1770,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         deviceId = vault.deviceId,
         deviceName = Build.MODEL ?: "Android",
         formFactor = if (getApplication<Application>().resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "mobile",
-        appVersion = "0.1.0",
+        appVersion = BuildConfig.VERSION_NAME,
         osVersion = Build.VERSION.RELEASE ?: "",
     )
 

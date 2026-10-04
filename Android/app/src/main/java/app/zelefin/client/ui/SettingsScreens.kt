@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import app.zelefin.client.BuildConfig
 import app.zelefin.client.push.ZelefinPush
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -148,7 +149,7 @@ fun SettingsScreen(
         SettingsLink("Cache", Icons.Outlined.Storage, "Posters and saved home data") { onTopic("cache") }
         SettingsLink("Interface", Icons.Outlined.Settings, "Accent color and Home rows") { onTopic("interface") }
         SettingsHeader("Zelefin")
-        SettingsLink("About", Icons.Outlined.Info, "0.1.0 (6)") { onTopic("about") }
+        SettingsLink("About", Icons.Outlined.Info, AppVersionLabel) { onTopic("about") }
     }
 }
 
@@ -618,6 +619,9 @@ private fun measuredBitrateLabel(bitsPerSecond: Int): String {
     }
 }
 
+/** `0.1.0 (10)`, read from the build so it tracks `versionName`/`versionCode` in build.gradle.kts. */
+internal val AppVersionLabel = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
 /** Mirrors iOS `NotificationSettingsView`. */
 @Composable
 private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController) {
@@ -1050,7 +1054,7 @@ private fun SessionsTopic(state: ZelefinUiState) {
         InfoLine("User", session?.userName ?: "—")
         InfoLine("Server", session?.displayServer ?: "—")
         InfoLine("Device", Build.MODEL ?: "Android")
-        InfoLine("App", "Zelefin 0.1.0 (6)")
+        InfoLine("App", "Zelefin $AppVersionLabel")
     }
     Text(
         "Silo manages its sessions in the Silo admin console.",
@@ -1070,7 +1074,7 @@ private fun AboutTopic(state: ZelefinUiState) {
         }
     }
     SettingsCard {
-        InfoLine("Version", "0.1.0 (6)")
+        InfoLine("Version", AppVersionLabel)
         InfoLine("Server", state.session?.displayServer ?: "—")
         InfoLine("Backend", if (state.session?.usesSilo == true) "Silo" else "Jellyfin")
     }
