@@ -8,7 +8,7 @@ struct MainTabView: View {
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
     @AppStorage(AppTab.favoritesHiddenDefaultKey) private var favoritesHiddenDefaultApplied = false
     @AppStorage(AppTab.liveTVHiddenDefaultKey) private var liveTVHiddenDefaultApplied = false
-    @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = false
+    @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = true
     @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
     @Environment(\.scenePhase) private var scenePhase
     @State private var dockSelection: DockSelection = .tab(.home)
@@ -59,7 +59,7 @@ struct MainTabView: View {
                 .customizationBehavior(.disabled, for: .sidebar, .tabBar)
             }
 
-            Tab(value: DockSelection.search, role: .search) {
+            Tab(value: DockSelection.search) {
                 NavigationStack {
                     SearchView()
                 }
@@ -72,6 +72,7 @@ struct MainTabView: View {
                     isSelected: dockSelection == .search
                 )
             }
+            .customizationID("app.zelefin.tab.search")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
         }
         .tabViewStyle(.sidebarAdaptable)
@@ -456,6 +457,7 @@ private enum TabBarTitleChrome {
 enum ProfileSheet: String, Identifiable {
     case profile
     case sessions
+    case syncplay
     case scheduledTasks
     case settings
     case addUser
@@ -589,6 +591,9 @@ struct ProfileMenu: View {
                     onSessions: session.usesSilo
                         ? nil
                         : { ProfilePresentation.show(.sessions) },
+                    onSyncPlay: session.usesSilo
+                        ? nil
+                        : { ProfilePresentation.show(.syncplay) },
                     onScheduledTasks: session.isAdministrator
                         ? { ProfilePresentation.show(.scheduledTasks) }
                         : nil,
@@ -656,6 +661,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
     var usesSilo: Bool
     var onProfile: () -> Void
     var onSessions: (() -> Void)?
+    var onSyncPlay: (() -> Void)?
     var onScheduledTasks: (() -> Void)?
     var onAddUser: () -> Void
     var onSettings: () -> Void
@@ -733,6 +739,13 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                 rows.append(
                     Self.action("Sessions", "play.tv") {
                         onSessions()
+                    }
+                )
+            }
+            if let onSyncPlay = parent.onSyncPlay {
+                rows.append(
+                    Self.action("SyncPlay", "person.2.wave.2") {
+                        onSyncPlay()
                     }
                 )
             }
@@ -834,6 +847,9 @@ struct ProfileSheetContainer: View {
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .sessions:
                 SessionsView()
+                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+            case .syncplay:
+                SyncPlayView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .scheduledTasks:
                 if session.usesSilo {

@@ -138,16 +138,20 @@ private struct RootNotificationModifier: ViewModifier {
                 profileSheet = notification.object as? ProfileSheet
             }
             .onReceive(NotificationCenter.default.publisher(for: .zelefinRemotePlayItem)) { notification in
-                guard let itemID = notification.object as? String else { return }
+                guard let itemID = notificationString(notification.object) else { return }
                 if session.syncPlayGroupID != nil {
-                    Task { await session.presentSyncPlayItem(id: itemID) }
+                    Task {
+                        let start = (notification.userInfo?["startSeconds"] as? TimeInterval)
+                            ?? (notification.userInfo?["startSeconds"] as? Double)
+                        await session.presentSyncPlayItem(id: itemID, start: start)
+                    }
                 } else {
                     deepLinks.openLibraryItem(itemID, session: session)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .zelefinSyncPlayJoined)) { notification in
                 session.noteSyncPlayJoined(
-                    groupID: notification.object as? String,
+                    groupID: notificationString(notification.object),
                     name: notification.userInfo?["name"] as? String
                 )
             }
@@ -155,7 +159,7 @@ private struct RootNotificationModifier: ViewModifier {
                 session.noteSyncPlayLeft()
             }
             .onReceive(NotificationCenter.default.publisher(for: .zelefinSyncPlayQueueItem)) { notification in
-                session.noteSyncPlayPlaylistItem(notification.object as? String)
+                session.noteSyncPlayPlaylistItem(notificationString(notification.object))
             }
             .onReceive(NotificationCenter.default.publisher(for: .zelefinPushTokenReady)) { notification in
                 guard let token = notification.object as? String else { return }
@@ -213,5 +217,17 @@ private struct RootSessionLifecycleModifier: ViewModifier {
             guard session.isSignedIn else { return }
             profileSheet = .scheduledTasks
         }
+    }
+}
+
+private func notificationString(_ object: Any?) -> String? {
+    switch object {
+    case let text as String:
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    case let uuid as UUID:
+        return uuid.uuidString
+    default:
+        return nil
     }
 }

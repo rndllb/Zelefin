@@ -686,6 +686,13 @@ final class SessionStore {
         return item.withFavorite(saved)
     }
 
+    func toggleWatchlist(_ item: MediaItem) async throws -> MediaItem {
+        guard let library else { throw ZelefinError.missingUser }
+        let next = !item.isWatchlisted
+        try await library.setWatchlisted(itemID: item.id, watchlisted: next)
+        return item.withWatchlisted(next)
+    }
+
     func setLikes(_ item: MediaItem, likes: Bool?) async throws -> MediaItem {
         guard let library else { throw ZelefinError.missingUser }
         let saved = try await library.setLikes(itemID: item.id, likes: likes)
@@ -748,6 +755,14 @@ final class SessionStore {
         noteSyncPlayLeft()
     }
 
+    /// Regular Play while already in a group should queue the title for everyone.
+    @discardableResult
+    func playIfSyncPlay(_ item: MediaItem) -> Bool {
+        guard syncPlayGroupID != nil, !usesSilo else { return false }
+        Task { try? await playInSyncPlay(item) }
+        return true
+    }
+
     func playInSyncPlay(_ item: MediaItem, createGroupNamed name: String? = nil) async throws {
         if let name, syncPlayGroupID == nil {
             try await createSyncPlayGroup(name: name)
@@ -782,10 +797,18 @@ final class SessionStore {
         }
     }
 
-    func presentSyncPlayItem(id: String) async {
+    func presentSyncPlayItem(id: String, start: TimeInterval? = nil) async {
         guard let loaded = try? await library?.item(id: id) else { return }
-        if pendingPlayerItem?.id != loaded.id {
-            pendingPlayerItem = loaded
+        var item = loaded
+        if let start {
+            item.playbackPosition = start
+        }
+        if pendingPlayerItem?.id != item.id {
+            pendingPlayerItem = item
+        } else if let start {
+            var current = pendingPlayerItem
+            current?.playbackPosition = start
+            pendingPlayerItem = current
         }
     }
 

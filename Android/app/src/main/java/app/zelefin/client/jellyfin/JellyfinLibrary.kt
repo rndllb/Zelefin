@@ -821,6 +821,11 @@ class JellyfinLibrary(
             put("subtitleLanguages", subtitles)
         }
 
+    suspend fun mediaItem(userId: UUID, id: String): MediaItem? = withContext(Dispatchers.IO) {
+        val dto = runCatching { api.userLibraryApi.getItem(UUID.fromString(id), userId).content }.getOrNull() ?: return@withContext null
+        ItemMapper.mediaItem(dto.toSnapshot())
+    }
+
     suspend fun detail(userId: UUID, id: String): TitleDetail = withContext(Dispatchers.IO) {
         val itemId = UUID.fromString(id)
         val dto = api.userLibraryApi.getItem(itemId, userId).content
@@ -859,6 +864,7 @@ class JellyfinLibrary(
             val heroDto = episodeDtos.firstOrNull { it.id?.toString() == hero.id }
             if (heroDto != null) facts = facts.withMedia(TitleFacts.from(heroDto, hero))
         }
+        val parts = if (item.kind == MediaKind.Movie) additionalParts(userId, id) else emptyList()
         TitleDetail(
             item = item,
             seasons = seasons,
@@ -866,6 +872,7 @@ class JellyfinLibrary(
             related = related,
             trailers = trailers,
             moreInfo = facts,
+            additionalParts = parts,
         )
     }
 
@@ -946,6 +953,7 @@ class JellyfinLibrary(
         item: MediaItem,
         audioLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
         subtitleLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
+        preferSdh: Boolean = false,
         bitrate: suspend (sourceBitrate: Int?) -> Int = { MAX_BITRATE },
     ): PlaybackPlan = withContext(Dispatchers.IO) {
         val target = item
@@ -956,15 +964,18 @@ class JellyfinLibrary(
         val sourceBitrate = firstSource?.bitrate?.takeIf { it > 0 }
             ?: streams.filter { it.type == MediaStreamType.VIDEO || it.type == MediaStreamType.AUDIO }
                 .sumOf { it.bitRate ?: 0 }.takeIf { it > 0 }
-        fun languageTracks(type: MediaStreamType, defaultIndex: Int?) = streams.filter { it.type == type }.map { stream ->
-            app.zelefin.client.LanguageTrack(
-                index = stream.index,
-                language = stream.language,
-                // A user-scoped source already applied the user's Jellyfin settings; a null default
-                // there means "none", not "fall back to the file's flag".
-                isSelected = if (firstSource != null) stream.index == defaultIndex else stream.isDefault,
-            )
-        }
+        fun languageTracks(type: MediaStreamType, defaultIndex: Int?, sourceStreams: List<org.jellyfin.sdk.model.api.MediaStream> = streams) =
+            sourceStreams.filter { it.type == type }.map { stream ->
+                app.zelefin.client.LanguageTrack(
+                    index = stream.index,
+                    language = stream.language,
+                    // A user-scoped source already applied the user's Jellyfin settings; a null default
+                    // there means "none", not "fall back to the file's flag".
+                    isSelected = if (firstSource != null) stream.index == defaultIndex else stream.isDefault,
+                    title = stream.displayTitle ?: stream.title.orEmpty(),
+                    isHearingImpaired = stream.isHearingImpaired == true,
+                )
+            }
         val audioIndex = app.zelefin.client.PlaybackLanguage.audioIndex(
             languageTracks(MediaStreamType.AUDIO, firstSource?.defaultAudioStreamIndex),
             audioLanguage,
@@ -974,6 +985,24 @@ class JellyfinLibrary(
             subtitleLanguage,
         )
         val maxBitrate = bitrate(sourceBitrate).coerceIn(1, MAX_BITRATE)
+        val explicitSubtitle = subtitleLanguage != app.zelefin.client.PlaybackPreferences.AUTOMATIC &&
+            subtitleLanguage.isNotEmpty()
+        val preferences = runCatching { playbackPreferences() }.getOrNull()
+        val itemSubtitleTracks = languageTracks(MediaStreamType.SUBTITLE, firstSource?.defaultSubtitleStreamIndex)
+        val plannedSubtitle = when {
+            subtitleLanguage == app.zelefin.client.PlaybackPreferences.OFF -> -1
+            explicitSubtitle -> subtitleIndex
+            else -> app.zelefin.client.PlaybackLanguage.startingSubtitleIndex(
+                tracks = itemSubtitleTracks,
+                serverIndex = firstSource?.defaultSubtitleStreamIndex,
+                mode = preferences?.subtitleMode ?: org.jellyfin.sdk.model.api.SubtitlePlaybackMode.DEFAULT,
+                preferredLanguage = preferences?.subtitleLanguage.orEmpty(),
+                audioLanguage = languageTracks(MediaStreamType.AUDIO, firstSource?.defaultAudioStreamIndex)
+                    .firstOrNull { it.index == audioIndex }?.language,
+                preferSdh = preferSdh,
+                deviceLanguage = java.util.Locale.getDefault().language,
+            )
+        }
         val response = api.mediaInfoApi.getPostedPlaybackInfo(
             itemId = UUID.fromString(target.id),
             data = PlaybackInfoDto(
@@ -981,7 +1010,12 @@ class JellyfinLibrary(
                 maxStreamingBitrate = maxBitrate,
                 startTimeTicks = app.zelefin.core.TickClock.ticks(resume),
                 audioStreamIndex = audioIndex,
-                subtitleStreamIndex = subtitleIndex,
+                subtitleStreamIndex = when {
+                    subtitleLanguage == app.zelefin.client.PlaybackPreferences.OFF -> -1
+                    explicitSubtitle -> subtitleIndex
+                    plannedSubtitle != null -> plannedSubtitle
+                    else -> null
+                },
                 deviceProfile = deviceProfile(maxBitrate),
                 enableDirectPlay = true,
                 enableDirectStream = true,
@@ -1043,12 +1077,43 @@ class JellyfinLibrary(
             }
         // The server echoes the streams it settled on after applying this user's Jellyfin
         // settings, so these are what the player must start with on a Direct Play too.
-        val chosenAudio = source.defaultAudioStreamIndex ?: audioIndex
-        val chosenSubtitle = when {
-            subtitleIndex == -1 -> -1
-            else -> source.defaultSubtitleStreamIndex ?: subtitleIndex
+        val playbackStreams = source.mediaStreams.orEmpty()
+        val sourceStreams = if (playbackStreams.any { it.type == MediaStreamType.SUBTITLE } || streams.none { it.type == MediaStreamType.SUBTITLE }) {
+            playbackStreams.ifEmpty { streams }
+        } else {
+            val merged = playbackStreams.associateBy { it.index }.toMutableMap()
+            streams.forEach { stream -> if (stream.index !in merged) merged[stream.index] = stream }
+            merged.values.sortedBy { it.index }
         }
-        val sourceStreams = source.mediaStreams ?: streams
+        val chosenAudio = source.defaultAudioStreamIndex ?: audioIndex
+        val subtitleTracks = languageTracks(
+            MediaStreamType.SUBTITLE,
+            source.defaultSubtitleStreamIndex,
+            sourceStreams,
+        ).ifEmpty { itemSubtitleTracks }
+        val audioLanguageCode = languageTracks(
+            MediaStreamType.AUDIO,
+            source.defaultAudioStreamIndex,
+            sourceStreams,
+        ).firstOrNull { it.index == chosenAudio }?.language
+        val serverSubtitle = when {
+            subtitleLanguage == app.zelefin.client.PlaybackPreferences.OFF -> null
+            explicitSubtitle -> subtitleIndex?.takeIf { it >= 0 }
+            else -> source.defaultSubtitleStreamIndex?.takeIf { it >= 0 } ?: plannedSubtitle?.takeIf { it >= 0 }
+        }
+        val chosenSubtitle = when {
+            subtitleLanguage == app.zelefin.client.PlaybackPreferences.OFF -> -1
+            else -> app.zelefin.client.PlaybackLanguage.startingSubtitleIndex(
+                tracks = subtitleTracks,
+                serverIndex = serverSubtitle,
+                mode = preferences?.subtitleMode ?: org.jellyfin.sdk.model.api.SubtitlePlaybackMode.DEFAULT,
+                preferredLanguage = preferences?.subtitleLanguage.orEmpty(),
+                audioLanguage = audioLanguageCode,
+                preferSdh = preferSdh,
+                deviceLanguage = java.util.Locale.getDefault().language,
+                forcedByUser = explicitSubtitle,
+            )
+        }
         PlaybackPlan(
             item = target,
             streamUrl = url,
@@ -1073,6 +1138,10 @@ class JellyfinLibrary(
                     ?.takeIf { method == PlaybackMethod.DirectPlay || it.externalId != null }
             },
             subtitlesOff = chosenSubtitle == -1 || chosenSubtitle == null,
+            trickplay = runCatching {
+                (itemDto ?: api.userLibraryApi.getItem(UUID.fromString(target.id), userId).content)
+                    .trickplayInfo(source.id)
+            }.getOrNull(),
         )
     }
 
@@ -1319,9 +1388,19 @@ class JellyfinLibrary(
                 codecProfiles = emptyList(),
                 subtitleProfiles = listOf(
                     SubtitleProfile(format = "vtt", method = SubtitleDeliveryMethod.HLS),
+                    SubtitleProfile(format = "vtt", method = SubtitleDeliveryMethod.EXTERNAL),
+                    SubtitleProfile(format = "webvtt", method = SubtitleDeliveryMethod.EXTERNAL),
                     SubtitleProfile(format = "srt", method = SubtitleDeliveryMethod.EXTERNAL),
+                    SubtitleProfile(format = "srt", method = SubtitleDeliveryMethod.EMBED),
+                    SubtitleProfile(format = "subrip", method = SubtitleDeliveryMethod.EXTERNAL),
+                    SubtitleProfile(format = "subrip", method = SubtitleDeliveryMethod.EMBED),
                     SubtitleProfile(format = "ass", method = SubtitleDeliveryMethod.EXTERNAL),
+                    SubtitleProfile(format = "ass", method = SubtitleDeliveryMethod.EMBED),
+                    SubtitleProfile(format = "ssa", method = SubtitleDeliveryMethod.EXTERNAL),
                     SubtitleProfile(format = "pgssub", method = SubtitleDeliveryMethod.EXTERNAL),
+                    SubtitleProfile(format = "pgs", method = SubtitleDeliveryMethod.EXTERNAL),
+                    SubtitleProfile(format = "dvdsub", method = SubtitleDeliveryMethod.EXTERNAL),
+                    SubtitleProfile(format = "dvbsub", method = SubtitleDeliveryMethod.EXTERNAL),
                 ),
             )
         }

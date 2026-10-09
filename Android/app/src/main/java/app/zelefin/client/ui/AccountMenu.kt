@@ -20,10 +20,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -68,6 +70,7 @@ fun AccountAvatarMenu(
     val anchor = remember { mutableStateOf(Rect.Zero) }
     val haze = LocalZelefinHaze.current
     val showSessions = session?.usesSilo != true
+    val showSyncPlay = session?.usesSilo != true
     val addLabel = if (session?.usesSilo == true) "Add Account" else "Add User"
     val others = appState.accounts.filter { it.accountId != session?.accountId }
 
@@ -77,6 +80,7 @@ fun AccountAvatarMenu(
                 hazeState = hazeState,
                 anchor = anchor.value,
                 showSessions = showSessions,
+                showSyncPlay = showSyncPlay,
                 addLabel = addLabel,
                 others = others,
                 onDismiss = { open = false },
@@ -87,6 +91,10 @@ fun AccountAvatarMenu(
                 onSessions = {
                     open = false
                     onSessions()
+                },
+                onSyncPlay = {
+                    open = false
+                    model.openSettingsTopic("syncplay")
                 },
                 onSwitch = { account ->
                     open = false
@@ -120,11 +128,13 @@ private fun DockGlassMenu(
     hazeState: ZelefinHazeState,
     anchor: Rect,
     showSessions: Boolean,
+    showSyncPlay: Boolean,
     addLabel: String,
     others: List<SavedSession>,
     onDismiss: () -> Unit,
     onProfile: () -> Unit,
     onSessions: () -> Unit,
+    onSyncPlay: () -> Unit,
     onSwitch: (SavedSession) -> Unit,
     onAdd: () -> Unit,
     onSettings: () -> Unit,
@@ -140,6 +150,7 @@ private fun DockGlassMenu(
         ) {
             GlassMenuRow("Profile", Icons.Outlined.AccountCircle, onProfile)
             if (showSessions) GlassMenuRow("Sessions", Icons.Outlined.LiveTv, onSessions)
+            if (showSyncPlay) GlassMenuRow("SyncPlay", Icons.Outlined.Groups, onSyncPlay)
             if (others.isNotEmpty()) {
                 GlassMenuDivider()
                 others.forEach { account -> GlassAccountRow(account) { onSwitch(account) } }
@@ -207,7 +218,7 @@ fun AccountAvatarImage(account: SavedSession, diameter: androidx.compose.ui.unit
     }
 }
 
-/** Two-button glass confirm (Cancel + action), the dock-glass stand-in for a confirmation dialog. */
+/** Two-button confirm (Cancel + action). */
 @Composable
 fun ZelefinGlassConfirm(
     hazeState: ZelefinHazeState,
@@ -218,86 +229,14 @@ fun ZelefinGlassConfirm(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
-        Column(
-            Modifier
-                .width(270.dp)
-                .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
-                .padding(top = 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 16.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(message, color = DockInactive, fontFamily = ZelefinFont, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 16.dp))
-            Spacer(Modifier.height(14.dp))
-            Box(Modifier.fillMaxWidth().height(0.5.dp).background(DockBorder))
-            Row(Modifier.fillMaxWidth().height(44.dp)) {
-                Box(Modifier.weight(1f).fillMaxSize().clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
-                    Text("Cancel", color = ZelefinCyan, fontFamily = ZelefinFont, fontSize = 17.sp)
-                }
-                Box(Modifier.width(0.5.dp).fillMaxSize().background(DockBorder))
-                Box(Modifier.weight(1f).fillMaxSize().clickable(onClick = onConfirm), contentAlignment = Alignment.Center) {
-                    Text(
-                        confirmLabel,
-                        color = if (destructive) Destructive else ZelefinCyan,
-                        fontFamily = ZelefinFont,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 17.sp,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ZelefinGlassAlert(
-    hazeState: ZelefinHazeState,
-    title: String,
-    message: String,
-    onDismiss: () -> Unit,
-) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
-        Column(
-            Modifier
-                .width(270.dp)
-                .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
-                .padding(horizontal = 16.dp, vertical = 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(4.dp))
-            Text(message, color = DockInactive, fontFamily = ZelefinFont, fontSize = 13.sp, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(14.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(0.5.dp)
-                    .background(DockBorder),
-            )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .clickable(onClick = onDismiss),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("OK", color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-            }
-        }
-    }
+    SettingsAlertDialog(
+        title = title,
+        message = message,
+        confirmLabel = confirmLabel,
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+        destructive = destructive,
+    )
 }
 
 @Composable
@@ -310,8 +249,8 @@ private fun GlassMenuRow(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val run = LocalMenuAction.current
-    val textTint = if (destructive) Destructive else DockInactive
-    val iconTint = if (destructive) Destructive else ZelefinCyan
+    val textTint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    val iconTint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
         Modifier
             .fillMaxWidth()
@@ -347,20 +286,10 @@ fun AccountAvatar(
     val inset = maxOf(3.dp, diameter * 0.08f)
     val photo = diameter - inset * 2
     val initial = session?.userName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "Z"
-    val haze = LocalZelefinHaze.current
     Box(
         modifier
             .size(diameter)
-            .then(
-                if (haze != null) {
-                    Modifier.zelefinGlassChrome(haze, CircleShape)
-                } else {
-                    Modifier
-                        .clip(CircleShape)
-                        .background(DockFill)
-                        .border(0.5.dp, DockBorder, CircleShape)
-                },
-            )
+            .zelefinGlassChrome(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

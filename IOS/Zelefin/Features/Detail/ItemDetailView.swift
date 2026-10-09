@@ -15,6 +15,9 @@ struct ItemDetailView: View {
     @State private var episodes: [MediaItem] = []
     @State private var trailers: [TitleTrailer] = []
     @State private var extras: [TitleExtra] = []
+    @State private var additionalParts: [MediaItem] = []
+    @State private var showsIdentify = false
+    @State private var showsEditMetadata = false
     @State private var related: [MediaItem] = []
     @State private var credits: [CreditPerson] = []
     @State private var collections: [ItemCollectionMembership] = []
@@ -105,6 +108,20 @@ struct ItemDetailView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showsIdentify, onDismiss: {
+                Task { await refreshFromServer() }
+            }) {
+                if let item {
+                    IdentifySheet(item: item) { showsIdentify = false }
+                }
+            }
+            .sheet(isPresented: $showsEditMetadata, onDismiss: {
+                Task { await refreshFromServer() }
+            }) {
+                if let item {
+                    EditMetadataSheet(item: item) { showsEditMetadata = false }
+                }
+            }
             .fullScreenCover(item: $viewingPhoto) { photo in
                 NavigationStack {
                     PhotoViewerView(item: photo)
@@ -179,6 +196,11 @@ struct ItemDetailView: View {
                             if item.kind == .series, !seasons.isEmpty {
                                 seasonsSection
                                     .padding(.top, 4)
+                                    .padding(.bottom, 20)
+                            }
+
+                            if !additionalParts.isEmpty {
+                                additionalPartsSection
                                     .padding(.bottom, 20)
                             }
 
@@ -272,6 +294,12 @@ struct ItemDetailView: View {
                         : nil,
                     onDelete: session.isAdministrator && !session.usesSilo
                         ? { showsDeleteConfirm = true }
+                        : nil,
+                    onIdentify: session.isAdministrator && !session.usesSilo
+                        ? { showsIdentify = true }
+                        : nil,
+                    onEditMetadata: session.isAdministrator && !session.usesSilo
+                        ? { showsEditMetadata = true }
                         : nil
                 )
                 if item.kind == .movie || item.kind == .episode {
@@ -294,7 +322,7 @@ struct ItemDetailView: View {
             .buttonStyle(.plain)
             .zelefinLiquidGlassCircle()
             .accessibilityLabel("More")
-            DetailDownloadSharePill(item: item, episodes: episodes)
+            DetailDownloadSharePill(item: item, seasons: seasons, episodes: episodes)
         }
     }
 
@@ -573,6 +601,31 @@ struct ItemDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var additionalPartsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Additional Parts", showsChevron: false)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                    ForEach(additionalParts) { part in
+                        Button {
+                            play(part)
+                        } label: {
+                            TrailerLandscapeCard(
+                                title: part.name,
+                                caption: "Part",
+                                imageURL: session.library?.artworkURL(for: part, style: .replayLandscape)
+                                    ?? session.library?.backdropURL(for: part)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(height: PosterMetrics.landscapeSize.height * sidebarLayout.scale)
         }
     }
 
@@ -908,6 +961,9 @@ struct ItemDetailView: View {
             extras = extrasList
             persistSnapshot()
 
+            additionalParts = await library.additionalParts(for: loaded.id)
+            persistSnapshot()
+
             collections = await library.collections(containing: loaded.id)
             persistSnapshot()
         } catch {
@@ -1044,6 +1100,7 @@ struct ItemDetailView: View {
             viewingPhoto = item
             return
         }
+        if session.playIfSyncPlay(item) { return }
         if let local = downloads.playableItem(
             for: item,
             allowRelated: allowRelatedDownload,

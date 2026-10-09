@@ -193,6 +193,7 @@ final class RemoteControlHub {
         case let .string(value): data = Data(value.utf8)
         @unknown default: return
         }
+        publishRawSyncPlayGroup(data)
         let shownDisplayMessage = SessionDisplayMessage.parse(json: data).map {
             SessionMessageCenter.present($0)
             return true
@@ -266,13 +267,11 @@ final class RemoteControlHub {
             let items = queue.data?.playlist ?? []
             let index = queue.data?.playingItemIndex ?? 0
             let current = items.indices.contains(index) ? items[index] : items.first
-            if let playlistItemID = current?.playlistItemID {
-                NotificationCenter.default.post(name: .zelefinSyncPlayQueueItem, object: playlistItemID)
-            }
-            if let itemID = current?.itemID {
-                NotificationCenter.default.post(name: .zelefinRemotePlayItem, object: itemID)
-                NotificationCenter.default.post(name: .zelefinSyncPlayQueueItem, object: current?.playlistItemID)
-            }
+            publishSyncPlayQueue(
+                itemID: current?.itemID,
+                playlistItemID: current?.playlistItemID,
+                startSeconds: queue.data?.startPositionTicks.map { TickClock.seconds(from: $0) }
+            )
         default:
             break
         }
@@ -292,6 +291,81 @@ final class RemoteControlHub {
         }
         guard let itemID else { return }
         NotificationCenter.default.post(name: .zelefinRemotePlayItem, object: itemID)
+    }
+
+    /// Official `GroupUpdate` decoding can drop PlayQueue. Read the JSON Jellyfin actually sends.
+    private func publishRawSyncPlayGroup(_ data: Data) {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        let messageType = (root["MessageType"] as? String) ?? (root["messageType"] as? String)
+        guard messageType == "SyncPlayGroupUpdate" else { return }
+        let update = (root["Data"] as? [String: Any]) ?? [:]
+        let type = (update["Type"] as? String) ?? (update["type"] as? String)
+        switch type {
+        case "GroupJoined":
+            let info = update["Data"] as? [String: Any]
+            let id = stringID(update["GroupId"]) ?? stringID(info?["GroupId"])
+            NotificationCenter.default.post(
+                name: .zelefinSyncPlayJoined,
+                object: id,
+                userInfo: ["name": stringID(info?["GroupName"]) ?? ""]
+            )
+        case "GroupLeft", "GroupDoesNotExist", "NotInGroup":
+            NotificationCenter.default.post(name: .zelefinSyncPlayLeft, object: nil)
+        case "PlayQueue":
+            let queue = update["Data"] as? [String: Any] ?? [:]
+            let playlist = queue["Playlist"] as? [[String: Any]] ?? []
+            let index = queue["PlayingItemIndex"] as? Int ?? 0
+            let current = playlist.indices.contains(index) ? playlist[index] : playlist.first
+            publishSyncPlayQueue(
+                itemID: stringID(current?["ItemId"]),
+                playlistItemID: stringID(current?["PlaylistItemId"]),
+                startSeconds: secondsFromTicks(queue["StartPositionTicks"])
+            )
+        default:
+            break
+        }
+    }
+
+    private func publishSyncPlayQueue(itemID: String?, playlistItemID: String?, startSeconds: TimeInterval?) {
+        if let playlistItemID, !playlistItemID.isEmpty {
+            NotificationCenter.default.post(name: .zelefinSyncPlayQueueItem, object: playlistItemID)
+        }
+        if let itemID, !itemID.isEmpty {
+            var info: [AnyHashable: Any] = [:]
+            if let startSeconds {
+                info["startSeconds"] = startSeconds
+            }
+            NotificationCenter.default.post(
+                name: .zelefinRemotePlayItem,
+                object: itemID,
+                userInfo: info.isEmpty ? nil : info
+            )
+        }
+    }
+
+    private func secondsFromTicks(_ value: Any?) -> TimeInterval? {
+        switch value {
+        case let ticks as Int:
+            return TickClock.seconds(from: ticks)
+        case let ticks as Int64:
+            return TickClock.seconds(from: ticks)
+        case let number as NSNumber:
+            return TickClock.seconds(from: number.int64Value)
+        default:
+            return nil
+        }
+    }
+
+    private func stringID(_ value: Any?) -> String? {
+        switch value {
+        case let text as String:
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case let uuid as UUID:
+            return uuid.uuidString
+        default:
+            return nil
+        }
     }
 
     private func apply(_ action: RemotePlaybackAction) {

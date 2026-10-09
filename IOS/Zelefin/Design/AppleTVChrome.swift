@@ -1349,6 +1349,7 @@ struct FeaturedHero: View {
     }
 
     private func play(_ item: MediaItem) {
+        if session.playIfSyncPlay(item) { return }
         playingItem = item
     }
 }

@@ -54,8 +54,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.zelefin.client.AppTab
 import app.zelefin.client.LibraryRoom
+import app.zelefin.client.PlayerDirective
 import app.zelefin.client.Screen
 import app.zelefin.client.ZelefinUiState
+import kotlinx.coroutines.flow.SharedFlow
 import app.zelefin.core.HouseholdProfile
 import app.zelefin.core.MediaBackend
 import app.zelefin.core.MediaItem
@@ -122,6 +124,8 @@ fun LibraryScreen(
     onSessions: () -> Unit,
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
+    onToggleWatchlist: (MediaItem) -> Unit = {},
+    onRandom: () -> Unit,
     onCatalogQuery: (AppTab, app.zelefin.client.CatalogBrowseQuery) -> Unit,
     onCatalogRefresh: (AppTab) -> Unit,
     onCatalogFilters: (AppTab) -> Unit,
@@ -137,7 +141,7 @@ fun LibraryScreen(
     onBrowse: (app.zelefin.client.BrowsePage) -> Unit = {},
     onEnsureGrid: (app.zelefin.client.LibraryRoute) -> Unit = {},
 ) {
-    val contentBottom = DockContentReserve
+    val contentBottom = dockContentReserve()
     val pluginState by plugins.state.collectAsState()
     Box(Modifier.fillMaxSize().background(ZelefinBlack)) {
         Column(Modifier.fillMaxSize()) {
@@ -159,6 +163,7 @@ fun LibraryScreen(
                     onSignOut,
                     onToggleWatched,
                     onToggleFavorite,
+                    onToggleWatchlist = if (state.session?.usesSilo == true) null else onToggleWatchlist,
                     onHideFromHome = if (pluginState.hidesFromHome) onHideFromHome else null,
                     onSeeAll = onSeeAll,
                     onBrowse = onBrowse,
@@ -234,6 +239,7 @@ fun LibraryScreen(
                     onSessions = onSessions,
                     onSettings = onSettings,
                     onSignOut = onSignOut,
+                    onRandom = onRandom,
                 )
                 AppTab.Search -> SearchTabPage(
                     state = state,
@@ -304,6 +310,9 @@ fun PlayerScreen(
     onProgress: (Double, Boolean) -> Unit,
     onStopped: (Double) -> Unit,
     onClose: () -> Unit,
+    onPlaybackReady: () -> Unit = {},
+    onUserTransport: (PlayerDirective) -> Unit = {},
+    directives: SharedFlow<PlayerDirective>? = null,
     session: app.zelefin.core.SavedSession? = null,
     onLoadNext: suspend (MediaItem) -> MediaItem? = { null },
     onPlayNext: (MediaItem, Double) -> Unit = { _, _ -> },
@@ -334,6 +343,7 @@ fun PlayerScreen(
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         PlayerSurface(
             plan = plan,
+            session = session,
             onProgress = onProgress,
             onStopped = onStopped,
             onClose = onClose,
@@ -359,6 +369,9 @@ fun PlayerScreen(
                 null
             },
             onRetryStream = if (remote) onRecover else null,
+            onPlaybackReady = onPlaybackReady,
+            onUserTransport = onUserTransport,
+            directives = directives,
         )
         if (subtitleSheet.displayed != null) {
             ZelefinSheetScrim(subtitleSheet.progress)

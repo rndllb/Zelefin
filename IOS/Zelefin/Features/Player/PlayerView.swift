@@ -125,34 +125,11 @@ struct PlayerView: View {
         .padding(.top, 12)
     }
 
-    private var loadingArtworkURL: URL? {
-        session.library?.backdropURL(for: activeItem)
-    }
-
-    private var loadingPosterURL: URL? {
-        session.library?.primaryURL(for: activeItem)
-    }
-
     private var loadingSurface: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            HeroArtwork(
-                url: loadingArtworkURL,
-                placeholderURL: loadingPosterURL
-            )
-            .overlay(Color.black.opacity(0.46))
-            .ignoresSafeArea()
-            VStack(spacing: 14) {
-                ProgressView()
-                    .tint(.white)
-                    .controlSize(.large)
-                Text(activeItem.name)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .padding(.horizontal, 28)
-            }
+            ProgressView()
+                .tint(.white)
             loadingClose
         }
     }
@@ -184,17 +161,12 @@ struct PlayerView: View {
                     mediaSourceID: launch.mediaSourceID
                 )
             }
-            if cinemaQueue.isEmpty, !launch.skipCinemaIntros {
-                let intros = await library.cinemaIntros(for: item.id)
-                if !intros.isEmpty {
-                    planTask.cancel()
-                    cinemaQueue = intros + [item]
-                    cinemaIndex = 0
-                    activeItem = intros[0]
-                }
-            }
+            let introTask: Task<[MediaItem], Never>? = (cinemaQueue.isEmpty && !launch.skipCinemaIntros)
+                ? Task { await library.cinemaIntros(for: item.id) }
+                : nil
             var plan: PlaybackPlan
             if isCinemaBumper {
+                planTask.cancel()
                 plan = try await library.playbackPlan(
                     for: activeItem,
                     allowDirectPlay: true,
@@ -204,7 +176,20 @@ struct PlayerView: View {
                 )
             } else {
                 plan = try await planTask.value
-                activeItem = item
+                if let introTask, let intros = await finishedIfReady(introTask), !intros.isEmpty {
+                    cinemaQueue = intros + [item]
+                    cinemaIndex = 0
+                    activeItem = intros[0]
+                    plan = try await library.playbackPlan(
+                        for: activeItem,
+                        allowDirectPlay: true,
+                        maxBitrate: maxBitrate,
+                        startTime: 0,
+                        mediaSourceID: nil
+                    )
+                } else {
+                    activeItem = item
+                }
             }
             resumeOverride = nil
             if PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
@@ -234,6 +219,21 @@ struct PlayerView: View {
             return
         } catch {
             fallbackError = error.localizedDescription
+        }
+    }
+
+    /// Takes cinema intros only when they already finished during the playback-plan
+    /// request. Waiting on `/Intros` was holding Play behind an extra server round trip.
+    private func finishedIfReady<T: Sendable>(_ task: Task<T, Never>) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                await Task.yield()
+                return nil
+            }
+            let value = await group.next() ?? nil
+            group.cancelAll()
+            return value
         }
     }
 
@@ -379,6 +379,9 @@ struct PlayerView: View {
                     playlistItemID: session.syncPlayPlaylistItemID,
                     position: plan.startTime
                 )
+                if plan.startTime > 5 {
+                    try? await session.library?.syncPlaySeek(to: plan.startTime)
+                }
             }
         } catch is CancellationError {
             await created.stop()
@@ -495,38 +498,34 @@ struct PlayerView: View {
                     pictureSize: model.pictureSize,
                     fillsScreen: model.fillsScreen
                 )
+                AVKitPlaybackChrome(
+                    model: model,
+                    title: model.plan.item.name,
+                    quality: session.launchOptions(for: item.id).resolvedQuality,
+                    canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
+                    onClose: { dismiss() },
+                    onQualityChange: { quality in
+                        Task { await changeQuality(quality) }
+                    },
+                    onAddSubtitles: {
+                        subtitleSearchFileID = model.plan.mediaSourceID
+                        subtitleSearchItem = activeItem
+                    },
+                    onAudioChange: { id in
+                        model.selectAudio(id: id)
+                        session.updateLaunchOptions(for: activeItem.id) { $0.audioIndex = id }
+                    },
+                    onSubtitleChange: { id in
+                        model.selectSubtitle(id: id)
+                        session.updateLaunchOptions(for: activeItem.id) { options in
+                            options.subtitlesDisabled = id == nil
+                            options.subtitleIndex = id
+                        }
+                    },
+                    onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
+                )
                 if model.showsPlaybackStats {
                     PlaybackStatsOverlay(snapshot: model.playbackStats)
-                }
-                if model.hasFirstFrame {
-                    AVKitPlaybackChrome(
-                        model: model,
-                        title: model.plan.item.name,
-                        quality: session.launchOptions(for: item.id).resolvedQuality,
-                        canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
-                        onClose: { dismiss() },
-                        onQualityChange: { quality in
-                            Task { await changeQuality(quality) }
-                        },
-                        onAddSubtitles: {
-                            subtitleSearchFileID = model.plan.mediaSourceID
-                            subtitleSearchItem = activeItem
-                        },
-                        onAudioChange: { id in
-                            model.selectAudio(id: id)
-                            session.updateLaunchOptions(for: activeItem.id) { $0.audioIndex = id }
-                        },
-                        onSubtitleChange: { id in
-                            model.selectSubtitle(id: id)
-                            session.updateLaunchOptions(for: activeItem.id) { options in
-                                options.subtitlesDisabled = id == nil
-                                options.subtitleIndex = id
-                            }
-                        },
-                        onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
-                    )
-                } else {
-                    loadingSurface
                 }
             }
         } else if let player = model.player {

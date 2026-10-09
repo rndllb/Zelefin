@@ -23,8 +23,12 @@ import org.jellyfin.sdk.model.api.PlayCommand
 import org.jellyfin.sdk.model.api.PlayMethod
 import org.jellyfin.sdk.model.api.PlayRequestDto
 import org.jellyfin.sdk.model.api.PlaystateCommand
+import org.jellyfin.sdk.model.api.ReadyRequestDto
+import org.jellyfin.sdk.model.api.SeekRequestDto
 import org.jellyfin.sdk.model.api.SessionInfoDto
 import org.jellyfin.sdk.model.api.TranscodingInfo
+import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 private const val TicksPerSecond = 10_000_000L
 
@@ -215,6 +219,40 @@ suspend fun JellyfinLibrary.syncPlaySetQueue(item: MediaItem) = withContext(Disp
     sdk.syncPlayApi.syncPlaySetNewQueue(
         PlayRequestDto(playingQueue = listOf(UUID.fromString(item.id)), playingItemPosition = 0, startPositionTicks = start.toTicks()),
     )
+    Unit
+}
+
+suspend fun JellyfinLibrary.syncPlayReady(isPlaying: Boolean, playlistItemId: String?, positionSeconds: Double) =
+    withContext(Dispatchers.IO) {
+        val playlist = playlistItemId?.let { runCatching { UUID.fromString(it) }.getOrNull() } ?: return@withContext
+        sdk.syncPlayApi.syncPlayReady(
+            ReadyRequestDto(
+                `when` = LocalDateTime.now(ZoneOffset.UTC),
+                positionTicks = positionSeconds.toTicks(),
+                isPlaying = isPlaying,
+                playlistItemId = playlist,
+            ),
+        )
+        Unit
+    }
+
+suspend fun JellyfinLibrary.syncPlayPause() = withContext(Dispatchers.IO) {
+    sdk.syncPlayApi.syncPlayPause()
+    Unit
+}
+
+suspend fun JellyfinLibrary.syncPlayUnpause() = withContext(Dispatchers.IO) {
+    sdk.syncPlayApi.syncPlayUnpause()
+    Unit
+}
+
+suspend fun JellyfinLibrary.syncPlaySeek(seconds: Double) = withContext(Dispatchers.IO) {
+    sdk.syncPlayApi.syncPlaySeek(SeekRequestDto(positionTicks = seconds.coerceAtLeast(0.0).toTicks()))
+    Unit
+}
+
+suspend fun JellyfinLibrary.syncPlayStop() = withContext(Dispatchers.IO) {
+    sdk.syncPlayApi.syncPlayStop()
     Unit
 }
 

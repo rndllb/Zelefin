@@ -27,6 +27,12 @@ import app.zelefin.client.jellyfin.playbackSessions
 import app.zelefin.client.jellyfin.refreshItemMetadata
 import app.zelefin.client.jellyfin.remoteArtwork
 import app.zelefin.client.jellyfin.reportedDeviceId
+import app.zelefin.client.jellyfin.applyIdentify
+import app.zelefin.client.jellyfin.randomTitle
+import app.zelefin.client.jellyfin.searchIdentify
+import app.zelefin.client.jellyfin.setWatchlisted
+import app.zelefin.client.jellyfin.updateItemMetadata
+import app.zelefin.client.jellyfin.watchlistItems
 import app.zelefin.client.jellyfin.syncPlayCreateGroup
 import app.zelefin.client.jellyfin.activityLog
 import app.zelefin.client.jellyfin.adminMediaFolders
@@ -52,7 +58,12 @@ import app.zelefin.client.jellyfin.updateUserPolicy
 import app.zelefin.client.jellyfin.uploadSplashscreen
 import app.zelefin.client.jellyfin.syncPlayJoinGroup
 import app.zelefin.client.jellyfin.syncPlayLeaveGroup
+import app.zelefin.client.jellyfin.syncPlayPause
+import app.zelefin.client.jellyfin.syncPlayReady
+import app.zelefin.client.jellyfin.syncPlaySeek
 import app.zelefin.client.jellyfin.syncPlaySetQueue
+import app.zelefin.client.jellyfin.syncPlayStop
+import app.zelefin.client.jellyfin.syncPlayUnpause
 import app.zelefin.client.plugins.HomeQueueHideStore
 import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.client.push.ZelefinPush
@@ -79,10 +90,15 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import org.jellyfin.sdk.model.api.PlaystateCommand
+import org.jellyfin.sdk.model.api.SendCommandType
 import app.zelefin.client.downloads.LocalPlayback
 import app.zelefin.client.downloads.SessionDownloadBackend
 import app.zelefin.client.downloads.ZelefinDownloads
@@ -159,7 +175,14 @@ data class ZelefinUiState(
     val localServerUrl: String? = null,
     val syncPlayGroupId: String? = null,
     val syncPlayGroupName: String? = null,
+    val syncPlayPlaylistItemId: String? = null,
 )
+
+sealed interface PlayerDirective {
+    data object Play : PlayerDirective
+    data object Pause : PlayerDirective
+    data class Seek(val seconds: Double) : PlayerDirective
+}
 
 /** Settings → Add User / Add Account. [pending] is set while a Silo login waits for a household profile. */
 data class AddAccountState(
@@ -173,6 +196,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private val vault = SessionVault(application)
     private val snapshots = SnapshotStore(application)
     private val layoutStore = LibraryLayoutStore(application)
+    private val queryStore = CatalogQueryStore(application)
     private val searchHistory = SearchHistoryStore(application)
     private val _state = MutableStateFlow(
         ZelefinUiState(libraryLayout = layoutStore.load(), search = LibrarySearchState(recents = searchHistory.load())),
@@ -204,6 +228,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private var routeJob: Job? = null
     private var pendingSilo: SiloClient? = null
     private val sessionSocket = SessionSocket(application, viewModelScope)
+    private val _playerDirectives = MutableSharedFlow<PlayerDirective>(replay = 1, extraBufferCapacity = 8)
+    val playerDirectives: SharedFlow<PlayerDirective> = _playerDirectives.asSharedFlow()
+    private var ignoreRemotePauseUntil = 0L
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = refreshRoute()
         override fun onLost(network: Network) = refreshRoute()
@@ -464,20 +491,21 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun syncPlayGroups(): List<SyncPlayGroup> = jellyfinClient().syncPlayGroups()
 
-    /** Creates or joins a group, queues the title for everyone, then starts it here like iOS `playInSyncPlay`. */
+    /** Creates or joins a group only when needed, then queues the title. Playback opens from the socket queue. */
     suspend fun playInSyncPlay(item: MediaItem, joinGroupId: String?, newGroupName: String?) {
         val client = jellyfinClient()
         if (joinGroupId != null) {
             client.syncPlayJoinGroup(joinGroupId)
             val name = runCatching { client.syncPlayGroups().firstOrNull { it.id == joinGroupId }?.name }.getOrNull()
             _state.update { it.copy(syncPlayGroupId = joinGroupId, syncPlayGroupName = name ?: it.syncPlayGroupName) }
-        } else {
+        } else if (_state.value.syncPlayGroupId == null) {
             val name = newGroupName?.trim()?.takeIf { it.isNotEmpty() } ?: "${_state.value.session?.userName ?: "Zelefin"}’s group"
             val group = client.syncPlayCreateGroup(name)
             _state.update { it.copy(syncPlayGroupId = group.id, syncPlayGroupName = group.name) }
         }
-        client.syncPlaySetQueue(item)
-        play(item)
+        val queued = playbackTarget(item)
+        client.syncPlaySetQueue(queued)
+        play(queued, fromSyncPlay = true)
     }
 
     suspend fun createSyncPlayGroup(name: String) {
@@ -492,7 +520,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun leaveSyncPlayGroup() {
         jellyfinClient().syncPlayLeaveGroup()
-        _state.update { it.copy(syncPlayGroupId = null, syncPlayGroupName = null) }
+        ignoreRemotePauseUntil = 0L
+        _state.update { it.copy(syncPlayGroupId = null, syncPlayGroupName = null, syncPlayPlaylistItemId = null) }
     }
 
     suspend fun refreshMetadata(item: MediaItem) {
@@ -555,6 +584,32 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             else -> current
         }
         _state.update { it.copy(screen = Screen.SettingsTopic(id, backTo), message = null) }
+    }
+
+    fun closePlayer() {
+        if (_state.value.syncPlayGroupId != null) {
+            viewModelScope.launch { runCatching { jellyfinClient().syncPlayStop() } }
+        }
+        if (_state.value.screen is Screen.Player) back()
+    }
+
+    fun syncPlayPlayerReady() {
+        val screen = _state.value.screen as? Screen.Player ?: return
+        notifySyncPlayReady(screen.plan.startTimeSeconds)
+    }
+
+    fun forwardSyncPlay(directive: PlayerDirective) {
+        if (_state.value.syncPlayGroupId == null) return
+        viewModelScope.launch {
+            runCatching {
+                val client = jellyfinClient()
+                when (directive) {
+                    PlayerDirective.Pause -> client.syncPlayPause()
+                    PlayerDirective.Play -> client.syncPlayUnpause()
+                    is PlayerDirective.Seek -> client.syncPlaySeek(directive.seconds)
+                }
+            }
+        }
     }
 
     fun back() {
@@ -703,6 +758,82 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleWatchlist(item: MediaItem) {
+        if (_state.value.session?.usesSilo == true) return
+        val watchlisted = !item.isWatchlisted
+        viewModelScope.launch {
+            runCatching { jellyfinClient().setWatchlisted(userUuid(), item.id, watchlisted) }
+                .onSuccess {
+                    _state.update { state -> state.withItem(item.id) { copy(isWatchlisted = watchlisted) } }
+                    if (_state.value.libraryPath.lastOrNull() == LibraryRoute.Watchlist ||
+                        _state.value.searchPath.lastOrNull() == LibraryRoute.Watchlist
+                    ) {
+                        loadLibraryGrid(LibraryRoute.Watchlist, refreshing = true)
+                    }
+                }
+                .onFailure { error -> _state.update { it.copy(message = error.message) } }
+        }
+    }
+
+    fun pickRandomTitle() {
+        viewModelScope.launch {
+            runCatching {
+                when (_state.value.session?.backend) {
+                    MediaBackend.Silo -> {
+                        val pool = (_state.value.movies + _state.value.shows).ifEmpty {
+                            siloClient().catalog(null, null, CatalogBrowseQuery(sort = CatalogSortField.Random))
+                        }
+                        pool.randomOrNull() ?: throw ZelefinException.server("Nothing to pick yet.")
+                    }
+                    else -> jellyfinClient().randomTitle(userUuid())
+                        ?: throw ZelefinException.server("Nothing to pick yet.")
+                }
+            }.onSuccess { openItem(it) }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    _state.update { it.copy(message = error.message) }
+                }
+        }
+    }
+
+    suspend fun identifyHits(item: MediaItem) = jellyfinClient().searchIdentify(item)
+
+    suspend fun applyIdentify(item: MediaItem, hit: app.zelefin.client.jellyfin.RemoteIdentifyHit) {
+        jellyfinClient().applyIdentify(item.id, hit)
+        refreshDetail()
+    }
+
+    suspend fun saveItemMetadata(item: MediaItem, draft: app.zelefin.client.jellyfin.ItemMetadataDraft) {
+        jellyfinClient().updateItemMetadata(userUuid(), item.id, draft)
+        refreshDetail()
+    }
+
+    fun downloadRelated(item: MediaItem) {
+        viewModelScope.launch {
+            runCatching {
+                val fromDetail = _state.value.detail
+                val episodes = when (item.kind) {
+                    MediaKind.Series, MediaKind.Season -> {
+                        val loaded = fromDetail?.takeIf {
+                            it.item.id == item.id || it.item.id == item.seriesId || it.episodes.any { episode -> episode.id == item.id }
+                        } ?: if (_state.value.session?.usesSilo == true) {
+                            fromDetail
+                        } else {
+                            jellyfinClient().detail(userUuid(), item.seriesId ?: item.id)
+                        }
+                        val all = loaded?.episodes.orEmpty()
+                        if (item.kind == MediaKind.Season) all.filter { it.seasonIndex == item.seasonIndex } else all
+                    }
+                    else -> listOf(item)
+                }
+                app.zelefin.client.downloads.ZelefinDownloads.startAll(episodes.ifEmpty { listOf(item) })
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                _state.update { it.copy(message = error.message) }
+            }
+        }
+    }
+
     suspend fun loadCollections(itemId: String): CollectionEditor {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
         if (session.usesSilo) throw ZelefinException.server("Collections aren't available on this server.")
@@ -727,21 +858,23 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** [bitrateOverride] pins the stream cap (live adaptive steps); null lets Playback settings decide. */
-    fun play(item: MediaItem, bitrateOverride: Int? = null) {
-        val returnTo = _state.value.screen.let { if (it is Screen.Player) it.returnTo else it }
-        _state.value.session?.let { HomeQueueHideStore.remove(getApplication(), item.id, it.userId) }
-        launch("Starting playback…") {
-            val detail = _state.value.detail
-            val target = if (detail != null && detail.item.id == item.id) {
-                MediaItem.heroPlaybackItem(item, detail.episodes)
-            } else {
-                item
+    fun play(item: MediaItem, bitrateOverride: Int? = null, fromSyncPlay: Boolean = false) {
+        val target = playbackTarget(item)
+        if (!fromSyncPlay && _state.value.syncPlayGroupId != null && _state.value.session?.backend == MediaBackend.Jellyfin) {
+            viewModelScope.launch {
+                runCatching { jellyfinClient().syncPlaySetQueue(target) }
+                    .onFailure { error -> _state.update { it.copy(message = error.message) } }
             }
+        }
+        val returnTo = _state.value.screen.let { if (it is Screen.Player) it.returnTo else it }
+        _state.value.session?.let { HomeQueueHideStore.remove(getApplication(), target.id, it.userId) }
+        launch("Starting playback…") {
             when (val local = ZelefinDownloads.localPlayback(target)) {
                 is LocalPlayback.Ready -> {
                     activePlan = null
                     localPlan = local.plan
                     _state.update { it.copy(busy = false, screen = Screen.Player(local.plan, returnTo), message = null) }
+                    notifySyncPlayReady(local.plan.startTimeSeconds)
                     return@launch
                 }
                 LocalPlayback.Missing -> {
@@ -769,7 +902,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     val client = jellyfinClient()
                     // The user's Jellyfin account settings (Settings → Playback) decide the starting
                     // streams, so the device-side language picks only apply to Silo.
-                    client.playback(userId, target, PlaybackPreferences.AUTOMATIC, PlaybackPreferences.AUTOMATIC) { sourceBitrate ->
+                    client.playback(
+                        userId,
+                        target,
+                        PlaybackPreferences.AUTOMATIC,
+                        PlaybackPreferences.AUTOMATIC,
+                        preferSdh = PlaybackPreferences.preferSdh(appContext),
+                    ) { sourceBitrate ->
                         bitrateOverride ?: streamingCap(appContext, client, sourceBitrate)
                     }
                 }
@@ -783,6 +922,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 externalSubtitles = plan.externalSubtitles.map { it.copy(url = ServerRoute.rewrite(it.url)) },
             )
             _state.update { it.copy(busy = false, screen = Screen.Player(routed, returnTo), message = null) }
+            notifySyncPlayReady(routed.startTimeSeconds)
         }
     }
 
@@ -1311,7 +1451,114 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val library = jellyfin ?: return
-        sessionSocket.connect(session, library)
+        sessionSocket.connect(session, library, object : SessionSocket.Events {
+            override fun onGroupJoined(groupId: String, name: String) {
+                _state.update {
+                    it.copy(syncPlayGroupId = groupId, syncPlayGroupName = name.ifBlank { it.syncPlayGroupName })
+                }
+            }
+
+            override fun onGroupLeft() {
+                ignoreRemotePauseUntil = 0L
+                _state.update { it.copy(syncPlayGroupId = null, syncPlayGroupName = null, syncPlayPlaylistItemId = null) }
+            }
+
+            override fun onPlayQueue(itemId: String, playlistItemId: String, startSeconds: Double) {
+                presentSyncPlayItem(itemId, playlistItemId, startSeconds)
+            }
+
+            override fun onSyncPlayCommand(command: SendCommandType, positionSeconds: Double?) {
+                applySyncPlayCommand(command, positionSeconds)
+            }
+
+            override fun onRemotePlay(itemId: String) {
+                if (_state.value.syncPlayGroupId != null) presentSyncPlayItem(itemId, _state.value.syncPlayPlaylistItemId, 0.0)
+            }
+
+            override fun onRemoteStop() {
+                if (_state.value.syncPlayGroupId == null) applyRemoteStop()
+            }
+
+            override fun onPlaystate(command: PlaystateCommand, positionSeconds: Double?) {
+                if (_state.value.syncPlayGroupId != null) return
+                when (command) {
+                    PlaystateCommand.PAUSE -> _playerDirectives.tryEmit(PlayerDirective.Pause)
+                    PlaystateCommand.UNPAUSE -> _playerDirectives.tryEmit(PlayerDirective.Play)
+                    PlaystateCommand.SEEK -> positionSeconds?.let { _playerDirectives.tryEmit(PlayerDirective.Seek(it)) }
+                    PlaystateCommand.STOP -> applyRemoteStop()
+                    else -> Unit
+                }
+            }
+        })
+    }
+
+    private fun presentSyncPlayItem(itemId: String, playlistItemId: String?, startSeconds: Double) {
+        if (playlistItemId != null) {
+            _state.update { it.copy(syncPlayPlaylistItemId = playlistItemId) }
+        }
+        val playing = _state.value.screen as? Screen.Player
+        if (playing != null && playing.plan.item.id == itemId) {
+            notifySyncPlayReady(playing.plan.startTimeSeconds)
+            return
+        }
+        viewModelScope.launch {
+            val loaded = runCatching { jellyfinClient().mediaItem(userUuid(), itemId) }.getOrNull()
+                ?: runCatching { jellyfinClient().detail(userUuid(), itemId).item }.getOrNull()
+            if (loaded == null) {
+                _state.update { it.copy(message = "SyncPlay couldn’t open that title.") }
+                return@launch
+            }
+            play(loaded.copy(playbackPosition = startSeconds.coerceAtLeast(0.0)), fromSyncPlay = true)
+        }
+    }
+
+    private fun applySyncPlayCommand(command: SendCommandType, positionSeconds: Double?) {
+        when (command) {
+            SendCommandType.PAUSE -> {
+                if (android.os.SystemClock.elapsedRealtime() < ignoreRemotePauseUntil) return
+                _playerDirectives.tryEmit(PlayerDirective.Pause)
+            }
+            SendCommandType.UNPAUSE -> _playerDirectives.tryEmit(PlayerDirective.Play)
+            SendCommandType.SEEK -> positionSeconds?.let { _playerDirectives.tryEmit(PlayerDirective.Seek(it)) }
+            SendCommandType.STOP -> applyRemoteStop()
+        }
+    }
+
+    private fun notifySyncPlayReady(positionSeconds: Double) {
+        if (_state.value.syncPlayGroupId == null) return
+        viewModelScope.launch {
+            var playlistId = _state.value.syncPlayPlaylistItemId
+            if (playlistId == null) {
+                repeat(15) {
+                    kotlinx.coroutines.delay(100)
+                    playlistId = _state.value.syncPlayPlaylistItemId
+                    if (playlistId != null) return@repeat
+                }
+            }
+            if (_state.value.syncPlayGroupId == null) return@launch
+            runCatching { jellyfinClient().syncPlayReady(true, playlistId, positionSeconds) }
+                .onSuccess {
+                    ignoreRemotePauseUntil = android.os.SystemClock.elapsedRealtime() + 2_500
+                    _playerDirectives.tryEmit(PlayerDirective.Play)
+                    runCatching { jellyfinClient().syncPlayUnpause() }
+                    if (positionSeconds > 5) {
+                        runCatching { jellyfinClient().syncPlaySeek(positionSeconds) }
+                    }
+                }
+        }
+    }
+
+    private fun applyRemoteStop() {
+        if (_state.value.screen is Screen.Player) back()
+    }
+
+    private fun playbackTarget(item: MediaItem): MediaItem {
+        val detail = _state.value.detail
+        return if (detail != null && detail.item.id == item.id) {
+            MediaItem.heroPlaybackItem(item, detail.episodes)
+        } else {
+            item
+        }
     }
 
     private suspend fun signInJellyfin(url: String, username: String, password: String) {
@@ -1597,6 +1844,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun applyLibraryQuery(route: LibraryRoute, query: CatalogBrowseQuery) {
         if (_state.value.libraryGrids[route]?.query == query) return
+        queryStore.save(CatalogQueryStore.routeKey(route), query)
         updateGrid(route) { copy(query = query) }
         loadLibraryGrid(route)
     }
@@ -1655,7 +1903,11 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadLibraryGrid(route: LibraryRoute, refreshing: Boolean = false) {
-        val query = _state.value.libraryGrids[route]?.query ?: CatalogBrowseQuery()
+        val stored = _state.value.libraryGrids[route]?.query ?: queryStore.load(CatalogQueryStore.routeKey(route))
+        if (_state.value.libraryGrids[route]?.query != stored) {
+            updateGrid(route) { copy(query = stored) }
+        }
+        val query = stored
         val effective = if (route == LibraryRoute.Favorites) {
             query.copy(statuses = query.statuses + CatalogStatusFilter.Favorite)
         } else {
@@ -1673,12 +1925,16 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                             is LibraryRoute.Room -> client.catalog(client.catalogType(route.room.kind), route.room.id, effective)
                             is LibraryRoute.Genre -> client.catalog(null, null, effective.copy(genres = effective.genres + route.genre.name))
                             LibraryRoute.Favorites -> client.catalog(null, null, effective)
+                            LibraryRoute.Watchlist -> emptyList()
                             LibraryRoute.AllCollections -> client.catalog("collection", null, effective)
                             else -> emptyList()
                         }
                     }
-                    else -> jellyfinClient().browse(userUuid(), jellyfinScope(route), effective) { page ->
-                        if (gridJob.isActive) updateGrid(route) { copy(items = page, loading = false) }
+                    else -> when (route) {
+                        LibraryRoute.Watchlist -> jellyfinClient().watchlistItems(userUuid())
+                        else -> jellyfinClient().browse(userUuid(), jellyfinScope(route), effective) { page ->
+                            if (gridJob.isActive) updateGrid(route) { copy(items = page, loading = false) }
+                        }
                     }
                 }
             }.onSuccess { items ->

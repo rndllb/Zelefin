@@ -6,7 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -36,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,8 +54,16 @@ import app.zelefin.client.ui.PinScreen
 import app.zelefin.client.ui.PlayerScreen
 import app.zelefin.client.ui.ProfileScreen
 import app.zelefin.client.ui.ProfilesScreen
+import app.zelefin.client.ui.AddAccountTopicId
+import app.zelefin.client.ui.SettingsBarAction
 import app.zelefin.client.ui.SettingsScreen
 import app.zelefin.client.ui.SettingsTopicScreen
+import app.zelefin.client.ui.cancelPredictiveDismiss
+import app.zelefin.client.ui.cancelPredictivePop
+import app.zelefin.client.ui.finishPredictiveDismiss
+import app.zelefin.client.ui.finishPredictivePop
+import app.zelefin.client.ui.followPredictiveDismiss
+import app.zelefin.client.ui.followPredictivePop
 import app.zelefin.client.ui.LocalCollectionPosters
 import app.zelefin.client.ui.LocalZelefinGlassHost
 import app.zelefin.client.ui.LocalZelefinHaze
@@ -75,6 +84,9 @@ import app.zelefin.client.ui.rememberZelefinSheet
 import app.zelefin.client.ui.zelefinHazeSource
 import app.zelefin.client.ui.zelefinSheetBackdrop
 import app.zelefin.core.TitleDetail
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
@@ -120,13 +132,41 @@ class MainActivity : ComponentActivity() {
                         (state.tab == AppTab.Search && state.searchPath.isNotEmpty())
                     else -> true
                 }
-                BackHandler(enabled = handlesBack) { model.back() }
                 var detailCoversDock by remember { mutableStateOf(false) }
                 val pageSheet = state.screen.takeIf { it.isPageSheet() }
                 val sheetMotion = rememberZelefinSheet(pageSheet)
                 val backdrop = sheetMotion.displayed?.underSheet() ?: state.screen
                 val sheetUp = sheetMotion.displayed != null
                 val sheetNavigation = rememberZelefinPush(sheetMotion.displayed ?: backdrop, ::sheetPushRelation)
+                val goBack by rememberUpdatedState(model::back)
+                val sheetScreen by rememberUpdatedState(state.screen)
+                PredictiveBackHandler(enabled = handlesBack) { events ->
+                    val from = sheetScreen
+                    val sheetTo = from.sheetBackTarget()
+                    val popInSheet = from.isPageSheet() && sheetTo != null && sheetTo.isPageSheet()
+                    val dismissSheet = from.isPageSheet() && sheetTo != null && !sheetTo.isPageSheet()
+                    try {
+                        events.collect { event ->
+                            when {
+                                popInSheet && sheetTo != null -> sheetNavigation.followPredictivePop(from, sheetTo, event.progress)
+                                dismissSheet -> sheetMotion.followPredictiveDismiss(event.progress)
+                            }
+                        }
+                        when {
+                            popInSheet && sheetTo != null -> sheetNavigation.finishPredictivePop(sheetTo)
+                            dismissSheet -> sheetMotion.finishPredictiveDismiss()
+                        }
+                        goBack()
+                    } catch (e: CancellationException) {
+                        withContext(NonCancellable) {
+                            when {
+                                popInSheet -> sheetNavigation.cancelPredictivePop(from)
+                                dismissSheet -> sheetMotion.cancelPredictiveDismiss()
+                            }
+                        }
+                        throw e
+                    }
+                }
                 val navigation = updateTransition(backdrop, label = "page")
                 val knownDetails = remember { mutableMapOf<String, TitleDetail>() }
                 state.detail?.let { knownDetails[it.item.id] = it }
@@ -182,7 +222,7 @@ class MainActivity : ComponentActivity() {
                         ZelefinGlassDiscs(hazeState, glassHost)
                         glassHost.content?.invoke()
                     }
-                    // Settings pages live in the sheet; their confirms and pickers still need the glass overlay.
+                    // Settings pages live in the sheet; their dialogs still use the overlay host.
                     if (sheetUp) glassHost.content?.invoke()
                     app.zelefin.client.ui.DownloadNoticeAlert()
                     app.zelefin.client.ui.SessionMessageAlert()
@@ -272,6 +312,8 @@ private fun ZelefinScreen(
             onSessions = model::openSessions,
             onToggleWatched = model::toggleWatched,
             onToggleFavorite = model::toggleFavorite,
+            onToggleWatchlist = model::toggleWatchlist,
+            onRandom = model::pickRandomTitle,
             onCatalogQuery = model::applyCatalogQuery,
             onCatalogRefresh = model::refreshCatalog,
             onCatalogFilters = model::loadCatalogFilters,
@@ -295,6 +337,7 @@ private fun ZelefinScreen(
             onPlay = model::play,
             onToggleWatched = model::toggleWatched,
             onToggleFavorite = model::toggleFavorite,
+            onToggleWatchlist = model::toggleWatchlist,
             onBrowse = model::openBrowse,
             onEnsureGrid = model::ensureBrowseGrid,
             onGridQuery = model::applyLibraryQuery,
@@ -322,15 +365,18 @@ private fun ZelefinScreen(
             plugins = model.plugins,
             actions = detailActions(model, state),
         )
-        is Screen.Settings -> SettingsScreen(state, model::back, model::openProfile, model::openSettingsTopic)
-        is Screen.Profile -> ProfileScreen(state, model::back)
-        is Screen.SettingsTopic -> SettingsTopicScreen(screen.id, state, model.plugins, model::back)
+        is Screen.Settings -> SettingsScreen(state, model::back, model::openProfile, model::openSettingsTopic, screen.settingsBar())
+        is Screen.Profile -> ProfileScreen(state, model::back, screen.settingsBar())
+        is Screen.SettingsTopic -> SettingsTopicScreen(screen.id, state, model.plugins, model::back, screen.settingsBar())
         is Screen.Player -> PlayerScreen(
             plan = screen.plan,
             plugins = model.plugins,
             onProgress = { position, paused -> model.playbackProgress(screen.plan, position, paused) },
             onStopped = { position -> model.playbackStopped(screen.plan, position) },
-            onClose = model::back,
+            onClose = model::closePlayer,
+            onPlaybackReady = model::syncPlayPlayerReady,
+            onUserTransport = model::forwardSyncPlay,
+            directives = model.playerDirectives,
             session = state.session,
             onLoadNext = model::nextEpisode,
             onPlayNext = { next, position -> model.playNext(screen.plan, position, next) },
@@ -354,6 +400,11 @@ private fun detailActions(model: ZelefinModel, state: ZelefinUiState): DetailTit
         remoteArtwork = if (jellyfin) model::remoteArtwork else null,
         applyArtwork = model::applyRemoteArtwork,
         deleteFromLibrary = if (jellyfin) model::deleteFromLibrary else null,
+        onToggleWatchlist = if (jellyfin) model::toggleWatchlist else null,
+        identifyHits = if (jellyfin) model::identifyHits else null,
+        applyIdentify = if (jellyfin) model::applyIdentify else null,
+        saveMetadata = if (jellyfin) model::saveItemMetadata else null,
+        downloadRelated = model::downloadRelated,
     )
 }
 
@@ -393,17 +444,40 @@ private fun Screen.pageKey(): String = when (this) {
     Screen.Library -> "library"
 }
 
-private fun sheetPushRelation(from: Screen, to: Screen): ZelefinPushRelation {
-    val deeper = to is Screen.SettingsTopic || to is Screen.Profile
-    val shallower = to is Screen.Settings
-    return when {
-        from is Screen.Settings && deeper -> ZelefinPushRelation.Push
-        from is Screen.SettingsTopic && to is Screen.Profile -> ZelefinPushRelation.Push
-        from is Screen.SettingsTopic && shallower -> ZelefinPushRelation.Pop
-        from is Screen.Profile && (shallower || to is Screen.SettingsTopic) -> ZelefinPushRelation.Pop
-        from is Screen.SettingsTopic && to is Screen.SettingsTopic && from.id != to.id -> ZelefinPushRelation.Push
-        else -> ZelefinPushRelation.None
+private fun sheetPushRelation(from: Screen, to: Screen): ZelefinPushRelation = when {
+    from == to -> ZelefinPushRelation.None
+    from.isSheetAncestor(to) -> ZelefinPushRelation.Pop
+    from.isPageSheet() && to.isPageSheet() -> ZelefinPushRelation.Push
+    else -> ZelefinPushRelation.None
+}
+
+private fun Screen.isSheetAncestor(ancestor: Screen): Boolean {
+    var current = this
+    var guard = 0
+    while (current.isPageSheet() && guard++ < 8) {
+        val parent = current.sheetBackTarget() ?: return false
+        if (parent == ancestor) return true
+        current = parent
     }
+    return false
+}
+
+private fun Screen.sheetBackTarget(): Screen? = when (this) {
+    is Screen.Settings -> returnTo
+    is Screen.Profile -> returnTo
+    is Screen.SettingsTopic -> backTo
+    else -> null
+}
+
+private fun Screen.settingsBar(): SettingsBarAction = when (this) {
+    is Screen.Settings -> SettingsBarAction.Done
+    is Screen.Profile -> if (returnTo.isPageSheet()) SettingsBarAction.Back else SettingsBarAction.Done
+    is Screen.SettingsTopic -> when {
+        !backTo.isPageSheet() && id == AddAccountTopicId -> SettingsBarAction.Cancel
+        !backTo.isPageSheet() -> SettingsBarAction.Done
+        else -> SettingsBarAction.Back
+    }
+    else -> SettingsBarAction.Back
 }
 
 private fun Screen.isPageSheet(): Boolean =

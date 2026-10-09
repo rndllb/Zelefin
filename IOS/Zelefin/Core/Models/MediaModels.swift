@@ -111,7 +111,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     let seriesName: String?
     let seasonIndex: Int?
     let episodeIndex: Int?
-    let playbackPosition: TimeInterval
+    var playbackPosition: TimeInterval
     let unplayedCount: Int?
     let isPlayed: Bool
     let primaryImageTag: String?
@@ -141,6 +141,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var sourceBitrate: Int? = nil
     var tmdbID: Int? = nil
     var isFavorite: Bool = false
+    var isWatchlisted: Bool = false
     var likes: Bool? = nil
     var premiereDate: Date? = nil
     var posterURL: URL? = nil
@@ -388,8 +389,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     var seasonMenuTitle: String {
         guard let number = resolvedSeasonNumber else { return name }
-        if number == 0 { return "Specials" }
-        return "Season \(number)"
+        return SeasonDownloadChoice.seasonTitle(number)
     }
 
     var episodeOrdinalLabel: String? {
@@ -513,6 +513,12 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
         return copy
     }
 
+    func withWatchlisted(_ value: Bool) -> MediaItem {
+        var copy = self
+        copy.isWatchlisted = value
+        return copy
+    }
+
     func withLikes(_ value: Bool?) -> MediaItem {
         var copy = self
         copy.likes = value
@@ -563,6 +569,51 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+/// One season the user can tick in the show download action sheet.
+struct SeasonDownloadChoice: Identifiable, Hashable, Sendable {
+    var id: String { seasonIndex.map(String.init) ?? "all" }
+    let title: String
+    let seasonIndex: Int?
+
+    static func options(seasons: [MediaItem], episodes: [MediaItem]) -> [SeasonDownloadChoice] {
+        let numbers = seasonNumbers(seasons: seasons, episodes: episodes)
+        if numbers.isEmpty {
+            return episodes.contains(where: { $0.kind == .episode })
+                ? [SeasonDownloadChoice(title: "All Episodes", seasonIndex: nil)]
+                : []
+        }
+        return numbers.map { SeasonDownloadChoice(title: seasonTitle($0), seasonIndex: $0) }
+    }
+
+    static func episodes(for choice: SeasonDownloadChoice, in episodes: [MediaItem], seasons: [MediaItem] = []) -> [MediaItem] {
+        if let number = choice.seasonIndex {
+            return Self.episodes(in: episodes, seasons: seasons, indexes: [number])
+        }
+        return Self.episodes(in: episodes, seasons: seasons, indexes: nil)
+    }
+
+    static func episodes(in episodes: [MediaItem], seasons: [MediaItem] = [], indexes: Set<Int>?) -> [MediaItem] {
+        let playable = episodes.filter { $0.kind == .episode }
+        let scoped = indexes.map { numbers in playable.filter { item in item.seasonIndex.map(numbers.contains) ?? false } } ?? playable
+        return MediaItem.orderedShowEpisodes(scoped, seasons: seasons)
+    }
+
+    static func seasonTitle(_ number: Int) -> String {
+        number == 0 ? "Specials" : "Season \(number)"
+    }
+
+    private static func seasonNumbers(seasons: [MediaItem], episodes: [MediaItem]) -> [Int] {
+        let fromEpisodes = Set(episodes.compactMap(\.seasonIndex))
+        let fromSeasons = Set(seasons.compactMap(\.resolvedSeasonNumber))
+        let numbers = fromEpisodes.isEmpty ? fromSeasons : fromEpisodes
+        return numbers.sorted { lhs, rhs in
+            let left = lhs == 0 ? Int.max : lhs
+            let right = rhs == 0 ? Int.max : rhs
+            return left < right
+        }
+    }
+}
+
 enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
     case movies
     case shows
@@ -574,6 +625,7 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
     case homeVideos
     case collections
     case favorites
+    case watchlist
     case other
 
     var appearsOnHome: Bool {
@@ -587,7 +639,7 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
 
     var appearsInLibrary: Bool {
         switch self {
-        case .music, .books, .playlists, .favorites:
+        case .music, .books, .playlists, .favorites, .watchlist:
             false
         default:
             true
@@ -606,6 +658,7 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         case .homeVideos: "Home videos"
         case .collections: "Collections"
         case .favorites: "Favorites"
+        case .watchlist: "Watchlist"
         case .other: "Library"
         }
     }
@@ -622,6 +675,7 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         case .homeVideos: "video"
         case .collections: "square.grid.2x2.fill"
         case .favorites: "heart.fill"
+        case .watchlist: "text.badge.plus"
         case .other: "rectangle.stack"
         }
     }

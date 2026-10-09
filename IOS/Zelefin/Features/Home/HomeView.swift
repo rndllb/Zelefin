@@ -250,6 +250,7 @@ struct MediaRow: View {
     }
 
     private func play(_ item: MediaItem) {
+        if session.playIfSyncPlay(item) { return }
         playingItem = item
     }
 
@@ -372,6 +373,7 @@ struct ContinueWatchingListView: View {
     }
 
     private func play(_ item: MediaItem) {
+        if session.playIfSyncPlay(item) { return }
         playingItem = item
     }
 }

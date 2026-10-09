@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -68,8 +70,12 @@ import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Replay30
 import androidx.compose.material.icons.rounded.Replay5
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -90,6 +96,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -123,7 +130,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import app.zelefin.client.PlaybackLanguage
 import app.zelefin.client.PlaybackPreferences
+import app.zelefin.client.PlayerDirective
 import app.zelefin.client.R
+import app.zelefin.client.SubtitleAppearance
 import app.zelefin.client.network.GatewayHttp
 import app.zelefin.client.plugins.SkipPrompt
 import app.zelefin.client.plugins.SkipSegment
@@ -136,27 +145,40 @@ import java.util.Locale
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
 
 private const val ChromeIdleMillis = 3_000L
 private const val UpNextWindowSeconds = 30.0
 private const val UpNextOutroCountdown = 10.0
 private const val UpNextMinimumRuntime = 60.0
 
-private enum class PlayerMenuPage(val title: String) {
+internal enum class PlayerMenuPage(val title: String) {
     Root("More"),
     Speed("Playback Speed"),
     Audio("Select Audio"),
     Subtitles("Select Subtitles"),
+    SubtitleStyle("Subtitle Style"),
+    SubtitleSync("Subtitle Sync"),
     Chapters("Chapters"),
     Sleep("Sleep Timer"),
 }
 
-private class PlayerTrack(val title: String, val group: Tracks.Group, val index: Int, val selected: Boolean)
+internal data class OverlayTrack(
+    val key: String,
+    val title: String,
+    val selected: Boolean,
+    val language: String? = null,
+)
+
+private class PlayerTrack(val title: String, val group: Tracks.Group, val index: Int, val selected: Boolean) {
+    fun overlay(): OverlayTrack = OverlayTrack("${System.identityHashCode(group)}:$index", title, selected)
+}
 
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerSurface(
     plan: PlaybackPlan,
+    session: app.zelefin.core.SavedSession? = null,
     onProgress: (Double, Boolean) -> Unit,
     onStopped: (Double) -> Unit,
     onClose: () -> Unit,
@@ -170,9 +192,42 @@ fun PlayerSurface(
     onAdaptiveBitrate: ((Int, Double) -> Unit)? = null,
     onRecover: ((Double) -> Unit)? = null,
     onRetryStream: ((Double) -> Unit)? = null,
+    onPlaybackReady: () -> Unit = {},
+    onUserTransport: (PlayerDirective) -> Unit = {},
+    directives: SharedFlow<PlayerDirective>? = null,
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
+    val castConnected = app.zelefin.client.cast.rememberCastConnected()
+    if (castConnected) {
+        app.zelefin.client.cast.CastRemoteSurface(
+            plan = plan,
+            artworkUrl = plan.item.backdropUrl ?: plan.item.posterUrl,
+            onClose = onClose,
+        )
+        return
+    }
+    if (PlaybackPreferences.usesMpv(context)) {
+        MpvPlayerSurface(
+            plan = plan,
+            session = session,
+            onProgress = onProgress,
+            onStopped = onStopped,
+            onClose = onClose,
+            onCast = {},
+            skipSegments = skipSegments,
+            autoSkip = autoSkip,
+            nextEpisode = nextEpisode,
+            nextArtwork = nextArtwork,
+            onPlayNext = onPlayNext,
+            onAddSubtitles = onAddSubtitles,
+            suspended = suspended,
+            onPlaybackReady = onPlaybackReady,
+            onUserTransport = onUserTransport,
+            directives = directives,
+        )
+        return
+    }
     val clientStart = remember(plan.streamUrl) {
         PlaybackResumePolicy.clientStartPosition(plan.method, plan.startTimeSeconds, plan.clientOwnsPlayhead)
     }
@@ -209,6 +264,8 @@ fun PlayerSurface(
     val currentOnClose by rememberUpdatedState(onClose)
     val currentOnRecover by rememberUpdatedState(onRecover)
     val currentOnRetryStream by rememberUpdatedState(onRetryStream)
+    val currentOnPlaybackReady by rememberUpdatedState(onPlaybackReady)
+    val currentOnUserTransport by rememberUpdatedState(onUserTransport)
     LiveAdaptiveMonitor(player, plan, mediaSeconds, onAdaptiveBitrate)
     DisposableEffect(player) {
         onDispose {
@@ -256,8 +313,9 @@ fun PlayerSurface(
             override fun onTracksChanged(value: Tracks) {
                 tracks = value
                 if (!startedWithServerChoice && value.groups.isNotEmpty()) {
-                    startedWithServerChoice = true
-                    applyServerTrackChoice(player, value, plan)
+                    if (applyServerTrackChoice(player, value, plan, context)) {
+                        startedWithServerChoice = true
+                    }
                 }
             }
 
@@ -358,10 +416,31 @@ fun PlayerSurface(
         player.seekTo(streamMs)
         positionMs = player.currentPosition
     }
+    var announcedReady by remember(player) { mutableStateOf(false) }
+    LaunchedEffect(playbackState) {
+        if (!announcedReady && playbackState == Player.STATE_READY) {
+            announcedReady = true
+            currentOnPlaybackReady()
+        }
+    }
+    LaunchedEffect(player, directives) {
+        val commands = directives ?: return@LaunchedEffect
+        commands.collect { directive ->
+            when (directive) {
+                PlayerDirective.Play -> player.play()
+                PlayerDirective.Pause -> player.pause()
+                is PlayerDirective.Seek -> seekMedia(directive.seconds)
+            }
+        }
+    }
 
     val prompt = SkipSegment.prompt(skipSegments, mediaPosition)
     val currentAutoSkip by rememberUpdatedState(autoSkip)
-    val skip: (SkipPrompt) -> Unit = { target -> seekMedia(target.seekTo + 0.05) }
+    val skip: (SkipPrompt) -> Unit = { target ->
+        val time = target.seekTo + 0.05
+        seekMedia(time)
+        currentOnUserTransport(PlayerDirective.Seek(time))
+    }
     LaunchedEffect(prompt, playbackState) {
         val active = prompt ?: return@LaunchedEffect
         if (playbackState == Player.STATE_READY && currentAutoSkip(active.kind)) skip(active)
@@ -380,6 +459,7 @@ fun PlayerSurface(
     var scrubTime by remember { mutableStateOf<Double?>(null) }
     var menuPage by remember { mutableStateOf<PlayerMenuPage?>(null) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
+    var styleRevision by remember { mutableIntStateOf(0) }
     var fillsScreen by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var sleep by remember { mutableStateOf<SleepTimer>(SleepTimer.Off) }
@@ -475,15 +555,20 @@ fun PlayerSurface(
         if (player.playbackState == Player.STATE_ENDED) {
             player.seekTo(0)
             player.play()
+            currentOnUserTransport(PlayerDirective.Play)
         } else if (player.playWhenReady) {
             player.pause()
+            currentOnUserTransport(PlayerDirective.Pause)
         } else {
             player.play()
+            currentOnUserTransport(PlayerDirective.Play)
         }
         reveal()
     }
     val skipBy: (Int) -> Unit = { seconds ->
-        seekMedia(mediaSeconds() + seconds)
+        val target = (mediaSeconds() + seconds).coerceAtLeast(streamOffset)
+        seekMedia(target)
+        currentOnUserTransport(PlayerDirective.Seek(target))
         reveal()
     }
 
@@ -523,12 +608,9 @@ fun PlayerSurface(
     val buffering = playbackError == null &&
         (playbackState == Player.STATE_BUFFERING || (playbackState == Player.STATE_IDLE && playWhenReady))
     val showChrome = chromeVisible && !locked && !inPip && !suspended
-    val frostActive = !inPip && !suspended &&
-        (showChrome || menuPage != null || prompt != null || upNextVisible || lockHint || playbackError != null)
-    PlayerFrostCapture(playerView?.videoSurfaceView as? android.view.SurfaceView, frostActive, isPlaying)
-    DisposableEffect(Unit) { onDispose { PlayerFrost.clear() } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        val configuration = LocalConfiguration.current
         AndroidView(
             factory = { viewContext ->
                 (LayoutInflater.from(viewContext).inflate(R.layout.zelefin_player_view, null) as PlayerView).apply {
@@ -537,7 +619,27 @@ fun PlayerSurface(
                     playerView = this
                 }
             },
-            update = { view -> if (view.player !== player) view.player = player },
+            update = { view ->
+                if (view.player !== player) view.player = player
+                configuration.orientation
+                configuration.screenWidthDp
+                configuration.screenHeightDp
+                view.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                view.resizeMode = if (fillsScreen) {
+                    androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                } else {
+                    androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+                styleRevision
+                aspect
+                fillsScreen
+                SubtitleAppearance.applyTo(view, fill = fillsScreen)
+                view.post {
+                    view.requestLayout()
+                    (view.videoSurfaceView as? android.view.SurfaceView)?.holder?.setSizeFromLayout()
+                    SubtitleAppearance.applyTo(view, fill = fillsScreen)
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
         Box(
@@ -596,9 +698,18 @@ fun PlayerSurface(
                 },
                 onSeek = { time ->
                     scrubTime = null
-                    seekMedia(time.coerceAtLeast(streamOffset))
+                    val target = time.coerceAtLeast(streamOffset)
+                    seekMedia(target)
+                    currentOnUserTransport(PlayerDirective.Seek(target))
                     reveal()
                 },
+                trickplay = plan.trickplay,
+                trickplayUrl = { time ->
+                    val info = plan.trickplay ?: return@PlayerChrome null
+                    val signed = session ?: return@PlayerChrome null
+                    app.zelefin.core.ArtworkUrls.trickplayTile(signed.serverUrl, plan.item.id, info, time, signed.accessToken)
+                },
+                onCast = {},
             )
         }
         if (showStats && !inPip) {
@@ -612,7 +723,8 @@ fun PlayerSurface(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(start = 16.dp, top = 64.dp, end = 16.dp),
+                    .padding(start = 16.dp, top = 64.dp, end = 16.dp)
+                    .heightIn(max = playerStatsMaxHeight(showChrome)),
             )
         }
         val lift by animateDpAsState(if (showChrome) 84.dp else 18.dp, label = "player-lift")
@@ -721,11 +833,13 @@ fun PlayerSurface(
             onClose = { menuPage = null },
             speed = speed,
             onSpeed = selectSpeed,
-            audio = audioTracks,
+            audio = audioTracks.map { it.overlay() },
             audioNote = audioNote,
-            onAudio = selectAudio,
-            subtitles = subtitleTracks,
-            onSubtitle = selectSubtitle,
+            onAudio = { overlay -> audioTracks.firstOrNull { it.overlay().key == overlay.key }?.let(selectAudio) },
+            subtitles = subtitleTracks.map { it.overlay() },
+            onSubtitle = { overlay ->
+                selectSubtitle(overlay?.let { chosen -> subtitleTracks.firstOrNull { it.overlay().key == chosen.key } })
+            },
             chapters = plan.chapters,
             position = mediaPosition,
             onChapter = { chapter ->
@@ -754,12 +868,13 @@ fun PlayerSurface(
             onToggleFill = { fillsScreen = !fillsScreen },
             showStats = showStats,
             onToggleStats = { showStats = !showStats },
+            onAppearanceChange = { styleRevision += 1 },
         )
     }
 }
 
 @Composable
-private fun PlayerChrome(
+internal fun PlayerChrome(
     title: String,
     subtitle: String?,
     playing: Boolean,
@@ -780,6 +895,9 @@ private fun PlayerChrome(
     onSkip: (Int) -> Unit,
     onScrub: (Double) -> Unit,
     onSeek: (Double) -> Unit,
+    trickplay: app.zelefin.core.TrickplayInfo? = null,
+    trickplayUrl: ((Double) -> String?)? = null,
+    onCast: (() -> Unit)? = null,
 ) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val horizontal = if (wide) 28.dp else 16.dp
@@ -857,6 +975,11 @@ private fun PlayerChrome(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (onCast != null) {
+                        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                            app.zelefin.client.cast.CastRouteButton()
+                        }
+                    }
                     GlassIconButton(Icons.Rounded.Lock, "Lock Controls", onClick = onLock)
                     if (pipSupported) GlassIconButton(Icons.Rounded.PictureInPictureAlt, "Picture in Picture", onClick = onPip)
                     GlassIconButton(
@@ -868,13 +991,39 @@ private fun PlayerChrome(
                 }
             }
             Spacer(Modifier.weight(1f))
-            Timeline(position = position, duration = duration, chapterStarts = chapterStarts, onScrub = onScrub, onSeek = onSeek)
+            Timeline(
+                position = position,
+                duration = duration,
+                chapterStarts = chapterStarts,
+                onScrub = onScrub,
+                onSeek = onSeek,
+                trickplay = trickplay,
+                trickplayUrl = { time -> trickplayUrl?.invoke(time) },
+            )
         }
     }
 }
 
 @Composable
-private fun Timeline(position: Double, duration: Double, chapterStarts: List<Double>, onScrub: (Double) -> Unit, onSeek: (Double) -> Unit) {
+private fun Timeline(
+    position: Double,
+    duration: Double,
+    chapterStarts: List<Double>,
+    onScrub: (Double) -> Unit,
+    onSeek: (Double) -> Unit,
+    trickplay: app.zelefin.core.TrickplayInfo? = null,
+    trickplayUrl: (Double) -> String? = { null },
+) {
+    var previewing by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        if (previewing && trickplay != null) {
+            val url = trickplayUrl(position)
+            if (url != null) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TrickplayPreview(url, trickplay, position)
+                }
+            }
+        }
     Row(
         Modifier
             .fillMaxWidth()
@@ -887,14 +1036,46 @@ private fun Timeline(position: Double, duration: Double, chapterStarts: List<Dou
             position = position,
             duration = duration,
             chapterStarts = chapterStarts,
-            onScrub = onScrub,
-            onSeek = onSeek,
+            onScrub = {
+                previewing = true
+                onScrub(it)
+            },
+            onSeek = {
+                previewing = false
+                onSeek(it)
+            },
             modifier = Modifier
                 .weight(1f)
                 .height(28.dp)
                 .padding(horizontal = 12.dp),
         )
         TimeLabel(if (duration > 0) "-" + clock(duration - position) else "--:--", Modifier.widthIn(min = 56.dp), end = true)
+    }
+    }
+}
+
+@Composable
+private fun TrickplayPreview(url: String, info: app.zelefin.core.TrickplayInfo, time: Double) {
+    val cell = info.cell(time)
+    val previewW = 160.dp
+    val thumbW = info.thumbnailWidth.coerceAtLeast(1)
+    val thumbH = info.thumbnailHeight.coerceAtLeast(1)
+    val previewH = previewW * thumbH / thumbW
+    Box(
+        Modifier
+            .size(previewW, previewH)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black),
+    ) {
+        coil.compose.AsyncImage(
+            model = url,
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier
+                .requiredWidth(previewW * info.tileWidth.coerceAtLeast(1))
+                .requiredHeight(previewH * info.tileHeight.coerceAtLeast(1))
+                .offset(x = -(previewW * cell.first), y = -(previewH * cell.second)),
+        )
     }
 }
 
@@ -1038,7 +1219,7 @@ private fun GlassIconButton(icon: ImageVector, description: String, size: Dp = 4
 }
 
 @Composable
-private fun UpNextCard(item: MediaItem, artwork: List<String>, status: String, onPlay: () -> Unit, onCancel: () -> Unit) {
+internal fun UpNextCard(item: MediaItem, artwork: List<String>, status: String, onPlay: () -> Unit, onCancel: () -> Unit) {
     Row(
         Modifier
             .widthIn(max = 420.dp)
@@ -1189,17 +1370,17 @@ private fun PlaybackErrorCard(message: String, onRetry: () -> Unit, onClose: () 
 }
 
 @Composable
-private fun PlayerMenuPanel(
+internal fun PlayerMenuPanel(
     page: PlayerMenuPage,
     onPage: (PlayerMenuPage) -> Unit,
     onClose: () -> Unit,
     speed: Float,
     onSpeed: (Float) -> Unit,
-    audio: List<PlayerTrack>,
+    audio: List<OverlayTrack>,
     audioNote: String?,
-    onAudio: (PlayerTrack) -> Unit,
-    subtitles: List<PlayerTrack>,
-    onSubtitle: (PlayerTrack?) -> Unit,
+    onAudio: (OverlayTrack) -> Unit,
+    subtitles: List<OverlayTrack>,
+    onSubtitle: (OverlayTrack?) -> Unit,
     chapters: List<PlaybackChapter>,
     position: Double,
     onChapter: (PlaybackChapter) -> Unit,
@@ -1212,7 +1393,15 @@ private fun PlayerMenuPanel(
     onToggleFill: () -> Unit,
     showStats: Boolean,
     onToggleStats: () -> Unit,
+    onAppearanceChange: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    var appearance by remember { mutableStateOf(SubtitleAppearance.current(context)) }
+    fun updateAppearance(change: () -> Unit) {
+        change()
+        appearance = SubtitleAppearance.current(context)
+        onAppearanceChange()
+    }
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     Box(Modifier.fillMaxSize()) {
         Box(
@@ -1225,9 +1414,9 @@ private fun PlayerMenuPanel(
             Modifier
                 .align(Alignment.TopEnd)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(top = 60.dp, end = 16.dp, start = 16.dp)
+                .padding(top = 60.dp, end = 16.dp, start = 16.dp, bottom = 88.dp)
                 .width(320.dp)
-                .heightIn(max = (screenHeight - 76.dp).coerceAtLeast(180.dp))
+                .heightIn(max = minOf(420.dp, (screenHeight - 148.dp).coerceAtLeast(180.dp)))
                 .playerGlass(RoundedCornerShape(22.dp))
                 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
         ) {
@@ -1271,6 +1460,12 @@ private fun PlayerMenuPanel(
                         MenuRow("Select Subtitles", subtitles.firstOrNull { it.selected }?.title ?: "Off", Icons.Rounded.ClosedCaption) {
                             onPage(PlayerMenuPage.Subtitles)
                         }
+                        MenuRow("Subtitle Style", appearance.sizeTitle(), Icons.Rounded.TextFields) {
+                            onPage(PlayerMenuPage.SubtitleStyle)
+                        }
+                        MenuRow("Subtitle Sync", appearance.syncTitle(), Icons.Rounded.Sync) {
+                            onPage(PlayerMenuPage.SubtitleSync)
+                        }
                         if (chapters.isNotEmpty()) {
                             MenuRow("Chapters", chapters.size.toString(), Icons.AutoMirrored.Rounded.FormatListBulleted) {
                                 onPage(PlayerMenuPage.Chapters)
@@ -1281,7 +1476,6 @@ private fun PlayerMenuPanel(
                             sleepRemaining?.let { clockText(it) } ?: sleepTitle(sleep),
                             Icons.Rounded.Bedtime,
                         ) { onPage(PlayerMenuPage.Sleep) }
-                        onAddSubtitles?.let { add -> ActionRow("Add Subtitles", Icons.Rounded.AddComment, add) }
                         ToggleRow("Fill screen", Icons.Rounded.OpenInFull, fillsScreen, onToggleFill)
                         ToggleRow("Stats", Icons.Rounded.Info, showStats, onToggleStats)
                     }
@@ -1315,8 +1509,92 @@ private fun PlayerMenuPanel(
                         audioNote?.let { MenuNote(it) }
                     }
                     PlayerMenuPage.Subtitles -> {
+                        onAddSubtitles?.let { add -> ActionRow("Add Subtitles", Icons.Rounded.AddComment, add) }
                         ChoiceRow("Off", selected = subtitles.none { it.selected }) { onSubtitle(null) }
                         subtitles.forEach { track -> ChoiceRow(track.title, selected = track.selected) { onSubtitle(track) } }
+                    }
+                    PlayerMenuPage.SubtitleStyle -> {
+                        MenuNote("Font Size")
+                        SubtitleAppearance.sizes.forEach { option ->
+                            ChoiceRow(SubtitleAppearance.sizeTitle(option), selected = appearance.size == option) {
+                                updateAppearance { SubtitleAppearance.setSize(context, option) }
+                            }
+                        }
+                        MenuNote("Text Color")
+                        SubtitleAppearance.colors.forEach { option ->
+                            ChoiceRow(SubtitleAppearance.colorTitle(option), selected = appearance.color == option) {
+                                updateAppearance { SubtitleAppearance.setColor(context, option) }
+                            }
+                        }
+                        MenuNote("Background")
+                        SubtitleAppearance.backgrounds.forEach { option ->
+                            ChoiceRow(SubtitleAppearance.backgroundTitle(option), selected = appearance.background == option) {
+                                updateAppearance { SubtitleAppearance.setBackground(context, option) }
+                            }
+                        }
+                    }
+                    PlayerMenuPage.SubtitleSync -> {
+                        Text(
+                            appearance.syncTitle(),
+                            color = Color.White,
+                            fontFamily = ZelefinFont,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                "−0.25",
+                                color = Color.White,
+                                fontFamily = ZelefinFont,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.White.copy(alpha = 0.12f))
+                                    .clickable {
+                                        updateAppearance { SubtitleAppearance.setSyncSeconds(context, appearance.syncSeconds - 0.25) }
+                                    }
+                                    .padding(vertical = 10.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                            Text(
+                                "+0.25",
+                                color = Color.White,
+                                fontFamily = ZelefinFont,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.White.copy(alpha = 0.12f))
+                                    .clickable {
+                                        updateAppearance { SubtitleAppearance.setSyncSeconds(context, appearance.syncSeconds + 0.25) }
+                                    }
+                                    .padding(vertical = 10.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                        Slider(
+                            value = appearance.syncSeconds.toFloat(),
+                            onValueChange = {
+                                updateAppearance { SubtitleAppearance.setSyncSeconds(context, it.toDouble()) }
+                            },
+                            valueRange = -10f..10f,
+                            steps = 79,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color.White,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.22f),
+                            ),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                        ChoiceRow("Reset", selected = appearance.syncSeconds == 0.0) {
+                            updateAppearance { SubtitleAppearance.setSyncSeconds(context, 0.0) }
+                        }
                     }
                 }
             }
@@ -1448,7 +1726,7 @@ private fun skipIcon(seconds: Int, forward: Boolean): ImageVector? = when (secon
     else -> null
 }
 
-private fun episodeCaption(item: MediaItem, includeName: Boolean): String? {
+internal fun episodeCaption(item: MediaItem, includeName: Boolean): String? {
     val season = item.seasonIndex
     val episode = item.episodeIndex
     val code = if (season != null && episode != null) "S$season, E$episode" else null
@@ -1469,13 +1747,13 @@ private fun clock(seconds: Double): String {
  * "play default audio track", subtitle mode). ExoPlayer otherwise follows the phone's locale
  * and the file's own flags, which is why a Direct Play ignored the user's server settings.
  */
-private fun applyServerTrackChoice(player: Player, tracks: Tracks, plan: PlaybackPlan) {
+private fun applyServerTrackChoice(player: Player, tracks: Tracks, plan: PlaybackPlan, context: Context): Boolean {
     val builder = player.trackSelectionParameters.buildUpon()
     var changed = false
     plan.audioChoice?.let { choice ->
-        val groups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        val groups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
         val group = groups.getOrNull(choice.ordinal)?.takeIf { groups.size > 1 }
-            ?: groups.firstOrNull { PlaybackLanguage.matches(it.getTrackFormat(0).language, choice.language.orEmpty()) }
+            ?: groups.firstOrNull { PlaybackLanguage.matchesLabel(it.getTrackFormat(0).label, it.getTrackFormat(0).language, choice.language.orEmpty()) }
         if (group != null && group.length > 0) {
             builder.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
                 .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
@@ -1483,25 +1761,49 @@ private fun applyServerTrackChoice(player: Player, tracks: Tracks, plan: Playbac
         }
     }
     val subtitle = plan.subtitleChoice
-    if (subtitle != null) {
-        val text = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+    if (subtitle != null || !plan.subtitlesOff) {
+        val text = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.length > 0 }
+        if (text.isEmpty()) return false
         val sideloaded = text.filter { it.getTrackFormat(0).id?.startsWith("jf-ext-") == true }
         val embedded = text - sideloaded.toSet()
-        val group = when {
-            subtitle.externalId != null -> sideloaded.firstOrNull { it.getTrackFormat(0).id == subtitle.externalId }
-            else -> embedded.getOrNull(subtitle.ordinal)
-                ?: embedded.firstOrNull { PlaybackLanguage.matches(it.getTrackFormat(0).language, subtitle.language.orEmpty()) }
+        val preferSdh = PlaybackPreferences.preferSdh(context)
+        val language = subtitle?.language.orEmpty()
+        val sdhMatch: (Tracks.Group) -> Boolean = { group ->
+            val format = group.getTrackFormat(0)
+            val label = format.label.orEmpty()
+            format.roleFlags and (C.ROLE_FLAG_CAPTION or C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND) != 0 ||
+                label.contains("SDH", ignoreCase = true) ||
+                label.contains("CC", ignoreCase = true) ||
+                label.contains("caption", ignoreCase = true)
         }
+        val matches: (Tracks.Group) -> Boolean = { group ->
+            val format = group.getTrackFormat(0)
+            PlaybackLanguage.matchesLabel(format.label, format.language, language)
+        }
+        val group = when {
+            subtitle?.externalId != null -> sideloaded.firstOrNull { it.getTrackFormat(0).id == subtitle.externalId }
+            preferSdh -> {
+                val pool = embedded.ifEmpty { text }
+                pool.firstOrNull { sdhMatch(it) && matches(it) }
+                    ?: pool.firstOrNull(sdhMatch)
+                    ?: embedded.getOrNull(subtitle?.ordinal ?: -1)
+                    ?: embedded.firstOrNull(matches)
+            }
+            else -> embedded.getOrNull(subtitle?.ordinal ?: -1)
+                ?: embedded.firstOrNull(matches)
+        } ?: text.firstOrNull()
         if (group != null && group.length > 0) {
             builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setIgnoredTextSelectionFlags(0)
                 .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
             changed = true
         }
-    } else if (plan.subtitlesOff) {
+    } else {
         builder.clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         changed = true
     }
     if (changed) player.trackSelectionParameters = builder.build()
+    return changed || plan.subtitlesOff
 }
 
 private fun preferredLanguages(context: Context, current: TrackSelectionParameters): TrackSelectionParameters {

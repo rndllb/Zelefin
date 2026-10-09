@@ -901,6 +901,7 @@ private struct SearchPage: View {
 
     private func play(_ item: MediaItem) {
         recordRecent(item)
+        if session.playIfSyncPlay(item) { return }
         playingItem = item
     }
 }
