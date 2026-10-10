@@ -194,6 +194,8 @@ struct TitleUserActions: View {
     var onRefreshMetadata: (() -> Void)? = nil
     var onRemoteImage: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
+    var onIdentify: (() -> Void)? = nil
+    var onEditMetadata: (() -> Void)? = nil
 
     @Environment(SessionStore.self) private var session
 
@@ -205,6 +207,16 @@ struct TitleUserActions: View {
                 item.isFavorite ? "Remove from Favorites" : "Add to Favorites",
                 systemImage: item.isFavorite ? "heart.fill" : "heart"
             )
+        }
+        if !session.usesSilo {
+            Button {
+                Task { await toggleWatchlist() }
+            } label: {
+                Label(
+                    item.isWatchlisted ? "Remove from Watchlist" : "Add to Watchlist",
+                    systemImage: item.isWatchlisted ? "text.badge.minus" : "text.badge.plus"
+                )
+            }
         }
         Button {
             Task { await setLikes(item.likes == true ? nil : true) }
@@ -240,6 +252,12 @@ struct TitleUserActions: View {
         if let onRefreshMetadata {
             Button("Refresh Metadata", systemImage: "arrow.clockwise", action: onRefreshMetadata)
         }
+        if let onIdentify {
+            Button("Identify…", systemImage: "magnifyingglass", action: onIdentify)
+        }
+        if let onEditMetadata {
+            Button("Edit Metadata…", systemImage: "pencil", action: onEditMetadata)
+        }
         if let onRemoteImage {
             Button("Edit Images…", systemImage: "photo.on.rectangle", action: onRemoteImage)
         }
@@ -250,6 +268,11 @@ struct TitleUserActions: View {
 
     private func toggleFavorite() async {
         guard let updated = try? await session.toggleFavorite(item) else { return }
+        onChange(updated)
+    }
+
+    private func toggleWatchlist() async {
+        guard let updated = try? await session.toggleWatchlist(item) else { return }
         onChange(updated)
     }
 

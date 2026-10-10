@@ -6,6 +6,27 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+class TrickplayInfoTest {
+    @Test
+    fun tilesAndCells() {
+        val info = TrickplayInfo(
+            width = 320,
+            interval = 10.0,
+            thumbnailCount = 25,
+            tileWidth = 10,
+            tileHeight = 10,
+            thumbnailWidth = 320,
+            thumbnailHeight = 180,
+            mediaSourceId = "src",
+        )
+        assertEquals(0, info.thumbnailIndex(0.0))
+        assertEquals(2, info.thumbnailIndex(25.0))
+        assertEquals(0, info.tileIndex(25.0))
+        assertEquals(2 to 0, info.cell(25.0))
+        assertEquals(24, info.thumbnailIndex(10_000.0))
+    }
+}
+
 class TickClockTest {
     @Test
     fun secondsRoundTrip() {
@@ -258,4 +279,44 @@ class ArtworkUrlTest {
         val item = MediaItem(id = "episode", name = "Space Pilot 3000", kind = MediaKind.Episode)
         assertNull(ArtworkUrls.thumb("https://media.example.com", item, "token", 640))
     }
+}
+
+class SeasonDownloadChoiceTest {
+    @Test
+    fun showPickerListsEachSeason() {
+        val episodes = (1..5).flatMap { season ->
+            listOf(
+                episode("s${season}e1", season, 1),
+                episode("s${season}e2", season, 2),
+            )
+        }
+        val choices = SeasonDownloadChoice.options(emptyList(), episodes)
+        assertEquals(listOf("Season 1", "Season 2", "Season 3", "Season 4", "Season 5"), choices.map { it.title })
+        assertEquals(listOf("s3e1", "s3e2"), SeasonDownloadChoice.episodes(choices.first { it.seasonIndex == 3 }, episodes).map { it.id })
+        assertEquals(listOf("s1e1", "s1e2", "s3e1", "s3e2"), SeasonDownloadChoice.episodes(setOf(1, 3), episodes).map { it.id })
+    }
+
+    @Test
+    fun oneSeasonIsTheOnlyChoice() {
+        val episodes = listOf(episode("e1", 3, 1), episode("e2", 3, 2))
+        val choices = SeasonDownloadChoice.options(emptyList(), episodes)
+        assertEquals(listOf("Season 3"), choices.map { it.title })
+        assertEquals(3, choices.single().seasonIndex)
+    }
+
+    @Test
+    fun specialsSitAfterNumberedSeasons() {
+        val episodes = listOf(episode("e1", 1, 1), episode("sp", 0, 1), episode("e2", 2, 1))
+        val choices = SeasonDownloadChoice.options(emptyList(), episodes)
+        assertEquals(listOf("Season 1", "Season 2", "Specials"), choices.map { it.title })
+    }
+
+    private fun episode(id: String, season: Int, number: Int) = MediaItem(
+        id = id,
+        name = id,
+        kind = MediaKind.Episode,
+        seasonIndex = season,
+        episodeIndex = number,
+        seriesId = "show",
+    )
 }

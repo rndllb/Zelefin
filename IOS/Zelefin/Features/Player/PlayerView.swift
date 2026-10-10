@@ -353,6 +353,15 @@ struct PlayerView: View {
         created.onUserTransport = { action in
             Task { await session.forwardSyncPlay(action) }
         }
+        created.onRemoteSeekApplied = { time in
+            Task {
+                try? await session.library?.syncPlayReady(
+                    isPlaying: true,
+                    playlistItemID: session.syncPlayPlaylistItemID,
+                    position: time
+                )
+            }
+        }
         created.onDidStart = {
             session.noteHomeQueueResumed(plan.item.id)
         }
@@ -379,9 +388,6 @@ struct PlayerView: View {
                     playlistItemID: session.syncPlayPlaylistItemID,
                     position: plan.startTime
                 )
-                if plan.startTime > 5 {
-                    try? await session.library?.syncPlaySeek(to: plan.startTime)
-                }
             }
         } catch is CancellationError {
             await created.stop()

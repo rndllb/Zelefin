@@ -63,7 +63,7 @@ extension SubtitlePlaybackMode {
         switch self {
         case .default: return "Subtitles follow the default and forced flags in the file."
         case .smart: return "Subtitles in the preferred language load when the audio is in another language."
-        case .always: return "Subtitles in the preferred language load regardless of the audio language."
+        case .always: return "Subtitles load on every title. The preferred language is used when the file has it."
         case .onlyForced: return "Only subtitles flagged as forced load."
         case .none: return "No subtitles load unless you pick them during playback."
         }
@@ -118,13 +118,83 @@ enum PlaybackLanguage {
             ?? tracks.first?.id
     }
 
+    static func positiveIndex(_ value: Int?) -> Int? {
+        guard let value, value >= 0 else { return nil }
+        return value
+    }
+
+    static func positiveIndex(_ value: Int??) -> Int? {
+        switch value {
+        case .some(.some(let index)) where index >= 0:
+            return index
+        default:
+            return nil
+        }
+    }
+
+    /// Jellyfin Always only matches a preferred language. "Any Language" comes back as none,
+    /// which this app used to treat as Off.
+    static func startingSubtitleIndex(
+        in tracks: [MediaTrack],
+        serverIndex: Int?,
+        mode: SubtitlePlaybackMode,
+        preferredLanguage: String,
+        audioLanguage: String?,
+        preferSDH: Bool,
+        deviceLanguage: String = deviceCode,
+        forcedByUser: Bool = false
+    ) -> Int? {
+        if forcedByUser { return positiveIndex(serverIndex) }
+        let wanted = preferredLanguage.isEmpty ? deviceLanguage : preferredLanguage
+        if let serverIndex {
+            if preferSDH, let sdh = pick(in: tracks, language: wanted, preferSDH: true) {
+                return sdh
+            }
+            return serverIndex
+        }
+        switch mode {
+        case .always:
+            return pick(in: tracks, language: wanted, preferSDH: preferSDH) ?? tracks.first?.id
+        case .smart:
+            if !wanted.isEmpty, matches(audioLanguage, preference: wanted) { return nil }
+            return pick(in: tracks, language: wanted, preferSDH: preferSDH)
+        default:
+            return nil
+        }
+    }
+
+    private static func pick(in tracks: [MediaTrack], language: String, preferSDH: Bool) -> Int? {
+        let sdh = tracks.filter(isSDH)
+        let pool = preferSDH && !sdh.isEmpty ? sdh : tracks
+        if !language.isEmpty {
+            return pool.first { matches($0.language, preference: language) }?.id
+                ?? tracks.first { matches($0.language, preference: language) }?.id
+        }
+        return pool.first?.id
+    }
+
     static func subtitleIndex(in tracks: [MediaTrack], preference: String = PlaybackPreferences.subtitleLanguageCode) -> Int? {
         if preference == offCode { return -1 }
+        let sdh = tracks.filter(isSDH)
+        if PlaybackPreferences.preferSDH {
+            if preference == automaticCode || preference.isEmpty {
+                return sdh.first(where: \.isSelected)?.id ?? sdh.first?.id ?? tracks.first(where: \.isSelected)?.id
+            }
+            return sdh.first { matches($0.language, preference: preference) }?.id
+                ?? tracks.first { matches($0.language, preference: preference) }?.id
+                ?? sdh.first?.id
+                ?? tracks.first(where: \.isSelected)?.id
+        }
         if preference == automaticCode || preference.isEmpty {
             return tracks.first(where: \.isSelected)?.id
         }
         return tracks.first { matches($0.language, preference: preference) }?.id
             ?? tracks.first(where: \.isSelected)?.id
+    }
+
+    static func isSDH(_ track: MediaTrack) -> Bool {
+        let title = track.title.lowercased()
+        return title.contains("sdh") || title.contains("cc") || title.contains("caption") || title.contains("hearing")
     }
 
     static func selecting(_ tracks: [MediaTrack], selectedID: Int?) -> [MediaTrack] {

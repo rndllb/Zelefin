@@ -20,6 +20,7 @@ class ZelefinApplication : Application(), ImageLoaderFactory {
         ZelefinPush.ensureChannel(this)
         app.zelefin.client.session.SessionMessageCenter.install(this)
         app.zelefin.client.ui.loadInterfacePreferences(this)
+        app.zelefin.client.cast.ZelefinCast.warmup(this)
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)

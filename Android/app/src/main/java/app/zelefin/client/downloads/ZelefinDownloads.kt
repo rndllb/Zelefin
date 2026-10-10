@@ -1,8 +1,11 @@
 package app.zelefin.client.downloads
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.text.format.Formatter
+import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.network.GatewayHttp
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
@@ -67,6 +70,7 @@ data class DownloadProgress(
     val runId: String,
     val bytesWritten: Long = 0,
     val bytesExpected: Long = 0,
+    val paused: Boolean = false,
 ) {
     val fraction: Double
         get() = if (bytesExpected > 0 && bytesWritten >= 0) min(1.0, bytesWritten.toDouble() / bytesExpected.toDouble()) else 0.0
@@ -97,12 +101,14 @@ sealed interface DownloadControlState {
     data object Unavailable : DownloadControlState
     data object Idle : DownloadControlState
     data class Downloading(val fraction: Double) : DownloadControlState
+    data class Paused(val fraction: Double) : DownloadControlState
     data object Downloaded : DownloadControlState
 
     val menuTitle: String
         get() = when (this) {
             Unavailable, Idle -> "Download"
-            is Downloading -> if (fraction > 0) "Cancel Download · ${(fraction * 100).roundToInt()}%" else "Cancel Download"
+            is Downloading -> if (fraction > 0) "Pause Download · ${(fraction * 100).roundToInt()}%" else "Cancel Download"
+            is Paused -> "Resume Download"
             Downloaded -> "Remove Download"
         }
 }
@@ -156,14 +162,16 @@ data class DownloadsState(
     }
 
     fun mark(item: MediaItem): DownloadMark {
-        transfer(item)?.let { return DownloadMark.Downloading(it.fraction) }
+        transfer(item)?.takeUnless { it.paused }?.let { return DownloadMark.Downloading(it.fraction) }
         val covered = scopedRecords.any { it.item.id == item.id || (item.kind == MediaKind.Series && it.item.seriesId == item.id) }
         return if (covered) DownloadMark.Downloaded else DownloadMark.None
     }
 
     fun control(item: MediaItem, episodes: List<MediaItem> = emptyList()): DownloadControlState {
         val target = DownloadEligibility.playableItem(item, episodes) ?: return DownloadControlState.Unavailable
-        scopedProgress[target.id]?.let { return DownloadControlState.Downloading(it.fraction) }
+        scopedProgress[target.id]?.let {
+            return if (it.paused) DownloadControlState.Paused(it.fraction) else DownloadControlState.Downloading(it.fraction)
+        }
         if (record(target.id) != null) return DownloadControlState.Downloaded
         return if (available) DownloadControlState.Idle else DownloadControlState.Unavailable
     }
@@ -328,21 +336,38 @@ object ZelefinDownloads {
         val current = session ?: return
         val backend = backend ?: return
         val app = appContext ?: return
+        if (PlaybackPreferences.downloadWifiOnly(app) && !onWifi(app)) {
+            showNotice(DownloadNotice("Download", "Connect to Wi-Fi to download, or turn off Wi-Fi only in Playback settings."))
+            return
+        }
         val runId = UUID.randomUUID().toString()
         synchronized(lock) {
             if (jobs.containsKey(target.id)) return
             if (_state.value.record(target.id) != null) return
-            val progress = DownloadProgress(target, current.userId, host(current.serverUrl), runId)
+            val existing = _state.value.progress[target.id]
+            val progress = DownloadProgress(
+                target,
+                current.userId,
+                host(current.serverUrl),
+                runId,
+                bytesWritten = existing?.bytesWritten ?: 0,
+                bytesExpected = existing?.bytesExpected ?: 0,
+            )
             _state.update { it.copy(progress = it.progress + (target.id to progress)) }
             val job = scope.launch(start = CoroutineStart.LAZY) { perform(app, target, current, backend, runId) }
             jobs[target.id] = job
-            job.invokeOnCompletion {
+            job.invokeOnCompletion { cause ->
                 synchronized(lock) { if (jobs[target.id] === job) jobs.remove(target.id) }
-                clearProgress(target.id, runId)
+                val keep = _state.value.progress[target.id]?.paused == true || cause is CancellationException && _state.value.progress[target.id]?.paused == true
+                if (!keep) clearProgress(target.id, runId)
             }
             job.start()
         }
         DownloadService.start(app)
+    }
+
+    fun startAll(targets: List<MediaItem>) {
+        targets.forEach(::start)
     }
 
     /** Stops the transfer for [item] (or, for a show, its episode that is downloading). */
@@ -352,6 +377,23 @@ object ZelefinDownloads {
             jobs.remove(id)?.cancel()
             _state.update { it.copy(progress = it.progress - id) }
         }
+        appContext?.let { File(itemDirectory(it, session ?: return, id), "media.part").delete() }
+    }
+
+    fun pause(item: MediaItem) {
+        val id = _state.value.transfer(item)?.item?.id ?: item.id
+        synchronized(lock) {
+            _state.update { state ->
+                val current = state.progress[id] ?: return@update state
+                state.copy(progress = state.progress + (id to current.copy(paused = true)))
+            }
+            jobs.remove(id)?.cancel()
+        }
+    }
+
+    fun resume(item: MediaItem) {
+        val target = _state.value.transfer(item)?.item ?: item
+        start(target)
     }
 
     fun remove(itemId: String) {
@@ -457,16 +499,17 @@ object ZelefinDownloads {
 
     private suspend fun perform(app: Context, target: MediaItem, account: SavedSession, backend: DownloadBackend, runId: String) {
         val folder = itemDirectory(app, account, target.id)
-        val staging = File(folder, ".run-$runId")
+        val staging = File(folder, ".artwork-$runId")
         var asset: DownloadAsset? = null
         var finished = false
+        val partial = File(folder, "media.part")
         try {
             val resolved = backend.prepare(target, account)
             asset = resolved
             coroutineScope { ensureActive() }
+            folder.mkdirs()
             staging.mkdirs()
             if (resolved.knownSize > 0) updateProgress(target.id, runId) { copy(bytesExpected = resolved.knownSize) }
-            val partial = File(staging, "media.part")
             val (bytes, extension) = transfer(resolved, partial) { written, expected ->
                 updateProgress(target.id, runId) { copy(bytesWritten = written, bytesExpected = expected) }
             }
@@ -503,12 +546,14 @@ object ZelefinDownloads {
             finished = true
             resolved.serverDownloadId?.let { id -> runCatching { backend.finalize(account, id) } }
         } catch (cancel: CancellationException) {
+            val paused = _state.value.progress[target.id]?.paused == true
+            if (!paused) partial.delete()
             throw cancel
         } catch (_: Throwable) {
             showNotice(DownloadNotice("Download", FailureMessage))
         } finally {
             staging.deleteRecursively()
-            if (!finished) {
+            if (!finished && _state.value.progress[target.id]?.paused != true) {
                 if (folder.listFiles().isNullOrEmpty()) folder.delete()
                 val serverId = asset?.serverDownloadId
                 if (serverId != null) scope.launch { runCatching { backend.deleteServer(account, serverId) } }
@@ -517,8 +562,10 @@ object ZelefinDownloads {
     }
 
     private suspend fun transfer(asset: DownloadAsset, destination: File, onProgress: (Long, Long) -> Unit): Pair<Long, String?> {
+        val already = destination.takeIf { it.exists() }?.length() ?: 0L
         val request = Request.Builder().url(asset.url).apply {
             asset.headers.forEach { (name, value) -> header(name, value) }
+            if (already > 0) header("Range", "bytes=$already-")
         }.build()
         val call = transferClient.newCall(request)
         return coroutineScope {
@@ -535,12 +582,16 @@ object ZelefinDownloads {
                     val type = response.header("Content-Type")?.lowercase()
                     if (type != null && type.contains("text/html")) throw IOException("Unexpected page")
                     val body = response.body ?: throw IOException("Empty body")
-                    val expected = body.contentLength().takeIf { it > 0 } ?: asset.knownSize
+                    val expected = when {
+                        response.code == 206 && already > 0 -> already + (body.contentLength().takeIf { it > 0 } ?: 0)
+                        body.contentLength() > 0 -> body.contentLength()
+                        else -> asset.knownSize
+                    }
                     val extension = response.header("Content-Disposition")?.let(::filenameExtension)
-                    var written = 0L
+                    var written = if (response.code == 206) already else 0L
                     var lastReport = 0L
                     body.byteStream().use { input ->
-                        FileOutputStream(destination).use { output ->
+                        FileOutputStream(destination, response.code == 206 && already > 0).use { output ->
                             val buffer = ByteArray(64 * 1024)
                             while (true) {
                                 ensureActive()
@@ -611,6 +662,13 @@ object ZelefinDownloads {
 
     private fun itemDirectory(context: Context, account: SavedSession, itemId: String): File =
         File(File(File(File(root(context), "files"), sanitized(host(account.serverUrl))), sanitized(account.userId)), sanitized(itemId))
+
+    private fun onWifi(context: Context): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
 
     private fun relativePath(context: Context, file: File): String = file.relativeTo(root(context)).path
 

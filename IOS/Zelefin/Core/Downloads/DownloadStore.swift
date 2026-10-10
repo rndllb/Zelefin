@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Observation
 
 @MainActor
@@ -128,6 +129,20 @@ final class DownloadStore {
         return DownloadPlaybackSelection.record(for: item, in: records)
     }
 
+    func pauseTransfer(for item: MediaItem, account: SavedSession?) {
+        cancelTransfer(for: item, account: account)
+    }
+
+    func downloadMany(
+        items: [MediaItem],
+        library: (any LibraryServing)?,
+        account: SavedSession?
+    ) async throws {
+        for item in items {
+            try await toggle(item: item, library: library, account: account)
+        }
+    }
+
     func cancelTransfer(for item: MediaItem, account: SavedSession?) {
         let scoped = scopedProgress(account)
         guard let active = DownloadCoverLogic.activeProgress(for: item, progress: scoped) else {
@@ -164,6 +179,19 @@ final class DownloadStore {
         }
         guard let library, let account else {
             throw ZelefinError.missingUser
+        }
+        if PlaybackPreferences.downloadWifiOnly {
+            let monitor = NWPathMonitor()
+            let path = await withCheckedContinuation { continuation in
+                monitor.pathUpdateHandler = { path in
+                    continuation.resume(returning: path)
+                    monitor.cancel()
+                }
+                monitor.start(queue: DispatchQueue.global())
+            }
+            if path.usesInterfaceType(.wifi) == false {
+                throw ZelefinError.server("Connect to Wi-Fi to download, or turn off Wi-Fi only in Playback settings.")
+            }
         }
 
         let host = SnapshotCoding.host(from: account.serverURL)

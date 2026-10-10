@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Privacy Policy — Zelefin</title>
-  <meta name="description" content="How Zelefin handles information on your iPhone or iPad." />
+  <meta name="description" content="How Zelefin handles information on iPhone, iPad, and Android." />
   <link rel="icon" href="/mark.png" />
   <link rel="stylesheet" href="/style.css" />
   <style>
-    article h1 { font-size: clamp(2.75rem, 7vw, 4rem); }
-    article h2 { font-size: 1.5rem; }
+    article h1 { font-size: clamp(3.25rem, 8vw, 5rem); line-height: 0.95; }
+    article h2 { font-size: 1.85rem; }
     article p, article li { font-size: 1.125rem; }
   </style>
 </head>
@@ -18,13 +18,13 @@
     <a class="back" href="/">Zelefin</a>
     <article>
       <h1>Privacy Policy</h1>
-      <p>Zelefin is a native Jellyfin and Silo client for iPhone and iPad. It talks to the media server you type in. There is no Zelefin account.</p>
+      <p>Zelefin is a native Jellyfin and Silo client for iPhone, iPad, and Android. Emby and Plex support is planned and is not in the current app. It talks to the media server you type in. There is no Zelefin account and no Zelefin Plus.</p>
 
       <h2>What stays on your devices</h2>
-      <p>Sign-in details, library cache, downloads, and settings live on your iPhone or iPad. Playback goes to your Jellyfin or Silo server. We do not operate that server, and we do not receive your library files or media-server password.</p>
+      <p>Sign-in details, library cache, downloads, and settings live on your iPhone, iPad, or Android device. Playback goes to your Jellyfin or Silo server. When Emby or Plex sign-in ships, the same rule applies. We do not operate that server, and we do not receive your library files or media-server password.</p>
 
       <h2>Notifications</h2>
-      <p>If you install the Zelefin plugin on Jellyfin and allow alerts, the app registers an Apple Push token with that plugin. The plugin sends alerts through Zelefin’s push service so they can arrive while the app is closed. That service holds Apple Push credentials for the Zelefin app. It receives device tokens and notification text from your plugin. It does not receive your Jellyfin password or library files. Silo has no Zelefin plugin; this device checks that server itself.</p>
+      <p>If you install the Zelefin plugin on Jellyfin and allow alerts, the app registers a push token with that plugin. iPhone and iPad use Apple Push Notification service. Android uses Firebase Cloud Messaging. The plugin sends alerts through Zelefin’s push service so they can arrive while the app is closed, including dashboard Display Messages. That service holds push credentials for the Zelefin apps. It receives device tokens and notification text from your plugin. It does not receive your Jellyfin password or library files. Silo has no Zelefin plugin; this device checks that server itself.</p>
 
       <h2>Optional connections</h2>
       <p>If you sign in to Seerr, Sonarr, Radarr, or Open Subtitles from Settings, those credentials stay on this device and are sent only to the address you enter.</p>
@@ -38,7 +38,7 @@
 
       <h2>Contact</h2>
       <p>Questions: <a href="https://github.com/rndllb/Zelefin/issues">GitHub issues</a>. Also see <a href="/terms">Terms of Use</a> and <a href="/support">Support</a>.</p>
-      <p>Last updated 3 October 2026.</p>
+      <p>Last updated 4 October 2026.</p>
     </article>
   </main>
 </body>

@@ -63,7 +63,7 @@ val SubtitlePlaybackMode.summary: String
     get() = when (this) {
         SubtitlePlaybackMode.DEFAULT -> "Subtitles follow the default and forced flags in the file."
         SubtitlePlaybackMode.SMART -> "Subtitles in the preferred language load when the audio is in another language."
-        SubtitlePlaybackMode.ALWAYS -> "Subtitles in the preferred language load regardless of the audio language."
+        SubtitlePlaybackMode.ALWAYS -> "Subtitles load on every title. The preferred language is used when the file has it."
         SubtitlePlaybackMode.ONLY_FORCED -> "Only subtitles flagged as forced load."
         SubtitlePlaybackMode.NONE -> "No subtitles load unless you pick them during playback."
     }

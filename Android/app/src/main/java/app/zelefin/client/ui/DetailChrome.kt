@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,11 +93,14 @@ private sealed interface DetailSheet {
     data object MoreInfo : DetailSheet
     data class Collections(val item: MediaItem) : DetailSheet
     data object Seasons : DetailSheet
+    data class DownloadSeasons(val anchor: Rect) : DetailSheet
     data class Subtitles(val item: MediaItem) : DetailSheet
     data class Review(val existing: app.zelefin.client.plugins.JellyfinEnhancedReview?) : DetailSheet
     data class RemotePlay(val item: MediaItem) : DetailSheet
     data class SyncPlay(val item: MediaItem) : DetailSheet
     data class Images(val item: MediaItem) : DetailSheet
+    data class Identify(val item: MediaItem) : DetailSheet
+    data class Metadata(val item: MediaItem) : DetailSheet
 }
 
 @Composable
@@ -122,7 +126,7 @@ fun DetailPage(
     DownloadRemovalOverlay(downloadRemoval) { downloadRemoval = null }
     val pageSheet: DetailSheet? = when (val current = sheet) {
         DetailSheet.MoreInfo, is DetailSheet.Collections, is DetailSheet.Subtitles, is DetailSheet.Review -> current
-        is DetailSheet.RemotePlay, is DetailSheet.SyncPlay, is DetailSheet.Images -> current
+        is DetailSheet.RemotePlay, is DetailSheet.SyncPlay, is DetailSheet.Images, is DetailSheet.Identify, is DetailSheet.Metadata -> current
         else -> null
     }
     val pluginState = plugins?.state?.collectAsState()?.value
@@ -193,12 +197,15 @@ fun DetailPage(
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Box(Modifier.fillMaxSize().zelefinSheetBackdrop(sheetMotion.progress)) {
         if (detail == null) {
-            Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Box(Modifier.fillMaxSize()) {
                 GlassBack(onBack)
-                if (busy) {
-                    CircularProgressIndicator(color = ZelefinCyan, modifier = Modifier.padding(24.dp))
+                Column(
+                    Modifier.align(Alignment.Center).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (busy) CircularProgressIndicator(color = ZelefinCyan)
+                    state.message?.let { Text(it, color = ZelefinMuted, modifier = Modifier.padding(top = if (busy) 16.dp else 0.dp)) }
                 }
-                state.message?.let { Text(it, modifier = Modifier.padding(24.dp), color = ZelefinMuted) }
             }
         } else {
             val item = detail.item
@@ -206,11 +213,10 @@ fun DetailPage(
             var seasonJump by remember(item.id) { mutableStateOf<String?>(null) }
             val season = detail.seasons.firstOrNull { it.id == seasonId } ?: detail.seasons.firstOrNull()
             val pageState = rememberLazyListState()
-            TrackHazeScroll(pageState.isScrollInProgress)
             LazyColumn(
                 state = pageState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = DockContentReserve),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = dockContentReserve()),
             ) {
                 item(key = "hero") {
                     DetailHero(
@@ -242,6 +248,20 @@ fun DetailPage(
                                 sheet = DetailSheet.More(episode, anchor, TitleMenuContext.Episode)
                             },
                         )
+                    }
+                }
+                if (detail.additionalParts.isNotEmpty()) {
+                    item(key = "parts") {
+                        SectionTitle("Additional Parts")
+                        LazyRow(
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(detail.additionalParts, key = { it.id }) { part ->
+                                PortraitHomeCard(part, session) { onPlay(part) }
+                            }
+                        }
+                        Spacer(Modifier.height(20.dp))
                     }
                 }
                 if (detail.trailers.isNotEmpty()) {
@@ -352,8 +372,10 @@ fun DetailPage(
                     DownloadSharePill(
                         item = item,
                         episodes = detail.episodes,
+                        seasons = detail.seasons,
                         onShare = { shareTitle(context, item, session) },
                         onRemove = { downloadRemoval = it },
+                        onChooseSeasons = { sheet = DetailSheet.DownloadSeasons(it) },
                     )
                 }
             }
@@ -421,6 +443,21 @@ fun DetailPage(
                         onClose = { sheet = null },
                     )
                 }
+                is DetailSheet.Identify -> ZelefinSheetSurface(sheetMotion.progress) {
+                    IdentifySheet(
+                        item = shown.item,
+                        onSearch = actions.identifyHits ?: { emptyList() },
+                        onApply = actions.applyIdentify ?: { _, _ -> },
+                        onClose = { sheet = null },
+                    )
+                }
+                is DetailSheet.Metadata -> ZelefinSheetSurface(sheetMotion.progress) {
+                    EditMetadataSheet(
+                        item = shown.item,
+                        onSave = actions.saveMetadata ?: { _, _ -> },
+                        onClose = { sheet = null },
+                    )
+                }
                 is DetailSheet.Review -> ZelefinSheetSurface(sheetMotion.progress) {
                     TitleReviewEditor(
                         existing = shown.existing,
@@ -443,6 +480,10 @@ fun DetailPage(
         onOpen = onOpen,
         onToggleWatched = onToggleWatched,
         onToggleFavorite = onToggleFavorite,
+        onToggleWatchlist = actions.onToggleWatchlist,
+        onIdentify = actions.identifyHits?.let { { target -> sheet = DetailSheet.Identify(pageItem ?: target) } },
+        onEditMetadata = actions.saveMetadata?.let { { target -> sheet = DetailSheet.Metadata(pageItem ?: target) } },
+        onDownloadSeason = actions.downloadRelated,
         usesSilo = session?.usesSilo == true,
         skipCinemaIntros = skipCinema,
         onCollections = detail?.item?.let { pageItem ->
@@ -470,6 +511,23 @@ fun DetailPage(
         onRefreshMetadata = actions.refreshMetadata?.let { refresh -> { target -> refresh(pageItem ?: target) } },
         onEditImages = actions.remoteArtwork?.let { { target -> sheet = DetailSheet.Images(pageItem ?: target) } },
         onDeleteFromLibrary = actions.deleteFromLibrary?.let { delete -> { target -> delete(pageItem ?: target) } },
+    )
+    val downloadSeasons = sheet as? DetailSheet.DownloadSeasons
+    DownloadSeasonsSheet(
+        seasons = detail?.seasons.orEmpty(),
+        episodes = detail?.episodes.orEmpty(),
+        anchor = downloadSeasons?.anchor ?: Rect.Zero,
+        visible = downloadSeasons != null && detail != null,
+        onConfirm = { indexes ->
+            val page = detail ?: return@DownloadSeasonsSheet
+            sheet = null
+            startSeasonDownload(
+                indexes,
+                page.episodes,
+                app.zelefin.client.downloads.DownloadEligibility.playableItem(page.item, page.episodes) ?: page.item,
+            )
+        },
+        onDismiss = { sheet = null },
     )
 }
 
@@ -703,9 +761,7 @@ private fun SeasonMenu(
                     }
                     Text(
                         season.seasonMenuTitle,
-                        color = Color.White,
-                        fontFamily = ZelefinFont,
-                        fontSize = 17.sp,
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                 }
             }
@@ -1090,7 +1146,6 @@ private fun EpisodeStripSection(
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = episodeStripIndex(strip, seasonId, copy = 1).coerceAtLeast(0),
     )
-    TrackHazeScroll(listState.isScrollInProgress)
     LaunchedEffect(seasonJump, strip) {
         val target = seasonJump ?: return@LaunchedEffect
         val index = episodeStripIndex(strip, target, copy = 1)

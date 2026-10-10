@@ -106,7 +106,7 @@ extension AppTab {
 }
 
 enum PhoneDockLimit {
-    /// Search is always in the dock, so four other tabs can sit beside it.
+    /// Five slots in one bar. Search always takes the last one.
     static let capacity = 5
 
     @MainActor

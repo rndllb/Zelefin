@@ -165,11 +165,13 @@ struct DownloadStatusBanner: View {
 
 struct DetailDownloadSharePill: View {
     let item: MediaItem
+    var seasons: [MediaItem] = []
     var episodes: [MediaItem] = []
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
     @State private var errorMessage: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
+    @State private var showsSeasonPicker = false
 
     var body: some View {
         let state: DownloadControlState = (session.usesSilo && !session.downloadsAvailable)
@@ -220,6 +222,17 @@ struct DetailDownloadSharePill: View {
         .downloadRemovalConfirmation($removalPrompt) {
             downloads.removeDownloaded(item: item, episodes: episodes, account: session.session)
         }
+        .popover(isPresented: $showsSeasonPicker) {
+            ShowDownloadSeasonsMenu(
+                choices: SeasonDownloadChoice.options(seasons: seasons, episodes: episodes),
+                onCancel: { showsSeasonPicker = false },
+                onConfirm: { indexes in
+                    showsSeasonPicker = false
+                    Task { await download(indexes: indexes) }
+                }
+            )
+            .presentationCompactAdaptation(.popover)
+        }
     }
 
     private func share() {
@@ -237,7 +250,7 @@ struct DetailDownloadSharePill: View {
         case .unavailable:
             return
         case .downloading:
-            downloads.cancelTransfer(for: item, account: session.session)
+            downloads.pauseTransfer(for: item, account: session.session)
         case .downloaded:
             let target = DownloadEligibility.playableItem(from: item, episodes: episodes) ?? item
             removalPrompt = .make(item: target)
@@ -247,6 +260,19 @@ struct DetailDownloadSharePill: View {
     }
 
     private func startDownload() async {
+        if item.kind == .series {
+            let choices = SeasonDownloadChoice.options(seasons: seasons, episodes: episodes)
+            if choices.count > 1 {
+                showsSeasonPicker = true
+                return
+            }
+            await download(choices.first)
+            return
+        }
+        if item.kind == .season, !episodes.isEmpty {
+            await download(SeasonDownloadChoice(title: item.seasonMenuTitle, seasonIndex: item.resolvedSeasonNumber))
+            return
+        }
         do {
             try await downloads.toggle(
                 item: item,
@@ -260,12 +286,123 @@ struct DetailDownloadSharePill: View {
         }
     }
 
+    private func download(_ choice: SeasonDownloadChoice?) async {
+        let selected = choice.map { SeasonDownloadChoice.episodes(for: $0, in: episodes, seasons: seasons) } ?? episodes
+        await enqueue(selected)
+    }
+
+    private func download(indexes: Set<Int>) async {
+        await enqueue(SeasonDownloadChoice.episodes(in: episodes, seasons: seasons, indexes: indexes))
+    }
+
+    private func enqueue(_ targets: [MediaItem]) async {
+        guard !targets.isEmpty else { return }
+        do {
+            try await downloads.downloadMany(items: targets, library: session.library, account: session.session)
+        } catch {
+            guard !DownloadFailure.isCancellation(error) else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func title(for state: DownloadControlState) -> String {
         DownloadControlCopy.title(for: state)
     }
 
     private func symbol(for state: DownloadControlState) -> String {
         DownloadControlCopy.symbol(for: state)
+    }
+}
+
+private struct ShowDownloadSeasonsMenu: View {
+    let choices: [SeasonDownloadChoice]
+    var onCancel: () -> Void
+    var onConfirm: (Set<Int>) -> Void
+    @State private var selected: Set<Int> = []
+
+    private var indexes: Set<Int> {
+        Set(choices.compactMap(\.seasonIndex))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    Button {
+                        selected = selected == indexes ? [] : indexes
+                    } label: {
+                        seasonRow(title: "Select All", isOn: !indexes.isEmpty && selected == indexes)
+                    }
+                    .buttonStyle(.plain)
+                    ForEach(choices) { choice in
+                        if let number = choice.seasonIndex {
+                            Button {
+                                if selected.contains(number) {
+                                    selected.remove(number)
+                                } else {
+                                    selected.insert(number)
+                                }
+                            } label: {
+                                seasonRow(title: choice.title, isOn: selected.contains(number))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 320)
+            Rectangle()
+                .fill(.white.opacity(0.16))
+                .frame(height: 0.5)
+                .padding(.horizontal, 16)
+            Button(action: onCancel) {
+                menuRow(title: "Cancel", systemImage: "xmark", color: .red)
+            }
+            .buttonStyle(.plain)
+            Button {
+                onConfirm(selected)
+            } label: {
+                menuRow(
+                    title: "Download",
+                    systemImage: "arrow.down.to.line",
+                    color: .white,
+                    enabled: !selected.isEmpty
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(selected.isEmpty)
+        }
+        .frame(width: 250)
+        .padding(.vertical, 4)
+        .preferredColorScheme(.dark)
+    }
+
+    private func seasonRow(title: String, isOn: Bool) -> some View {
+        menuRow(title: title, systemImage: "checkmark", color: .white, showsLeading: isOn)
+    }
+
+    private func menuRow(
+        title: String,
+        systemImage: String,
+        color: Color,
+        showsLeading: Bool = true,
+        enabled: Bool = true
+    ) -> some View {
+        let tint = color.opacity(enabled ? 1 : 0.4)
+        return HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(tint)
+                .opacity(showsLeading ? 1 : 0)
+                .frame(width: 20, alignment: .center)
+            Text(title)
+                .font(.body)
+                .foregroundStyle(tint)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 

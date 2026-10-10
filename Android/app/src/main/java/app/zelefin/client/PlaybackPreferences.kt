@@ -22,6 +22,12 @@ object PlaybackPreferences {
     /** ISO 639 code, [AUTOMATIC] for the title default, or [OFF]. */
     const val SUBTITLE_LANGUAGE = "subtitle-language"
 
+    const val PREFER_SDH = "prefer-sdh"
+    const val PLAYER_ENGINE = "player-engine"
+    const val DOWNLOAD_WIFI_ONLY = "download-wifi-only"
+    const val ENGINE_EXOPLAYER = "exoplayer"
+    const val ENGINE_MPV = "mpv"
+
     const val AUTOMATIC = "auto"
     const val OFF = "off"
 
@@ -60,6 +66,24 @@ object PlaybackPreferences {
     fun subtitleLanguage(context: Context): String = resolvedLanguage(prefs(context).getString(SUBTITLE_LANGUAGE, AUTOMATIC))
 
     fun setSubtitleLanguage(context: Context, code: String) = prefs(context).edit().putString(SUBTITLE_LANGUAGE, code).apply()
+
+    fun preferSdh(context: Context): Boolean = prefs(context).getBoolean(PREFER_SDH, false)
+
+    fun setPreferSdh(context: Context, value: Boolean) = prefs(context).edit().putBoolean(PREFER_SDH, value).apply()
+
+    fun playerEngine(context: Context): String {
+        val raw = prefs(context).getString(PLAYER_ENGINE, ENGINE_MPV).orEmpty()
+        return if (raw == ENGINE_EXOPLAYER) ENGINE_EXOPLAYER else ENGINE_MPV
+    }
+
+    fun setPlayerEngine(context: Context, engine: String) =
+        prefs(context).edit().putString(PLAYER_ENGINE, if (engine == ENGINE_MPV) ENGINE_MPV else ENGINE_EXOPLAYER).apply()
+
+    fun usesMpv(context: Context): Boolean = playerEngine(context) == ENGINE_MPV
+
+    fun downloadWifiOnly(context: Context): Boolean = prefs(context).getBoolean(DOWNLOAD_WIFI_ONLY, false)
+
+    fun setDownloadWifiOnly(context: Context, value: Boolean) = prefs(context).edit().putBoolean(DOWNLOAD_WIFI_ONLY, value).apply()
 
     fun speedTitle(rate: Float): String {
         if (abs(rate - 1f) < 0.01f) return "1x"

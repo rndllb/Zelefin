@@ -60,6 +60,7 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -89,6 +90,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -117,8 +119,8 @@ import app.zelefin.core.MediaItem
 import app.zelefin.core.SavedSession
 
 private val RowHairline = Color.White.copy(alpha = 0.08f)
-private val FieldPrompt = Color.White.copy(alpha = 0.45f)
-private val FieldIcon = Color.White.copy(alpha = 0.55f)
+private val FieldPrompt = ZelefinMuted
+private val FieldIcon = ZelefinMuted
 private val HitSubtitle = Color.White.copy(alpha = 0.45f)
 
 /** The Discover scope's content. Null when no request service is set up. */
@@ -293,7 +295,6 @@ private fun SearchHome(
     var focused by remember { mutableStateOf(false) }
     var scope by rememberSaveable { mutableStateOf(SearchScope.Library) }
     var discoverTerm by rememberSaveable { mutableStateOf("") }
-    if (discover == null && scope == SearchScope.Discover) scope = SearchScope.Library
     val term = if (scope == SearchScope.Discover) discoverTerm else search.term
     val active = focused || term.isNotEmpty()
     var headerVisible by remember { mutableStateOf(true) }
@@ -332,6 +333,10 @@ private fun SearchHome(
         Box(Modifier.fillMaxSize().zelefinHazeSource(pageGlass)) {
         when {
             scope == SearchScope.Discover && discover != null -> discover.content(discoverTerm.trim(), headerHeight, bottomInset, dismissKeyboard, onScrollOffset)
+            scope == SearchScope.Discover -> DiscoverUnavailable(
+                usesSilo = state.session?.usesSilo == true,
+                topInset = headerHeight,
+            )
             !active -> GenreGrid(search.genres, search.genresLoading, headerHeight, bottomInset, onScrollOffset, onGenre)
             term.isEmpty() -> RecentList(
                 recents = search.recents,
@@ -368,13 +373,12 @@ private fun SearchHome(
         }
         }
         SearchChrome(
-            glass = SearchGlass(pageGlass, blur = (appGlass?.scrollLocks ?: 0) == 0),
+            glass = SearchGlass(pageGlass),
             visible = headerVisible,
             active = active,
             focused = focused,
             scope = scope,
             term = term,
-            discoverAvailable = discover != null,
             session = state.session,
             focusRequester = focusRequester,
             modifier = Modifier.onSizeChanged { headerPx = it.height },
@@ -398,11 +402,11 @@ private fun SearchHome(
     )
 }
 
-private class SearchGlass(val haze: ZelefinHazeState, val blur: Boolean)
+private class SearchGlass(val haze: ZelefinHazeState)
 
 @Composable
 private fun Modifier.searchGlass(glass: SearchGlass, shape: androidx.compose.ui.graphics.Shape): Modifier =
-    zelefinGlassChrome(glass.haze, shape, glass.blur)
+    zelefinGlassChrome(glass.haze, shape)
 
 @Composable
 private fun SearchChrome(
@@ -412,7 +416,6 @@ private fun SearchChrome(
     focused: Boolean,
     scope: SearchScope,
     term: String,
-    discoverAvailable: Boolean,
     session: SavedSession?,
     focusRequester: FocusRequester,
     modifier: Modifier,
@@ -428,7 +431,8 @@ private fun SearchChrome(
 ) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(180), label = "searchChrome")
     val shift by animateDpAsState(if (visible) 0.dp else (-160).dp, tween(180), label = "searchChromeShift")
-    val showsScope = focused && discoverAvailable
+    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    val showsScope = focused || tablet
     val topPad by animateDpAsState(if (active) 8.dp else 4.dp, SearchSessionMotion(), label = "searchTopPad")
     val bottomPad by animateDpAsState(if (showsScope) 4.dp else 12.dp, SearchFocusMotion(), label = "searchBottomPad")
     Column(
@@ -516,7 +520,7 @@ private fun SearchField(
             value = term,
             onValueChange = onTerm,
             singleLine = true,
-            textStyle = TextStyle(color = Color.White, fontFamily = ZelefinFont, fontSize = 17.sp),
+            textStyle = MaterialTheme.typography.bodyLarge,
             cursorBrush = SolidColor(ZelefinCyan),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
@@ -635,7 +639,6 @@ private fun GenreGrid(
             else -> 3
         }
         val gridState = rememberLazyGridState()
-        TrackHazeScroll(gridState.isScrollInProgress)
         TrackOffset({ gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset }, onScrollOffset)
         LazyVerticalGrid(
             state = gridState,
@@ -667,7 +670,6 @@ private fun HitList(
     onHit: (SearchHit) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    TrackHazeScroll(listState.isScrollInProgress)
     DragDismiss(listState.isScrollInProgress, onDrag)
     LazyColumn(
         state = listState,
@@ -699,7 +701,6 @@ private fun RecentList(
     onClear: () -> Unit,
 ) {
     val listState = rememberLazyListState()
-    TrackHazeScroll(listState.isScrollInProgress)
     DragDismiss(listState.isScrollInProgress, onDrag)
     LazyColumn(
         state = listState,
@@ -826,6 +827,33 @@ private fun SearchRow(
 }
 
 @Composable
+private fun DiscoverUnavailable(usesSilo: Boolean, topInset: Dp) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = topInset + 40.dp, start = 32.dp, end = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            if (usesSilo) "Requests Are Off" else "Sign In to Seerr",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold,
+            fontSize = 22.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            if (usesSilo) {
+                "Install the Seerr plugin or Sonarr & Radarr requests on this Silo server, then open Plugins in Settings."
+            } else {
+                "Add Seerr in Settings to request movies and shows."
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 16.sp,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
 private fun NoResults(term: String, topInset: Dp) {
     Column(
         Modifier.fillMaxWidth().padding(top = topInset + 24.dp, start = 32.dp, end = 32.dp),
@@ -871,7 +899,7 @@ private fun RecentMenu(
             current.anchor,
             alignTrailing = true,
             onDismiss = onDismiss,
-            clearBottom = DockContentReserve,
+            clearBottom = dockContentReserve(),
         ) {
             Column(
                 Modifier

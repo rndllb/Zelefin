@@ -104,16 +104,11 @@ extension View {
 
     func settingsCardRow() -> some View {
         self
-            .listRowInsets(SettingsChrome.cardInsets)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
     }
 
     func settingsHeroRow() -> some View {
         self
-            .listRowInsets(SettingsChrome.heroInsets)
             .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
     }
 }
 
@@ -121,19 +116,15 @@ struct SettingsFieldLabel: View {
     let title: String
 
     var body: some View {
-        Text(title.uppercased())
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(LoginPalette.captionText)
-            .tracking(0.6)
+        Text(title)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
     }
 }
 
 struct SettingsCardDivider: View {
     var body: some View {
-        Rectangle()
-            .fill(LoginPalette.divider)
-            .frame(height: 1)
-            .padding(.vertical, 12)
+        EmptyView()
     }
 }
 
@@ -335,7 +326,7 @@ struct SettingsChevron: View {
     var body: some View {
         Image(systemName: "chevron.right")
             .font(.footnote.weight(.semibold))
-            .foregroundStyle(LoginPalette.captionText)
+            .foregroundStyle(.tertiary)
             .accessibilityHidden(true)
     }
 }
@@ -353,8 +344,8 @@ struct SettingsNavRow: View {
                 .frame(width: 28, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(LoginPalette.primaryText)
+                    .font(.body)
+                    .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption)
@@ -362,9 +353,7 @@ struct SettingsNavRow: View {
                 }
             }
             Spacer(minLength: 8)
-            SettingsChevron()
         }
-        .padding(.vertical, 2)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(subtitle.map { "\(title), \($0)" } ?? title)
@@ -391,12 +380,11 @@ struct SettingsPersonRow: View {
                         .foregroundStyle(LoginPalette.secondaryText)
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: 0)
             if showsChevron {
                 SettingsChevron()
             }
         }
-        .padding(.vertical, 2)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(subtitle.isEmpty ? name : "\(name), \(subtitle)")

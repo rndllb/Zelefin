@@ -787,6 +787,11 @@ final class SessionStore {
                 try await library.syncPlayUnpause()
             case .seek(let time):
                 try await library.syncPlaySeek(to: time)
+                try? await library.syncPlayReady(
+                    isPlaying: true,
+                    playlistItemID: syncPlayPlaylistItemID,
+                    position: time
+                )
             case .stop:
                 try await library.syncPlayStop()
             default:

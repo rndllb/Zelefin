@@ -25,8 +25,6 @@ struct UserManagementView: View {
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         }
                     }
 
@@ -46,9 +44,7 @@ struct UserManagementView: View {
                                     ),
                                     showsChevron: true
                                 )
-                                .settingsLoginCard()
                             }
-                            .settingsCardRow()
                         }
                     } footer: {
                         Text("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.")
@@ -133,8 +129,6 @@ struct UserAccountEditorView: View {
             if let status {
                 Section {
                     SettingsStatusText(text: status, isError: statusIsError)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
             }
         }
@@ -272,8 +266,6 @@ struct UserAccountEditorView: View {
                 }
                 .padding(.top, 16)
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         }
     }
 
@@ -282,18 +274,16 @@ struct UserAccountEditorView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Toggle("Administrator", isOn: administratorBinding)
                     .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
                 SettingsCardDivider()
                 Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
                     .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
                 SettingsCardDivider()
                 Toggle("Disable Account", isOn: disabledBinding)
                     .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } header: {
             Text("Permissions")
         } footer: {
@@ -316,8 +306,6 @@ struct UserAccountEditorView: View {
                     Task { await savePolicy() }
                 }
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } header: {
             Text("Streaming")
         } footer: {
@@ -369,8 +357,6 @@ struct UserAccountEditorView: View {
                 }
                 .padding(.top, 10)
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } header: {
             Text("Password")
         } footer: {
@@ -395,11 +381,9 @@ struct UserAccountEditorView: View {
                     SettingsCardDivider()
                     Toggle(item.settingsTitle, isOn: unratedBinding(item))
                         .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                 }
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } header: {
             Text("Parental Controls")
         } footer: {
@@ -412,18 +396,16 @@ struct UserAccountEditorView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Toggle("All libraries", isOn: allFoldersBinding)
                     .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
                 if !draft.enableAllFolders {
                     ForEach(folders) { folder in
                         SettingsCardDivider()
                         Toggle(folder.name, isOn: folderBinding(folder.id))
                             .tint(AccentPreferences.current)
-                            .font(.body.weight(.semibold))
+                            .font(.body.weight(.medium))
                     }
                 }
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } header: {
             Text("Library Access")
         } footer: {

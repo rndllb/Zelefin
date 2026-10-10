@@ -217,8 +217,6 @@ struct RemoteImagePickerView: View {
                 SettingsFieldLabel(title: "Artwork")
                 kindButtons
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } header: {
             Text("Type")
         }
@@ -236,8 +234,6 @@ struct RemoteImagePickerView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 28)
-                .settingsLoginCard()
-                .settingsCardRow()
             } else if images.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     SettingsFieldLabel(title: kind.emptyTitle)
@@ -246,13 +242,9 @@ struct RemoteImagePickerView: View {
                         isError: errorMessage != nil
                     )
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } else {
                 if let errorMessage {
                     SettingsStatusText(text: errorMessage, isError: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
                 FixedColumnGrid(minimum: CGFloat(kind.gridMinimum), spacing: 10) {
                     ForEach(images) { image in

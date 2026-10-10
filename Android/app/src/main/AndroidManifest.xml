@@ -55,5 +55,8 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="zelefin_alerts" />
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="app.zelefin.client.cast.CastOptionsProvider" />
     </application>
 </manifest>

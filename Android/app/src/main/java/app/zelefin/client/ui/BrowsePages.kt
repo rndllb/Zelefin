@@ -84,6 +84,7 @@ fun BrowseScreen(
     onPlay: (MediaItem) -> Unit,
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
+    onToggleWatchlist: ((MediaItem) -> Unit)? = null,
     onBrowse: (BrowsePage) -> Unit,
     onEnsureGrid: (LibraryRoute) -> Unit,
     onGridQuery: (LibraryRoute, CatalogBrowseQuery) -> Unit,
@@ -114,7 +115,7 @@ fun BrowseScreen(
                     session = session,
                     refreshing = grid.refreshing,
                     loading = grid.loading,
-                    bottomInset = DockContentReserve,
+                    bottomInset = dockContentReserve(),
                     onOpen = { item ->
                         if (route == LibraryRoute.AllCollections && item.kind == app.zelefin.core.MediaKind.Collection) {
                             onBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name)))
@@ -157,6 +158,7 @@ fun BrowseScreen(
                         onPlay = onPlay,
                         onToggleWatched = onToggleWatched,
                         onToggleFavorite = onToggleFavorite,
+                        onToggleWatchlist = onToggleWatchlist,
                     )
                 } else {
                     PosterGridPage(page.title, items, session, onBack, onOpen)
@@ -224,17 +226,17 @@ private fun QueueListPage(
     onPlay: (MediaItem) -> Unit,
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
+    onToggleWatchlist: ((MediaItem) -> Unit)? = null,
 ) {
     var more by remember { mutableStateOf<TitleMoreRequest?>(null) }
     val listState = rememberLazyListState()
-    TrackHazeScroll(listState.isScrollInProgress)
     if (items.isEmpty()) {
         EmptyBrowse("Titles you start watching will show up here.")
     } else {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = browseTop(), bottom = DockContentReserve),
+            contentPadding = PaddingValues(top = browseTop(), bottom = dockContentReserve()),
         ) {
             val labelsKind = context == TitleMenuContext.ContinueWatching && HomeLayoutPreferences.mergeContinueAndNextUp
             items(items, key = { it.id }) { item ->
@@ -253,6 +255,7 @@ private fun QueueListPage(
         onOpen = onOpen,
         onToggleWatched = onToggleWatched,
         onToggleFavorite = onToggleFavorite,
+        onToggleWatchlist = onToggleWatchlist,
         usesSilo = usesSilo,
     )
 }
@@ -353,11 +356,10 @@ private fun PersonDetailPage(
         val spacing = 10.dp
         val count = max(3, ((maxWidth - inset * 2 + spacing) / (124.dp + spacing)).toInt())
         val gridState = rememberLazyGridState()
-        TrackHazeScroll(gridState.isScrollInProgress)
         LazyVerticalGrid(
             state = gridState,
             columns = GridCells.Fixed(count),
-            contentPadding = PaddingValues(start = inset, end = inset, top = browseTop(), bottom = DockContentReserve),
+            contentPadding = PaddingValues(start = inset, end = inset, top = browseTop(), bottom = dockContentReserve()),
             horizontalArrangement = Arrangement.spacedBy(spacing),
             verticalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier.fillMaxSize(),
@@ -450,11 +452,10 @@ private fun PosterGridPage(
             val spacing = 10.dp
             val count = max(3, ((maxWidth - inset * 2 + spacing) / (124.dp + spacing)).toInt())
             val gridState = rememberLazyGridState()
-            TrackHazeScroll(gridState.isScrollInProgress)
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Fixed(count),
-                contentPadding = PaddingValues(start = inset, end = inset, top = browseTop(), bottom = DockContentReserve),
+                contentPadding = PaddingValues(start = inset, end = inset, top = browseTop(), bottom = dockContentReserve()),
                 horizontalArrangement = Arrangement.spacedBy(spacing),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxSize(),
@@ -492,11 +493,10 @@ private fun TrailerListPage(
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
-    TrackHazeScroll(listState.isScrollInProgress)
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = browseTop(), bottom = DockContentReserve),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = browseTop(), bottom = dockContentReserve()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         items(trailers, key = { it.id }) { trailer ->
@@ -522,12 +522,11 @@ private fun CastListPage(
     onPerson: (CreditPerson) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    TrackHazeScroll(listState.isScrollInProgress)
     val tappable = session?.usesSilo != true
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = browseTop(), bottom = DockContentReserve),
+        contentPadding = PaddingValues(top = browseTop(), bottom = dockContentReserve()),
     ) {
         items(people, key = { it.id + it.roleLabel }) { person ->
             val photo = session?.serverUrl?.let { ArtworkUrls.person(it, person, session.accessToken) }

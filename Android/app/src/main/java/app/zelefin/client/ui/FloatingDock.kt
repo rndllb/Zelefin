@@ -5,16 +5,20 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +29,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -50,71 +58,44 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import app.zelefin.client.AppTab
 import app.zelefin.client.R
-import dev.chrisbanes.haze.ExperimentalHazeApi
-import dev.chrisbanes.haze.HazeInputScale
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
-import dev.chrisbanes.haze.materials.HazeMaterials
 
-/** Full tab pill + detached search button. Stays expanded while the page scrolls. */
+/** Icon-only dock thickness. Labels need [DockLabeledBarHeight] so items don’t sit on the top edge. */
 val DockTabBarHeight = 54.dp
 
-/** Matches iOS `TabBarIconMetrics.side`. */
+private val DockLabeledBarHeight = 72.dp
+
 private val DockIconSize = 28.dp
 
-/** Space scrolling content keeps clear of the dock. Bottom inset matches the 16 dp side inset. */
-val DockContentReserve = 86.dp
+@Composable
+fun dockBarHeight(showsNames: Boolean = TabPreferences.showsNames): Dp =
+    if (showsNames) DockLabeledBarHeight else DockTabBarHeight
 
-private val DockGap = 8.dp
-private val DockShape = RoundedCornerShape(percent = 50)
-internal val DockFill = Color(0x6628282A)
-internal val DockBorder = Color.White.copy(alpha = 0.16f)
+/** Space scrolling content keeps clear of the edge-to-edge navigation bar. */
+@Composable
+fun dockContentReserve(): Dp {
+    val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    return dockBarHeight() + nav
+}
+
+internal val DockFill = Color(0xFF2C2C2E)
+internal val DockBorder = Color.White.copy(alpha = 0.12f)
 internal val DockSelectedFill = Color.White.copy(alpha = 0.14f)
 internal val DockInactive = Color.White.copy(alpha = 0.92f)
 
-private enum class DockSlot { Tab, Search }
+class ZelefinHazeState
 
-class ZelefinHazeState internal constructor(internal val state: HazeState) {
-    var scrollLocks by mutableIntStateOf(0)
-        private set
-
-    fun acquireScroll() {
-        scrollLocks += 1
-    }
-
-    fun releaseScroll() {
-        scrollLocks = (scrollLocks - 1).coerceAtLeast(0)
-    }
-}
-
-/** Turns the live frost off while a list is moving, then restores it when the list rests. */
-@Composable
-fun TrackHazeScroll(scrolling: Boolean) {
-    val haze = LocalZelefinHaze.current ?: return
-    DisposableEffect(haze, scrolling) {
-        if (scrolling) haze.acquireScroll()
-        onDispose { if (scrolling) haze.releaseScroll() }
-    }
-}
-
-/** Draws floating glass above the page so it can frost the same way the dock does. */
+/** Draws floating chrome above the page so menus sit over the dock. */
 class ZelefinGlassHost {
     var content by mutableStateOf<(@Composable () -> Unit)?>(null)
     var foreground by mutableStateOf<(@Composable () -> Unit)?>(null)
@@ -309,7 +290,7 @@ fun CenteredMenuFrame(
 }
 
 /**
- * Shows one overlay in the same window as the dock, so [zelefinGlassChrome] frosts the page.
+ * Shows one overlay in the same window as the dock.
  * Only one overlay can be up at a time.
  */
 @Composable
@@ -329,11 +310,11 @@ fun PresentZelefinOverlay(visible: Boolean, content: @Composable () -> Unit) {
 }
 
 @Composable
-fun rememberZelefinHazeState(): ZelefinHazeState = remember { ZelefinHazeState(HazeState()) }
+fun rememberZelefinHazeState(): ZelefinHazeState = remember { ZelefinHazeState() }
 
 /**
- * Keeps a circular control in the layout, and draws its frosted face above the page
- * so it blurs the same way the dock does.
+ * Keeps a circular control in the layout, and draws its face above the page
+ * so it stays over scrolling content the same way the dock does.
  */
 @Composable
 fun Modifier.zelefinGlassDisc(
@@ -360,7 +341,7 @@ fun Modifier.zelefinGlassDisc(
 }
 
 /**
- * A two-part frosted capsule, drawn above the page the same way a glass disc is.
+ * A two-part capsule, drawn above the page the same way a disc is.
  */
 @Composable
 fun Modifier.zelefinGlassSplit(
@@ -414,7 +395,6 @@ fun ZelefinForeground(host: ZelefinGlassHost) {
 @Composable
 fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
     val discs = host.discs
-    val blur = hazeState.scrollLocks == 0
     val density = LocalDensity.current
     if (discs.isEmpty()) return
     Box(Modifier.fillMaxSize()) {
@@ -428,12 +408,13 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
                 Modifier
                     .offset { IntOffset(bounds.left.roundToInt(), bounds.top.roundToInt()) }
                     .size(width, height)
-                    .zelefinGlassChrome(hazeState, disc.shape, blur)
+                    .zelefinGlassChrome(hazeState, disc.shape)
                     .then(if (split == null) Modifier.clickable { disc.onClick() } else Modifier),
                 contentAlignment = Alignment.Center,
             ) {
+                val iconTint = MaterialTheme.colorScheme.onSurface
                 if (split == null) {
-                    Icon(disc.icon, contentDescription = disc.description, tint = Color.White)
+                    Icon(disc.icon, contentDescription = disc.description, tint = iconTint)
                 } else {
                     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                         Box(
@@ -443,12 +424,12 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
                                 .clickable { disc.onClick() },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(disc.icon, contentDescription = disc.description, tint = Color.White, modifier = Modifier.size(22.dp))
+                            Icon(disc.icon, contentDescription = disc.description, tint = iconTint, modifier = Modifier.size(22.dp))
                         }
                         Box(
                             Modifier
                                 .size(width = 1.dp, height = 20.dp)
-                                .background(Color.White.copy(alpha = 0.28f)),
+                                .background(MaterialTheme.colorScheme.outline),
                         )
                         Box(
                             Modifier
@@ -457,18 +438,18 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
                                 .clickable { disc.onSecondaryClick() },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(split, contentDescription = disc.secondaryDescription, tint = Color.White, modifier = Modifier.size(22.dp))
+                            Icon(split, contentDescription = disc.secondaryDescription, tint = iconTint, modifier = Modifier.size(22.dp))
                             if (disc.badge > 0) {
                                 Text(
                                     disc.badge.toString(),
-                                    color = Color.Black,
+                                    color = MaterialTheme.colorScheme.onPrimary,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
                                         .padding(top = 4.dp, end = 2.dp)
                                         .clip(CircleShape)
-                                        .background(Color.White)
+                                        .background(MaterialTheme.colorScheme.primary)
                                         .padding(horizontal = 5.dp, vertical = 1.dp),
                                 )
                             }
@@ -481,7 +462,7 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
 }
 
 @Composable
-fun Modifier.zelefinHazeSource(state: ZelefinHazeState): Modifier = hazeSource(state = state.state)
+fun Modifier.zelefinHazeSource(state: ZelefinHazeState): Modifier = this
 
 @Composable
 fun ZelefinFloatingDock(
@@ -494,105 +475,48 @@ fun ZelefinFloatingDock(
     showsNames: Boolean = TabPreferences.showsNames,
     onSelectEntry: (DockEntry) -> Unit = { onSelect(it.tab) },
 ) {
-    val blur = hazeState.scrollLocks == 0
-    val chrome = Modifier.zelefinGlassChrome(hazeState, DockShape, blur)
-    Layout(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 16.dp),
-        content = {
-            Box(
-                modifier = Modifier
-                    .layoutId(DockSlot.Tab)
-                    .then(chrome),
-                contentAlignment = Alignment.Center,
-            ) {
-                DockTabBar(
-                    entries = entries,
-                    currentTab = currentTab,
-                    currentRoomId = currentRoomId,
-                    showsNames = showsNames,
-                    onSelect = onSelectEntry,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            DockSearchButton(
-                selected = currentTab == AppTab.Search,
-                onClick = { onSelect(AppTab.Search) },
-                modifier = Modifier
-                    .layoutId(DockSlot.Search)
-                    .then(chrome),
-            )
-        },
-    ) { measurables, constraints ->
-        val gap = DockGap.roundToPx()
-        val total = constraints.maxWidth
-        val rowHeight = DockTabBarHeight.roundToPx()
-        val side = rowHeight
-        val tabWidth = (total - side - gap).coerceAtLeast(0)
-        val placed = measurables.map { measurable ->
-            val width = if (measurable.layoutId == DockSlot.Tab) tabWidth else side
-            measurable.layoutId to measurable.measure(Constraints.fixed(width, rowHeight))
-        }
-        layout(total, rowHeight) {
-            placed.forEach { (slot, placeable) ->
-                if (slot == DockSlot.Search) {
-                    placeable.place(total - side, 0)
-                } else {
-                    placeable.place(0, 0)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DockTabBar(
-    entries: List<DockEntry>,
-    currentTab: AppTab,
-    currentRoomId: String?,
-    showsNames: Boolean,
-    onSelect: (DockEntry) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.padding(horizontal = 4.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = scheme.surfaceContainer,
+        contentColor = scheme.onSurfaceVariant,
+        tonalElevation = 3.dp,
     ) {
-        entries.forEach { entry ->
-            val selected = currentTab == entry.tab && (entry.room == null || entry.room.id == currentRoomId)
-            val tint = if (selected) ZelefinCyan else DockInactive
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(DockShape)
-                    .background(if (selected) DockSelectedFill else Color.Transparent)
-                    .clickable { onSelect(entry) },
-                contentAlignment = Alignment.Center,
-            ) {
-                androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    DockTabIcon(
-                        tab = entry.tab,
-                        selected = selected,
-                        description = entry.title,
-                        tint = tint,
-                        modifier = Modifier.size(if (showsNames) 22.dp else DockIconSize),
-                    )
-                    if (showsNames) {
-                        Text(
-                            entry.title,
-                            color = tint,
-                            fontFamily = ZelefinFont,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 10.sp,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 1.dp, start = 2.dp, end = 2.dp),
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .height(dockBarHeight(showsNames)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            entries.forEach { entry ->
+                val selected = currentTab == entry.tab && (entry.room == null || entry.room.id == currentRoomId)
+                NavigationBarItem(
+                    selected = selected,
+                    onClick = { onSelectEntry(entry) },
+                    icon = {
+                        DockTabIcon(
+                            tab = entry.tab,
+                            selected = selected,
+                            description = if (showsNames) null else entry.title,
+                            tint = if (selected) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
+                            modifier = Modifier.size(if (showsNames) 22.dp else DockIconSize),
                         )
-                    }
-                }
+                    },
+                    label = if (showsNames) {
+                        { Text(entry.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+                    } else {
+                        null
+                    },
+                    alwaysShowLabel = showsNames,
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = scheme.onSecondaryContainer,
+                        selectedTextColor = scheme.onSurface,
+                        indicatorColor = scheme.secondaryContainer,
+                        unselectedIconColor = scheme.onSurfaceVariant,
+                        unselectedTextColor = scheme.onSurfaceVariant,
+                    ),
+                )
             }
         }
     }
@@ -614,53 +538,23 @@ internal fun DockTabIcon(tab: AppTab, selected: Boolean, description: String?, t
 }
 
 @Composable
-private fun DockSearchButton(
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier = modifier.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(4.dp)
-                .clip(CircleShape)
-                .background(if (selected) DockSelectedFill else Color.Transparent),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(dockIcon(AppTab.Search, selected)),
-                contentDescription = "Search",
-                tint = if (selected) ZelefinCyan else DockInactive,
-                modifier = Modifier.size(DockIconSize),
-            )
-        }
-    }
+fun Modifier.zelefinGlassChrome(hazeState: ZelefinHazeState, shape: Shape): Modifier {
+    return this.zelefinGlassChrome(shape)
 }
 
-@OptIn(ExperimentalHazeMaterialsApi::class, ExperimentalHazeApi::class)
 @Composable
-fun Modifier.zelefinGlassChrome(hazeState: ZelefinHazeState, shape: Shape, blur: Boolean = true): Modifier {
-    val style = dockHazeStyle()
+fun Modifier.zelefinGlassChrome(shape: Shape): Modifier {
     return this
         .shadow(
             elevation = 6.dp,
             shape = shape,
             clip = false,
-            ambientColor = Color.Black.copy(alpha = 0.06f),
-            spotColor = Color.Black.copy(alpha = 0.10f),
+            ambientColor = Color.Black.copy(alpha = 0.18f),
+            spotColor = Color.Black.copy(alpha = 0.24f),
         )
         .clip(shape)
-        .hazeEffect(state = hazeState.state, style = style) {
-            inputScale = HazeInputScale.Fixed(0.33f)
-            blurEnabled = blur
-        }
-        .border(width = 0.5.dp, color = DockBorder, shape = shape)
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
 }
-
-@OptIn(ExperimentalHazeMaterialsApi::class)
-@Composable
-private fun dockHazeStyle(): HazeStyle = HazeMaterials.thin(containerColor = DockFill)
 
 private fun dockIcon(tab: AppTab, selected: Boolean): Int = when (tab) {
     AppTab.Home -> if (selected) R.drawable.iconsax_home_filled else R.drawable.iconsax_home

@@ -23,7 +23,12 @@ import app.zelefin.client.R
 
 /** Solid white genre mark, in the style of the genre icon sheet. */
 @Composable
-fun GenreIcon(title: String, side: Dp, modifier: Modifier = Modifier) {
+fun GenreIcon(
+    title: String,
+    side: Dp,
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+) {
     val kind = remember(title) { GenreIconKind.matching(title) }
     val asset = kind.asset
     if (asset != null) {
@@ -31,14 +36,14 @@ fun GenreIcon(title: String, side: Dp, modifier: Modifier = Modifier) {
             painter = painterResource(asset),
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            colorFilter = ColorFilter.tint(Color.White),
+            colorFilter = ColorFilter.tint(tint),
             modifier = modifier.size(side),
         )
     } else {
         val glyph = remember(kind) { kind.glyph() }
         Canvas(modifier.size(side)) {
             val factor = minOf(size.width, size.height) / 24f
-            scale(factor, pivot = Offset.Zero) { drawPath(glyph, Color.White) }
+            scale(factor, pivot = Offset.Zero) { drawPath(glyph, tint) }
         }
     }
 }

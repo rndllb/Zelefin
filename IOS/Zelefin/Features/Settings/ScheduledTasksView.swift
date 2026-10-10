@@ -34,8 +34,6 @@ struct ScheduledTasksView: View {
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         }
                     }
                     if !running.isEmpty {
@@ -70,9 +68,7 @@ struct ScheduledTasksView: View {
             } cancel: {
                 await cancel(task)
             }
-            .settingsLoginCard()
         }
-        .settingsCardRow()
     }
 
     private func monitor() async {
@@ -135,7 +131,7 @@ struct ScheduledTaskRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.name)
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(LoginPalette.primaryText)
                     Text(task.stateSubtitle)
                         .font(.caption)
@@ -190,8 +186,6 @@ struct ScheduledTaskDetailView: View {
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         }
                     }
                     Section {
@@ -214,16 +208,12 @@ struct ScheduledTaskDetailView: View {
                                 }
                             }
                         }
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                     if !task.summary.isEmpty {
                         Section {
                             Text(task.summary)
                                 .font(.body.weight(.medium))
                                 .foregroundStyle(LoginPalette.secondaryText)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         } header: {
                             Text("About")
                         }
@@ -247,8 +237,6 @@ struct ScheduledTaskDetailView: View {
                                         .padding(.top, 12)
                                 }
                             }
-                            .settingsLoginCard()
-                            .settingsCardRow()
                         } header: {
                             Text("Last run")
                         }
@@ -258,13 +246,11 @@ struct ScheduledTaskDetailView: View {
                             SettingsPrimaryButton(title: "Start Task", isBusy: isBusy) {
                                 Task { await start() }
                             }
-                            .settingsCardRow()
                         }
                         if task.canCancel {
                             SettingsSecondaryButton(title: "Cancel Task", role: .destructive, enabled: !isBusy) {
                                 Task { await cancel() }
                             }
-                            .settingsCardRow()
                         }
                     }
                 }

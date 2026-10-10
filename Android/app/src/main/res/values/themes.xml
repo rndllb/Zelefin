@@ -5,4 +5,14 @@
         <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowBackground">#000000</item>
     </style>
+
+    <style name="Theme.Zelefin.Cast" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowBackground">#000000</item>
+    </style>
+
+    <style name="Theme.Zelefin.CastDialog" parent="Theme.AppCompat.Light.Dialog">
+        <item name="mediaRouteTheme">@style/Theme.MediaRouter</item>
+    </style>
 </resources>

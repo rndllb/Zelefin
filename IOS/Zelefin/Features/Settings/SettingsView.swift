@@ -4,28 +4,220 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
-    @State private var showsLibraryScanConfirm = false
-    @State private var libraryScanMessage: String?
-    @State private var cacheSubtitle: String?
 
     var body: some View {
         List {
-            identitySection
-            accountSection
-            playbackSection
-            serverSection
-            deviceSection
-            aboutSection
+            Section {
+                NavigationLink {
+                    ProfileView()
+                } label: {
+                    SettingsPersonRow(
+                        name: accountDisplayName,
+                        subtitle: session.usesSilo ? "Silo account" : "Jellyfin account",
+                        avatarURL: session.avatarURL,
+                        showsChevron: false
+                    )
+                }
+                .accessibilityLabel("\(accountDisplayName), Account info")
+            }
+
+            Section {
+                NavigationLink {
+                    UserPreferencesView()
+                } label: {
+                    Label("User Preferences", systemImage: "slider.horizontal.3")
+                }
+                if session.canAdministerSilo || (session.isAdministrator && !session.usesSilo) {
+                    NavigationLink {
+                        AdministrationSettingsView()
+                    } label: {
+                        Label("Administration", systemImage: "lock.shield")
+                    }
+                }
+            }
+
+            Section("Zelefin") {
+                NavigationLink {
+                    PluginSettingsView()
+                } label: {
+                    Label("Plugins", systemImage: "puzzlepiece.extension")
+                }
+                NavigationLink {
+                    MetadataSettingsView()
+                } label: {
+                    Label("Metadata", systemImage: "text.book.closed")
+                }
+                NavigationLink {
+                    TabCustomizationView()
+                } label: {
+                    Label("Interface", systemImage: "rectangle.3.group")
+                }
+                NavigationLink {
+                    SettingsAboutView()
+                } label: {
+                    HStack {
+                        Label("About", systemImage: "info.circle")
+                        Spacer()
+                        Text(DeviceIdentity.versionAndBuild)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .zelefinSettingsChrome(title: "Settings")
         .task {
-            async let capabilities: Void = session.detectIntroSkipper()
-            let usage = await Task.detached(priority: .utility) {
-                CacheInventory.settingsUsageLabel()
-            }.value
-            cacheSubtitle = usage
-            await capabilities
+            await session.detectIntroSkipper()
         }
+    }
+
+    private var accountDisplayName: String {
+        let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "Account" : name
+    }
+}
+
+struct UserPreferencesView: View {
+    @Environment(SessionStore.self) private var session
+
+    var body: some View {
+        List {
+            Section {
+                NavigationLink {
+                    NotificationSettingsView()
+                } label: {
+                    Label("Notifications", systemImage: "bell")
+                }
+                if !session.usesSilo {
+                    NavigationLink {
+                        SessionsView()
+                    } label: {
+                        Label("Sessions", systemImage: "play.tv")
+                    }
+                    NavigationLink {
+                        SyncPlayView()
+                    } label: {
+                        Label("SyncPlay", systemImage: "person.2.wave.2")
+                    }
+                }
+                NavigationLink {
+                    PlaybackSettingsView()
+                } label: {
+                    Label("Playback", systemImage: "play.rectangle.on.rectangle")
+                }
+                NavigationLink {
+                    SubtitleAppearanceSettingsView()
+                } label: {
+                    Label("Subtitles", systemImage: "captions.bubble")
+                }
+                NavigationLink {
+                    AppearanceSettingsView()
+                } label: {
+                    Label("Appearance", systemImage: "paintpalette")
+                }
+            }
+            Section("This Device") {
+                NavigationLink {
+                    NetworkSettingsView()
+                } label: {
+                    Label("Network", systemImage: "network")
+                }
+                NavigationLink {
+                    CacheSettingsView()
+                } label: {
+                    Label("Cache", systemImage: "internaldrive")
+                }
+            }
+        }
+        .zelefinSettingsChrome(title: "User Preferences")
+    }
+}
+
+struct AdministrationSettingsView: View {
+    @Environment(SessionStore.self) private var session
+    @State private var showsLibraryScanConfirm = false
+    @State private var libraryScanMessage: String?
+
+    var body: some View {
+        List {
+            Section {
+                if session.canAdministerSilo {
+                    NavigationLink {
+                        SiloUsersView()
+                    } label: {
+                        Label("Accounts", systemImage: "person.2")
+                    }
+                    NavigationLink {
+                        SiloInvitationsView()
+                    } label: {
+                        Label("Invitations", systemImage: "envelope.badge")
+                    }
+                    NavigationLink {
+                        SiloSessionsView()
+                    } label: {
+                        Label("Sessions", systemImage: "play.tv")
+                    }
+                    NavigationLink {
+                        SiloDevicesView()
+                    } label: {
+                        Label("Devices", systemImage: "iphone")
+                    }
+                    NavigationLink {
+                        SiloLibrariesAdminView()
+                    } label: {
+                        Label("Libraries", systemImage: "rectangle.stack")
+                    }
+                    NavigationLink {
+                        SiloNodesView()
+                    } label: {
+                        Label("Nodes", systemImage: "server.rack")
+                    }
+                    NavigationLink {
+                        SiloTasksView()
+                    } label: {
+                        Label("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath")
+                    }
+                    NavigationLink {
+                        SiloAuditLogView()
+                    } label: {
+                        Label("Activity Log", systemImage: "list.bullet.rectangle")
+                    }
+                    NavigationLink {
+                        SiloOperationalLogView()
+                    } label: {
+                        Label("Server Logs", systemImage: "scroll")
+                    }
+                    scanLibrariesRow
+                } else {
+                    NavigationLink {
+                        UserManagementView()
+                    } label: {
+                        Label("Users", systemImage: "person.2")
+                    }
+                    NavigationLink {
+                        ScheduledTasksView()
+                    } label: {
+                        Label("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath")
+                    }
+                    NavigationLink {
+                        ActivityLogView()
+                    } label: {
+                        Label("Activity Log", systemImage: "list.bullet.rectangle")
+                    }
+                    NavigationLink {
+                        ServerBackupsView()
+                    } label: {
+                        Label("Backups", systemImage: "externaldrive.badge.timemachine")
+                    }
+                    NavigationLink {
+                        ServerBrandingView()
+                    } label: {
+                        Label("Branding", systemImage: "paintbrush")
+                    }
+                    scanLibrariesRow
+                }
+            }
+        }
+        .zelefinSettingsChrome(title: "Administration")
         .confirmationDialog(
             "Scan every library?",
             isPresented: $showsLibraryScanConfirm,
@@ -44,254 +236,19 @@ struct SettingsView: View {
         }
     }
 
-    private var identitySection: some View {
-        Section {
-            NavigationLink {
-                ProfileView()
-            } label: {
-                SettingsPersonRow(
-                    name: accountDisplayName,
-                    subtitle: session.usesSilo ? "Silo account" : "Jellyfin account",
-                    avatarURL: session.avatarURL,
-                    showsChevron: true
-                )
-                .settingsLoginCard()
-            }
-            .settingsCardRow()
-            .accessibilityLabel("\(accountDisplayName), Account info")
-        }
-    }
-
-    private var accountSection: some View {
-        Section {
-            settingsRow("Notifications", systemImage: "bell", subtitle: notificationsSubtitle) {
-                NotificationSettingsView()
-            }
-            if !session.usesSilo {
-                settingsRow("Sessions", systemImage: "play.tv") {
-                    SessionsView()
-                }
-                settingsRow("SyncPlay", systemImage: "person.2.wave.2", subtitle: syncPlaySubtitle) {
-                    SyncPlayView()
-                }
-            }
-        } header: {
-            Text("Account")
-        }
-    }
-
-    private var playbackSection: some View {
-        Section {
-            settingsRow("Playback", systemImage: "play.rectangle.on.rectangle") {
-                PlaybackSettingsView()
-            }
-            settingsRow("Plugins", systemImage: "puzzlepiece.extension", subtitle: pluginsSubtitle) {
-                PluginSettingsView()
-            }
-        } header: {
-            Text("Playback")
-        }
-    }
-
-    @ViewBuilder
-    private var serverSection: some View {
-        if session.canAdministerSilo {
-            Section {
-                settingsRow("Accounts", systemImage: "person.2", subtitle: "Logins, roles, and passwords") {
-                    SiloUsersView()
-                }
-                settingsRow("Invitations", systemImage: "envelope.badge", subtitle: "Invite people to this server") {
-                    SiloInvitationsView()
-                }
-                settingsRow("Sessions", systemImage: "play.tv", subtitle: "Who is playing right now") {
-                    SiloSessionsView()
-                }
-                settingsRow("Devices", systemImage: "iphone", subtitle: "Signed-in devices") {
-                    SiloDevicesView()
-                }
-                settingsRow("Libraries", systemImage: "rectangle.stack", subtitle: "Scan one library or all of them") {
-                    SiloLibrariesAdminView()
-                }
-                settingsRow("Nodes", systemImage: "server.rack", subtitle: "Stream and transcode workers") {
-                    SiloNodesView()
-                }
-                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress") {
-                    SiloTasksView()
-                }
-                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Administrator audit trail") {
-                    SiloAuditLogView()
-                }
-                settingsRow("Server Logs", systemImage: "scroll", subtitle: "Operational output") {
-                    SiloOperationalLogView()
-                }
-                scanLibrariesRow
-            } header: {
-                Text("Server")
-            } footer: {
-                Text("Administer this Silo server.")
-            }
-        } else if session.isAdministrator, !session.usesSilo {
-            Section {
-                settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls") {
-                    UserManagementView()
-                }
-                settingsRow("Scheduled Tasks", systemImage: "clock.arrow.2.circlepath", subtitle: "Start, cancel, and watch progress") {
-                    ScheduledTasksView()
-                }
-                settingsRow("Activity Log", systemImage: "list.bullet.rectangle", subtitle: "Sign-ins, scans, and failures") {
-                    ActivityLogView()
-                }
-                settingsRow("Backups", systemImage: "externaldrive.badge.timemachine", subtitle: "Archive and restore this server") {
-                    ServerBackupsView()
-                }
-                settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
-                    ServerBrandingView()
-                }
-                scanLibrariesRow
-            } header: {
-                Text("Server")
-            } footer: {
-                Text("Administer this Jellyfin server.")
-            }
-        }
-    }
-
     private var scanLibrariesRow: some View {
         Button {
             showsLibraryScanConfirm = true
         } label: {
-            settingsRowLabel(
-                "Scan Libraries",
-                systemImage: "arrow.triangle.2.circlepath",
-                subtitle: libraryScanMessage,
-                trailing: .none
-            )
-            .settingsLoginCard()
-        }
-        .buttonStyle(.plain)
-        .settingsCardRow()
-    }
-
-    private var deviceSection: some View {
-        Section {
-            settingsRow("Network", systemImage: "network", subtitle: networkSubtitle) {
-                NetworkSettingsView()
-            }
-            settingsRow("Cache", systemImage: "internaldrive", subtitle: cacheSubtitle) {
-                CacheSettingsView()
-            }
-            settingsRow("Interface", systemImage: "rectangle.3.group") {
-                TabCustomizationView()
-            }
-        } header: {
-            Text("This Device")
-        }
-    }
-
-    private var aboutSection: some View {
-        Section {
-            settingsRow("About", systemImage: "info.circle", subtitle: DeviceIdentity.versionAndBuild) {
-                SettingsAboutView()
-            }
-        } header: {
-            Text("Zelefin")
-        }
-    }
-
-    @ViewBuilder
-    private func settingsRow<Destination: View>(
-        _ title: String,
-        systemImage: String,
-        subtitle: String? = nil,
-        @ViewBuilder destination: () -> Destination
-    ) -> some View {
-        NavigationLink {
-            destination()
-        } label: {
-            settingsRowLabel(title, systemImage: systemImage, subtitle: subtitle, trailing: .chevron)
-                .settingsLoginCard()
-        }
-        .settingsCardRow()
-    }
-
-    private enum SettingsRowTrailing {
-        case none
-        case chevron
-    }
-
-    private func settingsRowLabel(
-        _ title: String,
-        systemImage: String,
-        subtitle: String?,
-        trailing: SettingsRowTrailing
-    ) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: systemImage)
-                .font(.body.weight(.medium))
-                .foregroundStyle(.tint)
-                .frame(width: 28, alignment: .center)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(LoginPalette.primaryText)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(LoginPalette.secondaryText)
+            HStack {
+                Label("Scan Libraries", systemImage: "arrow.triangle.2.circlepath")
+                Spacer()
+                if let libraryScanMessage {
+                    Text(libraryScanMessage)
+                        .foregroundStyle(.secondary)
                 }
             }
-            Spacer(minLength: 8)
-            switch trailing {
-            case .none:
-                EmptyView()
-            case .chevron:
-                SettingsChevron()
-            }
         }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-    }
-
-    private var accountDisplayName: String {
-        let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? "Account" : name
-    }
-
-    private var notificationsSubtitle: String? {
-        if session.usesSilo || session.isReviewDemo || !session.companionAvailable {
-            return "Plugin required"
-        }
-        return LibraryAlertSettings.isEnabled ? "On" : "Off"
-    }
-
-    private var pluginsSubtitle: String? {
-        var parts: [String] = []
-        if session.introSkipperAvailable {
-            parts.append("Intro Skipper")
-        }
-        if session.openSubtitlesAvailable, !session.usesSilo {
-            parts.append("Open Subtitles")
-        }
-        if session.jellyfinEnhancedAvailable {
-            parts.append("Jellyfin Enhanced")
-        }
-        if session.usesSilo {
-            if session.siloSeerrPluginAvailable { parts.append("Seerr") }
-            if session.siloArrPluginAvailable { parts.append("Sonarr & Radarr") }
-        } else if PluginSettings.isSeerrConfigured {
-            parts.append("Seerr")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private var networkSubtitle: String? {
-        let name = session.session?.displayServer ?? session.serverName ?? ""
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private var syncPlaySubtitle: String? {
-        session.syncPlayGroupName
     }
 
     private func scanLibraries() async {
@@ -325,23 +282,14 @@ struct SettingsAboutView: View {
                     )
                 }
                 .frame(maxWidth: .infinity)
-                .settingsHeroRow()
+                .listRowBackground(Color.clear)
             } footer: {
                 Text("A native Jellyfin and Silo client for iPhone and iPad. Tab icons are from Iconsax.")
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsLegalRow("Privacy Policy") {
-                        legalPage = .privacy
-                    }
-                    SettingsCardDivider()
-                    SettingsLegalRow("Terms of Use") {
-                        legalPage = .terms
-                    }
-                }
-                .settingsLoginCard()
-                .settingsCardRow()
+                Button("Privacy Policy") { legalPage = .privacy }
+                Button("Terms of Use") { legalPage = .terms }
             }
         }
         .zelefinSettingsChrome(title: "About")
@@ -365,30 +313,6 @@ private enum LegalPage: String, Identifiable {
     }
 }
 
-private struct SettingsLegalRow: View {
-    let title: String
-    let action: () -> Void
-
-    init(_ title: String, action: @escaping () -> Void) {
-        self.title = title
-        self.action = action
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(LoginPalette.primaryText)
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(LoginPalette.captionText)
-            }
-        }
-    }
-}
-
 private struct SettingsSafariView: UIViewControllerRepresentable {
     let url: URL
 
@@ -402,36 +326,16 @@ private struct SettingsSafariView: UIViewControllerRepresentable {
 extension View {
     func zelefinSettingsCanvas() -> some View {
         self
-            .scrollContentBackground(.hidden)
-            .background(ZelefinSettingsChrome.canvas)
             .preferredColorScheme(.dark)
             .zelefinAccentTint()
-            .navigationLinkIndicatorVisibility(.hidden)
-            .settingsListWidth()
     }
 
     func zelefinSettingsChrome(title: String) -> some View {
         self
             .zelefinSettingsCanvas()
-            .navigationTitle(title)
+            .listStyle(.insetGrouped)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(ZelefinSettingsChrome.canvas, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-    }
-
-    @ViewBuilder
-    private func settingsListWidth() -> some View {
-        if #available(iOS 26, *) {
-            self.listSectionMargins(.horizontal, 10)
-        } else {
-            self.contentMargins(.horizontal, 10, for: .scrollContent)
-        }
-    }
-}
-
-enum ZelefinSettingsChrome {
-    static var canvas: Color {
-        Color(uiColor: .systemGroupedBackground)
+            .toolbarTitleDisplayMode(.inline)
     }
 }

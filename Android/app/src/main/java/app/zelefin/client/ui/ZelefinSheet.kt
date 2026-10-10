@@ -49,6 +49,18 @@ fun <T> rememberZelefinSheet(target: T?): ZelefinSheetMotion<T> {
     return motion
 }
 
+suspend fun ZelefinSheetMotion<*>.followPredictiveDismiss(gestureProgress: Float) {
+    progress.snapTo((1f - gestureProgress).coerceIn(0f, 1f))
+}
+
+suspend fun ZelefinSheetMotion<*>.finishPredictiveDismiss() {
+    progress.animateTo(0f, SheetSpring)
+}
+
+suspend fun ZelefinSheetMotion<*>.cancelPredictiveDismiss() {
+    progress.animateTo(1f, SheetSpring)
+}
+
 fun Modifier.zelefinSheetBackdrop(progress: Animatable<Float, AnimationVector1D>): Modifier =
     graphicsLayer {
         val amount = progress.value.coerceIn(0f, 1f)

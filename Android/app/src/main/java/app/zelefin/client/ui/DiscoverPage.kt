@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -89,7 +90,8 @@ import kotlinx.coroutines.launch
 private val PosterWidth = 124.dp
 private val PosterHeight = 186.dp
 private val LogoBackdrop = Color(0xFF2E2E2E)
-internal val SheetGroupFill = Color.White.copy(alpha = 0.08f)
+internal val SheetGroupFill: Color
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
 internal val SheetGroupShape = RoundedCornerShape(16.dp)
 private val Faint = Color.White.copy(alpha = 0.45f)
 private val Soft = Color.White.copy(alpha = 0.55f)
@@ -120,7 +122,6 @@ internal fun DiscoverPane(
             discover.hits.isEmpty() -> DiscoverEmpty("No Results for “$term”", "Check the spelling or try a new search.", topInset)
             else -> {
                 val listState = rememberLazyListState()
-                TrackHazeScroll(listState.isScrollInProgress)
                 LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) onDrag() }
                 TrackOffset({ listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }, onScrollOffset)
                 LazyColumn(
@@ -145,7 +146,6 @@ internal fun DiscoverPane(
             DiscoverEmpty("Couldn’t Load Discover", discover.message, topInset)
         else -> {
             val listState = rememberLazyListState()
-            TrackHazeScroll(listState.isScrollInProgress)
             LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) onDrag() }
             TrackOffset({ listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }, onScrollOffset)
             LazyColumn(
@@ -184,7 +184,6 @@ private fun DiscoverShelf(
             }
         }
         val rowState = rememberLazyListState()
-        TrackHazeScroll(rowState.isScrollInProgress)
         LazyRow(
             state = rowState,
             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -395,7 +394,6 @@ internal fun DiscoverGridPage(
             else -> BoxWithConstraints(Modifier.fillMaxSize()) {
                 val columns = max(3, ((maxWidth - 32.dp + 10.dp) / (PosterWidth + 10.dp)).toInt())
                 val gridState = rememberLazyGridState()
-                TrackHazeScroll(gridState.isScrollInProgress)
                 LaunchedEffect(gridState, grid.titles.size) {
                     snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
                         .collect { last -> if (last >= grid.titles.size - 4) onLoadMore() }

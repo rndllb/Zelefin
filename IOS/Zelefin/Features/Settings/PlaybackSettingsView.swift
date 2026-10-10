@@ -13,6 +13,8 @@ struct PlaybackSettingsView: View {
     @AppStorage(PlaybackPreferences.defaultRateKey) private var defaultRate = 1.0
     @AppStorage(PlaybackPreferences.audioLanguageKey) private var audioLanguage = PlaybackLanguage.automaticCode
     @AppStorage(PlaybackPreferences.subtitleLanguageKey) private var subtitleLanguage = PlaybackLanguage.automaticCode
+    @AppStorage(PlaybackPreferences.preferSDHKey) private var preferSDH = false
+    @AppStorage(PlaybackPreferences.downloadWifiOnlyKey) private var downloadWifiOnly = false
 
     @State private var isTesting = false
     @State private var testError: String?
@@ -51,29 +53,15 @@ struct PlaybackSettingsView: View {
 
     private var serverAudioSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsFieldLabel(title: "Preferred Language")
-                    .padding(.bottom, 8)
-                Picker("Preferred Language", selection: serverBinding(\.audioLanguage)) {
-                    ForEach(serverLanguageChoices(including: serverPreferences?.audioLanguage), id: \.self) { code in
-                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                SettingsCardDivider()
-                Toggle("Play Default Audio Track", isOn: serverBinding(\.playDefaultAudioTrack))
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
-                if let serverPreferencesError {
-                    SettingsStatusText(text: serverPreferencesError, isError: true)
-                        .padding(.top, 12)
+            Picker("Preferred Language", selection: serverBinding(\.audioLanguage)) {
+                ForEach(serverLanguageChoices(including: serverPreferences?.audioLanguage), id: \.self) { code in
+                    Text(PlaybackLanguage.displayName(for: code)).tag(code)
                 }
             }
-            .settingsLoginCard()
-            .settingsCardRow()
-            .disabled(serverPreferences == nil)
-            .opacity(serverPreferences == nil ? 0.55 : 1)
+            Toggle("Play Default Audio Track", isOn: serverBinding(\.playDefaultAudioTrack))
+            if let serverPreferencesError {
+                SettingsStatusText(text: serverPreferencesError, isError: true)
+            }
         } header: {
             HStack {
                 Text("Audio")
@@ -88,40 +76,35 @@ struct PlaybackSettingsView: View {
                     : "Titles start on the audio track in your preferred language when the file has one. Saved to your Jellyfin account."
             )
         }
+        .disabled(serverPreferences == nil)
     }
 
     private var serverSubtitleSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsFieldLabel(title: "Preferred Language")
-                    .padding(.bottom, 8)
-                Picker("Preferred Language", selection: serverBinding(\.subtitleLanguage)) {
-                    ForEach(serverLanguageChoices(including: serverPreferences?.subtitleLanguage), id: \.self) { code in
-                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
-                    }
+            Picker("Preferred Language", selection: serverBinding(\.subtitleLanguage)) {
+                ForEach(serverLanguageChoices(including: serverPreferences?.subtitleLanguage), id: \.self) { code in
+                    Text(PlaybackLanguage.displayName(for: code)).tag(code)
                 }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                SettingsCardDivider()
-                SettingsFieldLabel(title: "Subtitle Mode")
-                    .padding(.bottom, 8)
-                Picker("Subtitle Mode", selection: serverBinding(\.subtitleMode)) {
-                    ForEach(SubtitlePlaybackMode.choices, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
             }
-            .settingsLoginCard()
-            .settingsCardRow()
-            .disabled(serverPreferences == nil)
-            .opacity(serverPreferences == nil ? 0.55 : 1)
+            Picker("Subtitle Mode", selection: serverBinding(\.subtitleMode)) {
+                ForEach(SubtitlePlaybackMode.choices, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            Toggle("Prefer SDH Subtitles", isOn: $preferSDH)
+            NavigationLink {
+                SubtitleAppearanceSettingsView()
+            } label: {
+                LabeledContent("Style & Sync") {
+                    Text(SubtitleAppearance.size.title)
+                }
+            }
         } header: {
             Text("Subtitles")
         } footer: {
-            Text((serverPreferences?.subtitleMode ?? .default).summary)
+            Text((serverPreferences?.subtitleMode ?? .default).summary + " SDH prefers captions that describe music and sound. Style & Sync change how captions look and when they appear.")
         }
+        .disabled(serverPreferences == nil)
     }
 
     private func serverBinding<Value>(_ keyPath: WritableKeyPath<JellyfinPlaybackPreferences, Value>) -> Binding<Value> {
@@ -171,33 +154,28 @@ struct PlaybackSettingsView: View {
 
     private var languageSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsFieldLabel(title: "Audio")
-                    .padding(.bottom, 8)
-                Picker("Audio", selection: $audioLanguage) {
-                    ForEach(audioChoices, id: \.self) { code in
-                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
-                    }
+            Picker("Audio", selection: $audioLanguage) {
+                ForEach(audioChoices, id: \.self) { code in
+                    Text(PlaybackLanguage.displayName(for: code)).tag(code)
                 }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                SettingsCardDivider()
-                SettingsFieldLabel(title: "Subtitles")
-                    .padding(.bottom, 8)
-                Picker("Subtitles", selection: $subtitleLanguage) {
-                    ForEach(subtitleChoices, id: \.self) { code in
-                        Text(PlaybackLanguage.displayName(for: code)).tag(code)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
             }
-            .settingsLoginCard()
-            .settingsCardRow()
+            Picker("Subtitles", selection: $subtitleLanguage) {
+                ForEach(subtitleChoices, id: \.self) { code in
+                    Text(PlaybackLanguage.displayName(for: code)).tag(code)
+                }
+            }
+            Toggle("Prefer SDH Subtitles", isOn: $preferSDH)
+            NavigationLink {
+                SubtitleAppearanceSettingsView()
+            } label: {
+                LabeledContent("Style & Sync") {
+                    Text(SubtitleAppearance.size.title)
+                }
+            }
         } header: {
             Text("Languages")
         } footer: {
-            Text("Automatic uses the title default. A language is used when that track exists.")
+            Text("Automatic uses the title default. A language is used when that track exists. Style & Sync change how captions look and when they appear.")
         }
         .onChange(of: audioLanguage) { _, code in
             Task { await session.applyPlaybackLanguages(audioCode: code, subtitleCode: subtitleLanguage) }
@@ -217,43 +195,24 @@ struct PlaybackSettingsView: View {
 
     private var qualitySection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
-                SettingsCardDivider()
-                SettingsFieldLabel(title: adaptiveBitrate ? "Maximum Quality" : "Quality")
-                    .padding(.bottom, 8)
-                Picker(adaptiveBitrate ? "Maximum Quality" : "Quality", selection: $maxBitrate) {
-                    ForEach(PlaybackQuality.allCases) { quality in
-                        Text(quality.title).tag(quality.rawValue)
-                    }
+            Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
+            Picker(adaptiveBitrate ? "Maximum Quality" : "Quality", selection: $maxBitrate) {
+                ForEach(PlaybackQuality.allCases) { quality in
+                    Text(quality.title).tag(quality.rawValue)
                 }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                SettingsCardDivider()
-                SettingsInfoRow(label: "Connection", value: session.adaptiveBitrate.path.transport.title)
-                if let testResult {
-                    SettingsCardDivider()
-                    SettingsInfoRow(label: "Measured", value: PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
-                    SettingsCardDivider()
-                    SettingsInfoRow(label: "Recommended", value: recommendedTitle(for: testResult))
-                }
-                if let testError {
-                    SettingsStatusText(text: testError, isError: true)
-                        .padding(.top, 12)
-                }
-                SettingsPrimaryButton(
-                    title: "Test Connection",
-                    isBusy: isTesting,
-                    enabled: session.library != nil
-                ) {
-                    Task { await runDemoTest() }
-                }
-                .padding(.top, 16)
             }
-            .settingsLoginCard()
-            .settingsCardRow()
+            LabeledContent("Connection", value: session.adaptiveBitrate.path.transport.title)
+            if let testResult {
+                LabeledContent("Measured", value: PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
+                LabeledContent("Recommended", value: recommendedTitle(for: testResult))
+            }
+            if let testError {
+                SettingsStatusText(text: testError, isError: true)
+            }
+            Button("Test Connection") {
+                Task { await runDemoTest() }
+            }
+            .disabled(isTesting || session.library == nil)
         } header: {
             Text("Quality")
         } footer: {
@@ -263,43 +222,23 @@ struct PlaybackSettingsView: View {
 
     private var watchingSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsFieldLabel(title: "Playback Speed")
-                    .padding(.bottom, 8)
-                Picker("Playback Speed", selection: $defaultRate) {
-                    ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
-                        Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
-                    }
+            Picker("Playback Speed", selection: $defaultRate) {
+                ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
+                    Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
                 }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                SettingsCardDivider()
-                Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
-                SettingsCardDivider()
-                SettingsFieldLabel(title: "Skip Backward")
-                    .padding(.bottom, 8)
-                Picker("Skip Backward", selection: $skipBackward) {
-                    ForEach(PlaybackSkipInterval.allCases) { interval in
-                        Text(interval.title).tag(interval.rawValue)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                SettingsCardDivider()
-                SettingsFieldLabel(title: "Skip Forward")
-                    .padding(.bottom, 8)
-                Picker("Skip Forward", selection: $skipForward) {
-                    ForEach(PlaybackSkipInterval.allCases) { interval in
-                        Text(interval.title).tag(interval.rawValue)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
             }
-            .settingsLoginCard()
-            .settingsCardRow()
+            Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
+            Toggle("Wi-Fi Only Downloads", isOn: $downloadWifiOnly)
+            Picker("Skip Backward", selection: $skipBackward) {
+                ForEach(PlaybackSkipInterval.allCases) { interval in
+                    Text(interval.title).tag(interval.rawValue)
+                }
+            }
+            Picker("Skip Forward", selection: $skipForward) {
+                ForEach(PlaybackSkipInterval.allCases) { interval in
+                    Text(interval.title).tag(interval.rawValue)
+                }
+            }
         } header: {
             Text("Watching")
         } footer: {
@@ -309,19 +248,10 @@ struct PlaybackSettingsView: View {
 
     private var playerSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
-                if useNativeVideoPlayer {
-                    SettingsCardDivider()
-                    Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
-                }
+            Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
+            if useNativeVideoPlayer {
+                Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } header: {
             Text("Player")
         } footer: {

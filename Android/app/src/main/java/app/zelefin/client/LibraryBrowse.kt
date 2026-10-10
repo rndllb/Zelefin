@@ -65,6 +65,7 @@ fun formatCount(value: Int): String = NumberFormat.getIntegerInstance().format(v
 
 enum class LibraryPageBlock(val title: String) {
     Favorites("Favorites"),
+    Watchlist("Watchlist"),
     Genres("Genres"),
     Collections("Collections"),
 }
@@ -80,6 +81,10 @@ sealed interface LibraryRoute {
 
     data object Favorites : LibraryRoute {
         override val title get() = "Favorites"
+    }
+
+    data object Watchlist : LibraryRoute {
+        override val title get() = "Watchlist"
     }
 
     data object Genres : LibraryRoute {

@@ -288,7 +288,13 @@ class LiveAdaptiveTracker(private val startedAt: Long = SystemClock.elapsedRealt
 }
 
 /** A server-side audio or subtitle stream, as far as language preference needs to know. */
-data class LanguageTrack(val index: Int, val language: String?, val isSelected: Boolean)
+data class LanguageTrack(
+    val index: Int,
+    val language: String?,
+    val isSelected: Boolean,
+    val title: String = "",
+    val isHearingImpaired: Boolean = false,
+)
 
 /** Mirrors iOS `PlaybackLanguage`. */
 object PlaybackLanguage {
@@ -327,7 +333,21 @@ object PlaybackLanguage {
         val stream = normalize(streamLanguage)
         val want = normalize(preference)
         if (stream.isEmpty() || want.isEmpty()) return false
-        return stream == want || stream.startsWith(want) || want.startsWith(stream) || alias(stream) == want
+        return stream == want || stream.startsWith(want) || want.startsWith(stream) || alias(stream) == want || alias(want) == stream
+    }
+
+    fun matchesLabel(label: String?, language: String?, preference: String): Boolean {
+        if (preference.isEmpty()) return false
+        if (matches(language, preference)) return true
+        if (matches(label, preference)) return true
+        val names = listOfNotNull(
+            normalize(preference),
+            alias(normalize(preference)),
+            displayName(preference).lowercase(),
+            alias(normalize(preference))?.let { displayName(it).lowercase() },
+        ).filter { it.isNotEmpty() && it != "any language" && it != "automatic" }
+        val text = label.orEmpty().lowercase()
+        return names.any { text.contains(it) }
     }
 
     fun audioIndex(tracks: List<LanguageTrack>, preference: String): Int? {
@@ -341,6 +361,53 @@ object PlaybackLanguage {
         val fallback = tracks.firstOrNull { it.isSelected }?.index
         if (preference == PlaybackPreferences.AUTOMATIC || preference.isEmpty()) return fallback
         return tracks.firstOrNull { matches(it.language, preference) }?.index ?: fallback
+    }
+
+    fun isSDH(track: LanguageTrack): Boolean {
+        if (track.isHearingImpaired) return true
+        val title = track.title.lowercase()
+        return title.contains("sdh") || title.contains("cc") || title.contains("caption") || title.contains("hearing")
+    }
+
+    /**
+     * Jellyfin's Always mode only matches a preferred language. An empty "Any Language"
+     * preference comes back as no subtitle, which this app used to treat as Off.
+     */
+    fun startingSubtitleIndex(
+        tracks: List<LanguageTrack>,
+        serverIndex: Int?,
+        mode: org.jellyfin.sdk.model.api.SubtitlePlaybackMode,
+        preferredLanguage: String,
+        audioLanguage: String?,
+        preferSdh: Boolean,
+        deviceLanguage: String,
+        forcedByUser: Boolean = false,
+    ): Int? {
+        if (forcedByUser) return serverIndex?.takeIf { it >= 0 }
+        val wanted = preferredLanguage.ifBlank { deviceLanguage }
+        val resolved = serverIndex?.takeIf { it >= 0 }?.let { index ->
+            if (preferSdh) pick(tracks, wanted, preferSdh = true) ?: index else index
+        }
+        if (resolved != null) return resolved
+        return when (mode) {
+            org.jellyfin.sdk.model.api.SubtitlePlaybackMode.ALWAYS ->
+                pick(tracks, wanted, preferSdh) ?: tracks.firstOrNull()?.index
+            org.jellyfin.sdk.model.api.SubtitlePlaybackMode.SMART -> {
+                if (wanted.isNotEmpty() && matches(audioLanguage, wanted)) null
+                else pick(tracks, wanted, preferSdh)
+            }
+            else -> null
+        }
+    }
+
+    private fun pick(tracks: List<LanguageTrack>, language: String, preferSdh: Boolean): Int? {
+        val sdh = tracks.filter(::isSDH)
+        val pool = if (preferSdh && sdh.isNotEmpty()) sdh else tracks
+        if (language.isNotEmpty()) {
+            return pool.firstOrNull { matches(it.language, language) }?.index
+                ?: tracks.firstOrNull { matches(it.language, language) }?.index
+        }
+        return pool.firstOrNull()?.index
     }
 
     /** Jellyfin and Silo usually tag streams with ISO 639-2 codes ("eng"), the picker stores 639-1 ("en"). */

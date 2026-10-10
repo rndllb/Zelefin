@@ -22,8 +22,6 @@ struct ActivityLogView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(entries) { entry in
                         SettingsStackedRow(
@@ -31,8 +29,6 @@ struct ActivityLogView: View {
                             subtitle: entry.subtitle,
                             caption: entry.date?.formatted(date: .abbreviated, time: .shortened) ?? ""
                         )
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -79,22 +75,17 @@ struct ServerBackupsView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     Section {
                         SettingsPrimaryButton(title: "Create Backup", isBusy: isCreating) {
                             Task { await create() }
                         }
-                        .settingsCardRow()
                     } footer: {
                         Text("A backup archives this server’s database and metadata. Restoring one restarts Jellyfin.")
                     }
                     Section {
                         if backups.isEmpty {
                             SettingsStackedRow(title: "No backups on this server yet.")
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         } else {
                             ForEach(backups) { backup in
                                 VStack(alignment: .leading, spacing: 0) {
@@ -110,8 +101,6 @@ struct ServerBackupsView: View {
                                     }
                                     .padding(.top, 16)
                                 }
-                                .settingsLoginCard()
-                                .settingsCardRow()
                             }
                         }
                     } header: {
@@ -210,8 +199,6 @@ struct ServerBrandingView: View {
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
             }
 
@@ -224,10 +211,8 @@ struct ServerBrandingView: View {
                     SettingsCardDivider()
                     Toggle("Show splashscreen", isOn: $branding.splashscreenEnabled)
                         .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } header: {
                 Text("Sign-In")
             }
@@ -240,8 +225,6 @@ struct ServerBrandingView: View {
                         .font(.footnote.monospaced())
                         .foregroundStyle(LoginPalette.fieldValue)
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } header: {
                 Text("Custom CSS")
             }
@@ -265,8 +248,6 @@ struct ServerBrandingView: View {
                     }
                     .padding(.top, 10)
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } header: {
                 Text("Splash Image")
             }
@@ -275,7 +256,6 @@ struct ServerBrandingView: View {
                 SettingsPrimaryButton(title: "Save Branding", isBusy: isSaving, enabled: !isLoading) {
                     Task { await save() }
                 }
-                .settingsCardRow()
             }
         }
         .zelefinSettingsChrome(title: "Branding")

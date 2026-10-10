@@ -14,6 +14,43 @@ final class DownloadLayoutTests: XCTestCase {
         XCTAssertNil(DownloadEligibility.playableItem(from: sampleGenre()))
     }
 
+    func testShowDownloadPickerListsEachSeason() {
+        let episodes = (1...5).flatMap { season in
+            [
+                sampleEpisode(id: "s\(season)e1", season: season, number: 1, watched: false),
+                sampleEpisode(id: "s\(season)e2", season: season, number: 2, watched: false),
+            ]
+        }
+        let choices = SeasonDownloadChoice.options(seasons: [], episodes: episodes)
+        XCTAssertEqual(choices.map(\.title), ["Season 1", "Season 2", "Season 3", "Season 4", "Season 5"])
+        let season3 = choices.first { $0.seasonIndex == 3 }!
+        XCTAssertEqual(SeasonDownloadChoice.episodes(for: season3, in: episodes).map(\.id), ["s3e1", "s3e2"])
+        XCTAssertEqual(
+            SeasonDownloadChoice.episodes(in: episodes, indexes: [1, 3]).map(\.id),
+            ["s1e1", "s1e2", "s3e1", "s3e2"]
+        )
+    }
+
+    func testShowDownloadPickerHasOneChoiceForASingleSeason() {
+        let episodes = [
+            sampleEpisode(id: "e1", season: 3, number: 1, watched: false),
+            sampleEpisode(id: "e2", season: 3, number: 2, watched: false),
+        ]
+        let choices = SeasonDownloadChoice.options(seasons: [], episodes: episodes)
+        XCTAssertEqual(choices.map(\.title), ["Season 3"])
+        XCTAssertEqual(choices.first?.seasonIndex, 3)
+    }
+
+    func testShowDownloadPickerListsSpecialsAfterNumberedSeasons() {
+        let episodes = [
+            sampleEpisode(id: "e1", season: 1, number: 1, watched: false),
+            sampleEpisode(id: "sp", season: 0, number: 1, watched: false),
+            sampleEpisode(id: "e2", season: 2, number: 1, watched: false),
+        ]
+        let choices = SeasonDownloadChoice.options(seasons: [], episodes: episodes)
+        XCTAssertEqual(choices.map(\.title), ["Season 1", "Season 2", "Specials"])
+    }
+
     func testCoverMarkBadgesAShowWhenAnyEpisodeIsDownloaded() {
         let records = [downloaded(sampleEpisode(id: "e2", season: 1, number: 2, watched: false))]
         XCTAssertEqual(DownloadCoverLogic.mark(for: sampleSeries(), records: records, progress: [:]), .downloaded)

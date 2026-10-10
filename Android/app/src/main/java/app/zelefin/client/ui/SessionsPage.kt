@@ -2,14 +2,12 @@ package app.zelefin.client.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.VolumeDown
@@ -31,8 +28,17 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.Replay10
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,13 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,10 +69,6 @@ import app.zelefin.core.SavedSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private val SessionCardShape = ZelefinCardShape
-private val SessionCaption = Color.White.copy(alpha = 0.55f)
-private val SessionSecondary = Color.White.copy(alpha = 0.72f)
 
 /**
  * Live Jellyfin sessions with remote control (iOS `SessionsView` / `SessionDetailView`).
@@ -110,7 +108,7 @@ internal fun SessionsPanel(session: SavedSession?) {
             SessionBackRow { selectedId = null }
             if (selected == null) {
                 SessionCard {
-                    Text("This session has ended.", color = SessionSecondary, fontFamily = ZelefinFont, fontSize = 15.sp)
+                    Text("This session has ended.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
                 }
             } else {
                 SessionDetail(
@@ -126,13 +124,12 @@ internal fun SessionsPanel(session: SavedSession?) {
         val list = sessions
         when {
             list == null && loadError == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = ZelefinCyan, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
             }
             list.isNullOrEmpty() -> SessionCard {
                 Text(
                     loadError ?: "No one is connected to this server right now.",
-                    color = SessionSecondary,
-                    fontFamily = ZelefinFont,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 15.sp,
                 )
             }
@@ -159,10 +156,9 @@ internal fun SessionsPanel(session: SavedSession?) {
                 }
                 Text(
                     "Updates every few seconds. Tap a session for details and remote control.",
-                    color = SessionCaption,
-                    fontFamily = ZelefinFont,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
         }
@@ -174,7 +170,7 @@ private fun SessionRow(session: RemoteSession, saved: SavedSession, isThisDevice
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -182,12 +178,11 @@ private fun SessionRow(session: RemoteSession, saved: SavedSession, isThisDevice
         SessionArtwork(session, saved, 44.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(session.title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(session.userLabel, color = SessionSecondary, fontFamily = ZelefinFont, fontSize = 13.sp, maxLines = 1)
+            Text(session.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(session.userLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
             Text(
                 if (isThisDevice) "This device" else session.deviceLabel.ifBlank { session.deviceType ?: "Jellyfin client" },
-                color = SessionCaption,
-                fontFamily = ZelefinFont,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -195,15 +190,14 @@ private fun SessionRow(session: RemoteSession, saved: SavedSession, isThisDevice
             if (session.isPlaying) {
                 Text(
                     "${if (session.isPaused) "Paused" else session.playMethod} · ${session.positionLabel}",
-                    color = SessionCaption,
-                    fontFamily = ZelefinFont,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     maxLines = 1,
                 )
                 SessionProgress(session.progressFraction)
             }
         }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.35f))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -263,11 +257,10 @@ private fun SessionDetail(
             SessionArtwork(session, saved, 64.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(session.title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(session.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
                     listOf(session.userLabel, if (isThisDevice) "This device" else session.deviceLabel).filter { it.isNotBlank() }.joinToString(" · "),
-                    color = SessionSecondary,
-                    fontFamily = ZelefinFont,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     maxLines = 2,
                 )
@@ -284,7 +277,7 @@ private fun SessionDetail(
             Spacer(Modifier.height(14.dp))
             SessionProgress(session.progressFraction)
             Spacer(Modifier.height(6.dp))
-            Text(session.positionLabel, color = SessionCaption, fontFamily = ZelefinFont, fontSize = 12.sp)
+            Text(session.positionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
         Spacer(Modifier.height(16.dp))
         if (session.canControl) {
@@ -314,35 +307,24 @@ private fun SessionDetail(
                 ControlButton(Icons.Filled.Stop, "Stop", busy == SessionControl.Stop) { control(SessionControl.Stop) }
             }
         } else {
-            Text("This client does not accept remote control.", color = SessionSecondary, fontFamily = ZelefinFont, fontSize = 14.sp)
+            Text("This client does not accept remote control.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         }
         if (session.supportsMessages) {
             Spacer(Modifier.height(14.dp))
             if (composing) {
-                Text("To ${session.deviceName.ifBlank { session.userLabel }}", color = SessionCaption, fontFamily = ZelefinFont, fontSize = 12.sp)
+                Text("To ${session.deviceName.ifBlank { session.userLabel }}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    BasicTextField(
+                    OutlinedTextField(
                         value = message,
                         onValueChange = { message = it },
-                        textStyle = TextStyle(color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp),
-                        cursorBrush = SolidColor(ZelefinCyan),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White.copy(alpha = 0.08f))
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                            .defaultMinSize(minHeight = 22.dp),
-                        decorationBox = { inner ->
-                            Box {
-                                if (message.isEmpty()) Text("Write a message", color = Color.White.copy(alpha = 0.4f), fontFamily = ZelefinFont, fontSize = 16.sp)
-                                inner()
-                            }
-                        },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Write a message") },
+                        singleLine = true,
                     )
                     Spacer(Modifier.width(10.dp))
                     if (sending) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
                         PillButton("Send", enabled = message.isNotBlank()) { send() }
                     }
@@ -350,8 +332,7 @@ private fun SessionDetail(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Cancel",
-                    color = SessionSecondary,
-                    fontFamily = ZelefinFont,
+                    color = MaterialTheme.colorScheme.primary,
                     fontSize = 14.sp,
                     modifier = Modifier.clickable { composing = false }.padding(vertical = 4.dp),
                 )
@@ -361,7 +342,7 @@ private fun SessionDetail(
         }
         status?.let {
             Spacer(Modifier.height(10.dp))
-            Text(it, color = SessionSecondary, fontFamily = ZelefinFont, fontSize = 13.sp)
+            Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         }
     }
 
@@ -401,7 +382,7 @@ private fun SessionArtwork(session: RemoteSession, saved: SavedSession, size: an
                 .width(size * 2f / 3f)
                 .height(size)
                 .clip(RoundedCornerShape(6.dp))
-                .background(Color.White.copy(alpha = 0.08f)),
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         ) {
             CachedArtwork(
                 urls = artworkCandidates(item, saved, landscape = false),
@@ -415,13 +396,12 @@ private fun SessionArtwork(session: RemoteSession, saved: SavedSession, size: an
             Modifier
                 .size(size)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.12f)),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 session.userLabel.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                color = Color.White,
-                fontFamily = ZelefinFont,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
                 fontWeight = FontWeight.Bold,
                 fontSize = (size.value * 0.4f).sp,
             )
@@ -431,93 +411,71 @@ private fun SessionArtwork(session: RemoteSession, saved: SavedSession, size: an
 
 @Composable
 private fun SessionCard(contentPadding: androidx.compose.ui.unit.Dp = 16.dp, content: @Composable () -> Unit) {
-    val haze = LocalZelefinHaze.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .then(glassOrFill(haze, SessionCardShape))
-            .padding(contentPadding),
-    ) { content() }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(Modifier.padding(contentPadding)) { content() }
+    }
 }
 
 @Composable
-@Suppress("UNUSED_PARAMETER")
-private fun glassOrFill(haze: ZelefinHazeState?, shape: Shape): Modifier =
-    Modifier.clip(shape).background(ZelefinCardFill, shape).border(1.dp, ZelefinCardStroke, shape)
-
-@Composable
 private fun ControlButton(icon: ImageVector, description: String, busy: Boolean, large: Boolean = false, onClick: () -> Unit) {
-    val haze = LocalZelefinHaze.current
-    val diameter = if (large) 60.dp else 46.dp
-    Box(
-        Modifier
-            .size(diameter)
-            .then(glassOrFill(haze, CircleShape))
-            .clip(CircleShape)
-            .clickable(enabled = !busy, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    val body: @Composable () -> Unit = {
         if (busy) {
-            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
         } else {
-            Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(if (large) 30.dp else 22.dp))
+            Icon(icon, contentDescription = description, modifier = Modifier.size(if (large) 30.dp else 22.dp))
         }
+    }
+    if (large) {
+        FilledIconButton(onClick = onClick, enabled = !busy, modifier = Modifier.size(60.dp), content = body)
+    } else {
+        FilledTonalIconButton(onClick = onClick, enabled = !busy, modifier = Modifier.size(46.dp), content = body)
     }
 }
 
 @Composable
 private fun PillButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(50))
-            .background(if (enabled) ZelefinCyan.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.06f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = if (enabled) ZelefinCyan else ZelefinMuted, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+    FilledTonalButton(onClick = onClick, enabled = enabled) {
+        Text(label)
     }
 }
 
 @Composable
 private fun StatusChip(label: String) {
+    val playing = label == "Playing"
     Text(
         label,
-        color = if (label == "Playing") ZelefinCyan else SessionSecondary,
-        fontFamily = ZelefinFont,
+        color = if (playing) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         fontWeight = FontWeight.SemiBold,
         fontSize = 12.sp,
         modifier = Modifier
             .padding(top = 2.dp)
             .clip(RoundedCornerShape(50))
-            .background(Color.White.copy(alpha = 0.1f))
+            .background(if (playing) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(horizontal = 10.dp, vertical = 3.dp),
     )
 }
 
 @Composable
 private fun SessionProgress(fraction: Float) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .clip(RoundedCornerShape(50))
-            .background(Color.White.copy(alpha = 0.18f)),
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth(fraction)
-                .height(3.dp)
-                .background(ZelefinCyan),
-        )
-    }
+    LinearProgressIndicator(
+        progress = { fraction.coerceIn(0f, 1f) },
+        modifier = Modifier.fillMaxWidth().height(3.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        drawStopIndicator = {},
+    )
 }
 
 @Composable
 private fun SessionFact(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
-        Text(label, color = SessionCaption, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.width(96.dp))
-        Text(value, color = Color.White, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.width(96.dp))
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, modifier = Modifier.weight(1f))
     }
 }
 
@@ -525,23 +483,19 @@ private fun SessionFact(label: String, value: String) {
 private fun SessionSectionLabel(text: String) {
     Text(
         text.uppercase(),
-        color = SessionCaption,
-        fontFamily = ZelefinFont,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontWeight = FontWeight.SemiBold,
         fontSize = 12.sp,
         letterSpacing = 0.6.sp,
-        modifier = Modifier.padding(start = 8.dp),
+        modifier = Modifier.padding(horizontal = 16.dp),
     )
 }
 
 @Composable
 private fun SessionDivider() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp)
-            .height(0.5.dp)
-            .background(Color.White.copy(alpha = 0.12f)),
+    HorizontalDivider(
+        Modifier.padding(horizontal = 14.dp),
+        color = MaterialTheme.colorScheme.outlineVariant,
     )
 }
 
@@ -549,13 +503,13 @@ private fun SessionDivider() {
 private fun SessionBackRow(onBack: () -> Unit) {
     Text(
         "All Sessions",
-        color = ZelefinCyan,
-        fontFamily = ZelefinFont,
+        color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
         modifier = Modifier
+            .padding(horizontal = 16.dp)
             .clip(RoundedCornerShape(50))
             .clickable(onClick = onBack)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(vertical = 6.dp),
     )
 }

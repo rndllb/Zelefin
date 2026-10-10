@@ -71,13 +71,35 @@ enum DirectPlayPictureLayout {
         return local.offsetBy(dx: frame.minX, dy: frame.minY)
     }
 
-    static func textLayout(pictureHeight: CGFloat) -> (fontSize: CGFloat, bottomMargin: CGFloat) {
+    static func textLayout(
+        pictureHeight: CGFloat,
+        sizeScale: CGFloat = 1,
+        lift: CGFloat = 0
+    ) -> (fontSize: CGFloat, bottomMargin: CGFloat) {
         let height = max(pictureHeight, 1)
-        return (min(36, max(17, height * 0.05)), height * 0.06)
+        let fontSize = min(34, max(15, height * 0.042 * max(sizeScale, 0.5)))
+        let margin = height * (0.06 + (0.32 * min(max(lift, 0), 1)))
+        return (fontSize, margin)
     }
 
     /// The engine publishes a prefetch window. Only cues whose time range contains the playhead
     /// belong on screen; everything else is future (or expired) text that would stack and look early.
+    /// Karaoke / styled ASS often arrives as one run per word with the space omitted.
+    static func joinedRunText(_ parts: [String]) -> String {
+        parts.reduce(into: "") { result, part in
+            guard !part.isEmpty else { return }
+            if result.isEmpty {
+                result = part
+                return
+            }
+            if result.last!.isWhitespace || part.first!.isWhitespace {
+                result += part
+            } else {
+                result += " " + part
+            }
+        }
+    }
+
     static func visibleCues(
         in cues: [DirectPlaySubtitleCue],
         at seconds: TimeInterval

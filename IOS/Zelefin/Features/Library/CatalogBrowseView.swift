@@ -31,6 +31,7 @@ struct CatalogBrowseView: View {
         case .shows: return "Shows from this server will show up here."
         case .collections: return "Collections from this server will show up here."
         case .favorites: return "Movies and shows you mark as favorites will show up here."
+        case .watchlist: return "Titles you add to Watchlist will show up here."
         default: return "Titles from this server will show up here."
         }
     }
@@ -40,6 +41,7 @@ struct CatalogBrowseView: View {
         case .shows: "tv"
         case .collections: "square.grid.2x2.fill"
         case .favorites: "heart.fill"
+        case .watchlist: "text.badge.plus"
         default: "film"
         }
     }
@@ -52,39 +54,54 @@ struct CatalogBrowseView: View {
     }
 
     var body: some View {
-        ScrollView {
-            if isLoading && items.isEmpty {
-                ProgressView()
-                    .tint(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 80)
-            } else if items.isEmpty {
-                ContentUnavailableView(
-                    query.isDefault ? "No Titles Yet" : "No Matches",
-                    systemImage: emptySymbol,
-                    description: Text(emptyMessage)
-                )
-                .padding(.top, 40)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    CatalogIndexBar(progress: indexProgress)
-                    LazyVGrid(columns: columns, spacing: 20) {
-                        ForEach(items) { item in
-                            NavigationLink {
-                                LibraryItemRoute(item: item)
-                            } label: {
-                                FillingPortraitPoster(
-                                    item: item,
-                                    imageURL: session.library?.primaryURL(for: item)
-                                )
+        ScrollViewReader { proxy in
+            ZStack {
+                ScrollView {
+                    if isLoading && items.isEmpty {
+                        ProgressView()
+                            .tint(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 80)
+                    } else if items.isEmpty {
+                        ContentUnavailableView(
+                            query.isDefault ? "No Titles Yet" : "No Matches",
+                            systemImage: emptySymbol,
+                            description: Text(emptyMessage)
+                        )
+                        .padding(.top, 40)
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            CatalogIndexBar(progress: indexProgress)
+                            LazyVGrid(columns: columns, spacing: 20) {
+                                ForEach(items) { item in
+                                    NavigationLink {
+                                        LibraryItemRoute(item: item)
+                                    } label: {
+                                        FillingPortraitPoster(
+                                            item: item,
+                                            imageURL: session.library?.primaryURL(for: item)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .id(item.id)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .padding(16)
+                            .padding(.bottom, 32)
+                            .padding(.trailing, 14)
+                        }
+                        .padding(.top, gridTopPadding)
+                    }
+                }
+                if !items.isEmpty {
+                    CatalogAlphabetRail(items: items) { id in
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            proxy.scrollTo(id, anchor: .top)
                         }
                     }
-                    .padding(16)
-                    .padding(.bottom, 32)
                 }
-                .padding(.top, gridTopPadding)
             }
         }
         .zelefinScrollEdgeBlur()
@@ -108,8 +125,12 @@ struct CatalogBrowseView: View {
             showSort: $showSort
         )
         .task { await loadOptions() }
-        .task { await load() }
-        .onChange(of: query) { _, _ in
+        .task {
+            query = CatalogQueryStore.load(key: CatalogQueryStore.key(kind: libraryKind, libraryID: libraryID))
+            await load()
+        }
+        .onChange(of: query) { _, next in
+            CatalogQueryStore.save(key: CatalogQueryStore.key(kind: libraryKind, libraryID: libraryID), query: next)
             guard !showFilters, !showSort else { return }
             Task { await load() }
         }

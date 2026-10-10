@@ -53,6 +53,7 @@ data class MediaItem(
     val hasClosedCaptions: Boolean = false,
     val hasAudioDescription: Boolean = false,
     val isFavorite: Boolean = false,
+    val isWatchlisted: Boolean = false,
     val posterUrl: String? = null,
     val backdropUrl: String? = null,
     val logoUrl: String? = null,
@@ -150,9 +151,13 @@ data class MediaItem(
             return show.ifEmpty { null }
         }
 
+    /** Jellyfin seasons store the number in `IndexNumber`; older snapshots may still have it on `episodeIndex`. */
+    val resolvedSeasonNumber: Int?
+        get() = if (kind == MediaKind.Season) seasonIndex ?: episodeIndex else seasonIndex
+
     val seasonMenuTitle: String
         get() {
-            val number = if (kind == MediaKind.Season) seasonIndex ?: episodeIndex else seasonIndex
+            val number = resolvedSeasonNumber
             return when (number) {
                 null -> name
                 0 -> "Specials"
@@ -180,6 +185,46 @@ data class MediaItem(
 
         fun orderedEpisodes(episodes: List<MediaItem>): List<MediaItem> =
             episodes.sortedWith(compareBy({ it.seasonIndex ?: Int.MAX_VALUE }, { it.episodeIndex ?: Int.MAX_VALUE }))
+    }
+}
+
+/** One season the user can tick in the show download action sheet. */
+data class SeasonDownloadChoice(
+    val title: String,
+    val seasonIndex: Int?,
+) {
+    val id: String get() = seasonIndex?.toString() ?: "all"
+
+    companion object {
+        fun options(seasons: List<MediaItem>, episodes: List<MediaItem>): List<SeasonDownloadChoice> {
+            val numbers = seasonNumbers(seasons, episodes)
+            if (numbers.isEmpty()) {
+                return if (episodes.any { it.kind == MediaKind.Episode }) {
+                    listOf(SeasonDownloadChoice("All Episodes", null))
+                } else {
+                    emptyList()
+                }
+            }
+            return numbers.map { SeasonDownloadChoice(seasonTitle(it), it) }
+        }
+
+        fun episodes(choice: SeasonDownloadChoice, episodes: List<MediaItem>): List<MediaItem> =
+            episodes(choice.seasonIndex?.let(::setOf), episodes)
+
+        fun episodes(indexes: Set<Int>?, episodes: List<MediaItem>): List<MediaItem> {
+            val playable = episodes.filter { it.kind == MediaKind.Episode }
+            val scoped = if (indexes == null) playable else playable.filter { it.seasonIndex != null && it.seasonIndex in indexes }
+            return MediaItem.orderedEpisodes(scoped)
+        }
+
+        private fun seasonNumbers(seasons: List<MediaItem>, episodes: List<MediaItem>): List<Int> {
+            val fromEpisodes = episodes.mapNotNull { it.seasonIndex }.toSet()
+            val fromSeasons = seasons.mapNotNull { it.resolvedSeasonNumber }.toSet()
+            val numbers = if (fromEpisodes.isNotEmpty()) fromEpisodes else fromSeasons
+            return numbers.sortedWith(compareBy { if (it == 0) Int.MAX_VALUE else it })
+        }
+
+        private fun seasonTitle(number: Int): String = if (number == 0) "Specials" else "Season $number"
     }
 }
 
@@ -261,6 +306,7 @@ data class TitleDetail(
     val trailers: List<TitleTrailer> = emptyList(),
     val moreInfo: TitleMoreInfo = TitleMoreInfo(),
     val collections: List<TitleCollection> = emptyList(),
+    val additionalParts: List<MediaItem> = emptyList(),
 )
 
 @Serializable
@@ -296,7 +342,33 @@ data class PlaybackPlan(
     val subtitleChoice: TrackChoice? = null,
     /** True when the server resolved the user's subtitle settings to no subtitles at all. */
     val subtitlesOff: Boolean = false,
+    val trickplay: TrickplayInfo? = null,
 )
+
+data class TrickplayInfo(
+    val width: Int,
+    val interval: Double,
+    val thumbnailCount: Int,
+    val tileWidth: Int,
+    val tileHeight: Int,
+    val thumbnailWidth: Int,
+    val thumbnailHeight: Int,
+    val mediaSourceId: String?,
+) {
+    val thumbnailsPerTile: Int get() = max(1, tileWidth * tileHeight)
+
+    fun thumbnailIndex(at: Double): Int {
+        if (interval <= 0) return 0
+        return min(max(0, floor(at / interval).toInt()), max(0, thumbnailCount - 1))
+    }
+
+    fun tileIndex(at: Double): Int = thumbnailIndex(at) / thumbnailsPerTile
+
+    fun cell(at: Double): Pair<Int, Int> {
+        val local = thumbnailIndex(at) % thumbnailsPerTile
+        return (local % max(tileWidth, 1)) to (local / max(tileWidth, 1))
+    }
+}
 
 /**
  * A stream Jellyfin's user settings (preferred language, play default audio track, subtitle

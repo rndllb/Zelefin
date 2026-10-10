@@ -132,6 +132,13 @@ protocol LibraryServing: AnyObject, Sendable {
     func markUnplayed(itemID: String) async throws
     func markFavorite(itemID: String, isFavorite: Bool) async throws -> Bool
     func setLikes(itemID: String, likes: Bool?) async throws -> Bool?
+    func additionalParts(for itemID: String) async -> [MediaItem]
+    func randomTitle() async -> MediaItem?
+    func watchlistItems() async -> [MediaItem]
+    func setWatchlisted(itemID: String, watchlisted: Bool) async throws
+    func identifyHits(for item: MediaItem) async -> [RemoteIdentifyHit]
+    func applyIdentify(itemID: String, hit: RemoteIdentifyHit) async throws
+    func updateItemMetadata(itemID: String, draft: ItemMetadataDraft) async throws
 
     func playlists() async throws -> [MediaItem]
     func playlistEntries(playlistID: String) async throws -> [PlaylistEntry]
@@ -426,4 +433,12 @@ extension LibraryServing {
     }
 
     func syncPlayGroups() async throws -> [SyncPlayGroupInfo] { [] }
+
+    func additionalParts(for itemID: String) async -> [MediaItem] { [] }
+    func randomTitle() async -> MediaItem? { nil }
+    func watchlistItems() async -> [MediaItem] { [] }
+    func setWatchlisted(itemID: String, watchlisted: Bool) async throws {}
+    func identifyHits(for item: MediaItem) async -> [RemoteIdentifyHit] { [] }
+    func applyIdentify(itemID: String, hit: RemoteIdentifyHit) async throws {}
+    func updateItemMetadata(itemID: String, draft: ItemMetadataDraft) async throws {}
 }

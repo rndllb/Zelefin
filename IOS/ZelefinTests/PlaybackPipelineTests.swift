@@ -865,6 +865,34 @@ final class DirectPlayPictureLayoutTests: XCTestCase {
         XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 4390.700).map(\.id), [12])
     }
 
+    func testSubtitleSyncShiftsVisibleCues() {
+        let retained = [cue(id: 1, start: 10, end: 14)]
+        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 10).map(\.id), [1])
+        XCTAssertTrue(DirectPlayPictureLayout.visibleCues(in: retained, at: 10 - 1).isEmpty)
+        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 11 - 1).map(\.id), [1])
+        XCTAssertEqual(SubtitleAppearance.snappedSync(0.13), 0.25, accuracy: 0.001)
+        XCTAssertEqual(SubtitleAppearance.snappedSync(12), 10, accuracy: 0.001)
+        XCTAssertEqual(SubtitleAppearance.syncTitle(0), "In Sync")
+    }
+
+    func testStyledSubtitleRunsKeepSpacesBetweenWords() {
+        XCTAssertEqual(
+            DirectPlayPictureLayout.joinedRunText(["You", "know,", "you're", "not"]),
+            "You know, you're not"
+        )
+        XCTAssertEqual(
+            DirectPlayPictureLayout.joinedRunText(["hard ", "to", " track"]),
+            "hard to track"
+        )
+    }
+
+    func testSubtitleTextLayoutHonorsSizeAndLift() {
+        let medium = DirectPlayPictureLayout.textLayout(pictureHeight: 720)
+        let large = DirectPlayPictureLayout.textLayout(pictureHeight: 720, sizeScale: 1.28, lift: 0.5)
+        XCTAssertGreaterThan(large.fontSize, medium.fontSize)
+        XCTAssertGreaterThan(large.bottomMargin, medium.bottomMargin)
+    }
+
     func testOverlappingCuesStayStacked() {
         let retained = [
             cue(id: 1, start: 10, end: 14),

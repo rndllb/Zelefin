@@ -26,6 +26,8 @@ import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,9 +76,9 @@ import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.model.api.TaskCompletionStatus
 import org.jellyfin.sdk.model.api.UnratedItem
 
-private val AdminSecondary = Color.White.copy(alpha = 0.72f)
-private val AdminCaption = Color.White.copy(alpha = 0.55f)
-private val AdminError = Color(0xFFFF6B6B)
+private val AdminSecondary = ZelefinMuted
+private val AdminCaption = ZelefinMuted
+private val AdminError = Color(0xFFFF453A)
 
 @Composable
 internal fun SyncPlayTopic(state: ZelefinUiState) {
@@ -125,7 +127,7 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
     }
     SettingsHeader("New Group")
     SettingsCard {
-        LoginField(
+        SettingsTextField(
             label = "NAME",
             value = name,
             icon = Icons.Outlined.Groups,
@@ -143,7 +145,7 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
     SettingsCard {
         when {
             loading && groups.isEmpty() -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
             }
             groups.isEmpty() -> Text("No SyncPlay groups are running.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 16.sp)
             else -> groups.forEachIndexed { index, group ->
@@ -155,7 +157,7 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
                         .clickable(enabled = !working && !joined) { run { model.joinSyncPlayGroup(group) } }
                         .padding(vertical = 4.dp),
                 ) {
-                    Text(group.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(group.name, style = MaterialTheme.typography.titleMedium)
                     Text(group.subtitle, color = AdminCaption, fontFamily = ZelefinFont, fontSize = 13.sp)
                 }
             }
@@ -177,7 +179,7 @@ internal fun UsersTopic() {
     }
     when {
         loading && users.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
         }
         users.isEmpty() -> SettingsCard {
             Text(error ?: "This server did not return any users.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp)
@@ -193,7 +195,7 @@ internal fun UsersTopic() {
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(account.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            Text(account.name, style = MaterialTheme.typography.titleMedium)
                             Text(account.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 13.sp)
                         }
                         Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = AdminCaption)
@@ -211,7 +213,6 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     val context = LocalContext.current
     val session = state.session
     val scope = rememberCoroutineScope()
-    val haze = LocalZelefinHaze.current
     var account by remember { mutableStateOf<ServerUserAccount?>(null) }
     var draft by remember { mutableStateOf<UserPolicyDraft?>(null) }
     var username by remember { mutableStateOf("") }
@@ -272,10 +273,8 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         run { model.updateUserPolicy(current.id, next.applyTo(policy)) }
     }
 
-    PresentZelefinOverlay(visible = confirmDisable && haze != null) {
-        val hazeState = haze ?: return@PresentZelefinOverlay
-        ZelefinGlassConfirm(
-            hazeState = hazeState,
+    if (confirmDisable) {
+        SettingsAlertDialog(
             title = "Disable this account?",
             message = "They will not be able to sign in until you turn the account back on.",
             confirmLabel = "Disable Account",
@@ -287,10 +286,8 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             onDismiss = { confirmDisable = false },
         )
     }
-    PresentZelefinOverlay(visible = confirmReset && haze != null) {
-        val hazeState = haze ?: return@PresentZelefinOverlay
-        ZelefinGlassConfirm(
-            hazeState = hazeState,
+    if (confirmReset) {
+        SettingsAlertDialog(
             title = "Reset this password?",
             message = "Jellyfin clears the password. They set a new one the next time they sign in.",
             confirmLabel = "Reset Password",
@@ -302,10 +299,8 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             onDismiss = { confirmReset = false },
         )
     }
-    PresentZelefinOverlay(visible = confirmDemote && haze != null) {
-        val hazeState = haze ?: return@PresentZelefinOverlay
-        ZelefinGlassConfirm(
-            hazeState = hazeState,
+    if (confirmDemote) {
+        SettingsAlertDialog(
             title = "Remove administrator access?",
             message = "This user will no longer be able to manage the server.",
             confirmLabel = "Remove Access",
@@ -343,7 +338,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     if (current == null || policy == null) {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             if (status?.second == true) Text(status?.first.orEmpty(), color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp)
-            else CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            else CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
         }
         return
     }
@@ -353,7 +348,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             UserAdminAvatar(session, current, 104.dp)
             if (photoBusy) {
                 Box(Modifier.size(104.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.48f)), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                 }
             }
             Box(
@@ -369,7 +364,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text(current.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+        Text(current.name, style = MaterialTheme.typography.headlineMedium)
         Text(current.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp)
         if (current.primaryImageTag != null) {
             Spacer(Modifier.height(10.dp))
@@ -394,7 +389,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     SettingsFooter("Administrators can change this user's profile picture on the server.")
 
     SettingsCard {
-        LoginField(label = "USERNAME", value = username, icon = Icons.Outlined.Person, onChange = { username = it }, placeholder = "Username")
+        SettingsTextField(label = "USERNAME", value = username, icon = Icons.Outlined.Person, onChange = { username = it }, placeholder = "Username")
         Spacer(Modifier.height(16.dp))
         SettingsPrimaryButton("Save Username", busy = saving, enabled = username.trim().isNotEmpty() && username.trim() != current.name && !photoBusy) {
             run { model.renameUser(current, username) }
@@ -427,9 +422,9 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
 
     SettingsHeader("Password")
     SettingsCard {
-        LoginField(label = "NEW", value = newPassword, icon = Icons.Outlined.Lock, onChange = { newPassword = it }, placeholder = "New", password = true, keyboard = KeyboardType.Password)
+        SettingsTextField(label = "NEW", value = newPassword, icon = Icons.Outlined.Lock, onChange = { newPassword = it }, placeholder = "New", password = true, keyboard = KeyboardType.Password)
         SettingsCardDivider()
-        LoginField(label = "CONFIRM", value = confirmPassword, icon = Icons.Outlined.Lock, onChange = { confirmPassword = it }, placeholder = "Confirm", password = true, keyboard = KeyboardType.Password)
+        SettingsTextField(label = "CONFIRM", value = confirmPassword, icon = Icons.Outlined.Lock, onChange = { confirmPassword = it }, placeholder = "Confirm", password = true, keyboard = KeyboardType.Password)
         if (confirmPassword.isNotEmpty() && newPassword != confirmPassword) {
             Text("The new passwords do not match.", color = AdminError, fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         }
@@ -529,7 +524,7 @@ internal fun ScheduledTasksTopic() {
 
     when {
         loading && tasks.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
         }
         tasks.isEmpty() -> SettingsCard { Text(error ?: "This server did not return any scheduled tasks.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp) }
         else -> {
@@ -563,7 +558,7 @@ private fun ScheduledTaskRow(task: ScheduledTask, isBusy: Boolean, onOpen: () ->
     Column(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(task.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text(task.name, style = MaterialTheme.typography.titleMedium)
                 Text(
                     task.stateSubtitle,
                     color = if (task.lastStatus == TaskCompletionStatus.FAILED && !task.isActive) AdminError else AdminCaption,
@@ -572,15 +567,15 @@ private fun ScheduledTaskRow(task: ScheduledTask, isBusy: Boolean, onOpen: () ->
                 )
             }
             when {
-                isBusy -> CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                isBusy -> CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                 task.canCancel -> Text("Cancel", color = AdminError, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onCancel).padding(8.dp))
                 task.canStart -> Text("Start", color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onStart).padding(8.dp))
             }
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = AdminCaption)
         }
         if (task.isActive) {
-            if (task.progressFraction != null) LinearProgressIndicator(progress = { task.progressFraction!! }, color = ZelefinCyan, trackColor = Color.White.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth())
-            else LinearProgressIndicator(color = ZelefinCyan, trackColor = Color.White.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth())
+            if (task.progressFraction != null) LinearProgressIndicator(progress = { task.progressFraction!! }, color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
+            else LinearProgressIndicator(color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -619,7 +614,7 @@ internal fun ScheduledTaskDetailTopic(taskId: String) {
     if (current == null) {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             if (error != null) Text(error.orEmpty(), color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp)
-            else CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            else CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
         }
         return
     }
@@ -632,8 +627,8 @@ internal fun ScheduledTaskDetailTopic(taskId: String) {
         }
         if (current.isActive) {
             SettingsCardDivider()
-            if (current.progressFraction != null) LinearProgressIndicator(progress = { current.progressFraction!! }, color = ZelefinCyan, trackColor = Color.White.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth())
-            else LinearProgressIndicator(color = ZelefinCyan, trackColor = Color.White.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth())
+            if (current.progressFraction != null) LinearProgressIndicator(progress = { current.progressFraction!! }, color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
+            else LinearProgressIndicator(color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
         }
     }
     if (current.summary.isNotEmpty()) {
@@ -679,7 +674,7 @@ internal fun ActivityLogTopic() {
     }
     when {
         loading && entries.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
         }
         entries.isEmpty() -> SettingsCard { Text(error ?: "This server has not logged any recent activity.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp) }
         else -> {
@@ -688,7 +683,7 @@ internal fun ActivityLogTopic() {
                 entries.forEachIndexed { index, entry ->
                     if (index > 0) SettingsCardDivider()
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Text(entry.title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text(entry.title, style = MaterialTheme.typography.titleMedium)
                         if (entry.subtitle.isNotEmpty()) Text(entry.subtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 13.sp)
                         formatAdminDate(entry.date).takeIf { it.isNotEmpty() }?.let {
                             Text(it, color = AdminCaption, fontFamily = ZelefinFont, fontSize = 12.sp)
@@ -704,7 +699,6 @@ internal fun ActivityLogTopic() {
 internal fun BackupsTopic() {
     val model: ZelefinModel = viewModel()
     val scope = rememberCoroutineScope()
-    val haze = LocalZelefinHaze.current
     var backups by remember { mutableStateOf(emptyList<ServerBackup>()) }
     var loading by remember { mutableStateOf(true) }
     var creating by remember { mutableStateOf(false) }
@@ -719,11 +713,8 @@ internal fun BackupsTopic() {
     }
     LaunchedEffect(Unit) { load() }
 
-    PresentZelefinOverlay(visible = restore != null && haze != null) {
-        val hazeState = haze ?: return@PresentZelefinOverlay
-        val target = restore ?: return@PresentZelefinOverlay
-        ZelefinGlassConfirm(
-            hazeState = hazeState,
+    restore?.let { target ->
+        SettingsAlertDialog(
             title = "Restore this backup?",
             message = "Jellyfin will restart and replace the current database with this archive. This cannot be undone from the app.",
             confirmLabel = "Restore and Restart Server",
@@ -741,7 +732,7 @@ internal fun BackupsTopic() {
 
     if (loading && backups.isEmpty() && error == null) {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
         }
         return
     }
@@ -761,7 +752,7 @@ internal fun BackupsTopic() {
         } else {
             backups.forEachIndexed { index, backup ->
                 if (index > 0) SettingsCardDivider()
-                Text(backup.fileName, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text(backup.fileName, style = MaterialTheme.typography.titleMedium)
                 val subtitle = listOfNotNull(formatAdminDate(backup.dateCreated).takeIf { it.isNotEmpty() }, backup.serverVersion?.takeIf { it.isNotEmpty() }?.let { "Jellyfin $it" }).joinToString(" · ")
                 if (subtitle.isNotEmpty()) Text(subtitle, color = AdminCaption, fontFamily = ZelefinFont, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
@@ -839,22 +830,15 @@ internal fun BrandingTopic(state: ZelefinUiState) {
 
 @Composable
 private fun AdminMultilineField(value: String, onChange: (String) -> Unit, placeholder: String, monospaced: Boolean = false) {
-    val style = TextStyle(
-        color = Color.White,
-        fontFamily = if (monospaced) FontFamily.Monospace else ZelefinFont,
-        fontSize = if (monospaced) 13.sp else 16.sp,
-    )
-    BasicTextField(
+    OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        textStyle = style,
-        cursorBrush = SolidColor(ZelefinCyan),
-        modifier = Modifier.fillMaxWidth().height(if (monospaced) 140.dp else 96.dp),
-        decorationBox = { inner ->
-            Box {
-                if (value.isEmpty()) Text(placeholder, style = style, color = AdminCaption)
-                inner()
-            }
+        modifier = Modifier.fillMaxWidth().height(if (monospaced) 160.dp else 120.dp),
+        placeholder = { Text(placeholder) },
+        textStyle = if (monospaced) {
+            MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+        } else {
+            MaterialTheme.typography.bodyLarge
         },
     )
 }

@@ -6,6 +6,11 @@ struct DirectPlaySubtitleOverlay: View {
     let cues: [DirectPlaySubtitleCue]
     let pictureSize: CGSize
     var fillsScreen = false
+    @AppStorage(SubtitleAppearance.sizeKey) private var sizeRaw = SubtitleAppearance.Size.medium.rawValue
+    @AppStorage(SubtitleAppearance.colorKey) private var colorRaw = SubtitleAppearance.TextColor.white.rawValue
+    @AppStorage(SubtitleAppearance.backgroundKey) private var backgroundRaw = SubtitleAppearance.Background.dropShadow.rawValue
+    @AppStorage(SubtitleAppearance.brightnessKey) private var brightness = 100.0
+    @AppStorage(SubtitleAppearance.positionKey) private var positionLift = 0.0
 
     var body: some View {
         GeometryReader { proxy in
@@ -31,9 +36,9 @@ struct DirectPlaySubtitleOverlay: View {
         case .image(let image):
             bitmapCue(image, in: video)
         case .text(let text):
-            textCue(text, placement: cue.placement, in: video)
+            textCue(text, placement: nil, in: video)
         case .richText(let runs):
-            textCue(runs.map(\.text).joined(), placement: cue.placement, in: video)
+            textCue(DirectPlayPictureLayout.joinedRunText(runs.map(\.text)), placement: nil, in: video)
         }
     }
 
@@ -50,12 +55,20 @@ struct DirectPlaySubtitleOverlay: View {
     }
 
     private func textCue(_ text: String, placement: DirectPlaySubtitlePlacement?, in video: CGRect) -> some View {
-        let layout = DirectPlayPictureLayout.textLayout(pictureHeight: video.height)
+        let size = SubtitleAppearance.Size(rawValue: sizeRaw) ?? .medium
+        let color = SubtitleAppearance.TextColor(rawValue: colorRaw) ?? .white
+        let background = SubtitleAppearance.Background(rawValue: backgroundRaw) ?? .dropShadow
+        let layout = DirectPlayPictureLayout.textLayout(
+            pictureHeight: video.height,
+            sizeScale: size.scale,
+            lift: CGFloat(positionLift / 100)
+        )
         let point: CGPoint
         if let position = placement?.position {
+            let lift = CGFloat(positionLift / 100) * video.height * 0.32
             point = CGPoint(
                 x: video.minX + position.x * video.width,
-                y: video.minY + position.y * video.height
+                y: video.minY + position.y * video.height - lift
             )
         } else {
             point = CGPoint(
@@ -66,9 +79,7 @@ struct DirectPlaySubtitleOverlay: View {
         return Text(text)
             .font(.system(size: layout.fontSize, weight: .semibold))
             .multilineTextAlignment(.center)
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.95), radius: 2, y: 1)
-            .shadow(color: .black, radius: 0, y: 1)
+            .modifier(SubtitleTextChrome(color: color, background: background, brightness: brightness))
             .frame(maxWidth: video.width * 0.9)
             .position(x: point.x, y: point.y)
     }

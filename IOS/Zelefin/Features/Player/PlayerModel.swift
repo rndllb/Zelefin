@@ -243,6 +243,7 @@ final class PlayerModel {
 
     var onUserTransport: ((RemotePlaybackAction) -> Void)?
     var onDidStart: (() -> Void)?
+    var onRemoteSeekApplied: ((TimeInterval) -> Void)?
     @ObservationIgnored private var isApplyingRemote = false
 
     func togglePlayPause() {
@@ -272,6 +273,7 @@ final class PlayerModel {
             resumePlayback()
         case .seek(let time):
             seek(to: time)
+            onRemoteSeekApplied?(time)
         case .skip(let interval):
             skip(by: interval)
         case .previous:
@@ -442,6 +444,11 @@ final class PlayerModel {
     func selectSubtitle(id: Int?) {
         selectedSubtitleID = id
         applySubtitleSelection(id)
+    }
+
+    func applySubtitleAppearance() {
+        player?.currentItem?.textStyleRules = SubtitleAppearance.textStyleRules()
+        publishVisibleSubtitleCues(at: currentSeconds)
     }
 
     private func applySubtitleSelection(_ id: Int?) {
@@ -915,7 +922,10 @@ final class PlayerModel {
     }
 
     private func publishVisibleSubtitleCues(at seconds: TimeInterval) {
-        let visible = DirectPlayPictureLayout.visibleCues(in: retainedSubtitleCues, at: seconds)
+        let visible = DirectPlayPictureLayout.visibleCues(
+            in: retainedSubtitleCues,
+            at: seconds - SubtitleAppearance.syncSeconds
+        )
         if visible != subtitleCues {
             subtitleCues = visible
         }
@@ -1168,6 +1178,7 @@ final class PlayerModel {
                 item = AVPlayerItem(url: url)
             }
         }
+        item.textStyleRules = SubtitleAppearance.textStyleRules()
         let player = AVPlayer(playerItem: item)
         player.appliesMediaSelectionCriteriaAutomatically = true
         return player

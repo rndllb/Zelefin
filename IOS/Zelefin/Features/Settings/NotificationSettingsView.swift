@@ -34,9 +34,7 @@ struct NotificationSettingsView: View {
         Section {
             Toggle("Notifications", isOn: $isEnabled)
                 .tint(AccentPreferences.current)
-                .font(.body.weight(.semibold))
-                .settingsLoginCard()
-                .settingsCardRow()
+                .font(.body.weight(.medium))
         } footer: {
             Text(permissionFooter)
         }
@@ -47,7 +45,7 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Zelefin plugin")
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(LoginPalette.primaryText)
                     Spacer(minLength: 8)
                     SettingsStatusValue(
@@ -87,8 +85,6 @@ struct NotificationSettingsView: View {
                     SettingsStatusText(text: pluginStatus, isError: pluginStatus.contains("could not"))
                 }
             }
-            .settingsLoginCard()
-            .settingsCardRow()
         } footer: {
             Text(pluginRequiredFooter)
         }

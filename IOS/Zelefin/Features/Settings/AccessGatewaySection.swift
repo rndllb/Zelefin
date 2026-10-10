@@ -6,21 +6,12 @@ struct AccessGatewaySection: View {
 
     var body: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsLabeledField(label: "Client ID", systemImage: "key.fill") {
-                    TextField("Client ID or token ID", text: $clientID)
-                        .textContentType(.username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                SettingsCardDivider()
-                SettingsLabeledField(label: "Secret", systemImage: "lock.fill") {
-                    SecureField("Client secret or access token", text: $clientSecret)
-                        .textContentType(.password)
-                }
-            }
-            .settingsLoginCard()
-            .settingsCardRow()
+            TextField("Client ID or token ID", text: $clientID)
+                .textContentType(.username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("Client secret or access token", text: $clientSecret)
+                .textContentType(.password)
         } header: {
             Text("Access Gateway")
         } footer: {

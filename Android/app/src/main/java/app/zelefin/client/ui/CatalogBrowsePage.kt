@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -88,7 +89,6 @@ private val PillSegmentWidth = 46.dp
 private val GridInset = 16.dp
 private val GridColumnSpacing = 10.dp
 private val GridRowSpacing = 20.dp
-private val RowFill = Color.White.copy(alpha = 0.08f)
 
 private enum class CatalogSheet { Sort, Filters }
 
@@ -287,7 +287,6 @@ private fun CatalogGrid(
                     val inner = maxWidth - GridInset * 2
                     val count = max(3, ((inner + GridColumnSpacing) / (124.dp + GridColumnSpacing)).toInt())
                     val gridState = rememberLazyGridState()
-                    TrackHazeScroll(gridState.isScrollInProgress)
                     var previousOffset by remember { mutableIntStateOf(0) }
                     var showingHeader by remember { mutableStateOf(true) }
                     LaunchedEffect(gridState) {
@@ -305,17 +304,24 @@ private fun CatalogGrid(
                             onHeaderVisible(showingHeader)
                         }
                     }
-                    LazyVerticalGrid(
-                        state = gridState,
-                        columns = GridCells.Fixed(count),
-                        contentPadding = PaddingValues(start = GridInset, end = GridInset, top = headerHeight, bottom = bottomInset),
-                        horizontalArrangement = Arrangement.spacedBy(GridColumnSpacing),
-                        verticalArrangement = Arrangement.spacedBy(GridRowSpacing),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        items(items, key = { it.id }) { item ->
-                            CatalogPoster(item, session) { onOpen(item) }
+                    Box(Modifier.fillMaxSize()) {
+                        LazyVerticalGrid(
+                            state = gridState,
+                            columns = GridCells.Fixed(count),
+                            contentPadding = PaddingValues(start = GridInset, end = GridInset + 18.dp, top = headerHeight, bottom = bottomInset),
+                            horizontalArrangement = Arrangement.spacedBy(GridColumnSpacing),
+                            verticalArrangement = Arrangement.spacedBy(GridRowSpacing),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            items(items, key = { it.id }) { item ->
+                                CatalogPoster(item, session) { onOpen(item) }
+                            }
                         }
+                        CatalogAlphabetRail(
+                            items = items,
+                            gridState = gridState,
+                            modifier = Modifier.align(Alignment.CenterEnd).padding(top = headerHeight),
+                        )
                     }
                 }
             }
@@ -619,7 +625,7 @@ private fun FilterChoices(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(RowFill)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             decorationBox = { inner ->
                 if (search.isEmpty()) Text("Search", color = ZelefinMuted, fontSize = 17.sp)
@@ -726,7 +732,7 @@ private fun SectionGroup(content: @Composable () -> Unit) {
         Modifier
             .padding(horizontal = 16.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(RowFill),
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         content()
     }

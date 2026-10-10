@@ -174,7 +174,7 @@ enum DownloadControlCopy {
         case .unavailable, .idle:
             "Download"
         case .downloading(let fraction):
-            fraction > 0 ? "Cancel Download · \(Int((fraction * 100).rounded()))%" : "Cancel Download"
+            fraction > 0 ? "Pause Download · \(Int((fraction * 100).rounded()))%" : "Cancel Download"
         case .downloaded:
             "Remove Download"
         }

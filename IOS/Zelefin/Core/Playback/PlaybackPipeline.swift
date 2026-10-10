@@ -14,6 +14,8 @@ enum PlaybackPreferences {
     static let defaultRateKey = "zelefin.playback.default-rate"
     static let audioLanguageKey = "zelefin.playback.audio-language"
     static let subtitleLanguageKey = "zelefin.playback.subtitle-language"
+    static let preferSDHKey = "zelefin.playback.prefer-sdh"
+    static let downloadWifiOnlyKey = "zelefin.playback.download-wifi-only"
 
     static var useNativeVideoPlayer: Bool {
         bool(for: useNativeVideoPlayerKey, default: false)
@@ -69,6 +71,14 @@ enum PlaybackPreferences {
     static var subtitleLanguageCode: String {
         get { UserDefaults.standard.string(forKey: subtitleLanguageKey) ?? PlaybackLanguage.automaticCode }
         set { UserDefaults.standard.set(newValue, forKey: subtitleLanguageKey) }
+    }
+
+    static var preferSDH: Bool {
+        bool(for: preferSDHKey, default: false)
+    }
+
+    static var downloadWifiOnly: Bool {
+        bool(for: downloadWifiOnlyKey, default: false)
     }
 
     /// MPEG-TS HLS is only optional while Apple’s player is on. Direct Play needs fMP4.

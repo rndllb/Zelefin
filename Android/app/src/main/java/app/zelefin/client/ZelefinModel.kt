@@ -230,7 +230,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private val sessionSocket = SessionSocket(application, viewModelScope)
     private val _playerDirectives = MutableSharedFlow<PlayerDirective>(replay = 1, extraBufferCapacity = 8)
     val playerDirectives: SharedFlow<PlayerDirective> = _playerDirectives.asSharedFlow()
-    private var ignoreRemotePauseUntil = 0L
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = refreshRoute()
         override fun onLost(network: Network) = refreshRoute()
@@ -520,7 +519,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun leaveSyncPlayGroup() {
         jellyfinClient().syncPlayLeaveGroup()
-        ignoreRemotePauseUntil = 0L
         _state.update { it.copy(syncPlayGroupId = null, syncPlayGroupName = null, syncPlayPlaylistItemId = null) }
     }
 
@@ -606,7 +604,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 when (directive) {
                     PlayerDirective.Pause -> client.syncPlayPause()
                     PlayerDirective.Play -> client.syncPlayUnpause()
-                    is PlayerDirective.Seek -> client.syncPlaySeek(directive.seconds)
+                    is PlayerDirective.Seek -> {
+                        client.syncPlaySeek(directive.seconds)
+                        client.syncPlayReady(true, _state.value.syncPlayPlaylistItemId, directive.seconds)
+                    }
                 }
             }
         }
@@ -1459,7 +1460,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             }
 
             override fun onGroupLeft() {
-                ignoreRemotePauseUntil = 0L
                 _state.update { it.copy(syncPlayGroupId = null, syncPlayGroupName = null, syncPlayPlaylistItemId = null) }
             }
 
@@ -1514,17 +1514,17 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     private fun applySyncPlayCommand(command: SendCommandType, positionSeconds: Double?) {
         when (command) {
-            SendCommandType.PAUSE -> {
-                if (android.os.SystemClock.elapsedRealtime() < ignoreRemotePauseUntil) return
-                _playerDirectives.tryEmit(PlayerDirective.Pause)
-            }
+            SendCommandType.PAUSE -> _playerDirectives.tryEmit(PlayerDirective.Pause)
             SendCommandType.UNPAUSE -> _playerDirectives.tryEmit(PlayerDirective.Play)
-            SendCommandType.SEEK -> positionSeconds?.let { _playerDirectives.tryEmit(PlayerDirective.Seek(it)) }
+            SendCommandType.SEEK -> positionSeconds?.let { seconds ->
+                _playerDirectives.tryEmit(PlayerDirective.Seek(seconds))
+                notifySyncPlayReady(seconds)
+            }
             SendCommandType.STOP -> applyRemoteStop()
         }
     }
 
-    private fun notifySyncPlayReady(positionSeconds: Double) {
+    private fun notifySyncPlayReady(positionSeconds: Double, isPlaying: Boolean = true) {
         if (_state.value.syncPlayGroupId == null) return
         viewModelScope.launch {
             var playlistId = _state.value.syncPlayPlaylistItemId
@@ -1536,15 +1536,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             if (_state.value.syncPlayGroupId == null) return@launch
-            runCatching { jellyfinClient().syncPlayReady(true, playlistId, positionSeconds) }
-                .onSuccess {
-                    ignoreRemotePauseUntil = android.os.SystemClock.elapsedRealtime() + 2_500
-                    _playerDirectives.tryEmit(PlayerDirective.Play)
-                    runCatching { jellyfinClient().syncPlayUnpause() }
-                    if (positionSeconds > 5) {
-                        runCatching { jellyfinClient().syncPlaySeek(positionSeconds) }
-                    }
-                }
+            runCatching { jellyfinClient().syncPlayReady(isPlaying, playlistId, positionSeconds) }
         }
     }
 

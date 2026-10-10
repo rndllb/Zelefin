@@ -29,6 +29,32 @@ class ZelefinPushMotion<T>(initial: T) {
     var progress by mutableFloatStateOf(0f)
 }
 
+fun <T> ZelefinPushMotion<T>.followPredictivePop(from: T, to: T, gestureProgress: Float) {
+    if (cover != from || base != to) {
+        base = to
+        cover = from
+        progress = 1f
+    }
+    progress = (1f - gestureProgress).coerceIn(0f, 1f)
+}
+
+suspend fun <T> ZelefinPushMotion<T>.finishPredictivePop(to: T) {
+    animate(progress, 0f, animationSpec = PushSpec) { value, _ -> progress = value }
+    settle(to)
+}
+
+suspend fun <T> ZelefinPushMotion<T>.cancelPredictivePop(from: T) {
+    animate(progress, 1f, animationSpec = PushSpec) { value, _ -> progress = value }
+    settle(from)
+}
+
+private fun <T> ZelefinPushMotion<T>.settle(page: T) {
+    cover = null
+    base = page
+    progress = 0f
+    settled = page
+}
+
 @Composable
 fun <T> rememberZelefinPush(
     target: T,
@@ -37,33 +63,27 @@ fun <T> rememberZelefinPush(
     val motion = remember { ZelefinPushMotion(target) }
     LaunchedEffect(target) {
         val from = motion.settled
-        val kind = if (from == target) ZelefinPushRelation.None else relation(from, target)
-        when (kind) {
-            ZelefinPushRelation.None -> {
-                motion.cover = null
-                motion.base = target
-                motion.progress = 0f
-                motion.settled = target
-            }
+        if (from == target) {
+            motion.settle(target)
+            return@LaunchedEffect
+        }
+        when (relation(from, target)) {
+            ZelefinPushRelation.None -> motion.settle(target)
             ZelefinPushRelation.Push -> {
                 motion.base = from
                 motion.cover = target
                 motion.progress = 0f
                 animate(0f, 1f, animationSpec = PushSpec) { value, _ -> motion.progress = value }
-                motion.base = target
-                motion.cover = null
-                motion.progress = 0f
-                motion.settled = target
+                motion.settle(target)
             }
             ZelefinPushRelation.Pop -> {
-                motion.progress = 1f
-                motion.base = target
-                motion.cover = from
-                animate(1f, 0f, animationSpec = PushSpec) { value, _ -> motion.progress = value }
-                motion.cover = null
-                motion.base = target
-                motion.progress = 0f
-                motion.settled = target
+                if (motion.cover != from || motion.base != target) {
+                    motion.progress = 1f
+                    motion.base = target
+                    motion.cover = from
+                }
+                animate(motion.progress, 0f, animationSpec = PushSpec) { value, _ -> motion.progress = value }
+                motion.settle(target)
             }
         }
     }

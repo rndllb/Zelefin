@@ -30,11 +30,14 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -81,6 +84,10 @@ internal fun TitleMoreOverlay(
     onOpen: (MediaItem) -> Unit,
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
+    onToggleWatchlist: ((MediaItem) -> Unit)? = null,
+    onIdentify: ((MediaItem) -> Unit)? = null,
+    onEditMetadata: ((MediaItem) -> Unit)? = null,
+    onDownloadSeason: ((MediaItem) -> Unit)? = null,
     usesSilo: Boolean = false,
     skipCinemaIntros: Boolean = false,
     onToggleSkipCinema: () -> Unit = {},
@@ -193,16 +200,37 @@ internal fun TitleMoreOverlay(
                             onDismiss()
                         }
                         is app.zelefin.client.downloads.DownloadControlState.Downloading -> {
-                            app.zelefin.client.downloads.ZelefinDownloads.cancel(current.item)
+                            app.zelefin.client.downloads.ZelefinDownloads.pause(current.item)
+                            onDismiss()
+                        }
+                        is app.zelefin.client.downloads.DownloadControlState.Paused -> {
+                            app.zelefin.client.downloads.ZelefinDownloads.resume(current.item)
                             onDismiss()
                         }
                         app.zelefin.client.downloads.DownloadControlState.Downloaded -> downloadRemoval = target
                         app.zelefin.client.downloads.DownloadControlState.Unavailable -> Unit
                     }
                 },
+                onDownloadSeason = if (
+                    onDownloadSeason != null &&
+                    (current.item.kind == MediaKind.Series || current.item.kind == MediaKind.Season)
+                ) {
+                    {
+                        onDismiss()
+                        onDownloadSeason.invoke(current.item)
+                    }
+                } else {
+                    null
+                },
                 onToggleFavorite = {
                     onDismiss()
                     onToggleFavorite(current.item)
+                },
+                onToggleWatchlist = onToggleWatchlist?.let { toggle ->
+                    {
+                        onDismiss()
+                        toggle(current.item)
+                    }
                 },
                 onToggleSkipCinema = onToggleSkipCinema,
                 onCollections = onCollections,
@@ -250,6 +278,18 @@ internal fun TitleMoreOverlay(
                         }
                     }
                 },
+                onIdentify = onIdentify?.let { open ->
+                    {
+                        onDismiss()
+                        open(current.item)
+                    }
+                },
+                onEditMetadata = onEditMetadata?.let { open ->
+                    {
+                        onDismiss()
+                        open(current.item)
+                    }
+                },
                 onEditImages = onEditImages?.let { open ->
                     {
                         onDismiss()
@@ -273,7 +313,9 @@ private fun TitleMorePanel(
     onOpen: () -> Unit,
     onToggleWatched: () -> Unit,
     onDownload: () -> Unit,
+    onDownloadSeason: (() -> Unit)? = null,
     onToggleFavorite: () -> Unit,
+    onToggleWatchlist: (() -> Unit)? = null,
     onToggleSkipCinema: () -> Unit,
     onCollections: (() -> Unit)?,
     onAddSubtitles: (() -> Unit)?,
@@ -282,6 +324,8 @@ private fun TitleMorePanel(
     onPlayElsewhere: (() -> Unit)? = null,
     onSyncPlay: (() -> Unit)? = null,
     onRefreshMetadata: (() -> Unit)? = null,
+    onIdentify: (() -> Unit)? = null,
+    onEditMetadata: (() -> Unit)? = null,
     onEditImages: (() -> Unit)? = null,
     onDeleteFromLibrary: (() -> Unit)? = null,
 ) {
@@ -298,7 +342,7 @@ private fun TitleMorePanel(
         request.anchor,
         alignTrailing = true,
         onDismiss = onDismiss,
-        clearBottom = DockContentReserve,
+        clearBottom = dockContentReserve(),
     ) {
         Column(
             Modifier
@@ -325,10 +369,18 @@ private fun TitleMorePanel(
                     downloadControl.menuTitle,
                     when (downloadControl) {
                         is app.zelefin.client.downloads.DownloadControlState.Downloading -> Icons.Outlined.StopCircle
+                        is app.zelefin.client.downloads.DownloadControlState.Paused -> Icons.Outlined.Download
                         app.zelefin.client.downloads.DownloadControlState.Downloaded -> Icons.Filled.CheckCircle
                         else -> Icons.Outlined.Download
                     },
                     onDownload,
+                )
+            }
+            if (onDownloadSeason != null) {
+                MoreRow(
+                    if (item.kind == MediaKind.Season) "Download Season" else "Download Series",
+                    Icons.Outlined.Download,
+                    onDownloadSeason,
                 )
             }
             MoreRow(
@@ -336,6 +388,13 @@ private fun TitleMorePanel(
                 if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                 onToggleFavorite,
             )
+            if (onToggleWatchlist != null && !usesSilo) {
+                MoreRow(
+                    if (item.isWatchlisted) "Remove from Watchlist" else "Add to Watchlist",
+                    Icons.Outlined.PlaylistAdd,
+                    onToggleWatchlist,
+                )
+            }
             if (onHideFromHome != null) {
                 val surface = if (request.context == TitleMenuContext.NextUp) {
                     JellyfinEnhancedHomeSurface.NextUp
@@ -361,6 +420,12 @@ private fun TitleMorePanel(
                         MoreRow("Refresh Metadata", Icons.Outlined.Refresh, dismissOnClick = false, onClick = { onRefreshMetadata?.invoke() })
                     }
                     if (showAdminRemote) {
+                        if (onIdentify != null) {
+                            MoreRow("Identify…", Icons.Outlined.Search, onClick = onIdentify)
+                        }
+                        if (onEditMetadata != null) {
+                            MoreRow("Edit Metadata…", Icons.Outlined.Image, onClick = onEditMetadata)
+                        }
                         MoreRow("Edit Images…", Icons.Outlined.Image, onClick = { onEditImages?.invoke() })
                         MoreRow(
                             "Delete from Library…",
@@ -393,7 +458,7 @@ internal fun MenuHairline() {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .height(0.5.dp)
-            .background(Color.White.copy(alpha = 0.16f)),
+            .background(MaterialTheme.colorScheme.outline),
     )
 }
 
@@ -408,15 +473,15 @@ internal fun MoreRow(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val run = LocalMenuAction.current
-    val textTint = if (destructive) Color(0xFFFF453A) else DockInactive
-    val iconTint = if (destructive) Color(0xFFFF453A) else ZelefinCyan
+    val textTint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    val iconTint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
         Modifier
             .fillMaxWidth()
             .height(44.dp)
             .padding(horizontal = 4.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (pressed) DockSelectedFill else Color.Transparent)
+            .background(if (pressed) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
             .clickable(interactionSource = interaction, indication = null) {
                 if (dismissOnClick) run(onClick) else onClick()
             }

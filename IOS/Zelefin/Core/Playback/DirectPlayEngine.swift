@@ -18,8 +18,8 @@ typealias DirectPlaySeekEvent = SeekEvent
 
 /// How long Direct Play waits for SwiftUI to insert `AetherPlayerView` before `load()`.
 enum DirectPlaySurfaceGate {
-    static let waitBudget: TimeInterval = 2
-    static let pollNanoseconds: UInt64 = 20_000_000
+    static let waitBudget: TimeInterval = 0.45
+    static let pollNanoseconds: UInt64 = 8_000_000
 }
 
 /// Aether plays audio with no picture when the probe opens the file but never finds a
@@ -142,7 +142,7 @@ enum DirectPlayLoadOptions {
             ),
             preserveASSMarkup: true,
             prepareNativeSubtitles: true,
-            eagerNativeSubtitleReaders: true,
+            eagerNativeSubtitleReaders: false,
             sequentialOrigin: plan.isLive,
             maxConcurrentSourceRequests: 2,
             declaredDurationSeconds: duration,

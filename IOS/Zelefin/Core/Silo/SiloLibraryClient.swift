@@ -344,6 +344,10 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
             params["favorite"] = "true"
             return (try? await pagedCatalog(params, query: query.applyingFavoriteFilter(), onPage: onPage)) ?? []
         }
+        if kind == .watchlist {
+            await onPage?(CatalogPageUpdate(items: [], totalCount: 0))
+            return []
+        }
         let matches = HomeLayoutPreferences.libraries(libraries, matching: kind)
         if !matches.isEmpty {
             return await items(inLibraries: matches, query: query, onPage: onPage)

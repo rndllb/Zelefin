@@ -98,6 +98,7 @@ fun HomeFeedPage(
     onSignOut: () -> Unit,
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
+    onToggleWatchlist: ((MediaItem) -> Unit)? = null,
     onHideFromHome: (suspend (MediaItem, JellyfinEnhancedHomeSurface) -> String?)? = null,
     onSeeAll: (HomeShelf) -> Unit = {},
     onBrowse: (BrowsePage) -> Unit = {},
@@ -109,7 +110,6 @@ fun HomeFeedPage(
     val refreshState = rememberPullToRefreshState()
     var headerVisible by remember { mutableStateOf(true) }
     var previousOffset by remember { mutableIntStateOf(0) }
-    TrackHazeScroll(listState.isScrollInProgress)
     LaunchedEffect(listState) {
         snapshotFlow {
             listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset
@@ -258,6 +258,7 @@ fun HomeFeedPage(
         onOpen = onOpen,
         onToggleWatched = onToggleWatched,
         onToggleFavorite = onToggleFavorite,
+        onToggleWatchlist = onToggleWatchlist,
         note = note,
         onDismissNote = { note = null },
         onHideFromHome = onHideFromHome?.let { hide ->
@@ -615,7 +616,6 @@ private fun HomeRow(
             }
         }
         val rowState = rememberLazyListState()
-        TrackHazeScroll(rowState.isScrollInProgress)
         LazyRow(
             state = rowState,
             contentPadding = PaddingValues(horizontal = 16.dp),

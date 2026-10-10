@@ -16,6 +16,7 @@ struct LibraryView: View {
     @State private var showsOrganize = false
     @State private var catalogCounts: ServerCatalogCounts?
     @State private var roomCounts: [String: LibraryRoomCounts] = [:]
+    @State private var randomItem: MediaItem?
 
     private var hiddenPageBlocks: Set<LibraryPageBlock> {
         LibraryLayoutPreferences.hiddenBlocks(from: pageHiddenRaw)
@@ -74,18 +75,35 @@ struct LibraryView: View {
                 isVisible: RootPageChrome.showsTitle ? headerVisible : true,
                 liftsIntoPadTabBar: true
             ) {
-                Button {
-                    showsOrganize = true
-                } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 45, height: 45)
-                        .contentShape(Circle())
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await pickRandom() }
+                    } label: {
+                        Image("IconsaxDiceFive")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                            .foregroundStyle(.white)
+                            .frame(width: 45, height: 45)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .zelefinLiquidGlassCircle()
+                    .accessibilityLabel("Random Title")
+                    Button {
+                        showsOrganize = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 45, height: 45)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .zelefinLiquidGlassCircle()
+                    .accessibilityLabel("Arrange Library")
                 }
-                .buttonStyle(.plain)
-                .zelefinLiquidGlassCircle()
-                .accessibilityLabel("Arrange Library")
             }
         }
         .sheet(isPresented: $showsOrganize) {
@@ -123,6 +141,18 @@ struct LibraryView: View {
             applyCatalog(catalog)
             Task { await loadRoomCounts() }
         }
+        .navigationDestination(item: $randomItem) { item in
+            ItemDetailView(item: item)
+        }
+    }
+
+    private func pickRandom() async {
+        if let title = await session.library?.randomTitle() {
+            randomItem = title
+        } else {
+            let pool = (session.cachedCatalog(kind: .movies) ?? []) + (session.cachedCatalog(kind: .shows) ?? [])
+            randomItem = pool.randomElement()
+        }
     }
 
     private var rooms: some View {
@@ -149,7 +179,7 @@ struct LibraryView: View {
     }
 
     private var visibleJumpBlocks: [LibraryPageBlock] {
-        [LibraryPageBlock.favorites, .downloaded, .genres].filter { !hiddenPageBlocks.contains($0) }
+        [LibraryPageBlock.favorites, .watchlist, .downloaded, .genres].filter { !hiddenPageBlocks.contains($0) }
     }
 
     private var jumpRow: some View {
@@ -167,6 +197,10 @@ struct LibraryView: View {
         case .favorites:
             jumpLink(block.title, systemImage: block.systemImage) {
                 CatalogBrowseView(title: "Favorites", libraryKind: .favorites, showsBackButton: true)
+            }
+        case .watchlist:
+            jumpLink(block.title, systemImage: block.systemImage) {
+                CatalogBrowseView(title: "Watchlist", libraryKind: .watchlist, showsBackButton: true)
             }
         case .downloaded:
             jumpLink(block.title, systemImage: block.systemImage) {
@@ -853,33 +887,48 @@ struct LibraryItemsView: View {
     }
 
     private var catalogBody: some View {
-        ScrollView {
-            if isLoading && items.isEmpty {
-                ProgressView().tint(.white).padding(.top, 80)
-            } else if items.isEmpty {
-                ContentUnavailableView(
-                    query.isDefault ? "No Titles Yet" : "No Matches",
-                    systemImage: "rectangle.stack",
-                    description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
-                )
-                .padding(.top, 40)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    CatalogIndexBar(progress: indexProgress)
-                    LazyVGrid(columns: columns, spacing: 20) {
-                        ForEach(items) { item in
-                            NavigationLink {
-                                LibraryItemRoute(item: item)
-                            } label: {
-                                FillingPortraitPoster(
-                                    item: item,
-                                    imageURL: session.library?.primaryURL(for: item)
-                                )
+        ScrollViewReader { proxy in
+            ZStack {
+                ScrollView {
+                    if isLoading && items.isEmpty {
+                        ProgressView().tint(.white).padding(.top, 80)
+                    } else if items.isEmpty {
+                        ContentUnavailableView(
+                            query.isDefault ? "No Titles Yet" : "No Matches",
+                            systemImage: "rectangle.stack",
+                            description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
+                        )
+                        .padding(.top, 40)
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            CatalogIndexBar(progress: indexProgress)
+                            LazyVGrid(columns: columns, spacing: 20) {
+                                ForEach(items) { item in
+                                    NavigationLink {
+                                        LibraryItemRoute(item: item)
+                                    } label: {
+                                        FillingPortraitPoster(
+                                            item: item,
+                                            imageURL: session.library?.primaryURL(for: item)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .id(item.id)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .padding(16)
+                            .padding(.trailing, 14)
                         }
                     }
-                    .padding(16)
+                }
+                if !items.isEmpty {
+                    CatalogAlphabetRail(items: items) { id in
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            proxy.scrollTo(id, anchor: .top)
+                        }
+                    }
                 }
             }
         }
@@ -901,8 +950,12 @@ struct LibraryItemsView: View {
             showSort: $showSort
         )
         .task { await loadOptions() }
-        .task { await load() }
-        .onChange(of: query) { _, _ in
+        .task {
+            query = CatalogQueryStore.load(key: CatalogQueryStore.key(kind: library.libraryKind, libraryID: library.id))
+            await load()
+        }
+        .onChange(of: query) { _, next in
+            CatalogQueryStore.save(key: CatalogQueryStore.key(kind: library.libraryKind, libraryID: library.id), query: next)
             guard !showFilters, !showSort else { return }
             Task { await load() }
         }

@@ -143,7 +143,7 @@ struct SiloAvatarPickerView: View {
     private var photosRow: some View {
         PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
             Label("Choose Photo", systemImage: "photo.on.rectangle")
-                .font(.body.weight(.semibold))
+                .font(.body.weight(.medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
         }

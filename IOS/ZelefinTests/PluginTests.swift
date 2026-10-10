@@ -640,6 +640,48 @@ final class PlaybackLanguageTests: XCTestCase {
         XCTAssertEqual(PlaybackLanguage.subtitleIndex(in: tracks, preference: "en"), 2)
     }
 
+    func testAlwaysTurnsSubtitlesOnWithoutPreferredLanguage() {
+        let tracks = [
+            MediaTrack(id: 2, kind: .subtitle, language: "eng", title: "English", codec: "srt", isSelected: false, isDefault: false),
+            MediaTrack(id: 3, kind: .subtitle, language: "spa", title: "Spanish", codec: "srt", isSelected: false, isDefault: false)
+        ]
+        XCTAssertEqual(
+            PlaybackLanguage.startingSubtitleIndex(
+                in: tracks,
+                serverIndex: nil,
+                mode: .always,
+                preferredLanguage: "",
+                audioLanguage: "eng",
+                preferSDH: false,
+                deviceLanguage: "en"
+            ),
+            2
+        )
+        XCTAssertNil(
+            PlaybackLanguage.startingSubtitleIndex(
+                in: tracks,
+                serverIndex: nil,
+                mode: .default,
+                preferredLanguage: "",
+                audioLanguage: "eng",
+                preferSDH: false,
+                deviceLanguage: "en"
+            )
+        )
+        XCTAssertNil(
+            PlaybackLanguage.startingSubtitleIndex(
+                in: tracks,
+                serverIndex: nil,
+                mode: .always,
+                preferredLanguage: "",
+                audioLanguage: "eng",
+                preferSDH: false,
+                deviceLanguage: "en",
+                forcedByUser: true
+            )
+        )
+    }
+
     func testAudioPrefersMatchingLanguage() {
         let tracks = [
             MediaTrack(id: 1, kind: .audio, language: "ja", title: "Japanese", codec: "aac", isSelected: true, isDefault: true),

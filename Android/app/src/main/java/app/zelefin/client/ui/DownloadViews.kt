@@ -21,23 +21,30 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowCircleDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +69,7 @@ import androidx.compose.ui.graphics.vector.PathData
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -82,6 +90,7 @@ import app.zelefin.client.downloads.ZelefinDownloads
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
 import app.zelefin.core.SavedSession
+import app.zelefin.core.SeasonDownloadChoice
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -89,9 +98,8 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private val DestructiveRed = Color(0xFFFF453A)
-private val DownloadCardFill = Color.White.copy(alpha = 0.08f)
 
-/** Two-button glass alert: Cancel on the leading side, the action on the trailing side. */
+/** Two-button confirm: Cancel on the leading side, the action on the trailing side. */
 @Composable
 private fun DownloadGlassConfirm(
     hazeState: ZelefinHazeState,
@@ -102,45 +110,14 @@ private fun DownloadGlassConfirm(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
-        Column(
-            Modifier
-                .width(270.dp)
-                .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Column(
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(4.dp))
-                Text(message, color = DockInactive, fontFamily = ZelefinFont, fontSize = 13.sp, textAlign = TextAlign.Center)
-            }
-            Box(Modifier.fillMaxWidth().height(0.5.dp).background(DockBorder))
-            Row(Modifier.fillMaxWidth().height(44.dp)) {
-                Box(
-                    Modifier.weight(1f).fillMaxHeight().clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Cancel", color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                }
-                Box(Modifier.width(0.5.dp).fillMaxHeight().background(DockBorder))
-                Box(
-                    Modifier.weight(1f).fillMaxHeight().clickable(onClick = onConfirm),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(confirmLabel, color = if (destructive) DestructiveRed else ZelefinCyan, fontFamily = ZelefinFont, fontSize = 17.sp)
-                }
-            }
-        }
-    }
+    SettingsAlertDialog(
+        title = title,
+        message = message,
+        confirmLabel = confirmLabel,
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+        destructive = destructive,
+    )
 }
 
 @Composable
@@ -223,8 +200,10 @@ internal fun startDownload(target: MediaItem) {
 internal fun DownloadSharePill(
     item: MediaItem,
     episodes: List<MediaItem>,
+    seasons: List<MediaItem> = emptyList(),
     onShare: () -> Unit,
     onRemove: (MediaItem) -> Unit,
+    onChooseSeasons: ((Rect) -> Unit)? = null,
 ) {
     val downloads by ZelefinDownloads.state.collectAsState()
     val control = downloads.control(item, episodes)
@@ -258,8 +237,20 @@ internal fun DownloadSharePill(
                 trailingIcon = Icons.Outlined.Share,
                 onLeading = {
                     when (ZelefinDownloads.state.value.control(item, episodes)) {
-                        DownloadControlState.Idle -> startDownload(target)
-                        is DownloadControlState.Downloading -> ZelefinDownloads.cancel(target)
+                        DownloadControlState.Idle -> {
+                            if (item.kind == MediaKind.Series) {
+                                val choices = SeasonDownloadChoice.options(seasons, episodes)
+                                if (choices.size > 1 && onChooseSeasons != null) {
+                                    onChooseSeasons(bounds[0])
+                                } else {
+                                    startSeasonDownload(choices.firstOrNull()?.seasonIndex?.let(::setOf), episodes, target)
+                                }
+                            } else {
+                                startDownload(target)
+                            }
+                        }
+                        is DownloadControlState.Downloading -> ZelefinDownloads.pause(target)
+                        is DownloadControlState.Paused -> ZelefinDownloads.resume(target)
                         DownloadControlState.Downloaded -> onRemove(target)
                         DownloadControlState.Unavailable -> Unit
                     }
@@ -271,6 +262,136 @@ internal fun DownloadSharePill(
     SideEffect {
         val disc = host?.discs?.firstOrNull { it.key == key } ?: return@SideEffect
         if (disc.bounds == Rect.Zero && bounds[0] != Rect.Zero) disc.bounds = bounds[0]
+    }
+}
+
+internal fun startSeasonDownload(indexes: Set<Int>?, episodes: List<MediaItem>, fallback: MediaItem) {
+    val selected = SeasonDownloadChoice.episodes(indexes, episodes)
+    ZelefinDownloads.startAll(selected.ifEmpty { listOf(fallback) })
+}
+
+@Composable
+internal fun DownloadSeasonsSheet(
+    seasons: List<MediaItem>,
+    episodes: List<MediaItem>,
+    onConfirm: (Set<Int>) -> Unit,
+    onDismiss: () -> Unit,
+    anchor: Rect = Rect.Zero,
+    visible: Boolean = true,
+) {
+    val haze = LocalZelefinHaze.current
+    PresentZelefinOverlay(visible = visible && haze != null) {
+        val hazeState = haze ?: return@PresentZelefinOverlay
+        val choices = remember(seasons, episodes) { SeasonDownloadChoice.options(seasons, episodes) }
+        val indexes = remember(choices) { choices.mapNotNull { it.seasonIndex }.toSet() }
+        var selected by remember(choices) { mutableStateOf(emptySet<Int>()) }
+        val allOn = indexes.isNotEmpty() && selected.containsAll(indexes)
+        DownloadSeasonsMenu(
+            hazeState = hazeState,
+            choices = choices,
+            indexes = indexes,
+            selected = selected,
+            allOn = allOn,
+            screenHeight = LocalConfiguration.current.screenHeightDp.dp,
+            anchor = anchor,
+            onSelect = { selected = it },
+            onConfirm = onConfirm,
+            onDismiss = onDismiss,
+        )
+    }
+}
+
+@Composable
+private fun DownloadSeasonsMenu(
+    hazeState: ZelefinHazeState,
+    choices: List<SeasonDownloadChoice>,
+    indexes: Set<Int>,
+    selected: Set<Int>,
+    allOn: Boolean,
+    screenHeight: Dp,
+    anchor: Rect,
+    onSelect: (Set<Int>) -> Unit,
+    onConfirm: (Set<Int>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AnchoredMenuFrame(anchor, alignTrailing = true, onDismiss) {
+        val run = LocalMenuAction.current
+        Column(
+            Modifier
+                .widthIn(max = 250.dp)
+                .zelefinGlassChrome(hazeState, ZelefinMenuShape)
+                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+                .zelefinMenuWidth()
+                .padding(vertical = 4.dp),
+        ) {
+            Column(Modifier.heightIn(max = screenHeight * 0.45f).verticalScroll(rememberScrollState())) {
+                DownloadSeasonRow("Select All", selected = allOn) {
+                    onSelect(if (allOn) emptySet() else indexes)
+                }
+                choices.forEach { choice ->
+                    val number = choice.seasonIndex ?: return@forEach
+                    DownloadSeasonRow(choice.title, selected = number in selected) {
+                        onSelect(if (number in selected) selected - number else selected + number)
+                    }
+                }
+            }
+            Box(
+                Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(DockBorder),
+            )
+            DownloadMenuRow("Cancel", Icons.Outlined.Close, DestructiveRed) { run(onDismiss) }
+            DownloadMenuRow(
+                title = "Download",
+                icon = Icons.Outlined.Download,
+                color = Color.White,
+                enabled = selected.isNotEmpty(),
+            ) {
+                val picked = selected
+                run { onConfirm(picked) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadSeasonRow(title: String, selected: Boolean, onClick: () -> Unit) {
+    DownloadMenuRow(
+        title = title,
+        icon = Icons.Rounded.Check,
+        color = Color.White,
+        showsLeading = selected,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun DownloadMenuRow(
+    title: String,
+    icon: ImageVector,
+    color: Color,
+    enabled: Boolean = true,
+    showsLeading: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val tint = color.copy(alpha = if (enabled) 1f else 0.4f)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            if (showsLeading) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            }
+        }
+        Text(title, color = tint, fontFamily = ZelefinFont, fontSize = 17.sp)
     }
 }
 
@@ -290,7 +411,7 @@ fun DownloadStatusBanner(progress: DownloadProgress, onCancel: () -> Unit, modif
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .posterChrome(16.dp)
-            .background(DownloadCardFill)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -413,14 +534,21 @@ internal fun DownloadedJumpTile(modifier: Modifier, onClick: () -> Unit) {
         modifier
             .height(88.dp)
             .posterChrome(14.dp)
-            .background(DownloadCardFill)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(Icons.Filled.ArrowCircleDown, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
         Spacer(Modifier.height(8.dp))
-        Text("Downloaded", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
+        Text(
+            "Downloaded",
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
     }
 }
 
@@ -512,7 +640,6 @@ internal fun DownloadedPage(
         } else {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val gridState = rememberLazyGridState()
-                TrackHazeScroll(gridState.isScrollInProgress)
                 val columns = max(3, ((maxWidth - 32.dp + 10.dp) / (124.dp + 10.dp)).toInt())
                 LazyVerticalGrid(
                     state = gridState,
@@ -545,7 +672,7 @@ internal fun DownloadedPage(
                                 urls = listOfNotNull(ZelefinDownloads.localArtwork(title)) + artworkCandidates(title, session, landscape = false),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().background(DownloadCardFill),
+                                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh),
                             )
                             ItemPosterMarks(title, portrait = true)
                         }
@@ -569,7 +696,7 @@ internal fun DownloadedPage(
 
 @Composable
 private fun DownloadedRowMenu(hazeState: ZelefinHazeState, anchor: Rect, onDismiss: () -> Unit, onRemove: () -> Unit) {
-    AnchoredMenuFrame(anchor, alignTrailing = true, onDismiss = onDismiss, clearBottom = DockContentReserve) {
+    AnchoredMenuFrame(anchor, alignTrailing = true, onDismiss = onDismiss, clearBottom = dockContentReserve()) {
             Column(
                 Modifier
                     .zelefinGlassChrome(hazeState, ZelefinMenuShape)

@@ -13,8 +13,6 @@ struct SyncPlayView: View {
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
             }
             if let name = session.syncPlayGroupName, session.syncPlayGroupID != nil {
@@ -26,8 +24,6 @@ struct SyncPlayView: View {
                         }
                         .padding(.top, 16)
                     }
-                    .settingsLoginCard()
-                    .settingsCardRow()
                 } header: {
                     Text("This Device")
                 }
@@ -46,8 +42,6 @@ struct SyncPlayView: View {
                     }
                     .padding(.top, 16)
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } header: {
                 Text("New Group")
             }
@@ -55,23 +49,18 @@ struct SyncPlayView: View {
                 if isLoading && groups.isEmpty {
                     ProgressView()
                         .frame(maxWidth: .infinity)
-                        .settingsCardRow()
                 } else if groups.isEmpty {
                     SettingsStackedRow(title: "No SyncPlay groups are running.")
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 } else {
                     ForEach(groups) { group in
                         Button {
                             Task { await join(group) }
                         } label: {
                             SettingsStackedRow(title: group.name, subtitle: group.subtitle)
-                                .settingsLoginCard()
                         }
                         .buttonStyle(.plain)
                         .disabled(isWorking || session.syncPlayGroupID == group.id)
                         .opacity(session.syncPlayGroupID == group.id ? 0.55 : 1)
-                        .settingsCardRow()
                     }
                 }
             } header: {
@@ -153,8 +142,6 @@ struct SyncPlayPlaySheet: View {
             List {
                 if let errorMessage {
                     SettingsStatusText(text: errorMessage, isError: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
                 Section {
                     VStack(alignment: .leading, spacing: 0) {
@@ -169,26 +156,20 @@ struct SyncPlayPlaySheet: View {
                         }
                         .padding(.top, 16)
                     }
-                    .settingsLoginCard()
-                    .settingsCardRow()
                 } header: {
                     Text("New Group")
                 }
                 Section {
                     if groups.isEmpty {
                         SettingsStackedRow(title: "No groups yet. Create one to watch together.")
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     } else {
                         ForEach(groups) { group in
                             Button {
                                 Task { await joinAndPlay(group) }
                             } label: {
                                 SettingsStackedRow(title: group.name)
-                                    .settingsLoginCard()
                             }
                             .buttonStyle(.plain)
-                            .settingsCardRow()
                         }
                     }
                 } header: {

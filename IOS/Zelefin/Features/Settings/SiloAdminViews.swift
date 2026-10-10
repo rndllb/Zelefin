@@ -24,8 +24,6 @@ struct SiloUsersView: View {
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         }
                     }
                     Section {
@@ -40,9 +38,7 @@ struct SiloUsersView: View {
                                     subtitle: account.subtitle,
                                     showsChevron: true
                                 )
-                                .settingsLoginCard()
                             }
-                            .settingsCardRow()
                         }
                     }
                 }
@@ -114,10 +110,8 @@ struct SiloCreateUserView: View {
                     SettingsCardDivider()
                     Toggle("Administrator", isOn: $isAdmin)
                         .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } footer: {
                 Text("Silo requires at least 8 characters for a new password. A default household profile is created for this account.")
             }
@@ -125,13 +119,10 @@ struct SiloCreateUserView: View {
                 SettingsPrimaryButton(title: "Create Account", isBusy: isSaving, enabled: canSave) {
                     Task { await save() }
                 }
-                .settingsCardRow()
             }
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
             }
         }
@@ -223,18 +214,16 @@ struct SiloUserEditorView: View {
                     SettingsCardDivider()
                     Toggle("Administrator", isOn: $isAdmin)
                         .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                     SettingsCardDivider()
                     Toggle("Enabled", isOn: $isEnabled)
                         .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                     SettingsPrimaryButton(title: "Save Access", isBusy: isSaving) {
                         Task { await saveAccess() }
                     }
                     .padding(.top, 16)
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             }
 
             Section {
@@ -263,8 +252,6 @@ struct SiloUserEditorView: View {
                     }
                     .padding(.top, 16)
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } footer: {
                 Text("At least 8 characters. This replaces the password for \(account.username).")
             }
@@ -272,8 +259,6 @@ struct SiloUserEditorView: View {
             if let status {
                 Section {
                     SettingsStatusText(text: status, isError: statusIsError)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
             }
 
@@ -281,7 +266,6 @@ struct SiloUserEditorView: View {
                 SettingsSecondaryButton(title: "Delete Account", role: .destructive, enabled: !isSaving) {
                     showsDeleteConfirm = true
                 }
-                .settingsCardRow()
             }
         }
         .zelefinSettingsChrome(title: account.username)
@@ -390,8 +374,6 @@ struct SiloTasksView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(tasks) { task in
                         VStack(alignment: .leading, spacing: 0) {
@@ -415,8 +397,6 @@ struct SiloTasksView: View {
                                 .padding(.top, 16)
                             }
                         }
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -487,8 +467,6 @@ struct SiloDevicesView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(devices) { device in
                         SettingsStackedRow(
@@ -499,8 +477,6 @@ struct SiloDevicesView: View {
                                 .joined(separator: " · "),
                             caption: device.lastUpdated?.formatted(date: .abbreviated, time: .shortened) ?? ""
                         )
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -543,8 +519,6 @@ struct SiloAuditLogView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(entries) { entry in
                         SettingsStackedRow(
@@ -555,8 +529,6 @@ struct SiloAuditLogView: View {
                             ].compactMap { $0 }.joined(separator: " · "),
                             caption: entry.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? ""
                         )
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -601,8 +573,6 @@ struct SiloLibrariesAdminView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(libraries) { library in
                         VStack(alignment: .leading, spacing: 0) {
@@ -617,8 +587,6 @@ struct SiloLibrariesAdminView: View {
                                 .padding(.top, 16)
                             }
                         }
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -699,13 +667,9 @@ struct SiloInvitationsView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     if let status {
                         SettingsStatusText(text: status)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(invitations) { invite in
                         VStack(alignment: .leading, spacing: 0) {
@@ -722,8 +686,6 @@ struct SiloInvitationsView: View {
                                 .padding(.top, 16)
                             }
                         }
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -816,14 +778,12 @@ struct SiloCreateInvitationView: View {
                     SettingsCardDivider()
                     Toggle("Administrator", isOn: $isAdmin)
                         .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                     SettingsCardDivider()
                     SettingsLabeledField(label: "Note", systemImage: "text.quote") {
                         TextField("Note (optional)", text: $note)
                     }
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } footer: {
                 Text("Silo emails the invite when mail is configured. The claim link is also copied so you can send it yourself.")
             }
@@ -836,21 +796,16 @@ struct SiloCreateInvitationView: View {
                         }
                         .padding(.top, 16)
                     }
-                    .settingsLoginCard()
-                    .settingsCardRow()
                 }
             }
             Section {
                 SettingsPrimaryButton(title: "Send Invite", isBusy: isSaving, enabled: email.contains("@")) {
                     Task { await save() }
                 }
-                .settingsCardRow()
             }
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
             }
         }
@@ -917,8 +872,6 @@ struct SiloSessionsView: View {
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         }
                     }
                     Section {
@@ -933,7 +886,7 @@ struct SiloSessionsView: View {
                                         .clipShape(Circle())
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(playback.title)
-                                            .font(.body.weight(.semibold))
+                                            .font(.body.weight(.medium))
                                             .foregroundStyle(LoginPalette.primaryText)
                                         if !playback.subtitle.isEmpty {
                                             Text(playback.subtitle)
@@ -954,8 +907,6 @@ struct SiloSessionsView: View {
                                     .padding(.top, 16)
                                 }
                             }
-                            .settingsLoginCard()
-                            .settingsCardRow()
                         }
                     }
                 }
@@ -1012,8 +963,6 @@ struct SiloNodesView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(nodes) { node in
                         VStack(alignment: .leading, spacing: 0) {
@@ -1032,8 +981,6 @@ struct SiloNodesView: View {
                                 .padding(.top, 16)
                             }
                         }
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }
@@ -1088,8 +1035,6 @@ struct SiloOperationalLogView: View {
                 List {
                     if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
-                            .settingsLoginCard()
-                            .settingsCardRow()
                     }
                     ForEach(entries) { entry in
                         SettingsStackedRow(
@@ -1100,8 +1045,6 @@ struct SiloOperationalLogView: View {
                                 .joined(separator: " · "),
                             caption: entry.timestamp?.formatted(date: .abbreviated, time: .shortened) ?? ""
                         )
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 }
                 .refreshable { await load(showProgress: false) }

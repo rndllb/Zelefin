@@ -27,8 +27,6 @@ struct SessionsView: View {
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         }
                     }
                     if !playing.isEmpty {
@@ -38,10 +36,8 @@ struct SessionsView: View {
                                     SessionDetailView(sessionID: item.id)
                                 } label: {
                                     SessionRow(item: item, localDeviceID: session.session?.deviceID)
-                                        .settingsLoginCard()
                                 }
                                 .navigationLinkIndicatorVisibility(.hidden)
-                                .settingsCardRow()
                             }
                         }
                     }
@@ -52,10 +48,8 @@ struct SessionsView: View {
                                     SessionDetailView(sessionID: item.id)
                                 } label: {
                                     SessionRow(item: item, localDeviceID: session.session?.deviceID)
-                                        .settingsLoginCard()
                                 }
                                 .navigationLinkIndicatorVisibility(.hidden)
-                                .settingsCardRow()
                             }
                         }
                     }
@@ -108,7 +102,7 @@ private struct SessionRow: View {
             poster
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.title)
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(LoginPalette.primaryText)
                     .lineLimit(2)
                 Text(item.userLabel)
@@ -193,24 +187,19 @@ struct SessionDetailView: View {
                     if item.isPlaying {
                         Section("Playback") {
                             playbackCard(item)
-                                .settingsCardRow()
                         }
                     }
                     Section("Device") {
                         deviceCard(item)
-                            .settingsCardRow()
                     }
                     if let transcoding = item.transcoding {
                         Section("Transcoding") {
                             transcodingCard(transcoding)
-                                .settingsCardRow()
                         }
                     }
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
-                                .settingsLoginCard()
-                                .settingsCardRow()
                         }
                     }
                 }
@@ -327,7 +316,7 @@ struct SessionDetailView: View {
             isComposingMessage = true
         } label: {
             Label("Message", systemImage: "text.bubble")
-                .font(.body.weight(.semibold))
+                .font(.body.weight(.medium))
                 .foregroundStyle(LoginPalette.primaryText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
@@ -348,7 +337,6 @@ struct SessionDetailView: View {
                 SettingsInfoRow(label: "Volume", value: item.isMuted ? "Muted (\(volume)%)" : "\(volume)%")
             }
         }
-        .settingsLoginCard()
     }
 
     private func deviceCard(_ item: PlaybackSession) -> some View {
@@ -379,7 +367,6 @@ struct SessionDetailView: View {
                 SettingsInfoRow(label: "Session", value: "This device")
             }
         }
-        .settingsLoginCard()
     }
 
     private func transcodingCard(_ transcoding: TranscodingSummary) -> some View {
@@ -397,7 +384,6 @@ struct SessionDetailView: View {
                 SettingsInfoRow(label: row.0, value: row.1)
             }
         }
-        .settingsLoginCard()
     }
 
     private func monitor() async {

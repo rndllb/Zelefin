@@ -8,60 +8,25 @@ struct TabCustomizationView: View {
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
     @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = ""
     @AppStorage(FeaturedHeroContent.storageKey) private var featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
-    @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
-    @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
-    @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = false
+    @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = true
     @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
 
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 16) {
-                    AccentColorPickerGrid(
-                        accentPresetId: $accentPresetId,
-                        customAccentHex: $customAccentHex
-                    )
-                    .padding(.vertical, 4)
-
-                    if accentPresetId == AccentPreferences.customId {
-                        CustomAccentColorControls(
-                            accentPresetId: $accentPresetId,
-                            customAccentHex: $customAccentHex
-                        )
-                    }
-                }
-                .settingsLoginCard()
-                .settingsCardRow()
-            } header: {
-                Text("Accent Color")
-            } footer: {
-                Text("Accent color tints buttons, highlights, and icons throughout the app.")
-            }
-
-            Section {
                 Toggle("Combine Continue Watching and Next Up", isOn: gatedMergeBinding)
                     .tint(AccentPreferences.current)
-                    .font(.body.weight(.semibold))
-                    .settingsLoginCard()
-                    .settingsCardRow()
+                    .font(.body.weight(.medium))
             } footer: {
                 Text(homeFooterCopy)
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsFieldLabel(title: "Content")
-                        .padding(.bottom, 8)
-                    Picker("Featured hero", selection: $featuredHeroContent) {
-                        ForEach(FeaturedHeroContent.allCases) { option in
-                            Text(option.title).tag(option.rawValue)
-                        }
+                Picker("Content", selection: $featuredHeroContent) {
+                    ForEach(FeaturedHeroContent.allCases) { option in
+                        Text(option.title).tag(option.rawValue)
                     }
-                    .pickerStyle(.menu)
-                    .tint(AccentPreferences.current)
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } header: {
                 Text("Featured Hero")
             } footer: {
@@ -70,18 +35,9 @@ struct TabCustomizationView: View {
 
             Section {
                 ForEach(displayedHomeRows) { row in
-                    HStack(spacing: 12) {
+                    Toggle(isOn: homeRowVisibilityBinding(for: row)) {
                         Label(row.title, systemImage: row.systemImage)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(LoginPalette.primaryText)
-                        Spacer(minLength: 8)
-                        Toggle("Show \(row.title)", isOn: homeRowVisibilityBinding(for: row))
-                            .labelsHidden()
-                            .tint(AccentPreferences.current)
                     }
-                    .accessibilityElement(children: .combine)
-                    .settingsLoginCard()
-                    .settingsCardRow()
                 }
                 .onMove(perform: moveHomeRows)
             } header: {
@@ -91,36 +47,24 @@ struct TabCustomizationView: View {
             }
             .environment(\.editMode, .constant(.active))
 
-            Section {
-                if UIDevice.current.userInterfaceIdiom != .pad {
+            if UIDevice.current.userInterfaceIdiom != .pad {
+                Section {
                     Toggle("Show Tab Names", isOn: $showsTabNames)
-                        .font(.body.weight(.semibold))
-                        .tint(AccentPreferences.current)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
+            }
 
+            Section {
                 ForEach(AppTab.ordered(from: tabOrderRaw).filter { tab in
                     !(session.usesSilo && tab == .liveTV)
                 }) { tab in
-                    HStack(spacing: 12) {
+                    Toggle(isOn: visibilityBinding(for: tab)) {
                         Label {
                             Text(tab.title)
                         } icon: {
                             TabBarIcon(assetName: tab.iconAsset, systemImage: tab.systemImage)
                         }
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(LoginPalette.primaryText)
-                        Spacer(minLength: 8)
-                        if tab.canHide {
-                            Toggle("Show \(tab.title)", isOn: visibilityBinding(for: tab))
-                                .labelsHidden()
-                                .tint(AccentPreferences.current)
-                        }
                     }
-                    .accessibilityElement(children: .combine)
-                    .settingsLoginCard()
-                    .settingsCardRow()
+                    .disabled(!tab.canHide)
                 }
                 .onMove(perform: moveTabs)
             } header: {
@@ -133,22 +77,13 @@ struct TabCustomizationView: View {
             if !pinnableLibraries.isEmpty {
                 Section {
                     ForEach(pinnableLibraries) { library in
-                        HStack(spacing: 12) {
+                        Toggle(isOn: dockLibraryBinding(for: library)) {
                             Label {
                                 Text(library.name)
                             } icon: {
                                 TabBarIcon(assetName: "IconsaxLibrary", systemImage: "book")
                             }
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(LoginPalette.primaryText)
-                            Spacer(minLength: 8)
-                            Toggle("Show \(library.name)", isOn: dockLibraryBinding(for: library))
-                                .labelsHidden()
-                                .tint(AccentPreferences.current)
                         }
-                        .accessibilityElement(children: .combine)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                     }
                 } header: {
                     Text("Libraries")
@@ -158,20 +93,15 @@ struct TabCustomizationView: View {
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsSecondaryButton(title: "Reset Home Rows") {
-                        homeRowOrder = HomeRowKind.defaultOrderRaw
-                        homeRowHidden = ""
-                        featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
-                    }
-                    SettingsSecondaryButton(title: "Reset Tabs") {
-                        tabOrderRaw = AppTab.defaultOrderRaw
-                        tabCustomization = AppTab.defaultCustomization()
-                    }
-                    .padding(.top, 10)
+                Button("Reset Home Rows") {
+                    homeRowOrder = HomeRowKind.defaultOrderRaw
+                    homeRowHidden = ""
+                    featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
+                Button("Reset Tabs") {
+                    tabOrderRaw = AppTab.defaultOrderRaw
+                    tabCustomization = AppTab.defaultCustomization()
+                }
             }
         }
         .zelefinSettingsChrome(title: "Interface")
@@ -326,5 +256,36 @@ struct TabCustomizationView: View {
         order.move(fromOffsets: offsets, toOffset: destination)
         tabOrderRaw = AppTab.raw(from: order)
         tabCustomization.resetSectionOrder()
+    }
+}
+
+struct AppearanceSettingsView: View {
+    @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
+    @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 16) {
+                    AccentColorPickerGrid(
+                        accentPresetId: $accentPresetId,
+                        customAccentHex: $customAccentHex
+                    )
+                    .padding(.vertical, 4)
+
+                    if accentPresetId == AccentPreferences.customId {
+                        CustomAccentColorControls(
+                            accentPresetId: $accentPresetId,
+                            customAccentHex: $customAccentHex
+                        )
+                    }
+                }
+            } header: {
+                Text("Accent Color")
+            } footer: {
+                Text("Accent color tints buttons, highlights, and icons throughout the app.")
+            }
+        }
+        .zelefinSettingsChrome(title: "Appearance")
     }
 }

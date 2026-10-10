@@ -52,7 +52,6 @@ struct ProfileView: View {
 
             Section {
                 passwordCard
-                    .settingsCardRow()
             } header: {
                 Text("Password")
             } footer: {
@@ -62,18 +61,14 @@ struct ProfileView: View {
             Section {
                 if let current = session.session {
                     accountRow(current, isCurrent: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
                 ForEach(session.otherAccounts) { account in
                     Button {
                         Task { await session.switchTo(account) }
                     } label: {
                         accountRow(account, isCurrent: false)
-                            .settingsLoginCard()
                     }
                     .buttonStyle(.plain)
-                    .settingsCardRow()
                 }
                 addUserRow
             } header: {
@@ -214,7 +209,7 @@ struct ProfileView: View {
             } else {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "lock.fill")
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(LoginPalette.iconTint)
                         .frame(width: 22, alignment: .center)
                     Text("This household profile cannot change the account password.")
@@ -231,10 +226,7 @@ struct ProfileView: View {
     }
 
     private var passwordDivider: some View {
-        Rectangle()
-            .fill(LoginPalette.divider)
-            .frame(height: 1)
-            .padding(.vertical, 12)
+        SettingsCardDivider()
     }
 
     private func passwordFieldRow(
@@ -256,7 +248,7 @@ struct ProfileView: View {
                     .frame(width: 22, alignment: .center)
                     .accessibilityHidden(true)
                 SecureField(label, text: text)
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(LoginPalette.fieldValue)
                     .textContentType(contentType)
                     .submitLabel(submit)
@@ -304,7 +296,7 @@ struct ProfileView: View {
                     tokenVisible.toggle()
                 } label: {
                     Image(systemName: tokenVisible ? "eye.slash" : "eye")
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(LoginPalette.iconTint)
                 }
                 .buttonStyle(.plain)
@@ -313,7 +305,7 @@ struct ProfileView: View {
                     copyAccessToken()
                 } label: {
                     Image(systemName: tokenCopied ? "checkmark" : "doc.on.doc")
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(tokenCopied ? LoginPalette.success : LoginPalette.iconTint)
                 }
                 .buttonStyle(.plain)
@@ -321,7 +313,6 @@ struct ProfileView: View {
                 .accessibilityLabel(tokenCopied ? "Copied" : "Copy token")
             }
         }
-        .settingsLoginCard()
         .accessibilityHint("This token signs this device into \(serverLabel). Copy it only into apps you trust.")
     }
 
@@ -613,9 +604,7 @@ struct ProfileView: View {
             AddAccountView()
         } label: {
             addUserLabel
-                .settingsLoginCard()
         }
-        .settingsCardRow()
     }
 
     private var addUserLabel: some View {
@@ -625,7 +614,7 @@ struct ProfileView: View {
                 .foregroundStyle(.tint)
                 .frame(width: 28, alignment: .center)
             Text(addUserTitle)
-                .font(.body.weight(.semibold))
+                .font(.body.weight(.medium))
                 .foregroundStyle(LoginPalette.primaryText)
             Spacer(minLength: 8)
             SettingsChevron()
@@ -646,7 +635,7 @@ struct ProfileView: View {
             )
             if isCurrent {
                 Image(systemName: "checkmark")
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
             } else {
@@ -789,23 +778,21 @@ struct AddAccountView: View {
             Section {
                 HStack(spacing: 12) {
                     Image(systemName: "server.rack")
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(AccentPreferences.current)
                         .frame(width: 28)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(serverLabel)
-                            .font(.body.weight(.semibold))
+                            .font(.body.weight(.medium))
                         Text("This server")
                             .font(.caption)
                             .foregroundStyle(LoginPalette.secondaryText)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(AccentPreferences.current)
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } footer: {
                 Text(session.usesSilo
                      ? "New accounts are added on the Silo server you’re already using. After you sign in, pick a household profile."
@@ -827,8 +814,6 @@ struct AddAccountView: View {
                             .textContentType(.password)
                     }
                 }
-                .settingsLoginCard()
-                .settingsCardRow()
             } header: {
                 Text("Sign In")
             }
@@ -841,14 +826,11 @@ struct AddAccountView: View {
                 ) {
                     Task { await add() }
                 }
-                .settingsCardRow()
             }
 
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
-                        .settingsLoginCard()
-                        .settingsCardRow()
                 }
             }
         }

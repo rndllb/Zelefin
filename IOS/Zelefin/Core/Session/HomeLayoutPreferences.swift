@@ -447,6 +447,7 @@ enum FeaturedHeroPaging {
 
 enum LibraryPageBlock: String, CaseIterable, Identifiable, Hashable, Sendable {
     case favorites
+    case watchlist
     case downloaded
     case genres
     case collections
@@ -456,6 +457,7 @@ enum LibraryPageBlock: String, CaseIterable, Identifiable, Hashable, Sendable {
     var title: String {
         switch self {
         case .favorites: "Favorites"
+        case .watchlist: "Watchlist"
         case .downloaded: "Downloaded"
         case .genres: "Genres"
         case .collections: "Collections"
@@ -465,6 +467,7 @@ enum LibraryPageBlock: String, CaseIterable, Identifiable, Hashable, Sendable {
     var systemImage: String {
         switch self {
         case .favorites: "heart.fill"
+        case .watchlist: "text.badge.plus"
         case .downloaded: "arrow.down.circle.fill"
         case .genres: "square.grid.2x2.fill"
         case .collections: "square.stack.fill"

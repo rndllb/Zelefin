@@ -8,37 +8,21 @@ struct NetworkSettingsView: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsInfoRow(label: "Remote URL", value: session.session?.serverURL.absoluteString ?? "—")
-                    SettingsCardDivider()
-                    SettingsInfoRow(label: "Active URL", value: session.activeServerURL?.absoluteString ?? "—")
-                    SettingsCardDivider()
-                    SettingsInfoRow(label: "Wi-Fi", value: session.currentSSID ?? unavailableWiFi)
-                    SettingsCardDivider()
-                    SettingsInfoRow(label: "Using", value: session.activeRoute.title)
-                }
-                .settingsLoginCard()
-                .settingsCardRow()
+                LabeledContent("Remote URL", value: session.session?.serverURL.absoluteString ?? "—")
+                LabeledContent("Active URL", value: session.activeServerURL?.absoluteString ?? "—")
+                LabeledContent("Wi-Fi", value: session.currentSSID ?? unavailableWiFi)
+                LabeledContent("Using", value: session.activeRoute.title)
             } header: {
                 Text("This Connection")
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    Toggle("Auto-switch on home Wi-Fi", isOn: autoSwitchBinding)
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.semibold))
-                    SettingsCardDivider()
-                    SettingsLabeledField(label: "Local URL", systemImage: "house.fill") {
-                        TextField(localURLPlaceholder, text: $localURLText)
-                            .textContentType(.URL)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    }
-                }
-                .settingsLoginCard()
-                .settingsCardRow()
+                Toggle("Auto-switch on home Wi-Fi", isOn: autoSwitchBinding)
+                TextField(localURLPlaceholder, text: $localURLText)
+                    .textContentType(.URL)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             } header: {
                 Text("Home Network")
             } footer: {
@@ -62,54 +46,36 @@ struct NetworkSettingsView: View {
     @ViewBuilder
     private var homeWiFiSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                if profile.homeSSIDs.isEmpty {
-                    SettingsStackedRow(
-                        title: "No networks configured",
-                        subtitle: "Add a network so auto-switch can use the local URL."
-                    )
-                } else {
-                    ForEach(Array(profile.homeSSIDs.enumerated()), id: \.element) { index, ssid in
-                        if index > 0 { SettingsCardDivider() }
-                        HStack {
-                            Text(ssid)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(LoginPalette.primaryText)
-                            Spacer(minLength: 8)
-                            Button("Remove", role: .destructive) {
-                                updateProfile { profile in
-                                    profile.homeSSIDs.removeAll { $0 == ssid }
-                                }
+            if profile.homeSSIDs.isEmpty {
+                Text("No networks configured")
+            } else {
+                ForEach(profile.homeSSIDs, id: \.self) { ssid in
+                    HStack {
+                        Text(ssid)
+                        Spacer(minLength: 8)
+                        Button("Remove", role: .destructive) {
+                            updateProfile { profile in
+                                profile.homeSSIDs.removeAll { $0 == ssid }
                             }
-                            .font(.caption.weight(.bold))
                         }
                     }
                 }
-
-                if let current = session.currentSSID, !HomeNetworkResolver.isHome(current, in: profile.homeSSIDs) {
-                    SettingsPrimaryButton(title: "Add \"\(current)\"") {
-                        addSSID(current)
-                    }
-                    .padding(.top, 16)
-                } else if session.currentSSID == nil {
-                    SettingsCardDivider()
-                    SettingsLabeledField(label: "Network name", systemImage: "wifi") {
-                        TextField("Network name", text: $manualSSID)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    }
-                    SettingsPrimaryButton(
-                        title: "Add Network",
-                        enabled: !manualSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ) {
-                        addSSID(manualSSID)
-                        manualSSID = ""
-                    }
-                    .padding(.top, 16)
-                }
             }
-            .settingsLoginCard()
-            .settingsCardRow()
+
+            if let current = session.currentSSID, !HomeNetworkResolver.isHome(current, in: profile.homeSSIDs) {
+                Button("Add “\(current)”") {
+                    addSSID(current)
+                }
+            } else if session.currentSSID == nil {
+                TextField("Network name", text: $manualSSID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Add Network") {
+                    addSSID(manualSSID)
+                    manualSSID = ""
+                }
+                .disabled(manualSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         } header: {
             Text("Home Wi-Fi")
         } footer: {

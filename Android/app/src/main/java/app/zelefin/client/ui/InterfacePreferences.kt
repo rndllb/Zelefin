@@ -283,10 +283,10 @@ enum class DockTab(val raw: String, val title: String, val appTab: AppTab?) {
     }
 }
 
-/** One slot in the floating dock: a tab, or a pinned custom library. Search is drawn separately. */
+/** One slot in the floating dock: a tab, a pinned custom library, or Search. */
 data class DockEntry(val tab: AppTab, val title: String, val room: LibraryRoom? = null)
 
-/** Mirrors iOS `PhoneDockLimit`: Search always takes one of the 5 phone spots. */
+/** Mirrors iOS `PhoneDockLimit`: five slots in one bar. Search always takes the last one. */
 object PhoneDockLimit {
     const val CAPACITY = 5
 
@@ -299,7 +299,7 @@ object TabPreferences {
         private set
     var hidden by mutableStateOf(DockTab.hiddenByDefault)
         private set
-    var showsNames by mutableStateOf(false)
+    var showsNames by mutableStateOf(true)
         private set
     var dockLibraryIds by mutableStateOf(emptySet<String>())
         private set
@@ -312,7 +312,7 @@ object TabPreferences {
         hidden = prefs.getString(HIDDEN, null)?.let { raw ->
             raw.split(',').mapNotNull { token -> DockTab.entries.firstOrNull { it.raw == token } }.toSet()
         } ?: DockTab.hiddenByDefault
-        showsNames = prefs.getBoolean(NAMES, false)
+        showsNames = prefs.getBoolean(NAMES, true)
         dockLibraryIds = prefs.getString(LIBRARIES, "").orEmpty().split(',').filter { it.isNotEmpty() }.toSet()
     }
 
@@ -370,6 +370,7 @@ object TabPreferences {
             result += DockEntry(AppTab.Room, library.name, library)
             room -= 1
         }
+        result += DockEntry(AppTab.Search, "Search")
         return result
     }
 

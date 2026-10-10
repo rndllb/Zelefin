@@ -39,6 +39,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GridView
@@ -47,16 +48,24 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -80,6 +89,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
@@ -94,6 +104,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import app.zelefin.client.R
 import app.zelefin.client.CatalogBrowseQuery
 import app.zelefin.client.LibraryCounts
 import app.zelefin.client.LibraryGenre
@@ -112,7 +123,6 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 private val HeaderRowHeight = 59.dp
-private val CardFill = Color.White.copy(alpha = 0.08f)
 private val RoomStride = 84.dp
 
 @Composable
@@ -134,6 +144,7 @@ fun LibraryTabPage(
     onSessions: () -> Unit,
     onSettings: () -> Unit,
     onSignOut: () -> Unit,
+    onRandom: () -> Unit = {},
 ) {
     val motion = rememberZelefinPush(state.libraryPath) { from, to ->
         when {
@@ -145,7 +156,7 @@ fun LibraryTabPage(
     ZelefinPush(motion) { path ->
         when (val route = path.lastOrNull()) {
             null -> LibraryHome(
-                state, bottomInset, refreshing, onOverviewRefresh, onRoute, onLayout, onResetLayout, onCoversDock, onProfile, onSessions, onSettings, onSignOut,
+                state, bottomInset, refreshing, onOverviewRefresh, onRoute, onLayout, onResetLayout, onCoversDock, onProfile, onSessions, onSettings, onSignOut, onRandom,
             )
             LibraryRoute.Genres -> GenresPage(state.libraryOverview.genres, state.libraryOverview.genresLoading, bottomInset, onBack) {
                 onRoute(LibraryRoute.Genre(it))
@@ -172,10 +183,10 @@ fun LibraryTabPage(
                     onSettings = onSettings,
                     onSignOut = onSignOut,
                     onBack = onBack,
-                    emptyMessage = if (route == LibraryRoute.Favorites) {
-                        "Titles you favorite will show up here."
-                    } else {
-                        "Titles from this library will show up here."
+                    emptyMessage = when (route) {
+                        LibraryRoute.Favorites -> "Titles you favorite will show up here."
+                        LibraryRoute.Watchlist -> "Titles you add to Watchlist will show up here."
+                        else -> "Titles from this library will show up here."
                     },
                 )
             }
@@ -198,6 +209,7 @@ private fun LibraryHome(
     onSessions: () -> Unit,
     onSettings: () -> Unit,
     onSignOut: () -> Unit,
+    onRandom: () -> Unit,
 ) {
     var arranging by remember { mutableStateOf(false) }
     val sheet = rememberZelefinSheet(if (arranging) Unit else null)
@@ -206,7 +218,8 @@ private fun LibraryHome(
     val layout = state.libraryLayout
     val rooms = layout.displayed(eligible)
     val overview = state.libraryOverview
-    val jumps = listOf(LibraryPageBlock.Favorites, LibraryPageBlock.Genres).filter { it !in layout.hiddenBlocks }
+    val jumps = listOf(LibraryPageBlock.Favorites, LibraryPageBlock.Watchlist, LibraryPageBlock.Genres)
+        .filter { it !in layout.hiddenBlocks }
     val collections = if (LibraryPageBlock.Collections in layout.hiddenBlocks) emptyList() else overview.collections.take(12)
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val headerHeight = statusTop + HeaderRowHeight
@@ -239,7 +252,6 @@ private fun LibraryHome(
                 else -> {
                     val listState = rememberLazyListState()
                     val refreshState = rememberPullToRefreshState()
-                    TrackHazeScroll(listState.isScrollInProgress)
                     var previousOffset by remember { mutableIntStateOf(0) }
                     val hasStats = overview.counts?.let { it.total > 0 } == true
                     LaunchedEffect(hasStats) {
@@ -296,16 +308,36 @@ private fun LibraryHome(
                             ) { onRoute(LibraryRoute.Room(room)) }
                         }
                         item(key = "jumps") {
-                            Row(
+                            val tiles = jumps + null
+                            val columns = if (tiles.size >= 4) 2 else tiles.size.coerceAtLeast(1)
+                            Column(
                                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                jumps.forEach { block ->
-                                    JumpTile(block, Modifier.weight(1f)) {
-                                        onRoute(if (block == LibraryPageBlock.Favorites) LibraryRoute.Favorites else LibraryRoute.Genres)
+                                tiles.chunked(columns).forEach { row ->
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        row.forEach { block ->
+                                            val tile = Modifier.weight(1f)
+                                            if (block == null) {
+                                                DownloadedJumpTile(tile) { onRoute(LibraryRoute.Downloaded) }
+                                            } else {
+                                                JumpTile(block, tile) {
+                                                    onRoute(
+                                                        when (block) {
+                                                            LibraryPageBlock.Favorites -> LibraryRoute.Favorites
+                                                            LibraryPageBlock.Watchlist -> LibraryRoute.Watchlist
+                                                            else -> LibraryRoute.Genres
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                                     }
                                 }
-                                DownloadedJumpTile(Modifier.weight(1f)) { onRoute(LibraryRoute.Downloaded) }
                             }
                         }
                         if (collections.isNotEmpty()) {
@@ -331,9 +363,10 @@ private fun LibraryHome(
             }
             LibraryHeader(
                 visible = headerVisible,
-                arrangeShown = sheet.displayed == null,
+                arrangeShown = sheet.displayed == null && state.libraryPath.isEmpty(),
                 session = state.session,
                 onArrange = { arranging = true },
+                onRandom = onRandom,
                 onProfile = onProfile,
                 onSessions = onSessions,
                 onSettings = onSettings,
@@ -342,7 +375,7 @@ private fun LibraryHome(
             if (sheet.displayed != null) ZelefinSheetScrim(sheet.progress)
         }
         if (sheet.displayed != null) {
-            ZelefinSheetSurface(sheet.progress, canvas = ZelefinBlack) {
+            ZelefinSheetSurface(sheet.progress, canvas = MaterialTheme.colorScheme.surface) {
                 ArrangeSheet(
                     rooms = layout.arranged(eligible),
                     layout = layout,
@@ -361,6 +394,7 @@ private fun LibraryHeader(
     arrangeShown: Boolean,
     session: SavedSession?,
     onArrange: () -> Unit,
+    onRandom: () -> Unit,
     onProfile: () -> Unit,
     onSessions: () -> Unit,
     onSettings: () -> Unit,
@@ -368,6 +402,7 @@ private fun LibraryHeader(
 ) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(180), label = "libraryHeader")
     val shift by animateDpAsState(if (visible) 0.dp else (-120).dp, tween(180), label = "libraryHeaderShift")
+    val diceFive = ImageVector.vectorResource(R.drawable.iconsax_dice_five)
     Row(
         Modifier
             .fillMaxWidth()
@@ -386,6 +421,18 @@ private fun LibraryHeader(
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
+        Box(
+            Modifier
+                .size(45.dp)
+                .then(
+                    if (visible && arrangeShown) {
+                        Modifier.zelefinGlassDisc("library-random", "Pick something", diceFive, onRandom)
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
+        Spacer(Modifier.width(12.dp))
         Box(
             Modifier
                 .size(45.dp)
@@ -410,7 +457,7 @@ private fun ServerStats(counts: LibraryCounts) {
             .fillMaxWidth()
             .height(64.dp)
             .posterChrome(16.dp)
-            .background(CardFill),
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StatFact(counts.movies, "Movies", Modifier.weight(1f))
@@ -461,7 +508,7 @@ private fun RoomBand(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Box(Modifier.fillMaxSize().background(CardFill))
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh))
         }
         Box(
             Modifier.fillMaxSize().background(
@@ -589,14 +636,21 @@ private fun JumpTile(block: LibraryPageBlock, modifier: Modifier, onClick: () ->
         modifier
             .height(88.dp)
             .posterChrome(14.dp)
-            .background(CardFill)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(blockIcon(block), contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
         Spacer(Modifier.height(8.dp))
-        Text(block.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
+        Text(
+            block.title,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
     }
 }
 
@@ -639,7 +693,7 @@ internal fun LabeledPortrait(
                 urls = urls,
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().background(CardFill),
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh),
             )
         }
         Box(
@@ -659,6 +713,7 @@ internal fun LabeledPortrait(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GenresPage(
     genres: List<LibraryGenre>,
@@ -667,28 +722,38 @@ private fun GenresPage(
     onBack: () -> Unit,
     onGenre: (LibraryGenre) -> Unit,
 ) {
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val headerHeight = statusTop + HeaderRowHeight
-    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        TopAppBar(
+            title = { Text("Genres") },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        )
         when {
             genres.isEmpty() && loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = ZelefinCyan)
+                CircularProgressIndicator()
             }
             genres.isEmpty() -> Column(
-                Modifier.fillMaxSize().padding(top = headerHeight + 40.dp, start = 32.dp, end = 32.dp),
+                Modifier.fillMaxSize().padding(top = 40.dp, start = 32.dp, end = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("No Genres", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text("No Genres", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("Genres from your libraries will show up here.", color = ZelefinMuted, fontSize = 16.sp)
+                Text("Genres from your libraries will show up here.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
             }
             else -> BoxWithConstraints(Modifier.fillMaxSize()) {
                 val gridState = rememberLazyGridState()
-                TrackHazeScroll(gridState.isScrollInProgress)
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Fixed(columnCount(maxWidth - 32.dp)),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = headerHeight, bottom = bottomInset),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomInset),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                     modifier = Modifier.fillMaxSize(),
@@ -699,54 +764,46 @@ private fun GenresPage(
                 }
             }
         }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            GlassBackDisc("genres-back", shown = true, onBack = onBack)
-            Spacer(Modifier.width(12.dp))
-            Text("Genres", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 22.sp)
-        }
     }
 }
 
 @Composable
 internal fun GenreCard(title: String, aspect: Float = 2f / 3f, corner: Dp = 12.dp, onClick: () -> Unit) {
-    BoxWithConstraints(
-        Modifier
-            .fillMaxWidth()
-            .aspectRatio(aspect)
-            .posterChrome(corner)
-            .background(Brush.verticalGradient(listOf(Color(0xFF1C1C1C), Color(0xFF0A0A0A), Color.Black)))
-            .clickable(onClick = onClick),
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().aspectRatio(aspect),
+        shape = RoundedCornerShape(corner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        GenreIcon(
-            title,
-            side = maxWidth * 0.42f,
-            modifier = Modifier.align(Alignment.Center).padding(bottom = maxHeight * 0.12f),
-        )
-        val cardWidth = maxWidth
-        Box(Modifier.align(Alignment.BottomStart).padding(cardWidth * 0.08f)) {
-            FitText(
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            GenreIcon(
                 title,
-                style = TextStyle(
-                    color = Color.White,
-                    fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = (cardWidth.value * 0.16f).sp,
-                    lineHeight = (cardWidth.value * 0.19f).sp,
-                ),
-                maxLines = 3,
-                minScale = 0.5f,
-                floorScale = 0.5f,
+                side = maxWidth * 0.42f,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.align(Alignment.Center).padding(bottom = maxHeight * 0.12f),
             )
+            val cardWidth = maxWidth
+            Box(Modifier.align(Alignment.BottomStart).padding(cardWidth * 0.08f)) {
+                FitText(
+                    title,
+                    style = TextStyle(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontFamily = ZelefinFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = (cardWidth.value * 0.16f).sp,
+                        lineHeight = (cardWidth.value * 0.19f).sp,
+                    ),
+                    maxLines = 3,
+                    minScale = 0.5f,
+                    floorScale = 0.5f,
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ArrangeSheet(
     rooms: List<LibraryRoom>,
@@ -761,8 +818,21 @@ private fun ArrangeSheet(
     val stride = with(LocalDensity.current) { RoomStride.toPx() }
     fun target(from: Int): Int = (from + (dragY / stride).roundToInt()).coerceIn(0, max(order.size - 1, 0))
 
-    Column(Modifier.fillMaxSize()) {
-        SheetBar(title = "Arrange", onDone = onDone)
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        TopAppBar(
+            title = { Text("Arrange") },
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            actions = {
+                TextButton(onClick = onDone) {
+                    Text("Done", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                actionIconContentColor = MaterialTheme.colorScheme.primary,
+            ),
+        )
         Column(
             Modifier
                 .fillMaxSize()
@@ -771,7 +841,7 @@ private fun ArrangeSheet(
         ) {
             Text(
                 "Hold a room and drag it up or down. The eye hides it from Library.",
-                color = Color.White.copy(alpha = 0.72f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 15.sp,
             )
             Spacer(Modifier.height(28.dp))
@@ -815,8 +885,8 @@ private fun ArrangeSheet(
                         },
                     )
                 }
-                Row(
-                    Modifier
+                Card(
+                    modifier = Modifier
                         .padding(bottom = 10.dp)
                         .zIndex(if (isDragging) 1f else 0f)
                         .graphicsLayer {
@@ -826,61 +896,74 @@ private fun ArrangeSheet(
                             scaleY = scale
                         }
                         .fillMaxWidth()
-                        .heightIn(min = 74.dp)
-                        .posterChrome(18.dp)
-                        .background(Color.White.copy(alpha = if (shown) 0.08f else 0.04f))
-                        .padding(start = 6.dp, end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .heightIn(min = 74.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (shown) {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f)
+                        },
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 3.dp else 0.dp),
                 ) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 74.dp).padding(start = 6.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                     Box(Modifier.size(44.dp).then(dragModifier), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.DragHandle, contentDescription = null, tint = Color.White.copy(alpha = 0.85f))
+                        Icon(Icons.Filled.DragHandle, contentDescription = "Reorder ${room.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Column(Modifier.weight(1f).fillMaxHeight().then(dragModifier), verticalArrangement = Arrangement.Center) {
-                        Text(room.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 1)
-                        if (!shown) Text("Hidden", color = Color.White.copy(alpha = 0.72f), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                        Text(room.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 1)
+                        if (!shown) Text("Hidden", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                     }
                     EyeButton(shown) {
                         val hidden = if (shown) layout.hidden + room.id else layout.hidden - room.id
                         onLayout(layout.copy(hidden = hidden))
                     }
+                    }
                 }
             } }
             Spacer(Modifier.height(18.dp))
-            Text("Also on Library", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Text("Also on Library", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
             Spacer(Modifier.height(12.dp))
-            Text("These stay under your rooms. Hide any you don’t need.", color = Color.White.copy(alpha = 0.72f), fontSize = 15.sp)
+            Text("These stay under your rooms. Hide any you don’t need.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
             Spacer(Modifier.height(16.dp))
             LibraryPageBlock.entries.forEach { block ->
                 val shown = block !in layout.hiddenBlocks
-                Row(
-                    Modifier
-                        .padding(bottom = 10.dp)
-                        .fillMaxWidth()
-                        .heightIn(min = 64.dp)
-                        .posterChrome(16.dp)
-                        .background(Color.White.copy(alpha = if (shown) 0.08f else 0.04f))
-                        .padding(start = 16.dp, end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Card(
+                    modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().heightIn(min = 64.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (shown) {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f)
+                        },
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 ) {
-                    Icon(blockIcon(block), contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 16.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                    Icon(blockIcon(block), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text(block.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                    Text(block.title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f))
                     EyeButton(shown) {
                         val hidden = if (shown) layout.hiddenBlocks + block else layout.hiddenBlocks - block
                         onLayout(layout.copy(hiddenBlocks = hidden))
                     }
+                    }
                 }
             }
             Spacer(Modifier.height(18.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(onClick = onReset),
-                contentAlignment = Alignment.Center,
+            TextButton(
+                onClick = onReset,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
             ) {
-                Text("Reset arrangement", color = Color.White.copy(alpha = 0.72f), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Text("Reset arrangement", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             }
         }
     }
@@ -888,11 +971,11 @@ private fun ArrangeSheet(
 
 @Composable
 private fun EyeButton(shown: Boolean, onClick: () -> Unit) {
-    Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
         Icon(
             if (shown) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
             contentDescription = if (shown) "Hide" else "Show",
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -918,6 +1001,7 @@ private fun kindIcon(kind: LibraryKind): ImageVector = when (kind) {
 
 private fun blockIcon(block: LibraryPageBlock): ImageVector = when (block) {
     LibraryPageBlock.Favorites -> Icons.Filled.Favorite
+    LibraryPageBlock.Watchlist -> Icons.Filled.PlaylistAdd
     LibraryPageBlock.Genres -> Icons.Filled.GridView
     LibraryPageBlock.Collections -> Icons.Filled.ViewModule
 }

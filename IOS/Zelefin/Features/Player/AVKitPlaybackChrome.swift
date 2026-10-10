@@ -25,71 +25,75 @@ struct AVKitPlaybackChrome: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        ZStack {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(perform: toggleControls)
+        GeometryReader { geo in
+            let panelCeiling = min(420, max(180, geo.size.height - 58 - (controlsVisible ? 88 : 16)))
+            ZStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: toggleControls)
 
-            dimming
+                dimming
 
-            if controlsVisible {
-                VStack(spacing: 0) {
-                    topBar
-                    Spacer()
-                    centerTransport
-                    Spacer(minLength: 12)
-                    AVKitTimelineChrome(
-                        model: model,
-                        isScrubbing: $isScrubbing,
-                        scrubTime: $scrubTime,
-                        onSeekEnded: { time in
-                            model.seek(to: time)
-                            revealControls()
-                        }
-                    )
+                if controlsVisible {
+                    VStack(spacing: 0) {
+                        topBar
+                        Spacer()
+                        centerTransport
+                        Spacer(minLength: 12)
+                        AVKitTimelineChrome(
+                            model: model,
+                            isScrubbing: $isScrubbing,
+                            scrubTime: $scrubTime,
+                            onSeekEnded: { time in
+                                model.seek(to: time)
+                                revealControls()
+                            }
+                        )
+                    }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, horizontalPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 2)
-                .transition(.opacity)
-            }
 
-            if let onSkipCinema {
-                skipIntro("Skip", action: onSkipCinema)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, horizontalPadding)
-                    .padding(.bottom, controlsVisible ? 64 : 10)
-            } else if let title = model.skipPrompt?.title {
-                skipIntro(title, action: {
-                    model.skipCurrentSegment()
-                    revealControls()
-                })
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, horizontalPadding)
-                    .padding(.bottom, controlsVisible ? 64 : 10)
-            }
+                if let onSkipCinema {
+                    skipIntro("Skip", action: onSkipCinema)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(.trailing, horizontalPadding)
+                        .padding(.bottom, controlsVisible ? 64 : 10)
+                } else if let title = model.skipPrompt?.title {
+                    skipIntro(title, action: {
+                        model.skipCurrentSegment()
+                        revealControls()
+                    })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(.trailing, horizontalPadding)
+                        .padding(.bottom, controlsVisible ? 64 : 10)
+                }
 
-            if settingsOpen {
-                settingsScrim
-                AVKitPlaybackSettingsPanel(
-                    model: model,
-                    page: $settingsPage,
-                    quality: quality,
-                    canAddSubtitles: canAddSubtitles,
-                    onClose: closeSettings,
-                    onQualityChange: { value in
-                        onQualityChange(value)
-                    },
-                    onAddSubtitles: {
-                        closeSettings()
-                        onAddSubtitles()
-                    },
-                    onAudioChange: onAudioChange,
-                    onSubtitleChange: onSubtitleChange
-                )
-                .padding(.trailing, horizontalPadding)
-                .padding(.top, 58)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                if settingsOpen {
+                    settingsScrim
+                    AVKitPlaybackSettingsPanel(
+                        model: model,
+                        page: $settingsPage,
+                        quality: quality,
+                        canAddSubtitles: canAddSubtitles,
+                        maxHeight: panelCeiling,
+                        onClose: closeSettings,
+                        onQualityChange: { value in
+                            onQualityChange(value)
+                        },
+                        onAddSubtitles: {
+                            closeSettings()
+                            onAddSubtitles()
+                        },
+                        onAudioChange: onAudioChange,
+                        onSubtitleChange: onSubtitleChange
+                    )
+                    .padding(.trailing, horizontalPadding)
+                    .padding(.top, 58)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
@@ -339,6 +343,8 @@ private enum AVKitPlaybackSettingsPage: Equatable {
     case speed
     case audio
     case subtitles
+    case subtitleStyle
+    case subtitleSync
     case chapters
     case sleepTimer
 }
@@ -367,6 +373,7 @@ private struct AVKitPlaybackSettingsPanel: View {
     @Binding var page: AVKitPlaybackSettingsPage
     var quality: PlaybackQuality
     var canAddSubtitles: Bool
+    var maxHeight: CGFloat = 420
     var onClose: () -> Void
     var onQualityChange: (PlaybackQuality) -> Void
     var onAddSubtitles: () -> Void
@@ -385,6 +392,8 @@ private struct AVKitPlaybackSettingsPanel: View {
                     case .speed: speedRows
                     case .audio: audioRows
                     case .subtitles: subtitleRows
+                    case .subtitleStyle: subtitleStyleRows
+                    case .subtitleSync: subtitleSyncRows
                     case .chapters: chapterRows
                     case .sleepTimer: sleepTimerRows
                     }
@@ -393,7 +402,7 @@ private struct AVKitPlaybackSettingsPanel: View {
             }
         }
         .frame(width: 320)
-        .frame(maxHeight: 420)
+        .frame(maxHeight: maxHeight, alignment: .top)
         .foregroundStyle(.white)
         .avkitSettingsCard()
         .accessibilityLabel("Playback settings")
@@ -434,6 +443,8 @@ private struct AVKitPlaybackSettingsPanel: View {
         case .speed: "Playback Speed"
         case .audio: "Select Audio"
         case .subtitles: "Select Subtitles"
+        case .subtitleStyle: "Subtitle Style"
+        case .subtitleSync: "Subtitle Sync"
         case .chapters: "Chapters"
         case .sleepTimer: "Sleep Timer"
         }
@@ -469,6 +480,20 @@ private struct AVKitPlaybackSettingsPanel: View {
         ) {
             page = .subtitles
         }
+        settingsRow(
+            title: "Subtitle Style",
+            value: SubtitleAppearance.size.title,
+            systemImage: "textformat.size"
+        ) {
+            page = .subtitleStyle
+        }
+        settingsRow(
+            title: "Subtitle Sync",
+            value: SubtitleAppearance.syncTitle(),
+            systemImage: "clock.arrow.2.circlepath"
+        ) {
+            page = .subtitleSync
+        }
         if !model.plan.chapters.isEmpty {
             settingsRow(
                 title: "Chapters",
@@ -486,12 +511,6 @@ private struct AVKitPlaybackSettingsPanel: View {
             ) {
                 page = .sleepTimer
             }
-        }
-        if canAddSubtitles {
-            Button(action: onAddSubtitles) {
-                rowLabel(title: "Add Subtitles", value: nil, systemImage: "plus.bubble", showsChevron: false)
-            }
-            .buttonStyle(.plain)
         }
         Button {
             model.toggleFillScreen()
@@ -606,6 +625,12 @@ private struct AVKitPlaybackSettingsPanel: View {
 
     private var subtitleRows: some View {
         Group {
+            if canAddSubtitles {
+                Button(action: onAddSubtitles) {
+                    rowLabel(title: "Add Subtitles", value: nil, systemImage: "plus.bubble", showsChevron: false)
+                }
+                .buttonStyle(.plain)
+            }
             choiceRow("Off", selected: model.selectedSubtitleID == nil) {
                 if let onSubtitleChange {
                     onSubtitleChange(nil)
@@ -622,13 +647,89 @@ private struct AVKitPlaybackSettingsPanel: View {
                     }
                 }
             }
-            if canAddSubtitles {
-                Button(action: onAddSubtitles) {
-                    rowLabel(title: "Add Subtitles", value: nil, systemImage: "plus.bubble", showsChevron: false)
-                }
-                .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var subtitleStyleRows: some View {
+        menuSection("Font Size")
+        ForEach(SubtitleAppearance.Size.allCases) { option in
+            choiceRow(option.title, selected: SubtitleAppearance.size == option) {
+                SubtitleAppearance.size = option
+                model.applySubtitleAppearance()
             }
         }
+        menuSection("Text Color")
+        ForEach(SubtitleAppearance.TextColor.allCases) { option in
+            choiceRow(option.title, selected: SubtitleAppearance.color == option) {
+                SubtitleAppearance.color = option
+                model.applySubtitleAppearance()
+            }
+        }
+        menuSection("Background")
+        ForEach(SubtitleAppearance.Background.allCases) { option in
+            choiceRow(option.title, selected: SubtitleAppearance.background == option) {
+                SubtitleAppearance.background = option
+                model.applySubtitleAppearance()
+            }
+        }
+    }
+
+    private func menuSection(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.55))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
+    }
+
+    private var subtitleSyncRows: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(SubtitleAppearance.syncTitle())
+                .font(.body.weight(.semibold))
+                .frame(maxWidth: .infinity)
+            HStack(spacing: 10) {
+                Button("−0.25") {
+                    SubtitleAppearance.syncSeconds -= SubtitleAppearance.syncStep
+                    model.applySubtitleAppearance()
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.12), in: Capsule())
+                Button("+0.25") {
+                    SubtitleAppearance.syncSeconds += SubtitleAppearance.syncStep
+                    model.applySubtitleAppearance()
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.12), in: Capsule())
+            }
+            Slider(
+                value: Binding(
+                    get: { SubtitleAppearance.syncSeconds },
+                    set: {
+                        SubtitleAppearance.syncSeconds = $0
+                        model.applySubtitleAppearance()
+                    }
+                ),
+                in: SubtitleAppearance.syncRange,
+                step: SubtitleAppearance.syncStep
+            )
+            .tint(.white)
+            Button("Reset") {
+                SubtitleAppearance.syncSeconds = 0
+                model.applySubtitleAppearance()
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .foregroundStyle(.white.opacity(0.72))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var selectedAudioTitle: String {

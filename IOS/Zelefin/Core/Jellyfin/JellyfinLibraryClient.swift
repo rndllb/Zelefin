@@ -417,6 +417,11 @@ class JellyfinLibraryClient: @unchecked Sendable {
                 onPage: onPage
             )) ?? []
         }
+        if kind == .watchlist {
+            let items = await watchlistItems()
+            await onPage?(CatalogPageUpdate(items: items, totalCount: items.count))
+            return items
+        }
         let matches = HomeLayoutPreferences.libraries(libraries, matching: kind)
         return await items(inLibraries: matches, query: query, onPage: onPage)
     }
@@ -988,8 +993,12 @@ class JellyfinLibraryClient: @unchecked Sendable {
             )
         )
         async let detail = client.send(Paths.getItem(itemID: item.id, userID: userID))
+        async let user = client.send(Paths.getCurrentUser)
         let response = try await playback.value
         let dto = try? await detail.value
+        let preferences = JellyfinPlaybackPreferences(
+            configuration: ((try? await user)?.value.configuration) ?? UserConfiguration()
+        )
 
         let sources = response.mediaSources ?? []
         let source = sources.first(where: { $0.id == mediaSourceID }) ?? sources.first
@@ -1006,9 +1015,21 @@ class JellyfinLibraryClient: @unchecked Sendable {
         // The response echoes what the server settled on for this user, so the player
         // starts there instead of on the file's own flags.
         let chosenAudio = resolvedAudio ?? source.defaultAudioStreamIndex
-        let chosenSubtitle: Int? = resolvedSubtitle == -1
+        let serverSubtitle: Int? = resolvedSubtitle == -1
             ? nil
-            : (resolvedSubtitle ?? source.defaultSubtitleStreamIndex).flatMap { $0 < 0 ? nil : $0 }
+            : PlaybackLanguage.positiveIndex(resolvedSubtitle)
+                ?? PlaybackLanguage.positiveIndex(source.defaultSubtitleStreamIndex)
+        let audioTracks = ItemMapper.tracks(from: streams, kind: .audio)
+        let subtitleTracks = ItemMapper.tracks(from: streams, kind: .subtitle)
+        let chosenSubtitle = PlaybackLanguage.startingSubtitleIndex(
+            in: subtitleTracks,
+            serverIndex: serverSubtitle,
+            mode: preferences.subtitleMode,
+            preferredLanguage: preferences.subtitleLanguage,
+            audioLanguage: audioTracks.first(where: { $0.id == chosenAudio })?.language,
+            preferSDH: PlaybackPreferences.preferSDH,
+            forcedByUser: resolvedSubtitle != nil
+        )
 
         return PlaybackPlan(
             item: item,
@@ -1389,7 +1410,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         case .movies: [.movie]
         case .shows: [.series]
         case .collections: [.boxSet]
-        case .favorites: [.movie, .series]
+        case .favorites, .watchlist: [.movie, .series]
         case .books: [.book]
         case .photos: [.photo, .photoAlbum]
         case .liveTV: [.tvChannel]

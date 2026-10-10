@@ -30,6 +30,7 @@ data class JellyfinItemSnapshot(
     val unplayedItemCount: Int? = null,
     val played: Boolean = false,
     val favorite: Boolean = false,
+    val watchlisted: Boolean = false,
     val primaryImageTag: String? = null,
     val imageTags: Map<String, String> = emptyMap(),
     val backdropImageTags: List<String> = emptyList(),
@@ -104,6 +105,7 @@ object ItemMapper {
             hasClosedCaptions = snapshot.streams.any { it.type.equals("Subtitle", true) },
             hasAudioDescription = hasAudioDescription(snapshot.streams),
             isFavorite = snapshot.favorite,
+            isWatchlisted = snapshot.watchlisted,
             people = snapshot.people,
         )
     }
@@ -246,5 +248,18 @@ object ArtworkUrls {
         if (!tag.isNullOrEmpty()) query += "tag=$tag"
         if (!token.isNullOrEmpty()) query += "api_key=$token"
         return ServerUrl.resolve(base, "/Items/$itemId/Images/$type?${query.joinToString("&")}")
+    }
+
+    fun trickplayTile(
+        base: String,
+        itemId: String,
+        info: TrickplayInfo,
+        time: Double,
+        token: String?,
+    ): String? {
+        val query = mutableListOf("quality=90")
+        if (!info.mediaSourceId.isNullOrBlank()) query += "mediaSourceId=${info.mediaSourceId}"
+        if (!token.isNullOrEmpty()) query += "api_key=$token"
+        return ServerUrl.resolve(base, "/Videos/$itemId/Trickplay/${info.width}/${info.tileIndex(time)}.jpg?${query.joinToString("&")}")
     }
 }

@@ -43,9 +43,12 @@ import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -80,6 +83,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.ZelefinModel
@@ -87,11 +91,17 @@ import app.zelefin.client.ZelefinUiState
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private val InterfaceCaption = Color.White.copy(alpha = 0.55f)
+private val InterfaceCaption = ZelefinMuted
 private val SwatchShape = RoundedCornerShape(9.7.dp)
 private const val DockFullNote = "The dock is full. Turn off a tab or library first."
 
-/** Mirrors iOS `TabCustomizationView`: accent, merge, hero, Home rows, tabs, libraries, reset. */
+/** Accent color. Used by the Appearance topic. */
+@Composable
+fun AppearanceSettings() {
+    AccentSection()
+}
+
+/** Mirrors iOS `TabCustomizationView`: merge, hero, Home rows, tabs, libraries, reset. */
 @Composable
 fun InterfaceSettings(state: ZelefinUiState) {
     val model: ZelefinModel = viewModel()
@@ -99,9 +109,6 @@ fun InterfaceSettings(state: ZelefinUiState) {
     val silo = state.session?.usesSilo == true
     LaunchedEffect(Unit) { model.pullDisplayPreferences() }
 
-    AccentSection()
-
-    Spacer(Modifier.height(22.dp))
     val merged = HomeLayoutPreferences.mergeContinueAndNextUp
     SettingsCard {
         SettingsToggleRow("Combine Continue Watching and Next Up", merged, onChange = { on ->
@@ -145,7 +152,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
         },
     ) { row, handle ->
         ReorderRow(
-            icon = { Icon(homeRowIcon(row), contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
+            icon = { Icon(homeRowIcon(row), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp)) },
             title = row.title,
             checked = row !in HomeLayoutPreferences.hidden,
             onCheckedChange = { on ->
@@ -200,7 +207,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
     ) { tab, handle ->
         val appTab = tab.appTab ?: return@ReorderableCards
         ReorderRow(
-            icon = { DockTabIcon(appTab, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
+            icon = { DockTabIcon(appTab, selected = false, description = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp)) },
             title = tab.title,
             checked = if (tab.canHide) TabPreferences.isShown(tab) else null,
             onCheckedChange = { on ->
@@ -229,7 +236,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
             if (index > 0) Spacer(Modifier.height(8.dp))
             SettingsCard {
                 ReorderRow(
-                    icon = { DockTabIcon(app.zelefin.client.AppTab.Room, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
+                    icon = { DockTabIcon(app.zelefin.client.AppTab.Room, selected = false, description = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp)) },
                     title = room.name,
                     checked = room.id in TabPreferences.dockLibraryIds,
                     onCheckedChange = { on ->
@@ -261,10 +268,9 @@ fun InterfaceSettings(state: ZelefinUiState) {
 private fun DockNote(text: String) {
     Text(
         text,
-        color = ZelefinCyan,
-        fontFamily = ZelefinFont,
-        fontSize = 13.sp,
-        modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 6.dp),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
     )
 }
 
@@ -295,10 +301,7 @@ private fun ReorderRow(
         Spacer(Modifier.width(14.dp))
         Text(
             title,
-            color = Color.White,
-            fontFamily = ZelefinFont,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 17.sp,
+            style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
@@ -306,7 +309,6 @@ private fun ReorderRow(
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(checkedTrackColor = ZelefinCyan, checkedThumbColor = Color.White),
             )
         }
         if (handle != null) {
@@ -399,7 +401,7 @@ private fun <T> ReorderableCards(
 }
 
 @Composable
-private fun AccentSection() {
+internal fun AccentSection() {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var pickerOpen by remember { mutableStateOf(false) }
@@ -432,7 +434,7 @@ private fun AccentSection() {
         if (custom) {
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Color", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                Text("Color", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Box(
                     Modifier
                         .size(30.dp)
@@ -453,10 +455,8 @@ private fun AccentSection() {
     }
     SettingsFooter("Accent color tints buttons, highlights, and icons throughout the app.")
 
-    val haze = LocalZelefinHaze.current
-    PresentZelefinOverlay(visible = pickerOpen && haze != null) {
-        val hazeState = haze ?: return@PresentZelefinOverlay
-        AccentColorPickerPanel(hazeState = hazeState, onDismiss = { pickerOpen = false })
+    if (pickerOpen) {
+        AccentColorPickerPanel(onDismiss = { pickerOpen = false })
     }
 }
 
@@ -481,9 +481,8 @@ private fun AccentSwatch(name: String, color: Color, selected: Boolean, eyedropp
         Spacer(Modifier.height(6.dp))
         Text(
             name,
-            color = if (selected) Color.White else InterfaceCaption,
-            fontFamily = ZelefinFont,
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
     }
@@ -508,10 +507,10 @@ private fun HexRow(onDone: () -> Unit) {
                 .size(36.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(preview)
-                .border(0.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
         )
         Spacer(Modifier.width(12.dp))
-        BasicTextField(
+        OutlinedTextField(
             value = text,
             onValueChange = { value ->
                 text = value.take(7)
@@ -519,9 +518,11 @@ private fun HexRow(onDone: () -> Unit) {
                     if (hex != AccentPreferences.customHex) AccentPreferences.setCustomHex(context, hex)
                 }
             },
+            modifier = Modifier
+                .weight(1f)
+                .onFocusChanged { if (!it.isFocused) revertIfInvalid() },
+            placeholder = { Text("Hex code") },
             singleLine = true,
-            textStyle = TextStyle(color = Color.White, fontFamily = ZelefinFont, fontSize = 17.sp),
-            cursorBrush = SolidColor(ZelefinCyan),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Characters,
                 autoCorrectEnabled = false,
@@ -532,17 +533,6 @@ private fun HexRow(onDone: () -> Unit) {
                 revertIfInvalid()
                 onDone()
             }),
-            modifier = Modifier
-                .weight(1f)
-                .onFocusChanged { if (!it.isFocused) revertIfInvalid() },
-            decorationBox = { field ->
-                Box(contentAlignment = Alignment.CenterStart) {
-                    if (text.isEmpty()) {
-                        Text("Hex code", color = InterfaceCaption, fontFamily = ZelefinFont, fontSize = 17.sp)
-                    }
-                    field()
-                }
-            },
         )
     }
 }
@@ -551,7 +541,7 @@ private val HueStops = listOf(0f, 60f, 120f, 180f, 240f, 300f, 360f).map { Color
 
 /** In-app color picker: saturation/brightness square and a hue slider, no opacity. Changes apply live. */
 @Composable
-private fun AccentColorPickerPanel(hazeState: ZelefinHazeState, onDismiss: () -> Unit) {
+private fun AccentColorPickerPanel(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val start = remember {
         FloatArray(3).also { android.graphics.Color.colorToHSV(AccentPreferences.customColor.toArgb(), it) }
@@ -563,18 +553,15 @@ private fun AccentColorPickerPanel(hazeState: ZelefinHazeState, onDismiss: () ->
         AccentPreferences.setCustomHex(context, AccentPreferences.hexFrom(Color.hsv(hue.coerceIn(0f, 360f), saturation, brightness)))
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.25f))
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
-        )
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+        ) {
         Column(
             Modifier
                 .width(320.dp)
-                .zelefinGlassChrome(hazeState, ZelefinOverlayShape)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -584,18 +571,11 @@ private fun AccentColorPickerPanel(hazeState: ZelefinHazeState, onDismiss: () ->
                         .size(28.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.hsv(hue.coerceIn(0f, 360f), saturation, brightness))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                        .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
                 )
                 Spacer(Modifier.width(12.dp))
-                Text("Color", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                Text(
-                    "Done",
-                    color = ZelefinCyan,
-                    fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 17.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onDismiss).padding(horizontal = 6.dp, vertical = 4.dp),
-                )
+                Text("Color", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("Done") }
             }
             BoxWithConstraints(
                 Modifier
@@ -669,6 +649,7 @@ private fun AccentColorPickerPanel(hazeState: ZelefinHazeState, onDismiss: () ->
                         .background(Color.hsv(hue.coerceIn(0f, 360f), 1f, 1f)),
                 )
             }
+        }
         }
     }
 }

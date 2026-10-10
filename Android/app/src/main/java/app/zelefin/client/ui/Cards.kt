@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -71,15 +72,15 @@ fun PosterCard(
                     .fillMaxWidth()
                     .aspectRatio(if (landscape) 16f / 9f else 2f / 3f)
                     .posterChrome()
-                    .background(Color.White.copy(alpha = 0.08f)),
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             )
             ItemPosterMarks(item, portrait = !landscape)
             if (item.progress > 0.02 && item.progress < 0.98) {
                 LinearProgressIndicator(
                     progress = { item.progress.toFloat() },
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp),
-                    color = ZelefinCyan,
-                    trackColor = ZelefinInk.copy(alpha = 0.25f),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f),
                 )
             }
         }
