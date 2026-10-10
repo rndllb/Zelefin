@@ -1,40 +1,66 @@
-# Zelefin (iOS)
+<div align="center">
 
-The iPhone and iPad app. Android lives in `../Android/`. Product overview, full feature list, and server notes are in the [repository README](../README.md).
+# Zelefin · iOS
 
-Native Jellyfin and Silo client. Emby and Plex are coming. There is no Zelefin Plus, no subscription, and no in-app purchase.
+iPhone and iPad. Full product list lives in the [repository README](../README.md).
 
-Open `Zelefin.xcodeproj` in Xcode. Sign in with your own server.
+<img src="https://img.shields.io/badge/iOS-26+-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 26+" />
+<img src="https://img.shields.io/badge/Jellyfin-ready-00A4DC?style=for-the-badge" alt="Jellyfin" />
+<img src="https://img.shields.io/badge/Silo-ready-2ad4fc?style=for-the-badge&labelColor=111111" alt="Silo" />
 
-## iOS-only in this tree
+Open `Zelefin.xcodeproj`. Sign in with your own server. No Plus, no subscription.
 
-- Live TV guide
-- Picture-in-picture and AirPlay
-- Review Demo, a local bundled catalog that never calls a server
-- AVFoundation / AVPlayerKit playback
-- Catalog A–Z rail and subtitle appearance (size, color, position)
+</div>
 
-Everything else in the root README (home, library, search, Discover, downloads, SyncPlay, sessions, messages, notifications, Jellyfin admin) is on iPhone and iPad as well.
+---
 
-## Requirements
+## Only on this tree
 
-- iOS 26, iPhone or iPad
-- A Jellyfin or Silo server you can reach from the device
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## Open in Xcode
+📺 **Live TV guide**  
+On Now, channels, listings, recordings already on the server.
 
-1. Open `Zelefin.xcodeproj`.
-2. Pick an iPhone or iPad simulator, or a signed-in device.
-3. Run.
+</td>
+<td width="50%" valign="top">
+
+🖼️ **PiP & AirPlay**  
+AVPlayer / VideoToolbox. HDR stays on Apple’s decoder.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+🧪 **Review Demo**  
+Bundled catalog. Never calls a server.
+
+</td>
+<td width="50%" valign="top">
+
+🔤 **Catalog extras**  
+A–Z rail. Subtitle size, color, and position.
+
+</td>
+</tr>
+</table>
+
+Home, library, search, Discover, downloads, SyncPlay, sessions, notifications, and Jellyfin admin match Android.
+
+---
+
+## Run
+
+1. Open `Zelefin.xcodeproj`
+2. Pick an iPhone or iPad simulator, or a signed-in device
+3. Run
 
 `project.yml` is the XcodeGen spec if you need to regenerate the project.
-
-## Tests
 
 ```bash
 xcodebuild test -scheme Zelefin -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
-## License
-
-See [LICENSE](../LICENSE).
+[License](../LICENSE)

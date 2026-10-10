@@ -1,33 +1,62 @@
-# Zelefin (Android)
+<div align="center">
 
-The Android app. iPhone and iPad live in `../IOS/`. Product overview, full feature list, and server notes are in the [repository README](../README.md).
+# Zelefin · Android
 
-Native Jellyfin and Silo client. Emby and Plex are coming. There is no Zelefin Plus, no subscription, and no in-app purchase.
+Phone and tablet. Full product list lives in the [repository README](../README.md).
 
-Open the `Android/` folder in Android Studio. Sign in with your own server.
+<img src="https://img.shields.io/badge/Android-8+-3DDC84?style=for-the-badge&logo=android&logoColor=111" alt="Android 8+" />
+<img src="https://img.shields.io/badge/Jellyfin-ready-00A4DC?style=for-the-badge" alt="Jellyfin" />
+<img src="https://img.shields.io/badge/Silo-ready-2ad4fc?style=for-the-badge&labelColor=111111" alt="Silo" />
 
-## Android-only in this tree
+Open the `Android/` folder in Android Studio. Sign in with your own server. No Plus, no subscription.
 
-- Material 3 chrome: edge-to-edge navigation bar, accent-tinted surfaces, settings hub
-- Chromecast
-- Media3 / ExoPlayer and optional mpv
-- Dock tab names on by default
+</div>
 
-Live TV, Picture-in-Picture, and AirPlay are iOS-only in this build.
+---
 
-Everything else in the root README (home, library, search, Discover, downloads, SyncPlay, sessions, messages, notifications, Jellyfin admin) is on Android as well.
+## Only on this tree
 
-## Requirements
+<table>
+<tr>
+<td width="50%" valign="top">
 
-- Android 8 (API 26) or later
-- A Jellyfin or Silo server you can reach from the device
+🎨 **Material 3**  
+Edge-to-edge navigation bar, accent-tinted surfaces, settings hub. Dock tab names on by default.
 
-## Open in Android Studio
+</td>
+<td width="50%" valign="top">
 
-1. Open the `Android/` folder.
-2. Pick an emulator or a device with USB debugging.
-3. Run the `app` configuration.
+📡 **Chromecast**  
+Send playback to a Cast device from the player.
 
-## License
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
-See [LICENSE](../LICENSE).
+▶️ **ExoPlayer & mpv**  
+Media3 / ExoPlayer by default. Optional mpv.
+
+</td>
+<td width="50%" valign="top">
+
+🚫 **Not here yet**  
+Live TV, Picture in Picture, and AirPlay stay iOS-only in this build.
+
+</td>
+</tr>
+</table>
+
+Home, library, search, Discover, downloads, SyncPlay, sessions, notifications, and Jellyfin admin match iOS.
+
+---
+
+## Run
+
+1. Open the `Android/` folder
+2. Pick an emulator or a device with USB debugging
+3. Run the `app` configuration
+
+Needs Android 8 (API 26) or later.
+
+[License](../LICENSE)
