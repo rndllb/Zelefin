@@ -8,7 +8,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.drag
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,13 +18,14 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -44,11 +44,8 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,7 +63,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -75,11 +71,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -91,7 +88,7 @@ import app.zelefin.client.ZelefinUiState
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private val InterfaceCaption = ZelefinMuted
+private val InterfaceCaption = IOSColors.tertiaryLabel
 private val SwatchShape = RoundedCornerShape(9.7.dp)
 private const val DockFullNote = "The dock is full. Turn off a tab or library first."
 
@@ -152,7 +149,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
         },
     ) { row, handle ->
         ReorderRow(
-            icon = { Icon(homeRowIcon(row), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp)) },
+            icon = { Icon(homeRowIcon(row), contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
             title = row.title,
             checked = row !in HomeLayoutPreferences.hidden,
             onCheckedChange = { on ->
@@ -183,6 +180,19 @@ fun InterfaceSettings(state: ZelefinUiState) {
         TabPreferences.enabledLibraryCount(state.libraries),
     )
 
+    LiquidGlassSettings(state)
+
+    SettingsHeader("Start Page")
+    SettingsCard {
+        SettingsMenuPicker(
+            label = "Page",
+            choices = StartPagePreferences.choices.map { SettingsChoice(it, it.title) },
+            selected = StartPagePreferences.tab,
+            onSelect = { page -> StartPagePreferences.setTab(context, page) },
+        )
+    }
+    SettingsFooter("The page Zelefin opens to when you launch it. Home is the default.")
+
     SettingsHeader("Tabs")
     SettingsCard {
         SettingsToggleRow("Show Tab Names", TabPreferences.showsNames, onChange = { on ->
@@ -207,7 +217,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
     ) { tab, handle ->
         val appTab = tab.appTab ?: return@ReorderableCards
         ReorderRow(
-            icon = { DockTabIcon(appTab, selected = false, description = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp)) },
+            icon = { DockTabIcon(appTab, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
             title = tab.title,
             checked = if (tab.canHide) TabPreferences.isShown(tab) else null,
             onCheckedChange = { on ->
@@ -232,11 +242,11 @@ fun InterfaceSettings(state: ZelefinUiState) {
 
     if (pinnable.isNotEmpty()) {
         SettingsHeader("Libraries")
-        pinnable.forEachIndexed { index, room ->
-            if (index > 0) Spacer(Modifier.height(8.dp))
-            SettingsCard {
+        SettingsCard {
+            pinnable.forEachIndexed { index, room ->
+                if (index > 0) SettingsCardDivider()
                 ReorderRow(
-                    icon = { DockTabIcon(app.zelefin.client.AppTab.Room, selected = false, description = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp)) },
+                    icon = { DockTabIcon(app.zelefin.client.AppTab.Room, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
                     title = room.name,
                     checked = room.id in TabPreferences.dockLibraryIds,
                     onCheckedChange = { on ->
@@ -256,7 +266,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
             model.pushDisplayPreferences()
             model.refreshLibrary()
         }
-        Spacer(Modifier.height(10.dp))
+        SettingsCardDivider()
         SettingsSecondaryButton("Reset Tabs") {
             TabPreferences.reset(context)
             model.pushDisplayPreferences()
@@ -268,9 +278,10 @@ fun InterfaceSettings(state: ZelefinUiState) {
 private fun DockNote(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
+        color = IOSColors.red,
+        fontFamily = ZelefinFont,
+        fontSize = 13.sp,
+        modifier = Modifier.padding(start = SettingsGroupMargin + SettingsContentInset, end = SettingsGroupMargin + SettingsContentInset, top = 6.dp),
     )
 }
 
@@ -296,20 +307,19 @@ private fun ReorderRow(
     onCheckedChange: (Boolean) -> Unit,
     handle: Modifier?,
 ) {
-    Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         icon()
         Spacer(Modifier.width(14.dp))
         Text(
             title,
-            style = MaterialTheme.typography.titleMedium,
+            style = SettingsRowText,
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
         if (checked != null) {
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-            )
+            Box(Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)) {
+                IOSSwitch(checked)
+            }
         }
         if (handle != null) {
             Spacer(Modifier.width(10.dp))
@@ -321,8 +331,8 @@ private fun ReorderRow(
 }
 
 /**
- * One settings card per item, reordered by dragging the handle Modifier handed to [content].
- * Neighbours slide out of the way while dragging; the new order is committed on release.
+ * One grouped section, a row per item, reordered by dragging the handle Modifier handed to
+ * [content]. Neighbours slide out of the way while dragging; the new order is committed on release.
  */
 @Composable
 private fun <T> ReorderableCards(
@@ -332,8 +342,9 @@ private fun <T> ReorderableCards(
     onCommit: (List<T>) -> Unit,
     content: @Composable (T, Modifier) -> Unit,
 ) {
-    val spacing = 8.dp
+    val spacing = 0.dp
     val spacingPx = with(LocalDensity.current) { spacing.toPx() }
+    val rowFill = MaterialTheme.colorScheme.surfaceContainerHigh
     var cardHeight by remember { mutableFloatStateOf(0f) }
     var dragging by remember(items) { mutableIntStateOf(-1) }
     var dragY by remember(items) { mutableFloatStateOf(0f) }
@@ -342,7 +353,13 @@ private fun <T> ReorderableCards(
     val latestItems by rememberUpdatedState(items)
     val latestCommit by rememberUpdatedState(onCommit)
 
-    Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = SettingsGroupMargin)
+            .clip(SettingsGroupShape)
+            .background(rowFill),
+    ) {
         items.forEachIndexed { index, item ->
             key(key(item)) {
                 val shift = when {
@@ -391,9 +408,13 @@ private fun <T> ReorderableCards(
                             scaleX = scale
                             scaleY = scale
                         }
-                        .onSizeChanged { if (index == 0) cardHeight = it.height.toFloat() },
+                        .onSizeChanged { if (index == 0) cardHeight = it.height.toFloat() }
+                        .background(rowFill),
                 ) {
-                    SettingsCard { content(item, handle) }
+                    Column(Modifier.padding(horizontal = SettingsContentInset)) {
+                        content(item, handle)
+                        if (index < items.lastIndex) SettingsCardDivider()
+                    }
                 }
             }
         }
@@ -434,7 +455,7 @@ internal fun AccentSection() {
         if (custom) {
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Color", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text("Color", style = SettingsRowText, modifier = Modifier.weight(1f))
                 Box(
                     Modifier
                         .size(30.dp)
@@ -481,8 +502,9 @@ private fun AccentSwatch(name: String, color: Color, selected: Boolean, eyedropp
         Spacer(Modifier.height(6.dp))
         Text(
             name,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = ZelefinFont,
+            fontSize = 11.sp,
+            color = if (selected) Color.White else IOSColors.secondaryLabel,
             maxLines = 1,
         )
     }
@@ -501,18 +523,12 @@ private fun HexRow(onDone: () -> Unit) {
     fun revertIfInvalid() {
         if (AccentPreferences.normalizedHex(text) == null) text = AccentPreferences.customHex
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(preview)
-                .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
-        )
-        Spacer(Modifier.width(12.dp))
-        OutlinedTextField(
+    Row(Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Hex", style = SettingsRowText)
+        Spacer(Modifier.width(16.dp))
+        IOSTextField(
             value = text,
-            onValueChange = { value ->
+            onChange = { value ->
                 text = value.take(7)
                 AccentPreferences.normalizedHex(text)?.let { hex ->
                     if (hex != AccentPreferences.customHex) AccentPreferences.setCustomHex(context, hex)
@@ -521,8 +537,8 @@ private fun HexRow(onDone: () -> Unit) {
             modifier = Modifier
                 .weight(1f)
                 .onFocusChanged { if (!it.isFocused) revertIfInvalid() },
-            placeholder = { Text("Hex code") },
-            singleLine = true,
+            placeholder = "Hex code",
+            textAlign = TextAlign.End,
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Characters,
                 autoCorrectEnabled = false,
@@ -533,6 +549,14 @@ private fun HexRow(onDone: () -> Unit) {
                 revertIfInvalid()
                 onDone()
             }),
+        )
+        Spacer(Modifier.width(12.dp))
+        Box(
+            Modifier
+                .size(24.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(preview)
+                .border(0.5.dp, IOSColors.separator, RoundedCornerShape(6.dp)),
         )
     }
 }
@@ -554,11 +578,7 @@ private fun AccentColorPickerPanel(onDismiss: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp,
-        ) {
+        Box(Modifier.clip(RoundedCornerShape(34.dp)).background(IOSColors.alert)) {
         Column(
             Modifier
                 .width(320.dp)
@@ -571,11 +591,11 @@ private fun AccentColorPickerPanel(onDismiss: () -> Unit) {
                         .size(28.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.hsv(hue.coerceIn(0f, 360f), saturation, brightness))
-                        .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
+                        .border(0.5.dp, IOSColors.separator, RoundedCornerShape(8.dp)),
                 )
                 Spacer(Modifier.width(12.dp))
-                Text("Color", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("Done") }
+                Text("Color", style = SettingsRowText.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+                IOSCapsuleButton("Done", onDismiss, prominent = true, height = 36.dp)
             }
             BoxWithConstraints(
                 Modifier
@@ -652,4 +672,63 @@ private fun AccentColorPickerPanel(onDismiss: () -> Unit) {
         }
         }
     }
+}
+
+/** Liquid Glass look for the dock, mini player, and floating buttons, with a live preview. */
+@Composable
+private fun LiquidGlassSettings(state: ZelefinUiState) {
+    val context = LocalContext.current
+    val mode = GlassPreferences.mode
+    val style = GlassPreferences.style
+    val backdrop = state.home.featured.firstOrNull() ?: state.home.continueWatching.firstOrNull()
+    SettingsHeader("Liquid Glass")
+    LiquidGlassPreview(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .height(170.dp),
+    ) {
+        if (backdrop != null) {
+            CachedArtwork(
+                urls = artworkCandidates(backdrop, state.session, landscape = true),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    SettingsCard {
+        SettingsMenuPicker(
+            label = "Look",
+            choices = GlassMode.entries.map { SettingsChoice(it, it.title) },
+            selected = mode,
+            onSelect = { next -> GlassPreferences.setMode(context, next) },
+        )
+        GlassKnob.entries.forEach { knob ->
+            SettingsCardDivider()
+            val value = knob.read(if (mode == GlassMode.Off) GlassMode.Clear.preset!! else style)
+            SettingsSliderRow(
+                label = knob.title,
+                value = value,
+                valueText = knob.label(value),
+                range = knob.range,
+                onChange = { next -> GlassPreferences.adjust(context, knob, next) },
+            )
+        }
+    }
+    SettingsFooter(
+        when (mode) {
+            GlassMode.Clear -> "Clear lets more of the page show through the dock and mini player. Move a slider to make your own look."
+            GlassMode.Tinted -> "Tinted darkens and frosts the glass so labels stand out over bright artwork. Move a slider to make your own look."
+            GlassMode.Custom -> "Your own look. Frost blurs what shows through, Darkness tints it, Refraction and Edge Width shape the bent rim, Color Fringe adds rainbow edges, and Vibrance boosts color. Pick Clear or Tinted to start over."
+            GlassMode.Off -> "Off shows a plain frosted bar with no live refraction. It is the smoothest option on older phones. Move a slider to turn the glass back on."
+        },
+    )
+    Spacer(Modifier.height(8.dp))
+    SettingsCard {
+        SettingsSecondaryButton("Reset Custom Glass") {
+            GlassPreferences.resetCustom(context)
+        }
+    }
+    SettingsFooter("Clears your slider changes and goes back to Clear.")
 }

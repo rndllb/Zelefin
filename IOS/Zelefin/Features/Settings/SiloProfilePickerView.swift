@@ -47,17 +47,20 @@ struct SiloProfilePickerView: View {
                     } footer: {
                         Text("A PIN locks this person on this login. Leave it empty for an unlocked profile.")
                     }
+                    .zelefinRowBackground()
                     Section {
                         Button("Create Profile") {
                             Task { await create() }
                         }
                         .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                     }
+                    .zelefinRowBackground()
                     if let errorMessage {
                         Section {
                             Text(errorMessage)
                                 .foregroundStyle(.red)
                         }
+                        .zelefinRowBackground()
                     }
                 }
                 .zelefinSettingsChrome(title: "Add Profile")

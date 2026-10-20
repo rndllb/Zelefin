@@ -26,6 +26,7 @@ struct UserManagementView: View {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
                         }
+                        .zelefinRowBackground()
                     }
 
                     Section {
@@ -49,6 +50,7 @@ struct UserManagementView: View {
                     } footer: {
                         Text("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.")
                     }
+                    .zelefinRowBackground()
                 }
             }
         }
@@ -130,6 +132,7 @@ struct UserAccountEditorView: View {
                 Section {
                     SettingsStatusText(text: status, isError: statusIsError)
                 }
+                .zelefinRowBackground()
             }
         }
         .zelefinSettingsChrome(title: account.name)
@@ -195,222 +198,169 @@ struct UserAccountEditorView: View {
 
     private var identitySection: some View {
         Section {
-            VStack(spacing: 18) {
+            VStack(spacing: 12) {
                 ZStack(alignment: .bottomTrailing) {
                     ZStack {
                         UserAvatarView(
                             url: session.library?.userAvatarURL(userID: account.id, tag: account.primaryImageTag),
                             localImage: localAvatar,
-                            diameter: 132
+                            diameter: 72
                         )
-                        .padding(6)
-                        .zelefinLiquidGlassCircle(interactive: false)
                         if isUpdatingPhoto {
                             Circle()
                                 .fill(.black.opacity(0.48))
-                                .frame(width: 144, height: 144)
+                                .frame(width: 72, height: 72)
                             ProgressView()
-                                .tint(.white)
                         }
                     }
-                    .frame(width: 144, height: 144)
+                    .frame(width: 72, height: 72)
                     .accessibilityHidden(true)
 
                     PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
                         SettingsCameraBadge()
                     }
                     .disabled(isUpdatingPhoto)
-                    .offset(x: -2, y: -2)
+                    .offset(x: 2, y: 2)
                     .accessibilityLabel("Change Profile Picture")
                 }
 
-                VStack(spacing: 10) {
+                VStack(spacing: 4) {
                     Text(account.name)
-                        .font(.title2.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
-                    SettingsChip(
-                        icon: account.isAdministrator ? "checkmark.shield.fill" : "person.fill",
-                        leading: account.isDisabled ? "Disabled" : account.statusSubtitle
-                    )
+                    Text(account.isDisabled ? "Disabled" : account.statusSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
 
                 if account.primaryImageTag != nil || localAvatar != nil {
                     Button("Remove Photo", role: .destructive) {
                         Task { await removePhoto() }
                     }
-                    .font(.subheadline.weight(.semibold))
                     .disabled(isSaving || isUpdatingPhoto)
                 }
             }
             .frame(maxWidth: .infinity)
-            .settingsHeroRow()
+            .padding(.vertical, 8)
         } footer: {
             Text("Administrators can change this user's profile picture on the server.")
         }
+        .zelefinRowBackground()
     }
 
     private var usernameSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsLabeledField(label: "Username", systemImage: "person.fill") {
-                    TextField("Username", text: $username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                SettingsPrimaryButton(
-                    title: "Save Username",
-                    isBusy: isSaving,
-                    enabled: canSaveUsername && !isUpdatingPhoto
-                ) {
-                    Task { await saveUsername() }
-                }
-                .padding(.top, 16)
+            TextField("Username", text: $username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Save Username") {
+                Task { await saveUsername() }
             }
+            .disabled(!canSaveUsername || isUpdatingPhoto || isSaving)
         }
+        .zelefinRowBackground()
     }
 
     private var permissionsSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                Toggle("Administrator", isOn: administratorBinding)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.medium))
-                SettingsCardDivider()
-                Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.medium))
-                SettingsCardDivider()
-                Toggle("Disable Account", isOn: disabledBinding)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.medium))
-            }
+            Toggle("Administrator", isOn: administratorBinding)
+            Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
+            Toggle("Disable Account", isOn: disabledBinding)
         } header: {
             Text("Permissions")
         } footer: {
             Text("Administrators can manage users, sessions, and server settings. Edit Subtitles lets this user search and download subtitles onto the server, same as an administrator.")
         }
+        .zelefinRowBackground()
     }
 
     private var bitrateSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
-                SettingsFieldLabel(title: "Remote bitrate")
-                Picker("Remote bitrate", selection: $draft.remoteClientBitrateLimit) {
-                    ForEach(bitrateOptions, id: \.self) { limit in
-                        Text(bitrateTitle(limit)).tag(limit)
-                    }
+            Picker("Remote Bitrate", selection: $draft.remoteClientBitrateLimit) {
+                ForEach(bitrateOptions, id: \.self) { limit in
+                    Text(bitrateTitle(limit)).tag(limit)
                 }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                .onChange(of: draft.remoteClientBitrateLimit) { _, _ in
-                    Task { await savePolicy() }
-                }
+            }
+            .onChange(of: draft.remoteClientBitrateLimit) { _, _ in
+                Task { await savePolicy() }
             }
         } header: {
             Text("Streaming")
         } footer: {
             Text("Caps how fast this user can pull video from outside the local network. Unlimited leaves the client in charge.")
         }
+        .zelefinRowBackground()
     }
 
     private var passwordSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsLabeledField(label: "New", systemImage: "lock.fill") {
-                    SecureField("New", text: $newPassword)
-                        .textContentType(.newPassword)
-                        .focused($passwordField, equals: .newPassword)
-                        .submitLabel(.next)
-                        .onSubmit { passwordField = .confirm }
-                }
-                SettingsCardDivider()
-                SettingsLabeledField(label: "Confirm", systemImage: "lock.fill") {
-                    SecureField("Confirm", text: $confirmPassword)
-                        .textContentType(.newPassword)
-                        .focused($passwordField, equals: .confirm)
-                        .submitLabel(.go)
-                        .onSubmit {
-                            guard canSetPassword, !isSaving else { return }
-                            Task { await setPassword() }
-                        }
-                }
-                if !confirmPassword.isEmpty && newPassword != confirmPassword {
-                    Text("The new passwords do not match.")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(LoginPalette.failure)
-                        .padding(.top, 12)
-                }
-                SettingsPrimaryButton(
-                    title: "Set Password",
-                    isBusy: isSaving,
-                    enabled: canSetPassword
-                ) {
+            SecureField("New Password", text: $newPassword)
+                .textContentType(.newPassword)
+                .focused($passwordField, equals: .newPassword)
+                .submitLabel(.next)
+                .onSubmit { passwordField = .confirm }
+            SecureField("Confirm Password", text: $confirmPassword)
+                .textContentType(.newPassword)
+                .focused($passwordField, equals: .confirm)
+                .submitLabel(.go)
+                .onSubmit {
+                    guard canSetPassword, !isSaving else { return }
                     Task { await setPassword() }
                 }
-                .padding(.top, 16)
-                SettingsSecondaryButton(
-                    title: "Reset Password",
-                    role: .destructive,
-                    enabled: !isSaving
-                ) {
-                    confirmResetPassword = true
-                }
-                .padding(.top, 10)
+            if !confirmPassword.isEmpty && newPassword != confirmPassword {
+                Text("The new passwords do not match.")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
             }
+            Button("Set Password") {
+                Task { await setPassword() }
+            }
+            .disabled(!canSetPassword || isSaving)
+            Button("Reset Password", role: .destructive) {
+                confirmResetPassword = true
+            }
+            .disabled(isSaving)
         } header: {
             Text("Password")
         } footer: {
             Text("Reset clears the password on the server. Set Password stores the new one now.")
         }
+        .zelefinRowBackground()
     }
 
     private var parentalSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsFieldLabel(title: "Maximum rating")
-                    .padding(.bottom, 8)
-                Picker("Maximum rating", selection: $ratingID) {
-                    Text("None").tag("none")
-                    ForEach(ratings) { rating in
-                        Text(rating.name).tag(rating.id)
-                    }
+            Picker("Maximum Rating", selection: $ratingID) {
+                Text("None").tag("none")
+                ForEach(ratings) { rating in
+                    Text(rating.name).tag(rating.id)
                 }
-                .pickerStyle(.menu)
-                .tint(AccentPreferences.current)
-                ForEach(UnratedItem.allCases, id: \.self) { item in
-                    SettingsCardDivider()
-                    Toggle(item.settingsTitle, isOn: unratedBinding(item))
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.medium))
-                }
+            }
+            ForEach(UnratedItem.allCases, id: \.self) { item in
+                Toggle(item.settingsTitle, isOn: unratedBinding(item))
             }
         } header: {
             Text("Parental Controls")
         } footer: {
             Text("Maximum rating hides titles above that score. Blocked types stay hidden even when they have no rating.")
         }
+        .zelefinRowBackground()
     }
 
     private var librarySection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                Toggle("All libraries", isOn: allFoldersBinding)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.medium))
-                if !draft.enableAllFolders {
-                    ForEach(folders) { folder in
-                        SettingsCardDivider()
-                        Toggle(folder.name, isOn: folderBinding(folder.id))
-                            .tint(AccentPreferences.current)
-                            .font(.body.weight(.medium))
-                    }
+            Toggle("All Libraries", isOn: allFoldersBinding)
+            if !draft.enableAllFolders {
+                ForEach(folders) { folder in
+                    Toggle(folder.name, isOn: folderBinding(folder.id))
                 }
             }
         } header: {
             Text("Library Access")
         } footer: {
-            Text("Turn off All libraries to pick which folders this user can see.")
+            Text("Turn off All Libraries to pick which folders this user can see.")
         }
+        .zelefinRowBackground()
     }
 
     private var canSaveUsername: Bool {

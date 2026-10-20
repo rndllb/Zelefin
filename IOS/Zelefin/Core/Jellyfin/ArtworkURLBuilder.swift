@@ -48,6 +48,11 @@ struct ArtworkURLBuilder: Sendable {
         return image(itemID: item.artworkItemID, type: "Thumb", tag: nil, maxWidth: maxWidth, format: "jpg")
     }
 
+    func banner(for item: MediaItem, maxWidth: Int = 1600) -> URL? {
+        guard let tag = item.bannerImageTag else { return nil }
+        return image(itemID: item.id, type: "Banner", tag: tag, maxWidth: maxWidth, format: "jpg")
+    }
+
     func backdrop(for item: MediaItem, maxWidth: Int, allowPosterFallback: Bool = true) -> URL? {
         if let tag = item.backdropImageTag {
             return image(itemID: item.artworkItemID, type: "Backdrop", tag: tag, maxWidth: maxWidth, format: "jpg")

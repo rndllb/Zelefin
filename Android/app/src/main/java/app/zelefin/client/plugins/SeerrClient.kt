@@ -173,6 +173,26 @@ data class SeerrUser(
     }
 }
 
+data class SeerrCredentials(
+    val username: String,
+    val password: String,
+) {
+    fun toJson(): String = buildJsonObject {
+        put("username", username)
+        put("password", password)
+    }.toString()
+
+    companion object {
+        fun fromJson(raw: String?): SeerrCredentials? {
+            val json = raw?.let(SiloJson::objectOrNull) ?: return null
+            val username = json.str("username").orEmpty()
+            val password = json.str("password").orEmpty()
+            if (username.isEmpty() || password.isEmpty()) return null
+            return SeerrCredentials(username, password)
+        }
+    }
+}
+
 data class SeerrSession(
     val cookieName: String,
     val cookieValue: String,
@@ -353,6 +373,9 @@ class SeerrClient(
             val headers = response.headers.names().associateWith { response.headers[it].orEmpty() }
             if (AccessGateway.isChallenge(response.status, headers, response.body)) {
                 throw ZelefinException.accessGateway()
+            }
+            if (response.status == 401 || response.status == 403) {
+                throw ZelefinException.seerrUnauthorized()
             }
             if (response.status !in 200..299) {
                 throw ZelefinException.server(errorMessage(response.body, response.status))

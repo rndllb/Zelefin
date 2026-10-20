@@ -147,6 +147,18 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var posterURL: URL? = nil
     var backdropURL: URL? = nil
     var logoURL: URL? = nil
+    var bannerImageTag: String? = nil
+    var youTubeID: String? = nil
+
+    var isYouTube: Bool { youTubeID != nil }
+
+    var youTubeURL: URL? {
+        guard let youTubeID, !youTubeID.isEmpty else { return nil }
+        if kind == .series {
+            return URL(string: "https://www.youtube.com/channel/\(youTubeID)")
+        }
+        return URL(string: "https://www.youtube.com/watch?v=\(youTubeID)")
+    }
 
     var progress: Double {
         guard let runtime, runtime > 0 else { return 0 }
@@ -155,6 +167,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     var episodeLabel: String? {
         guard kind == .episode else { return nil }
+        if isYouTube { return seriesName }
         guard let seasonIndex, let episodeIndex else { return seriesName }
         let remaining: String
         if let runtime {
@@ -200,18 +213,26 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     /// The title the hero Play control should start: an in-progress episode, else the next unwatched one.
     static func heroPlaybackItem(title: MediaItem, episodes: [MediaItem]) -> MediaItem {
-        guard title.kind == .series else { return title }
+        guard title.kind == .series || title.kind == .season else { return title }
+        return preferredEpisode(in: episodes) ?? title
+    }
+
+    static func preferredEpisode(in episodes: [MediaItem]) -> MediaItem? {
         if let resumable = episodes.first(where: { !$0.isWatched && $0.playbackPosition > 5 }) {
             return resumable
         }
         if let upcoming = episodes.first(where: { !$0.isWatched }) {
             return upcoming
         }
-        return episodes.first ?? title
+        return episodes.first
     }
 
     var continueWatchingCaption: String? {
         let remaining = remainingPlayback.map { Self.minutesLabel($0, rounding: .down) }
+        if isYouTube {
+            let parts = [seriesName, remaining].compactMap { $0 }.filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        }
         if kind == .episode, let seasonIndex, let episodeIndex {
             if let remaining {
                 return "S\(seasonIndex), E\(episodeIndex) · \(remaining)"
@@ -278,8 +299,26 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             likes: likes,
             premiereDate: premiereDate,
             posterURL: posterURL,
-            backdropURL: backdropURL
+            backdropURL: backdropURL,
+            bannerImageTag: bannerImageTag,
+            youTubeID: youTubeID
         )
+    }
+
+    /// TubeArchivist videos: newest premiere date first, then highest episode index.
+    static func orderedYouTubeVideos(_ videos: [MediaItem]) -> [MediaItem] {
+        videos.sorted { lhs, rhs in
+            switch (lhs.premiereDate, rhs.premiereDate) {
+            case let (left?, right?) where left != right:
+                return left > right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return (lhs.episodeIndex ?? 0) > (rhs.episodeIndex ?? 0)
+            }
+        }
     }
 
     var hasHeroBackdrop: Bool {
@@ -294,7 +333,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     }
 
     var continueWatchingTitle: String {
-        if kind == .episode {
+        if kind == .episode && !isYouTube {
             return seriesName ?? name
         }
         return name
@@ -316,7 +355,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     }
 
     var recentlyWatchedCaption: String? {
-        if kind == .episode, let seasonIndex, let episodeIndex {
+        if kind == .episode, !isYouTube, let seasonIndex, let episodeIndex {
             if let runtime {
                 return "S\(seasonIndex), E\(episodeIndex)  ·  \(Self.minutesLabel(runtime))"
             }
@@ -334,7 +373,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     var recentlyWatchedListSubtitle: String {
         var parts: [String] = []
-        if kind == .episode, let seasonIndex, let episodeIndex {
+        if kind == .episode, !isYouTube, let seasonIndex, let episodeIndex {
             parts.append("S\(seasonIndex), E\(episodeIndex)")
         } else if let year {
             parts.append("\(year)")
@@ -347,8 +386,10 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
 
     var continueWatchingListSubtitle: String {
         var parts = [queueKind.listStatusLabel]
-        if kind == .episode, let seasonIndex, let episodeIndex {
+        if kind == .episode, !isYouTube, let seasonIndex, let episodeIndex {
             parts.append("S\(seasonIndex), E\(episodeIndex)")
+        } else if isYouTube, let seriesName, !seriesName.isEmpty {
+            parts.append(seriesName)
         }
         if let remainingPlayback, remainingPlayback > 0 {
             parts.append("\(Self.minutesLabel(remainingPlayback, rounding: .down).uppercased()) LEFT")
@@ -366,16 +407,19 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     }
 
     var kindLabel: String {
+        if isYouTube {
+            return kind == .series ? "Channel" : "Video"
+        }
         switch kind {
-        case .movie: "Movie"
-        case .series, .season, .episode: "Show"
-        case .collection: "Collection"
-        case .genre: "Genre"
-        case .playlist: "Playlist"
-        case .liveTV: "Live TV"
-        case .book: "Book"
-        case .photo: "Photo"
-        case .unknown: "Title"
+        case .movie: return "Movie"
+        case .series, .season, .episode: return "Show"
+        case .collection: return "Collection"
+        case .genre: return "Genre"
+        case .playlist: return "Playlist"
+        case .liveTV: return "Live TV"
+        case .book: return "Book"
+        case .photo: return "Photo"
+        case .unknown: return "Title"
         }
     }
 
@@ -617,6 +661,7 @@ struct SeasonDownloadChoice: Identifiable, Hashable, Sendable {
 enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
     case movies
     case shows
+    case youTube
     case music
     case books
     case photos
@@ -646,10 +691,22 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         }
     }
 
+    var isHiddenOnLibraryByDefault: Bool {
+        switch self {
+        case .liveTV, .homeVideos:
+            true
+        default:
+            false
+        }
+    }
+
+    var isLastOnLibrary: Bool { isHiddenOnLibraryByDefault }
+
     var browseLabel: String {
         switch self {
         case .movies: "Movies"
         case .shows: "Shows"
+        case .youTube: "YouTube"
         case .music: "Music"
         case .books: "Books"
         case .photos: "Photos"
@@ -667,6 +724,7 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         switch self {
         case .movies: "film"
         case .shows: "tv"
+        case .youTube: "play.rectangle.fill"
         case .music: "music.note"
         case .books: "book"
         case .photos: "photo"
@@ -684,6 +742,7 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         switch self {
         case .movies: "Recently Added Movies"
         case .shows: "Recently Added Shows"
+        case .youTube: "Recently Added YouTube"
         default: "Recently Added \(libraryName)"
         }
     }
@@ -692,6 +751,9 @@ enum LibraryKind: String, Hashable, Sendable, Codable, CaseIterable {
         let lower = name.lowercased()
         if lower.contains("movie") || lower.contains("film") {
             return .movies
+        }
+        if lower.contains("youtube") || lower.contains("tubearchivist") {
+            return .youTube
         }
         if lower.contains("show") || lower.contains("series") || lower == "tv" || lower.contains("tv show") {
             return .shows
@@ -920,6 +982,29 @@ struct MediaLibrary: Identifiable, Hashable, Sendable, Codable {
     let name: String
     let kind: MediaKind
     let libraryKind: LibraryKind
+
+    /// Collections, then Movies, then Shows, then other rooms. Live TV and recordings stay last.
+    var libraryCardRank: Int {
+        if isLastOnLibrary { return 4 }
+        switch libraryKind {
+        case .collections: return 0
+        case .movies: return 1
+        case .shows: return 2
+        default: return 3
+        }
+    }
+
+    var isHiddenOnLibraryByDefault: Bool {
+        libraryKind.isHiddenOnLibraryByDefault || Self.nameLooksLikeRecordings(name)
+    }
+
+    var isLastOnLibrary: Bool {
+        libraryKind.isLastOnLibrary || Self.nameLooksLikeRecordings(name)
+    }
+
+    static func nameLooksLikeRecordings(_ name: String) -> Bool {
+        name.localizedCaseInsensitiveContains("recording")
+    }
 }
 
 struct HomeSection: Identifiable, Hashable, Sendable, Codable {
@@ -957,6 +1042,13 @@ struct HomeSection: Identifiable, Hashable, Sendable, Codable {
 struct HomeLayout: Hashable, Sendable, Codable {
     var featured: [MediaItem]
     var sections: [HomeSection]
+
+    /// Resume / next-up episode already on Home for this show, so Play can skip a full episode fetch.
+    func episode(forSeriesID id: String) -> MediaItem? {
+        MediaItem.preferredEpisode(
+            in: sections.flatMap(\.items).filter { $0.kind == .episode && $0.seriesID == id }
+        )
+    }
 
     func replacing(_ item: MediaItem) -> HomeLayout {
         HomeLayout(

@@ -615,12 +615,25 @@ final class SeerrDiscoverTests: XCTestCase {
 
 final class SeerrSessionPersistenceTests: XCTestCase {
     func testRelaunchDoesNotClearSeerr() {
-        XCTAssertFalse(PluginSettings.shouldClearSession(switchingFrom: nil, to: "ada"))
-        XCTAssertFalse(PluginSettings.shouldClearSession(switchingFrom: "ada", to: "ada"))
+        XCTAssertFalse(PluginSettings.shouldClearSession(switchingFrom: nil, to: "ada", ownerAccountID: nil))
+        XCTAssertFalse(PluginSettings.shouldClearSession(switchingFrom: "ada", to: "ada", ownerAccountID: "ada"))
+    }
+
+    func testUpdateKeepsSeerrForTheSameUser() {
+        XCTAssertFalse(PluginSettings.shouldClearSession(switchingFrom: nil, to: "ada", ownerAccountID: "ada"))
     }
 
     func testSwitchingJellyfinUserClearsSeerr() {
-        XCTAssertTrue(PluginSettings.shouldClearSession(switchingFrom: "ada", to: "bob"))
+        XCTAssertTrue(PluginSettings.shouldClearSession(switchingFrom: "ada", to: "bob", ownerAccountID: "ada"))
+    }
+
+    func testSigningInAsADifferentUserAfterSignOutClearsSeerr() {
+        XCTAssertTrue(PluginSettings.shouldClearSession(switchingFrom: nil, to: "bob", ownerAccountID: "ada"))
+    }
+
+    func testUnauthorizedIsDistinctFromAServerError() {
+        XCTAssertTrue(ZelefinError.seerrUnauthorized.isSeerrUnauthorized)
+        XCTAssertFalse(ZelefinError.server("Seerr is unreachable.").isSeerrUnauthorized)
     }
 }
 

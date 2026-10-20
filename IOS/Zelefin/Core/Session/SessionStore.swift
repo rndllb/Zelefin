@@ -51,7 +51,39 @@ final class SessionStore {
     var syncPlayGroupName: String?
     var syncPlayPlaylistItemID: String?
     var pendingPlayerItem: MediaItem?
+    /// Last title the player started. Drives the native tab-bar mini player after the full player dismisses.
+    /// Persisted per account so it comes back after reopen and cold start.
+    var nowPlayingItem: MediaItem? {
+        didSet { persistNowPlaying() }
+    }
     var incomingSessionMessage: SessionDisplayMessage?
+    /// Library tab cards, covers, and counts. Kept for the life of the process so revisiting
+    /// the tab does not refetch; a force quit or an account switch starts fresh.
+    var libraryPage = LibraryPageCache()
+
+    func presentNowPlaying() {
+        guard let nowPlayingItem else { return }
+        pendingPlayerItem = nowPlayingItem
+    }
+
+    /// Every Play button opens the one root player, so closing it always shrinks into the mini player.
+    func presentPlayer(_ item: MediaItem) {
+        pendingPlayerItem = item
+    }
+
+    func clearNowPlaying() {
+        nowPlayingItem = nil
+    }
+
+    func rememberNowPlaying(_ item: MediaItem) {
+        nowPlayingItem = item
+    }
+
+    func updateNowPlayingPosition(_ position: TimeInterval) {
+        guard var item = nowPlayingItem, position > 0 else { return }
+        item.playbackPosition = position
+        nowPlayingItem = item
+    }
 
     var canManageSubtitles: Bool {
         RemoteSubtitleOffer.canManageSubtitles(
@@ -870,15 +902,16 @@ final class SessionStore {
         syncPlayGroupName = nil
         syncPlayPlaylistItemID = nil
         pendingPlayerItem = nil
+        nowPlayingItem = nil
         needsFirstRunSetup = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
+        libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
         currentSSID = nil
         activeRoute = .remote
         pathMonitor?.cancel()
         pathMonitor = nil
-        PluginSettings.clearSeerrSession()
     }
 
     private func postProfileImage(_ jpeg: Data, userID: String) async throws {
@@ -928,10 +961,13 @@ final class SessionStore {
     ) {
         if PluginSettings.shouldClearSession(switchingFrom: session?.accountID, to: saved.accountID) {
             PluginSettings.clearSeerrSession()
+        } else if PluginSettings.seerrSession != nil, PluginSettings.seerrOwnerAccountID == nil {
+            PluginSettings.seerrOwnerAccountID = saved.accountID
         }
         // Landing in a working session clears any stale "session expired" notice.
         authNotice = nil
         session = saved
+        restoreNowPlaying()
         if ReviewDemo.isSession(saved) {
             applyReviewDemo(saved)
             return
@@ -969,6 +1005,7 @@ final class SessionStore {
         isAdministrator = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
+        libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
@@ -1027,6 +1064,7 @@ final class SessionStore {
         isAdministrator = (saved.userRole ?? "").lowercased() == "admin" && saved.isPrimaryProfile
         enableSubtitleManagement = true
         itemDetailMemory = [:]
+        libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
         restoreSnapshot(for: saved)
         Task { await loadHome(force: true) }
@@ -1092,6 +1130,7 @@ final class SessionStore {
         isAdministrator = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
+        libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
         libraries = ReviewDemoCatalog.libraries
         homeLayout = HomeLayout(
@@ -1339,6 +1378,17 @@ final class SessionStore {
         await ZelefinCompanionClient(client: client).registerDevice(token: token)
     }
 
+    /// Registers this iPhone again, then asks the plugin to push a test alert to it.
+    func sendCompanionTestAlert() async -> String? {
+        guard companionAvailable, let client else { return "Install the Zelefin plugin first." }
+        guard let token = PushNotificationCenter.storedToken else {
+            return "This iPhone has no push token yet. Turn Notifications off and on, then try again."
+        }
+        let companion = ZelefinCompanionClient(client: client)
+        await companion.registerDevice(token: token)
+        return await companion.sendTest()
+    }
+
     func registerCompanionPushIfNeeded() async {
         guard companionAvailable else { return }
         await registerCompanionPush()
@@ -1484,6 +1534,7 @@ final class SessionStore {
         if folder == nil || folder == .home {
             homeLayout = HomeLayout(featured: [], sections: [])
             libraries = []
+            libraryPage = LibraryPageCache()
         }
     }
 
@@ -1740,5 +1791,42 @@ final class SessionStore {
         if persist {
             persistSnapshot()
         }
+    }
+
+    private func persistNowPlaying() {
+        guard let accountID = session?.accountID else { return }
+        NowPlayingStore.save(nowPlayingItem, for: accountID)
+    }
+
+    private func restoreNowPlaying() {
+        nowPlayingItem = session.flatMap { NowPlayingStore.item(for: $0.accountID) }
+    }
+}
+
+struct LibraryPageCache: Equatable, Sendable {
+    var catalog: [MediaLibrary] = []
+    var covers: [String: [MediaItem]] = [:]
+    var roomCounts: [String: LibraryRoomCounts] = [:]
+    var catalogCounts: ServerCatalogCounts?
+    var detailedLibraryIDs: Set<String> = []
+    var isLoaded = false
+}
+
+enum NowPlayingStore: Sendable {
+    static func item(for accountID: String, defaults: UserDefaults = .standard) -> MediaItem? {
+        guard let data = defaults.data(forKey: key(accountID)) else { return nil }
+        return try? JSONDecoder().decode(MediaItem.self, from: data)
+    }
+
+    static func save(_ item: MediaItem?, for accountID: String, defaults: UserDefaults = .standard) {
+        guard let item, let data = try? JSONEncoder().encode(item) else {
+            defaults.removeObject(forKey: key(accountID))
+            return
+        }
+        defaults.set(data, forKey: key(accountID))
+    }
+
+    static func key(_ accountID: String) -> String {
+        "zelefin.now-playing.\(accountID)"
     }
 }

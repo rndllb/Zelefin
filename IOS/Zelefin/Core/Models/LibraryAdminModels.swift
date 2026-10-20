@@ -156,10 +156,15 @@ enum DisplayPreferencesSync {
             UserDefaults.standard.set(order, forKey: LibraryLayoutPreferences.orderKey)
         }
         if let hidden = prefs[libraryHiddenKey] {
-            UserDefaults.standard.set(
-                LibraryLayoutPreferences.hiddenRaw(from: LibraryLayoutPreferences.hiddenIDs(from: hidden)),
-                forKey: LibraryLayoutPreferences.hiddenKey
-            )
+            let trimmed = hidden.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || trimmed == LibraryLayoutPreferences.shownAllToken {
+                UserDefaults.standard.set(trimmed, forKey: LibraryLayoutPreferences.hiddenKey)
+            } else {
+                UserDefaults.standard.set(
+                    LibraryLayoutPreferences.hiddenRaw(from: LibraryLayoutPreferences.hiddenIDs(from: trimmed)),
+                    forKey: LibraryLayoutPreferences.hiddenKey
+                )
+            }
         }
         if let pageHidden = prefs[libraryPageHiddenKey] {
             UserDefaults.standard.set(

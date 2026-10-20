@@ -16,18 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhotoCamera
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,10 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,9 +69,9 @@ import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.model.api.TaskCompletionStatus
 import org.jellyfin.sdk.model.api.UnratedItem
 
-private val AdminSecondary = ZelefinMuted
-private val AdminCaption = ZelefinMuted
-private val AdminError = Color(0xFFFF453A)
+private val AdminSecondary = IOSColors.secondaryLabel
+private val AdminCaption = IOSColors.secondaryLabel
+private val AdminError = IOSColors.red
 
 @Composable
 internal fun SyncPlayTopic(state: ZelefinUiState) {
@@ -114,14 +107,14 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
     }
 
     error?.let {
-        SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp) }
+        SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }
         Spacer(Modifier.height(12.dp))
     }
     state.syncPlayGroupName?.takeIf { state.syncPlayGroupId != null }?.let { joined ->
         SettingsHeader("This Device")
         SettingsCard {
             SettingsInfoRow("Joined", joined)
-            Spacer(Modifier.height(16.dp))
+            SettingsCardDivider()
             SettingsSecondaryButton("Leave Group", enabled = !working) { run { model.leaveSyncPlayGroup() } }
         }
     }
@@ -136,7 +129,7 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
             ime = ImeAction.Go,
             onIme = { if (name.isNotBlank() && !working) run { model.createSyncPlayGroup(name); name = "" } },
         )
-        Spacer(Modifier.height(16.dp))
+        SettingsCardDivider()
         SettingsPrimaryButton("Create", busy = working, enabled = name.isNotBlank() && !working) {
             run { model.createSyncPlayGroup(name); name = "" }
         }
@@ -145,7 +138,7 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
     SettingsCard {
         when {
             loading && groups.isEmpty() -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                IOSSpinner(Modifier.size(22.dp))
             }
             groups.isEmpty() -> Text("No SyncPlay groups are running.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 16.sp)
             else -> groups.forEachIndexed { index, group ->
@@ -155,9 +148,9 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
                     Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !working && !joined) { run { model.joinSyncPlayGroup(group) } }
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = 11.dp),
                 ) {
-                    Text(group.name, style = MaterialTheme.typography.titleMedium)
+                    Text(group.name, style = SettingsRowText)
                     Text(group.subtitle, color = AdminCaption, fontFamily = ZelefinFont, fontSize = 13.sp)
                 }
             }
@@ -165,37 +158,52 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
     }
 }
 
+/** Last loaded admin lists, so returning to a page shows them at once while a fresh copy loads. */
+internal object AdminCache {
+    private val values = mutableMapOf<String, Any>()
+
+    @Suppress("UNCHECKED_CAST")
+    fun <T> get(key: String): T? = values[key] as T?
+
+    fun put(key: String, value: Any) {
+        values[key] = value
+    }
+}
+
+private fun adminCacheKey(model: ZelefinModel, page: String) = "${model.state.value.session?.accountId}:$page"
+
 @Composable
 internal fun UsersTopic() {
     val model: ZelefinModel = viewModel()
-    var users by remember { mutableStateOf(emptyList<ServerUserAccount>()) }
+    val cacheKey = adminCacheKey(model, "users")
+    var users by remember { mutableStateOf(AdminCache.get<List<ServerUserAccount>>(cacheKey).orEmpty()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         runCatching { model.adminUsers() }
-            .onSuccess { users = it; error = null }
+            .onSuccess { users = it; error = null; AdminCache.put(cacheKey, it) }
             .onFailure { error = it.message ?: "This server did not return any users." }
         loading = false
     }
     when {
         loading && users.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            IOSSpinner(Modifier.size(24.dp))
         }
         users.isEmpty() -> SettingsCard {
             Text(error ?: "This server did not return any users.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp)
         }
         else -> {
-            error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp) }; Spacer(Modifier.height(12.dp)) }
+            error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
             SettingsCard {
                 users.forEachIndexed { index, account ->
                     if (index > 0) SettingsCardDivider()
                     Row(
-                        Modifier.fillMaxWidth().clickable { model.openSettingsTopic("user:${account.id}") }.padding(vertical = 6.dp),
+                        Modifier.fillMaxWidth().clickable { model.openSettingsTopic("user:${account.id}") }.padding(vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(account.name, style = MaterialTheme.typography.titleMedium)
+                            Text(account.name, style = SettingsRowText)
                             Text(account.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 13.sp)
                         }
                         Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = AdminCaption)
@@ -338,7 +346,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     if (current == null || policy == null) {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             if (status?.second == true) Text(status?.first.orEmpty(), color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp)
-            else CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            else IOSSpinner(Modifier.size(24.dp))
         }
         return
     }
@@ -348,7 +356,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             UserAdminAvatar(session, current, 104.dp)
             if (photoBusy) {
                 Box(Modifier.size(104.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.48f)), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                    IOSSpinner(Modifier.size(24.dp))
                 }
             }
             Box(
@@ -364,7 +372,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text(current.name, style = MaterialTheme.typography.headlineMedium)
+        Text(current.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 22.sp)
         Text(current.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp)
         if (current.primaryImageTag != null) {
             Spacer(Modifier.height(10.dp))
@@ -390,7 +398,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
 
     SettingsCard {
         SettingsTextField(label = "USERNAME", value = username, icon = Icons.Outlined.Person, onChange = { username = it }, placeholder = "Username")
-        Spacer(Modifier.height(16.dp))
+        SettingsCardDivider()
         SettingsPrimaryButton("Save Username", busy = saving, enabled = username.trim().isNotEmpty() && username.trim() != current.name && !photoBusy) {
             run { model.renameUser(current, username) }
         }
@@ -428,7 +436,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         if (confirmPassword.isNotEmpty() && newPassword != confirmPassword) {
             Text("The new passwords do not match.", color = AdminError, fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         }
-        Spacer(Modifier.height(16.dp))
+        SettingsCardDivider()
         SettingsPrimaryButton("Set Password", busy = saving, enabled = newPassword.isNotEmpty() && newPassword == confirmPassword) {
             run("Password saved.") {
                 model.setUserPassword(userId, newPassword)
@@ -436,7 +444,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
                 confirmPassword = ""
             }
         }
-        Spacer(Modifier.height(10.dp))
+        SettingsCardDivider()
         SettingsSecondaryButton("Reset Password", enabled = !saving) { confirmReset = true }
     }
     SettingsFooter("Reset clears the password on the server. Set Password stores the new one now.")
@@ -474,7 +482,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     SettingsFooter("Turn off All libraries to pick which folders this user can see.")
 
     status?.let { (text, isError) ->
-        SettingsCard { Text(text, color = if (isError) AdminError else AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp) }
+        SettingsCard { Text(text, color = if (isError) AdminError else AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }
     }
 }
 
@@ -494,14 +502,15 @@ private fun UserAdminAvatar(session: SavedSession?, account: ServerUserAccount, 
 @Composable
 internal fun ScheduledTasksTopic() {
     val model: ZelefinModel = viewModel()
-    var tasks by remember { mutableStateOf(emptyList<ScheduledTask>()) }
+    val cacheKey = adminCacheKey(model, "tasks")
+    var tasks by remember { mutableStateOf(AdminCache.get<List<ScheduledTask>>(cacheKey).orEmpty()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
 
     suspend fun load() {
         runCatching { model.scheduledTasks() }
-            .onSuccess { tasks = it; error = null }
+            .onSuccess { tasks = it; error = null; AdminCache.put(cacheKey, it) }
             .onFailure { if (tasks.isEmpty()) error = it.message }
         loading = false
     }
@@ -524,11 +533,11 @@ internal fun ScheduledTasksTopic() {
 
     when {
         loading && tasks.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            IOSSpinner(Modifier.size(24.dp))
         }
-        tasks.isEmpty() -> SettingsCard { Text(error ?: "This server did not return any scheduled tasks.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp) }
+        tasks.isEmpty() -> SettingsCard { Text(error ?: "This server did not return any scheduled tasks.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp)) }
         else -> {
-            error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp) }; Spacer(Modifier.height(12.dp)) }
+            error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
             val running = tasks.filter { it.isActive }
             val idle = tasks.filter { !it.isActive && !it.isHidden }.groupBy { it.category }.toSortedMap(String.CASE_INSENSITIVE_ORDER)
             if (running.isNotEmpty()) {
@@ -555,10 +564,10 @@ internal fun ScheduledTasksTopic() {
 
 @Composable
 private fun ScheduledTaskRow(task: ScheduledTask, isBusy: Boolean, onOpen: () -> Unit, onStart: () -> Unit, onCancel: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(task.name, style = MaterialTheme.typography.titleMedium)
+                Text(task.name, style = SettingsRowText)
                 Text(
                     task.stateSubtitle,
                     color = if (task.lastStatus == TaskCompletionStatus.FAILED && !task.isActive) AdminError else AdminCaption,
@@ -567,15 +576,15 @@ private fun ScheduledTaskRow(task: ScheduledTask, isBusy: Boolean, onOpen: () ->
                 )
             }
             when {
-                isBusy -> CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                isBusy -> IOSSpinner(Modifier.size(18.dp))
                 task.canCancel -> Text("Cancel", color = AdminError, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onCancel).padding(8.dp))
                 task.canStart -> Text("Start", color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onStart).padding(8.dp))
             }
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = AdminCaption)
         }
         if (task.isActive) {
-            if (task.progressFraction != null) LinearProgressIndicator(progress = { task.progressFraction!! }, color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
-            else LinearProgressIndicator(color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
+            if (task.progressFraction != null) IOSProgressBar(task.progressFraction!!)
+            else IOSProgressBar(null)
         }
     }
 }
@@ -614,11 +623,11 @@ internal fun ScheduledTaskDetailTopic(taskId: String) {
     if (current == null) {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             if (error != null) Text(error.orEmpty(), color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp)
-            else CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            else IOSSpinner(Modifier.size(24.dp))
         }
         return
     }
-    error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp) }; Spacer(Modifier.height(12.dp)) }
+    error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
     SettingsCard {
         SettingsInfoRow("Status", current.stateLabel)
         if (current.isActive && current.progressLabel != null) {
@@ -627,13 +636,13 @@ internal fun ScheduledTaskDetailTopic(taskId: String) {
         }
         if (current.isActive) {
             SettingsCardDivider()
-            if (current.progressFraction != null) LinearProgressIndicator(progress = { current.progressFraction!! }, color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
-            else LinearProgressIndicator(color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth())
+            if (current.progressFraction != null) IOSProgressBar(current.progressFraction!!)
+            else IOSProgressBar(null)
         }
     }
     if (current.summary.isNotEmpty()) {
         SettingsHeader("About")
-        SettingsCard { Text(current.summary, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp) }
+        SettingsCard { Text(current.summary, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp)) }
     }
     if (current.lastStatus != null || current.lastEnded != null) {
         SettingsHeader("Last run")
@@ -650,40 +659,45 @@ internal fun ScheduledTaskDetailTopic(taskId: String) {
             current.lastError?.let { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp)) }
         }
     }
-    if (current.canStart) {
-        Spacer(Modifier.height(16.dp))
-        SettingsPrimaryButton("Start Task", busy = busy) { act { model.startScheduledTask(taskId) } }
-    }
-    if (current.canCancel) {
-        Spacer(Modifier.height(10.dp))
-        SettingsSecondaryButton("Cancel Task", enabled = !busy) { act { model.stopScheduledTask(taskId) } }
+    if (current.canStart || current.canCancel) {
+        Spacer(Modifier.height(20.dp))
+        SettingsCard {
+            if (current.canStart) {
+                SettingsPrimaryButton("Start Task", busy = busy) { act { model.startScheduledTask(taskId) } }
+            }
+            if (current.canCancel) {
+                if (current.canStart) SettingsCardDivider()
+                SettingsActionRow("Cancel Task", enabled = !busy, destructive = true) { act { model.stopScheduledTask(taskId) } }
+            }
+        }
     }
 }
 
 @Composable
 internal fun ActivityLogTopic() {
     val model: ZelefinModel = viewModel()
-    var entries by remember { mutableStateOf(emptyList<ActivityLogItem>()) }
+    val cacheKey = adminCacheKey(model, "activity")
+    var entries by remember { mutableStateOf(AdminCache.get<List<ActivityLogItem>>(cacheKey).orEmpty()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         runCatching { model.activityLog() }
-            .onSuccess { entries = it; error = null }
+            .onSuccess { entries = it; error = null; AdminCache.put(cacheKey, it) }
             .onFailure { error = it.message ?: "This server has not logged any recent activity." }
         loading = false
     }
     when {
         loading && entries.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            IOSSpinner(Modifier.size(24.dp))
         }
-        entries.isEmpty() -> SettingsCard { Text(error ?: "This server has not logged any recent activity.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp) }
+        entries.isEmpty() -> SettingsCard { Text(error ?: "This server has not logged any recent activity.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp)) }
         else -> {
-            error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp) }; Spacer(Modifier.height(12.dp)) }
+            error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
             SettingsCard {
                 entries.forEachIndexed { index, entry ->
                     if (index > 0) SettingsCardDivider()
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Text(entry.title, style = MaterialTheme.typography.titleMedium)
+                        Text(entry.title, style = SettingsRowText)
                         if (entry.subtitle.isNotEmpty()) Text(entry.subtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 13.sp)
                         formatAdminDate(entry.date).takeIf { it.isNotEmpty() }?.let {
                             Text(it, color = AdminCaption, fontFamily = ZelefinFont, fontSize = 12.sp)
@@ -699,7 +713,8 @@ internal fun ActivityLogTopic() {
 internal fun BackupsTopic() {
     val model: ZelefinModel = viewModel()
     val scope = rememberCoroutineScope()
-    var backups by remember { mutableStateOf(emptyList<ServerBackup>()) }
+    val cacheKey = adminCacheKey(model, "backups")
+    var backups by remember { mutableStateOf(AdminCache.get<List<ServerBackup>>(cacheKey).orEmpty()) }
     var loading by remember { mutableStateOf(true) }
     var creating by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -707,7 +722,7 @@ internal fun BackupsTopic() {
 
     suspend fun load() {
         runCatching { model.serverBackups() }
-            .onSuccess { backups = it; error = null }
+            .onSuccess { backups = it; error = null; AdminCache.put(cacheKey, it) }
             .onFailure { error = it.message ?: "Sign in as an administrator to manage backups." }
         loading = false
     }
@@ -732,16 +747,18 @@ internal fun BackupsTopic() {
 
     if (loading && backups.isEmpty() && error == null) {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+            IOSSpinner(Modifier.size(24.dp))
         }
         return
     }
-    error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp) }; Spacer(Modifier.height(12.dp)) }
-    SettingsPrimaryButton("Create Backup", busy = creating) {
-        creating = true
-        scope.launch {
-            runCatching { model.createServerBackup(); load() }.onFailure { error = it.message }
-            creating = false
+    error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
+    SettingsCard {
+        SettingsPrimaryButton("Create Backup", busy = creating) {
+            creating = true
+            scope.launch {
+                runCatching { model.createServerBackup(); load() }.onFailure { error = it.message }
+                creating = false
+            }
         }
     }
     SettingsFooter("A backup archives this server’s database and metadata. Restoring one restarts Jellyfin.")
@@ -752,10 +769,10 @@ internal fun BackupsTopic() {
         } else {
             backups.forEachIndexed { index, backup ->
                 if (index > 0) SettingsCardDivider()
-                Text(backup.fileName, style = MaterialTheme.typography.titleMedium)
+                Text(backup.fileName, style = SettingsRowText)
                 val subtitle = listOfNotNull(formatAdminDate(backup.dateCreated).takeIf { it.isNotEmpty() }, backup.serverVersion?.takeIf { it.isNotEmpty() }?.let { "Jellyfin $it" }).joinToString(" · ")
                 if (subtitle.isNotEmpty()) Text(subtitle, color = AdminCaption, fontFamily = ZelefinFont, fontSize = 13.sp)
-                Spacer(Modifier.height(12.dp))
+                SettingsCardDivider()
                 SettingsSecondaryButton("Restore…") { restore = backup }
             }
         }
@@ -789,7 +806,7 @@ internal fun BrandingTopic(state: ZelefinUiState) {
         }
     }
 
-    error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp) }; Spacer(Modifier.height(12.dp)) }
+    error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
     SettingsHeader("Sign-In")
     SettingsCard {
         SettingsFieldLabel("Login disclaimer")
@@ -809,36 +826,35 @@ internal fun BrandingTopic(state: ZelefinUiState) {
         SettingsPrimaryButton("Upload Splashscreen", enabled = !loading) {
             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
-        Spacer(Modifier.height(10.dp))
+        SettingsCardDivider()
         SettingsSecondaryButton("Remove Custom Splashscreen") {
             scope.launch {
                 runCatching { model.deleteSplashscreen() }.onSuccess { error = null }.onFailure { error = it.message }
             }
         }
     }
-    Spacer(Modifier.height(16.dp))
-    SettingsPrimaryButton("Save Branding", busy = saving, enabled = !loading) {
-        saving = true
-        scope.launch {
-            runCatching { model.updateServerBranding(branding) }
-                .onSuccess { error = null }
-                .onFailure { error = it.message ?: "Jellyfin did not save branding." }
-            saving = false
+    Spacer(Modifier.height(20.dp))
+    SettingsCard {
+        SettingsPrimaryButton("Save Branding", busy = saving, enabled = !loading) {
+            saving = true
+            scope.launch {
+                runCatching { model.updateServerBranding(branding) }
+                    .onSuccess { error = null }
+                    .onFailure { error = it.message ?: "Jellyfin did not save branding." }
+                saving = false
+            }
         }
     }
 }
 
 @Composable
 private fun AdminMultilineField(value: String, onChange: (String) -> Unit, placeholder: String, monospaced: Boolean = false) {
-    OutlinedTextField(
+    IOSTextField(
         value = value,
-        onValueChange = onChange,
-        modifier = Modifier.fillMaxWidth().height(if (monospaced) 160.dp else 120.dp),
-        placeholder = { Text(placeholder) },
-        textStyle = if (monospaced) {
-            MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
-        } else {
-            MaterialTheme.typography.bodyLarge
-        },
+        onChange = onChange,
+        placeholder = placeholder,
+        singleLine = false,
+        style = if (monospaced) SettingsRowText.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp) else SettingsRowText,
+        modifier = Modifier.fillMaxWidth().height(if (monospaced) 160.dp else 120.dp).padding(vertical = 12.dp),
     )
 }

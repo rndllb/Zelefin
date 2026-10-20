@@ -50,6 +50,7 @@ struct SubtitleAppearanceSettingsView: View {
             } header: {
                 Text("Style")
             }
+            .zelefinRowBackground()
 
             Section {
                 Picker("Font Size", selection: size) {
@@ -82,6 +83,7 @@ struct SubtitleAppearanceSettingsView: View {
             } footer: {
                 Text("Raise captions from the bottom of the picture. Style applies to text subtitles in Zelefin’s player. Positive sync shows captions later; negative shows them earlier.")
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Subtitles")
         .onChange(of: brightness) { _, value in
@@ -109,19 +111,15 @@ struct SubtitleAppearanceSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(title)
-                    .font(.body.weight(.medium))
                 Spacer()
                 Text(label())
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(LoginPalette.secondaryText)
+                    .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
             if let step {
                 Slider(value: value, in: range, step: step)
-                    .tint(AccentPreferences.current)
             } else {
                 Slider(value: value, in: range)
-                    .tint(AccentPreferences.current)
             }
         }
     }

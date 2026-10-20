@@ -7,16 +7,24 @@ struct LibraryView: View {
     @AppStorage(LibraryLayoutPreferences.orderKey) private var libraryOrderRaw = ""
     @AppStorage(LibraryLayoutPreferences.hiddenKey) private var libraryHiddenRaw = ""
     @AppStorage(LibraryLayoutPreferences.pageHiddenKey) private var pageHiddenRaw = ""
-    @State private var libraries: [MediaLibrary] = []
-    @State private var catalog: [MediaLibrary] = []
-    @State private var covers: [String: [MediaItem]] = [:]
-    @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var headerVisible = true
     @State private var showsOrganize = false
-    @State private var catalogCounts: ServerCatalogCounts?
-    @State private var roomCounts: [String: LibraryRoomCounts] = [:]
     @State private var randomItem: MediaItem?
+
+    private var page: LibraryPageCache { session.libraryPage }
+    private var covers: [String: [MediaItem]] { page.covers }
+    private var roomCounts: [String: LibraryRoomCounts] { page.roomCounts }
+    private var catalogCounts: ServerCatalogCounts? { page.catalogCounts }
+    private var catalog: [MediaLibrary] { eligibleLibraries(from: page.catalog) }
+
+    private var libraries: [MediaLibrary] {
+        LibraryLayoutPreferences.displayed(catalog, orderRaw: libraryOrderRaw, hiddenRaw: libraryHiddenRaw)
+    }
+
+    private var isLoading: Bool {
+        page.catalog.isEmpty && !page.isLoaded && errorMessage == nil
+    }
 
     private var hiddenPageBlocks: Set<LibraryPageBlock> {
         LibraryLayoutPreferences.hiddenBlocks(from: pageHiddenRaw)
@@ -47,7 +55,7 @@ struct LibraryView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 32) {
                         VStack(alignment: .leading, spacing: 16) {
-                            if let catalogCounts, catalogCounts.movies + catalogCounts.shows + catalogCounts.episodes > 0 {
+                            if let catalogCounts, catalogCounts.showsHeaderStats {
                                 LibraryServerStats(counts: catalogCounts)
                             }
                             rooms
@@ -64,7 +72,9 @@ struct LibraryView: View {
                 }
                 .scrollClipDisabled()
                 .zelefinScrollEdgeBlur()
+                .zelefinPinnedBottomEdge()
                 .zelefinHeaderScrollVisibility($headerVisible)
+                .refreshable { await load() }
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -121,25 +131,24 @@ struct LibraryView: View {
         }
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         .task {
-            if !session.libraries.isEmpty {
+            if page.isLoaded {
+                await loadMissingDetails()
+                return
+            }
+            if page.catalog.isEmpty, !session.libraries.isEmpty {
                 applyCatalog(session.libraries)
-                isLoading = false
             }
             await load()
         }
         .onChange(of: session.libraries) { _, next in
-            guard !next.isEmpty else { return }
+            guard !next.isEmpty, next != page.catalog else { return }
             applyCatalog(next)
-            isLoading = false
             errorMessage = nil
-            Task { await loadDetails() }
-        }
-        .onChange(of: libraryOrderRaw) { _, _ in
-            applyCatalog(catalog)
+            Task { await loadMissingDetails() }
         }
         .onChange(of: libraryHiddenRaw) { _, _ in
-            applyCatalog(catalog)
-            Task { await loadRoomCounts() }
+            seedCovers(for: libraries)
+            Task { await loadMissingDetails() }
         }
         .navigationDestination(item: $randomItem) { item in
             ItemDetailView(item: item)
@@ -262,19 +271,14 @@ struct LibraryView: View {
     }
 
     private func applyCatalog(_ source: [MediaLibrary]) {
-        catalog = eligibleLibraries(from: source)
-        libraries = LibraryLayoutPreferences.displayed(
-            catalog,
-            orderRaw: libraryOrderRaw,
-            hiddenRaw: libraryHiddenRaw
-        )
+        session.libraryPage.catalog = source
         seedCovers(for: libraries)
     }
 
+    /// Full fetch: cold start, or pull to refresh.
     private func load() async {
         guard let client = session.library else {
             errorMessage = "Not signed in."
-            isLoading = false
             return
         }
         async let counts = client.serverCatalogCounts()
@@ -287,29 +291,39 @@ struct LibraryView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
-        catalogCounts = await counts
-        isLoading = false
-        await loadDetails()
+        session.libraryPage.catalogCounts = await counts
+        await loadDetails(for: libraries)
+        if errorMessage == nil {
+            session.libraryPage.isLoaded = true
+        }
     }
 
-    private func loadDetails() async {
-        async let covers: Void = loadCovers()
-        async let counts: Void = loadRoomCounts()
+    /// Fills in cards that have no covers or counts yet, such as a library the user just unhid.
+    private func loadMissingDetails() async {
+        let missing = libraries.filter { !page.detailedLibraryIDs.contains($0.id) }
+        guard !missing.isEmpty else { return }
+        await loadDetails(for: missing)
+    }
+
+    private func loadDetails(for rooms: [MediaLibrary]) async {
+        async let covers: Void = loadCovers(for: rooms)
+        async let counts: Void = loadRoomCounts(for: rooms)
         _ = await covers
         _ = await counts
+        guard !Task.isCancelled else { return }
+        session.libraryPage.detailedLibraryIDs.formUnion(rooms.map(\.id))
     }
 
-    private func loadRoomCounts() async {
+    private func loadRoomCounts(for rooms: [MediaLibrary]) async {
         guard let client = session.library else { return }
-        let snapshot = libraries
         await withTaskGroup(of: (String, LibraryRoomCounts).self) { group in
-            for library in snapshot {
+            for library in rooms {
                 group.addTask {
                     (library.id, await client.roomCounts(for: library))
                 }
             }
             for await (id, counts) in group {
-                roomCounts[id] = counts
+                session.libraryPage.roomCounts[id] = counts
             }
         }
     }
@@ -318,7 +332,7 @@ struct LibraryView: View {
         for library in rooms where library.libraryKind != .liveTV {
             if let existing = covers[library.id], !existing.isEmpty { continue }
             if let items = previewFromHome(library), !items.isEmpty {
-                covers[library.id] = Array(items.prefix(8))
+                session.libraryPage.covers[library.id] = Array(items.prefix(8))
             }
         }
     }
@@ -334,24 +348,24 @@ struct LibraryView: View {
         return nil
     }
 
-    private func loadCovers() async {
+    private func loadCovers(for rooms: [MediaLibrary]) async {
         guard let client = session.library else { return }
-        let snapshot = libraries
-        seedCovers(for: snapshot)
+        seedCovers(for: rooms)
         await withTaskGroup(of: (String, [MediaItem]).self) { group in
-            for library in snapshot where library.libraryKind != .liveTV {
+            for library in rooms where library.libraryKind != .liveTV {
                 group.addTask {
                     (library.id, await client.previewItems(in: library, limit: 8))
                 }
             }
             for await (id, items) in group where !items.isEmpty {
-                covers[id] = items
+                session.libraryPage.covers[id] = items
             }
         }
     }
 }
 
 private struct LibraryServerStats: View {
+    @Environment(\.zelefinSurfaces) private var surfaces
     let counts: ServerCatalogCounts
 
     var body: some View {
@@ -361,9 +375,13 @@ private struct LibraryServerStats: View {
             fact(counts.shows, label: "Shows")
             divider
             fact(counts.episodes, label: "Episodes")
+            if counts.videos > 0 {
+                divider
+                fact(counts.videos, label: "Videos")
+            }
         }
         .frame(height: 64)
-        .background(Color.white.opacity(0.08))
+        .background(surfaces.raised)
         .posterCard(cornerRadius: 16)
         .padding(.horizontal, 16)
         .accessibilityElement(children: .ignore)
@@ -371,7 +389,15 @@ private struct LibraryServerStats: View {
     }
 
     private var summary: String {
-        "\(formatted(counts.movies)) movies, \(formatted(counts.shows)) shows, \(formatted(counts.episodes)) episodes"
+        var parts = [
+            "\(formatted(counts.movies)) movies",
+            "\(formatted(counts.shows)) shows",
+            "\(formatted(counts.episodes)) episodes"
+        ]
+        if counts.videos > 0 {
+            parts.append("\(formatted(counts.videos)) videos")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func fact(_ value: Int, label: String) -> some View {
@@ -403,6 +429,7 @@ private struct LibraryServerStats: View {
 
 private struct LibraryRoomBand: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.zelefinSurfaces) private var surfaces
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let library: MediaLibrary
     let covers: [MediaItem]
@@ -484,7 +511,7 @@ private struct LibraryRoomBand: View {
                 contentMode: .fill
             )
         } else {
-            Color.white.opacity(0.08)
+            surfaces.raised
         }
     }
 
@@ -519,6 +546,7 @@ private struct LibraryRoomBand: View {
 }
 
 private struct LibraryJumpTile: View {
+    @Environment(\.zelefinSurfaces) private var surfaces
     let title: String
     let systemImage: String
 
@@ -536,7 +564,7 @@ private struct LibraryJumpTile: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 88)
-        .background(Color.white.opacity(0.08))
+        .background(surfaces.raised)
         .posterCard(cornerRadius: 14)
         .accessibilityLabel(title)
     }
@@ -774,11 +802,11 @@ private struct LibraryOrganizeView: View {
     }
 
     private func isShown(_ id: String) -> Bool {
-        !LibraryLayoutPreferences.hiddenIDs(from: hiddenRaw).contains(id)
+        !LibraryLayoutPreferences.resolvedHidden(from: hiddenRaw, libraries: rows).contains(id)
     }
 
     private func setShown(_ shown: Bool, id: String) {
-        var hidden = LibraryLayoutPreferences.hiddenIDs(from: hiddenRaw)
+        var hidden = LibraryLayoutPreferences.resolvedHidden(from: hiddenRaw, libraries: rows)
         if shown {
             hidden.remove(id)
         } else {
@@ -813,41 +841,60 @@ struct LibraryGenresView: View {
     }
 
     var body: some View {
-        ScrollView {
-            if isLoading {
-                ProgressView()
-                    .tint(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 80)
-            } else if genres.isEmpty {
-                ContentUnavailableView(
-                    "No Genres",
-                    systemImage: "square.grid.2x2",
-                    description: Text("Genres from your libraries will show up here.")
-                )
-                .padding(.top, 40)
-            } else {
-                LazyVGrid(columns: columns, spacing: 20) {
-                    ForEach(genres) { genre in
-                        NavigationLink {
-                            CatalogGridView(title: genre.name, query: .genre(genre.id))
-                        } label: {
-                            FillingPosterCell { size in
-                                GenrePosterCard(
-                                    title: genre.name,
-                                    width: size.width,
-                                    height: size.height
-                                )
+        ScrollViewReader { proxy in
+            ZStack {
+                ScrollView {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 80)
+                    } else if genres.isEmpty {
+                        ContentUnavailableView(
+                            "No Genres",
+                            systemImage: "square.grid.2x2",
+                            description: Text("Genres from your libraries will show up here.")
+                        )
+                        .padding(.top, 40)
+                    } else {
+                        LazyVGrid(columns: columns, spacing: 20) {
+                            ForEach(genres) { genre in
+                                NavigationLink {
+                                    CatalogGridView(title: genre.name, query: .genre(genre.id))
+                                } label: {
+                                    FillingPosterCell { size in
+                                        GenrePosterCard(
+                                            title: genre.name,
+                                            width: size.width,
+                                            height: size.height
+                                        )
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .id(genre.id)
                             }
                         }
-                        .buttonStyle(.plain)
+                        .padding(16)
+                        .padding(.trailing, 14)
                     }
                 }
-                .padding(16)
+                if !genres.isEmpty {
+                    CatalogAlphabetRail(items: genres) { id in
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            proxy.scrollTo(id, anchor: .top)
+                        }
+                    }
+                }
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .zelefinPushedChrome(title: "Genres") { EmptyView() }
+        .zelefinScrollEdgeBlur()
+        .zelefinPinnedBottomEdge()
+        .navigationTitle("Genres")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await load() }
     }
 
@@ -934,6 +981,7 @@ struct LibraryItemsView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
+        .zelefinPinnedBottomEdge()
         .navigationTitle(library.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)

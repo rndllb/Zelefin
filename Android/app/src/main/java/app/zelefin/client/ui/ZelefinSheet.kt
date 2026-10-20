@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import androidx.compose.material3.MaterialTheme
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.spring
@@ -80,7 +82,7 @@ fun Modifier.zelefinSheetRise(progress: Animatable<Float, AnimationVector1D>): M
 @Composable
 fun ZelefinSheetSurface(
     progress: Animatable<Float, AnimationVector1D>,
-    canvas: Color = ZelefinSheetCanvas,
+    canvas: Color = MaterialTheme.colorScheme.surface,
     content: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().zelefinSheetRise(progress)) {

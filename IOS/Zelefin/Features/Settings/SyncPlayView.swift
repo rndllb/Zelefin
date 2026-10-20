@@ -14,37 +14,30 @@ struct SyncPlayView: View {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
                 }
+                .zelefinRowBackground()
             }
             if let name = session.syncPlayGroupName, session.syncPlayGroupID != nil {
                 Section {
-                    VStack(alignment: .leading, spacing: 0) {
-                        SettingsInfoRow(label: "Joined", value: name)
-                        SettingsSecondaryButton(title: "Leave Group", role: .destructive, enabled: !isWorking) {
-                            Task { await leave() }
-                        }
-                        .padding(.top, 16)
+                    LabeledContent("Joined", value: name)
+                    Button("Leave Group", role: .destructive) {
+                        Task { await leave() }
                     }
+                    .disabled(isWorking)
                 } header: {
                     Text("This Device")
                 }
+                .zelefinRowBackground()
             }
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsLabeledField(label: "Name", systemImage: "person.2.fill") {
-                        TextField("Name", text: $newName)
-                    }
-                    SettingsPrimaryButton(
-                        title: "Create",
-                        isBusy: isWorking,
-                        enabled: !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ) {
-                        Task { await create() }
-                    }
-                    .padding(.top, 16)
+                TextField("Name", text: $newName)
+                Button("Create") {
+                    Task { await create() }
                 }
+                .disabled(isWorking || newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } header: {
                 Text("New Group")
             }
+            .zelefinRowBackground()
             Section {
                 if isLoading && groups.isEmpty {
                     ProgressView()
@@ -66,6 +59,7 @@ struct SyncPlayView: View {
             } header: {
                 Text("Groups")
             }
+            .zelefinRowBackground()
         }
         .listStyle(.insetGrouped)
         .refreshable { await load(showProgress: false) }
@@ -144,21 +138,15 @@ struct SyncPlayPlaySheet: View {
                     SettingsStatusText(text: errorMessage, isError: true)
                 }
                 Section {
-                    VStack(alignment: .leading, spacing: 0) {
-                        SettingsLabeledField(label: "Name", systemImage: "person.2.fill") {
-                            TextField("Name", text: $newName)
-                        }
-                        SettingsPrimaryButton(
-                            title: "Start",
-                            enabled: !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ) {
-                            Task { await createAndPlay() }
-                        }
-                        .padding(.top, 16)
+                    TextField("Name", text: $newName)
+                    Button("Start") {
+                        Task { await createAndPlay() }
                     }
+                    .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 } header: {
                     Text("New Group")
                 }
+                .zelefinRowBackground()
                 Section {
                     if groups.isEmpty {
                         SettingsStackedRow(title: "No groups yet. Create one to watch together.")
@@ -175,6 +163,7 @@ struct SyncPlayPlaySheet: View {
                 } header: {
                     Text("Join and Play")
                 }
+                .zelefinRowBackground()
             }
             .zelefinSettingsChrome(title: "SyncPlay")
             .toolbar {

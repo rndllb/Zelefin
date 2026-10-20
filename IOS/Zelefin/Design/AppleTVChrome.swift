@@ -83,6 +83,26 @@ enum PosterMetrics {
     static func heroHeight(for size: CGSize) -> CGFloat {
         max(680, size.height * 0.82)
     }
+
+}
+
+/// Holds the hero height measured when a page first appears. The tab bar and mini player
+/// change the available height as they collapse on scroll; re-measuring made the hero resize.
+struct HeroHeightLock: Equatable {
+    private var width: CGFloat = 0
+    private var locked: CGFloat?
+
+    func height(for size: CGSize) -> CGFloat {
+        if let locked, width == size.width { return locked }
+        return PosterMetrics.heroHeight(for: size)
+    }
+
+    mutating func lock(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        guard locked == nil || width != size.width else { return }
+        width = size.width
+        locked = PosterMetrics.heroHeight(for: size)
+    }
 }
 
 enum PosterChrome {
@@ -122,16 +142,17 @@ struct PosterImage: View {
     let url: URL?
     var aspectRatio: CGFloat = 2 / 3
     var contentMode: ContentMode = .fill
-    var fill: Color = Color.white.opacity(0.08)
+    var fill: Color?
     var progressTint: Color = Color.white.opacity(0.6)
     @Environment(\.libraryArtworkRevision) private var artworkRevision
+    @Environment(\.zelefinSurfaces) private var surfaces
     @State private var image: UIImage?
     @State private var isLoading = true
 
     var body: some View {
         ZStack {
             Rectangle()
-                .fill(fill)
+                .fill(fill ?? surfaces.raised)
             if let shown = image ?? url.flatMap({ ArtworkCache.shared.image(for: $0) }) {
                 Image(uiImage: shown)
                     .resizable()
@@ -488,6 +509,7 @@ struct TrailerLandscapeCard: View {
 }
 
 struct EpisodeShowcaseCard: View {
+    @Environment(\.zelefinSurfaces) private var surfaces
     let item: MediaItem
     let imageURL: URL?
     var showsOverflowIcon = true
@@ -567,7 +589,7 @@ struct EpisodeShowcaseCard: View {
             .frame(width: size.width, height: size.height - imageHeight, alignment: .topLeading)
         }
         .frame(width: size.width, height: size.height, alignment: .top)
-        .background(Color.white.opacity(0.08))
+        .background(surfaces.raised)
         .posterCard()
         .clipped()
         .accessibilityElement(children: .combine)
@@ -750,30 +772,27 @@ private struct CollectionCollage: View {
     }
 }
 
-/// Dark grey into black, with the genre name in Outfit Bold.
+/// Accent-tinted card with the genre mark and name in Outfit Bold, like Android's `GenreCard`.
 struct GenrePosterCard: View {
     let title: String
     var width: CGFloat? = nil
     var height: CGFloat? = nil
     var cornerRadius: CGFloat = PosterMetrics.cornerRadius
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @Environment(\.zelefinSurfaces) private var surfaces
 
     var body: some View {
         let fittedWidth = width ?? PosterMetrics.portraitSize.width * sidebarLayout.scale
         let fittedHeight = height ?? PosterMetrics.portraitSize.height * sidebarLayout.scale
         let size = CGSize(width: fittedWidth, height: fittedHeight)
         ZStack(alignment: .bottomLeading) {
-            LinearGradient(
-                colors: [Color(white: 0.11), Color(white: 0.04), .black],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            GenreIcon(title: title, side: size.width * 0.42)
+            surfaces.raised
+            GenreIcon(title: title, side: size.width * 0.42, tint: surfaces.content)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.bottom, size.height * 0.12)
             Text(title)
                 .font(.custom("Outfit", size: size.width * 0.16).weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(surfaces.content)
                 .lineLimit(3)
                 .minimumScaleFactor(0.5)
                 .multilineTextAlignment(.leading)
@@ -1188,9 +1207,7 @@ struct FeaturedHero: View {
         .navigationDestination(item: $detailItem) { item in
             ItemDetailView(item: item)
         }
-        .fullScreenCover(item: $playingItem) { item in
-            PlayerView(item: item)
-        }
+        .presentsPlayerFromRoot($playingItem)
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
@@ -1415,6 +1432,13 @@ extension View {
         }
     }
 
+    /// Stops the rubber band at the bottom edge only. `tabBarMinimizeBehavior(.onScrollDown)`
+    /// reads the bounce back from the bottom as an upward scroll and re-expands the dock.
+    /// The top edge keeps its bounce so pull to refresh still works.
+    func zelefinPinnedBottomEdge() -> some View {
+        background(BottomEdgePin().allowsHitTesting(false))
+    }
+
     func zelefinHeaderScrollVisibility(_ isVisible: Binding<Bool>) -> some View {
         modifier(HeaderScrollVisibilityModifier(isVisible: isVisible))
     }
@@ -1559,6 +1583,117 @@ enum RootPageChrome {
     ) -> CGFloat {
         guard !contentIgnoresTopSafeArea else { return 0 }
         return padTabBarLift(usesPadTopChrome: usesPadTopChrome, isSidebarVisible: isSidebarVisible)
+    }
+}
+
+enum BottomEdgeClamp {
+    /// Bounce stays on in the top half of the page (pull to refresh) and turns off in the
+    /// bottom half, so UIKit stops at the bottom edge itself. Snapping the offset back after an
+    /// overscroll still showed the tab bar an upward scroll and re-expanded it.
+    static func shouldBounce(
+        offsetY: CGFloat,
+        contentHeight: CGFloat,
+        viewportHeight: CGFloat,
+        insetTop: CGFloat,
+        insetBottom: CGFloat
+    ) -> Bool {
+        let minOffset = -insetTop
+        let maxOffset = contentHeight + insetBottom - viewportHeight
+        guard maxOffset > minOffset else { return true }
+        return offsetY < (minOffset + maxOffset) / 2
+    }
+}
+
+/// Finds the vertical scroll view it sits behind (same frame) and pins its bottom edge.
+private struct BottomEdgePin: UIViewRepresentable {
+    func makeUIView(context: Context) -> BottomEdgePinView {
+        BottomEdgePinView()
+    }
+
+    func updateUIView(_ uiView: BottomEdgePinView, context: Context) {}
+}
+
+final class BottomEdgePinView: UIView {
+    private weak var scrollView: UIScrollView?
+    private var observation: NSKeyValueObservation?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        attachIfNeeded()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            observation = nil
+            scrollView = nil
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.attachIfNeeded() }
+        }
+    }
+
+    private func attachIfNeeded(retriesLeft: Int = 6) {
+        guard scrollView == nil, let window, bounds.width > 1, bounds.height > 1 else { return }
+        let target = convert(bounds, to: window)
+        var ancestor = superview
+        while let view = ancestor {
+            if let match = Self.scrollView(in: view, matching: target, window: window) {
+                attach(match)
+                return
+            }
+            ancestor = view.superview
+        }
+        // The scroll view can appear after this view does, once a loading state clears.
+        guard retriesLeft > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.attachIfNeeded(retriesLeft: retriesLeft - 1)
+        }
+    }
+
+    private func attach(_ scrollView: UIScrollView) {
+        self.scrollView = scrollView
+        observation = scrollView.observe(\.contentOffset, options: [.initial, .new]) { scrollView, _ in
+            MainActor.assumeIsolated {
+                let bounce = BottomEdgeClamp.shouldBounce(
+                    offsetY: scrollView.contentOffset.y,
+                    contentHeight: scrollView.contentSize.height,
+                    viewportHeight: scrollView.bounds.height,
+                    insetTop: scrollView.adjustedContentInset.top,
+                    insetBottom: scrollView.adjustedContentInset.bottom
+                )
+                if scrollView.bounces != bounce {
+                    scrollView.bounces = bounce
+                }
+            }
+        }
+    }
+
+    private static func scrollView(in root: UIView, matching target: CGRect, window: UIWindow) -> UIScrollView? {
+        for subview in root.subviews {
+            if let scroll = subview as? UIScrollView,
+               Self.matches(scroll.convert(scroll.bounds, to: window), target) {
+                return scroll
+            }
+            if let nested = scrollView(in: subview, matching: target, window: window) {
+                return nested
+            }
+        }
+        return nil
+    }
+
+    private static func matches(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) < 2 && abs(lhs.width - rhs.width) < 2
+            && abs(lhs.minY - rhs.minY) < 2 && abs(lhs.height - rhs.height) < 2
     }
 }
 
@@ -1929,8 +2064,17 @@ struct ZelefinPadBackButton: View {
 
 struct ZelefinPadPushedChrome<Trailing: View>: View {
     var contentIgnoresTopSafeArea: Bool
+    var isVisible: Bool = true
     @ViewBuilder var trailing: Trailing
     @Environment(\.tabBarPlacement) private var tabBarPlacement
+
+    private var lift: CGFloat {
+        RootPageChrome.pushedOverlayLift(
+            contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
+            usesPadTopChrome: RootPageChrome.usesOverlayPushedBar,
+            isSidebarVisible: tabBarPlacement == .sidebar
+        )
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -1947,11 +2091,10 @@ struct ZelefinPadPushedChrome<Trailing: View>: View {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
-        .offset(y: RootPageChrome.pushedOverlayLift(
-            contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
-            usesPadTopChrome: RootPageChrome.usesOverlayPushedBar,
-            isSidebarVisible: tabBarPlacement == .sidebar
-        ))
+        .opacity(isVisible ? 1 : 0)
+        .offset(y: isVisible ? lift : lift - 18)
+        .allowsHitTesting(isVisible)
+        .accessibilityHidden(!isVisible)
     }
 }
 
@@ -1959,17 +2102,20 @@ private struct ZelefinPushedChromeModifier<Trailing: View>: ViewModifier {
     var title: String
     var contentIgnoresTopSafeArea: Bool
     var hidesToolbarBackground: Bool
+    var chromeVisible: Bool
     var trailing: Trailing
 
     init(
         title: String,
         contentIgnoresTopSafeArea: Bool,
         hidesToolbarBackground: Bool,
+        chromeVisible: Bool,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title
         self.contentIgnoresTopSafeArea = contentIgnoresTopSafeArea
         self.hidesToolbarBackground = hidesToolbarBackground
+        self.chromeVisible = chromeVisible
         self.trailing = trailing()
     }
 
@@ -1989,7 +2135,10 @@ private struct ZelefinPushedChromeModifier<Trailing: View>: ViewModifier {
 
     @ViewBuilder
     private func padChrome(_ content: Content) -> some View {
-        let chrome = ZelefinPadPushedChrome(contentIgnoresTopSafeArea: contentIgnoresTopSafeArea) {
+        let chrome = ZelefinPadPushedChrome(
+            contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
+            isVisible: chromeVisible
+        ) {
             trailing
         }
         if contentIgnoresTopSafeArea {
@@ -2050,6 +2199,7 @@ extension View {
         title: String = "",
         contentIgnoresTopSafeArea: Bool = false,
         hidesToolbarBackground: Bool = false,
+        chromeVisible: Bool = true,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         modifier(
@@ -2057,6 +2207,7 @@ extension View {
                 title: title,
                 contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
                 hidesToolbarBackground: hidesToolbarBackground,
+                chromeVisible: chromeVisible,
                 trailing: trailing
             )
         )

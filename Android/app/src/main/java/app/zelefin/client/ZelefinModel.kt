@@ -38,6 +38,7 @@ import app.zelefin.client.jellyfin.activityLog
 import app.zelefin.client.jellyfin.adminMediaFolders
 import app.zelefin.client.jellyfin.adminUser
 import app.zelefin.client.jellyfin.adminUsers
+import app.zelefin.client.jellyfin.changeOwnPassword
 import app.zelefin.client.jellyfin.createServerBackup
 import app.zelefin.client.jellyfin.deleteSplashscreen
 import app.zelefin.client.jellyfin.deleteUserImage
@@ -88,6 +89,8 @@ import app.zelefin.core.TitleDetail
 import app.zelefin.core.ZelefinException
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -96,6 +99,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import org.jellyfin.sdk.model.api.PlaystateCommand
 import org.jellyfin.sdk.model.api.SendCommandType
@@ -104,6 +108,7 @@ import app.zelefin.client.downloads.SessionDownloadBackend
 import app.zelefin.client.downloads.ZelefinDownloads
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** [Room] is a custom library pinned to the dock; [ZelefinUiState.dockRoomId] says which one. */
 enum class AppTab { Home, Movies, Shows, Library, Search, Collections, Favorites, Room }
@@ -176,6 +181,8 @@ data class ZelefinUiState(
     val syncPlayGroupId: String? = null,
     val syncPlayGroupName: String? = null,
     val syncPlayPlaylistItemId: String? = null,
+    /** Last title played on this account. Drives the dock's mini player. */
+    val nowPlaying: MediaItem? = null,
 )
 
 sealed interface PlayerDirective {
@@ -198,6 +205,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private val layoutStore = LibraryLayoutStore(application)
     private val queryStore = CatalogQueryStore(application)
     private val searchHistory = SearchHistoryStore(application)
+    private val nowPlayingStore = NowPlayingStore(application)
     private val _state = MutableStateFlow(
         ZelefinUiState(libraryLayout = layoutStore.load(), search = LibrarySearchState(recents = searchHistory.load())),
     )
@@ -245,24 +253,71 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         runCatching { application.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(networkCallback) }
         if (saved != null) {
             restore(saved)
-            val cachedHome = snapshots.loadHome(saved)
-            _state.update {
-                it.copy(
-                    screen = Screen.Library,
-                    backend = saved.backend,
-                    home = cachedHome?.first?.let(::visibleHome) ?: it.home,
-                    libraries = cachedHome?.second ?: emptyList(),
-                    movies = snapshots.loadCatalog(saved, "movies").orEmpty(),
-                    shows = snapshots.loadCatalog(saved, "shows").orEmpty(),
-                )
+            _state.update { it.copy(screen = Screen.Library, backend = saved.backend) }
+            applyStartPage()
+            viewModelScope.launch {
+                applyCachedSnapshots(saved)
+                refreshLibrary()
             }
-            refreshLibrary()
             bindSessionSocket(saved)
         }
     }
 
     init {
         ZelefinDownloads.attach(application, SessionDownloadBackend { silo }, _state.map { it.session })
+    }
+
+    init {
+        viewModelScope.launch {
+            _state.map { it.session?.accountId }.distinctUntilChanged().collect { accountId ->
+                _state.update { it.copy(nowPlaying = accountId?.let(nowPlayingStore::load)) }
+            }
+        }
+    }
+
+    /**
+     * The cached Home feed and catalogs paint the first screen. Decoding them (a full catalog can
+     * be megabytes of JSON) on the main thread made the app stutter right after opening.
+     */
+    private suspend fun applyCachedSnapshots(session: SavedSession) {
+        val (home, movies, shows) = withContext(Dispatchers.IO) {
+            Triple(
+                snapshots.loadHome(session),
+                snapshots.loadCatalog(session, "movies"),
+                snapshots.loadCatalog(session, "shows"),
+            )
+        }
+        if (_state.value.session?.accountId != session.accountId) return
+        _state.update {
+            it.copy(
+                home = home?.first?.let(::visibleHome) ?: it.home,
+                libraries = if (it.libraries.isEmpty()) home?.second.orEmpty() else it.libraries,
+                movies = if (it.movies.isEmpty()) movies.orEmpty() else it.movies,
+                shows = if (it.shows.isEmpty()) shows.orEmpty() else it.shows,
+            )
+        }
+    }
+
+    fun playNowPlaying() {
+        _state.value.nowPlaying?.let { play(it) }
+    }
+
+    fun clearNowPlaying() {
+        val accountId = _state.value.session?.accountId ?: return
+        _state.update { it.copy(nowPlaying = null) }
+        nowPlayingStore.save(null, accountId)
+    }
+
+    private fun rememberNowPlaying(item: MediaItem) {
+        val accountId = _state.value.session?.accountId ?: return
+        _state.update { it.copy(nowPlaying = item) }
+        nowPlayingStore.save(item, accountId)
+    }
+
+    private fun noteNowPlayingPosition(itemId: String, positionSeconds: Double) {
+        val current = _state.value.nowPlaying ?: return
+        if (current.id != itemId || positionSeconds <= 0.0) return
+        rememberNowPlaying(current.copy(playbackPosition = positionSeconds))
     }
 
     fun setBackend(backend: MediaBackend) {
@@ -343,6 +398,15 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             val token = client.verifyPin(screen.profile.id, pin)
             finishSilo(screen.pending, screen.profile, token)
         }
+    }
+
+    /** On cold launch, open the page the user chose as their start page (Home by default). */
+    private fun applyStartPage() {
+        val start = app.zelefin.client.ui.StartPagePreferences.tab
+        if (start == app.zelefin.client.ui.DockTab.Home) return
+        val appTab = start.appTab ?: return
+        if (!app.zelefin.client.ui.TabPreferences.isShown(start)) return
+        selectTab(appTab)
     }
 
     fun selectTab(tab: AppTab) {
@@ -431,7 +495,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openItem(item: MediaItem) {
-        val target = item.seriesDetailItemId ?: item.id
+        val target = if (item.isYouTube && item.kind == MediaKind.Episode) item.id else item.seriesDetailItemId ?: item.id
         val current = _state.value.screen
         val returnTo = when (current) {
             is Screen.Detail -> if (current.id == target) current.returnTo else current
@@ -860,16 +924,15 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     /** [bitrateOverride] pins the stream cap (live adaptive steps); null lets Playback settings decide. */
     fun play(item: MediaItem, bitrateOverride: Int? = null, fromSyncPlay: Boolean = false) {
-        val target = playbackTarget(item)
-        if (!fromSyncPlay && _state.value.syncPlayGroupId != null && _state.value.session?.backend == MediaBackend.Jellyfin) {
-            viewModelScope.launch {
+        val returnTo = _state.value.screen.let { if (it is Screen.Player) it.returnTo else it }
+        launch("Starting playback…") {
+            val target = resolvePlaybackTarget(item)
+            rememberNowPlaying(target)
+            if (!fromSyncPlay && _state.value.syncPlayGroupId != null && _state.value.session?.backend == MediaBackend.Jellyfin) {
                 runCatching { jellyfinClient().syncPlaySetQueue(target) }
                     .onFailure { error -> _state.update { it.copy(message = error.message) } }
             }
-        }
-        val returnTo = _state.value.screen.let { if (it is Screen.Player) it.returnTo else it }
-        _state.value.session?.let { HomeQueueHideStore.remove(getApplication(), target.id, it.userId) }
-        launch("Starting playback…") {
+            _state.value.session?.let { HomeQueueHideStore.remove(getApplication(), target.id, it.userId) }
             when (val local = ZelefinDownloads.localPlayback(target)) {
                 is LocalPlayback.Ready -> {
                     activePlan = null
@@ -1125,6 +1188,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playbackStopped(positionSeconds: Double) {
+        (localPlan ?: activePlan)?.item?.id?.let { noteNowPlayingPosition(it, positionSeconds) }
         localPlan?.let { local ->
             localPlan = null
             ZelefinDownloads.updatePosition(local.item.id, positionSeconds)
@@ -1154,7 +1218,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val silo = _state.value.session?.backend == MediaBackend.Silo
             val counts = runCatching {
-                if (silo) siloClient().serverCounts() else jellyfinClient().serverCounts(userUuid())
+                if (silo) siloClient().serverCounts() else jellyfinServerCounts(_state.value.libraries)
             }.getOrNull()
             if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
             if (_state.value.libraries.isNotEmpty()) loadRoomDetails(onlyMissing = false)
@@ -1165,7 +1229,11 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         plugins.ensureDetected()
         viewModelScope.launch {
             val session = _state.value.session
-            val cached = session?.let { snapshots.loadHome(it) }
+            val cached = if (_state.value.home == HomeFeed()) {
+                session?.let { withContext(Dispatchers.IO) { snapshots.loadHome(it) } }
+            } else {
+                null
+            }
             _state.update {
                 it.copy(
                     homeRefreshing = true,
@@ -1371,17 +1439,11 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 localServerUrl = it.localServerUrl.takeIf { _ -> it.session?.serverUrl == session.serverUrl },
             )
         }
-        val cachedHome = snapshots.loadHome(session)
-        _state.update {
-            it.copy(
-                home = cachedHome?.first?.let(::visibleHome) ?: it.home,
-                libraries = cachedHome?.second.orEmpty(),
-                movies = snapshots.loadCatalog(session, "movies").orEmpty(),
-                shows = snapshots.loadCatalog(session, "shows").orEmpty(),
-            )
-        }
         refreshRoute()
-        refreshLibrary()
+        viewModelScope.launch {
+            applyCachedSnapshots(session)
+            refreshLibrary()
+        }
         bindSessionSocket(session)
     }
 
@@ -1394,6 +1456,28 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val tag = AccountPhoto.imageTag(session)
         val latest = _state.value.session?.takeIf { it.accountId == session.accountId } ?: return
         val updated = latest.copy(userImageTag = tag ?: latest.userImageTag)
+        vault.save(updated)
+        _state.update { it.copy(session = updated, accounts = vault.accounts()) }
+    }
+
+    suspend fun changePassword(current: String, new: String) {
+        val session = _state.value.session ?: throw ZelefinException.missingUser()
+        if (current.isBlank() || new.isBlank()) throw ZelefinException.server("Enter your current password and a new password.")
+        if (session.usesSilo) {
+            if (!session.isPrimaryProfile) throw ZelefinException.server("Switch to the primary household profile to change this password.")
+            if (new.length < 8) throw ZelefinException.server("Use at least 8 characters for the new password.")
+            siloClient().changePassword(current, new)
+        } else {
+            jellyfinClient().changeOwnPassword(session.userId, current, new)
+        }
+    }
+
+    suspend fun removeProfilePhoto() {
+        val session = _state.value.session ?: throw ZelefinException.missingUser()
+        if (session.usesSilo) throw ZelefinException.server("Change Silo profile pictures in Silo.")
+        jellyfinClient().deleteUserImage(session.userId)
+        val latest = _state.value.session?.takeIf { it.accountId == session.accountId } ?: return
+        val updated = latest.copy(userImageTag = null)
         vault.save(updated)
         _state.update { it.copy(session = updated, accounts = vault.accounts()) }
     }
@@ -1550,6 +1634,21 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             MediaItem.heroPlaybackItem(item, detail.episodes)
         } else {
             item
+        }
+    }
+
+    private suspend fun resolvePlaybackTarget(item: MediaItem): MediaItem {
+        val fromDetail = playbackTarget(item)
+        if (fromDetail.kind != MediaKind.Series && fromDetail.kind != MediaKind.Season) return fromDetail
+        val seriesId = if (fromDetail.kind == MediaKind.Season) fromDetail.seriesId ?: fromDetail.id else fromDetail.id
+        val home = _state.value.home
+        MediaItem.preferredEpisode(
+            (home.continueWatching + home.nextUp).filter { it.kind == MediaKind.Episode && it.seriesId == seriesId },
+        )?.let { return it }
+        val session = _state.value.session ?: return fromDetail
+        return when (session.backend) {
+            MediaBackend.Silo -> fromDetail
+            MediaBackend.Jellyfin -> jellyfinClient().playableItem(UUID.fromString(session.userId), fromDetail)
         }
     }
 
@@ -1733,10 +1832,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             val pageHidden = prefs[SyncLibraryPageHidden]
             if (libraryOrder != null || libraryHidden != null || pageHidden != null) {
                 val current = _state.value.libraryLayout
+                val parsedHidden = libraryHidden?.let(LibraryLayout::parseHidden)
                 val next = current.copy(
                     order = libraryOrder?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: current.order,
-                    hidden = libraryHidden?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: current.hidden,
+                    hidden = parsedHidden?.first ?: current.hidden,
                     hiddenBlocks = pageHidden?.let(::libraryBlocks) ?: current.hiddenBlocks,
+                    usesDefaultHidden = parsedHidden?.second ?: current.usesDefaultHidden,
                 )
                 if (next != current) {
                     layoutStore.save(next)
@@ -1760,7 +1861,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             SyncHomeRowHidden to app.zelefin.client.ui.HomeRowKind.rawHidden(layout.hidden),
             SyncHero to layout.heroContent.raw,
             SyncLibraryOrder to libraryLayout.order.joinToString(","),
-            SyncLibraryHidden to libraryLayout.hidden.sorted().joinToString(","),
+            SyncLibraryHidden to libraryLayout.encodedHidden(),
             SyncLibraryPageHidden to if (libraryLayout.hiddenBlocks.isEmpty()) {
                 "none"
             } else {
@@ -1955,6 +2056,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun jellyfinServerCounts(rooms: List<LibraryRoom>): LibraryCounts {
+        val client = jellyfinClient()
+        val counts = client.serverCounts(userUuid())
+        if (rooms.none { it.kind == LibraryKind.YouTube }) return counts
+        return counts.separatingYouTube(client.youTubeCounts(userUuid(), rooms))
+    }
+
     private fun loadLibraryOverview(force: Boolean = false) {
         val account = _state.value.session?.accountId
         if (!force && account != null && account == overviewLoadedFor && _state.value.libraries.isNotEmpty()) {
@@ -1969,9 +2077,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 _state.update { it.copy(librariesLoading = it.libraries.isEmpty()) }
                 if (_state.value.libraries.isNotEmpty()) loadRoomDetails()
                 val silo = _state.value.session?.backend == MediaBackend.Silo
+                val roomsReady = CompletableDeferred<List<LibraryRoom>>()
                 val countsJob = launch {
                     val counts = runCatching {
-                        if (silo) siloClient().serverCounts() else jellyfinClient().serverCounts(userUuid())
+                        if (silo) siloClient().serverCounts() else jellyfinServerCounts(roomsReady.await())
                     }.getOrNull()
                     if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
                 }
@@ -1984,6 +2093,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 runCatching {
                     if (silo) siloClient().libraries() else jellyfinClient().libraries(userUuid())
                 }.onSuccess { rooms ->
+                    roomsReady.complete(rooms)
                     val changed = rooms != _state.value.libraries
                     overviewLoadedFor = account
                     _state.update { it.copy(libraries = rooms, librariesLoading = false, message = null) }
@@ -1991,6 +2101,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     if (changed || _state.value.libraryOverview.covers.isEmpty()) loadRoomDetails()
                 }.onFailure { error ->
                     if (error is CancellationException) throw error
+                    roomsReady.complete(_state.value.libraries)
                     _state.update { it.copy(librariesLoading = false, message = if (it.libraries.isEmpty()) error.message else it.message) }
                 }
                 countsJob.join()
@@ -2063,11 +2174,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val session = _state.value.session
         val kind = if (tab == AppTab.Movies) "movies" else "shows"
         val query = if (tab == AppTab.Movies) _state.value.movieQuery else _state.value.showQuery
-        if (query.isDefault) {
-            session?.let { snapshots.loadCatalog(it, kind) }?.let { cached ->
-                _state.update { if (tab == AppTab.Movies) it.copy(movies = cached) else it.copy(shows = cached) }
-            }
-        }
         val empty = if (tab == AppTab.Movies) _state.value.movies.isEmpty() else _state.value.shows.isEmpty()
         _state.update {
             if (tab == AppTab.Movies) {
@@ -2080,6 +2186,15 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         previous?.cancel()
         val job = viewModelScope.launch {
             val catalogJob = this
+            if (query.isDefault && empty && session != null) {
+                val cached = withContext(Dispatchers.IO) { snapshots.loadCatalog(session, kind) }
+                if (cached != null) {
+                    _state.update {
+                        if (tab == AppTab.Movies) it.copy(movies = cached, moviesLoading = false)
+                        else it.copy(shows = cached, showsLoading = false)
+                    }
+                }
+            }
             runCatching {
                 when (_state.value.session?.backend) {
                     MediaBackend.Silo -> {
@@ -2171,6 +2286,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 item = if (detail.item.id == id) detail.item.transform() else detail.item,
                 episodes = detail.episodes.mapId(),
                 related = detail.related.mapId(),
+                channel = detail.channel?.let { if (it.id == id) it.transform() else it },
+                channelVideos = detail.channelVideos.mapId(),
             ),
         )
     }

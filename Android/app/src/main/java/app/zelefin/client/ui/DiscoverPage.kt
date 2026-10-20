@@ -91,8 +91,8 @@ private val PosterWidth = 124.dp
 private val PosterHeight = 186.dp
 private val LogoBackdrop = Color(0xFF2E2E2E)
 internal val SheetGroupFill: Color
-    @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
-internal val SheetGroupShape = RoundedCornerShape(16.dp)
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainer
+internal val SheetGroupShape = SettingsGroupShape
 private val Faint = Color.White.copy(alpha = 0.45f)
 private val Soft = Color.White.copy(alpha = 0.55f)
 

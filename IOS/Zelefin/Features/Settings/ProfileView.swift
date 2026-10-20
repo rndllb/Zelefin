@@ -32,8 +32,8 @@ struct ProfileView: View {
         Form {
             Section {
                 identityHero
-                    .settingsHeroRow()
             }
+            .zelefinRowBackground()
 
             if session.usesSilo {
                 Section {
@@ -42,6 +42,7 @@ struct ProfileView: View {
                         Text(householdError)
                             .font(.footnote)
                             .foregroundStyle(.red)
+                            .zelefinRowBackground()
                     }
                 } header: {
                     Text("Who’s watching")
@@ -50,12 +51,70 @@ struct ProfileView: View {
                 }
             }
 
+            if let current = session.session {
+                Section("Server") {
+                    LabeledContent("Server", value: current.displayServer)
+                    LabeledContent("Address", value: current.serverURL.absoluteString)
+                    if current.usesSilo, let profile = current.profileName, !profile.isEmpty {
+                        LabeledContent("Profile", value: profile)
+                    }
+                }
+                .zelefinRowBackground()
+            }
+
             Section {
-                passwordCard
+                if canChangePassword {
+                    SecureField("Current Password", text: $currentPassword)
+                        .textContentType(.password)
+                        .focused($passwordField, equals: .current)
+                        .submitLabel(.next)
+                        .onSubmit { advancePasswordField(from: .current) }
+                    SecureField("New Password", text: $newPassword)
+                        .textContentType(.newPassword)
+                        .focused($passwordField, equals: .newPassword)
+                        .submitLabel(.next)
+                        .onSubmit { advancePasswordField(from: .newPassword) }
+                    SecureField("Confirm Password", text: $confirmPassword)
+                        .textContentType(.newPassword)
+                        .focused($passwordField, equals: .confirm)
+                        .submitLabel(.go)
+                        .onSubmit { advancePasswordField(from: .confirm) }
+                    if passwordMismatch {
+                        Text("The new passwords do not match.")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                    Button("Update Password") {
+                        Task { await savePassword() }
+                    }
+                    .disabled(!canUpdatePassword || isSavingPassword)
+                } else {
+                    Text("This household profile cannot change the account password.")
+                        .foregroundStyle(.secondary)
+                }
             } header: {
                 Text("Password")
             } footer: {
                 Text(passwordFooter)
+            }
+            .zelefinRowBackground()
+
+            if session.session != nil, !accessToken.isEmpty {
+                Section {
+                    LabeledContent("Device Token", value: tokenVisible ? accessToken : maskedToken)
+                    Button(tokenVisible ? "Hide Token" : "Show Token") {
+                        tokenVisible.toggle()
+                    }
+                    Button(tokenCopied ? "Copied" : "Copy Token") {
+                        copyAccessToken()
+                    }
+                    .disabled(accessToken.isEmpty)
+                } header: {
+                    Text("Device Token")
+                } footer: {
+                    Text("This token signs this device into \(serverLabel). Copy it only into apps you trust.")
+                }
+                .zelefinRowBackground()
             }
 
             Section {
@@ -78,6 +137,7 @@ struct ProfileView: View {
                      ? "Saved logins stay on this device. People on a login are household profiles, not extra accounts."
                      : "Add another person on \(serverLabel). Saved users stay on this device.")
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Profile")
         .onChange(of: pickerItem) { _, item in
@@ -152,113 +212,6 @@ struct ProfileView: View {
         return "Updates the password for this login on \(serverLabel)."
     }
 
-    private var passwordCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if canChangePassword {
-                passwordFieldRow(
-                    label: "Current",
-                    text: $currentPassword,
-                    contentType: .password,
-                    field: .current,
-                    submit: .next
-                )
-                passwordDivider
-                passwordFieldRow(
-                    label: "New",
-                    text: $newPassword,
-                    contentType: .newPassword,
-                    field: .newPassword,
-                    submit: .next
-                )
-                passwordDivider
-                passwordFieldRow(
-                    label: "Confirm",
-                    text: $confirmPassword,
-                    contentType: .newPassword,
-                    field: .confirm,
-                    submit: .go
-                )
-                if passwordMismatch {
-                    Text("The new passwords do not match.")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(LoginPalette.failure)
-                        .padding(.top, 12)
-                }
-                Button {
-                    Task { await savePassword() }
-                } label: {
-                    HStack {
-                        Spacer(minLength: 0)
-                        if isSavingPassword {
-                            ProgressView()
-                                .tint(LoginPalette.actionLabel)
-                        } else {
-                            Text("Update Password")
-                                .font(.caption.weight(.bold))
-                                .tracking(0.8)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .modifier(LoginActionButtonStyle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!canUpdatePassword || isSavingPassword)
-                .opacity(!canUpdatePassword || isSavingPassword ? 0.42 : 1)
-                .padding(.top, 16)
-                .accessibilityLabel("Update Password")
-            } else {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "lock.fill")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(LoginPalette.iconTint)
-                        .frame(width: 22, alignment: .center)
-                    Text("This household profile cannot change the account password.")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(LoginPalette.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.vertical, 4)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(LoginCardBackground())
-    }
-
-    private var passwordDivider: some View {
-        SettingsCardDivider()
-    }
-
-    private func passwordFieldRow(
-        label: String,
-        text: Binding<String>,
-        contentType: UITextContentType,
-        field: PasswordField,
-        submit: SubmitLabel
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(label.uppercased())
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(LoginPalette.captionText)
-                .tracking(0.6)
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(LoginPalette.iconTint)
-                    .frame(width: 22, alignment: .center)
-                    .accessibilityHidden(true)
-                SecureField(label, text: text)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(LoginPalette.fieldValue)
-                    .textContentType(contentType)
-                    .submitLabel(submit)
-                    .focused($passwordField, equals: field)
-                    .onSubmit { advancePasswordField(from: field) }
-                    .accessibilityLabel(label)
-            }
-        }
-    }
-
     private func advancePasswordField(from field: PasswordField) {
         switch field {
         case .current:
@@ -273,47 +226,6 @@ struct ProfileView: View {
 
     private var accessToken: String {
         session.session?.accessToken ?? ""
-    }
-
-    private var accessTokenCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettingsFieldLabel(title: "Device token")
-            HStack(alignment: .top, spacing: 10) {
-                Group {
-                    if tokenVisible {
-                        Text(accessToken)
-                            .textSelection(.enabled)
-                    } else {
-                        Text(maskedToken)
-                    }
-                }
-                .font(.footnote.monospaced().weight(.semibold))
-                .foregroundStyle(LoginPalette.fieldValue)
-                .lineLimit(tokenVisible ? 6 : 1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel(tokenVisible ? "Access token" : "Hidden access token")
-                Button {
-                    tokenVisible.toggle()
-                } label: {
-                    Image(systemName: tokenVisible ? "eye.slash" : "eye")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(LoginPalette.iconTint)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tokenVisible ? "Hide token" : "Show token")
-                Button {
-                    copyAccessToken()
-                } label: {
-                    Image(systemName: tokenCopied ? "checkmark" : "doc.on.doc")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(tokenCopied ? LoginPalette.success : LoginPalette.iconTint)
-                }
-                .buttonStyle(.plain)
-                .disabled(accessToken.isEmpty)
-                .accessibilityLabel(tokenCopied ? "Copied" : "Copy token")
-            }
-        }
-        .accessibilityHint("This token signs this device into \(serverLabel). Copy it only into apps you trust.")
     }
 
     private var maskedToken: String {
@@ -339,7 +251,7 @@ struct ProfileView: View {
     }
 
     private var identityHero: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
             if session.usesSilo {
                 Button {
                     showsSiloAvatarPicker = true
@@ -347,7 +259,7 @@ struct ProfileView: View {
                     ZStack(alignment: .bottomTrailing) {
                         profileAvatar
                         CameraBadge()
-                            .offset(x: -2, y: -2)
+                            .offset(x: 2, y: 2)
                     }
                 }
                 .buttonStyle(.plain)
@@ -360,16 +272,19 @@ struct ProfileView: View {
                         CameraBadge()
                     }
                     .disabled(isUpdatingPhoto)
-                    .offset(x: -2, y: -2)
+                    .offset(x: 2, y: 2)
                     .accessibilityLabel("Change Profile Picture")
                 }
             }
 
-            VStack(spacing: 10) {
+            VStack(spacing: 4) {
                 Text(displayName)
-                    .font(.title2.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                serverChip
+                Text("\(serverKindLabel) · \(serverLabel)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(displayName), \(serverKindLabel), \(serverLabel)")
@@ -378,38 +293,18 @@ struct ProfileView: View {
                 Button("Remove Photo", role: .destructive) {
                     Task { await removePhoto() }
                 }
-                .font(.subheadline.weight(.semibold))
                 .disabled(isUpdatingPhoto)
-            }
-
-            if session.session != nil, !accessToken.isEmpty {
-                accessTokenCard
             }
 
             if let status {
                 Text(status)
-                    .font(.footnote.weight(.semibold))
+                    .font(.footnote)
                     .foregroundStyle(statusIsError ? Color.red : .secondary)
                     .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var serverChip: some View {
-        HStack(spacing: 6) {
-            Image(systemName: session.usesSilo ? "square.stack.3d.forward.dottedline.fill" : "play.tv.fill")
-                .font(.caption2.weight(.bold))
-            Text(serverKindLabel)
-                .font(.caption.weight(.bold))
-            Text(serverLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .zelefinLiquidGlassCapsule(interactive: false)
+        .padding(.vertical, 8)
     }
 
     private var serverKindLabel: String {
@@ -418,19 +313,16 @@ struct ProfileView: View {
 
     private var profileAvatar: some View {
         ZStack {
-            UserAvatarView(url: session.avatarURL, localImage: localAvatar, diameter: 132)
+            UserAvatarView(url: session.avatarURL, localImage: localAvatar, diameter: 72)
                 .id(session.avatarRevision)
-                .padding(6)
-                .zelefinLiquidGlassCircle(interactive: false)
             if isUpdatingPhoto {
                 Circle()
                     .fill(.black.opacity(0.48))
-                    .frame(width: 144, height: 144)
+                    .frame(width: 72, height: 72)
                 ProgressView()
-                    .tint(.white)
             }
         }
-        .frame(width: 144, height: 144)
+        .frame(width: 72, height: 72)
         .accessibilityHidden(true)
     }
 
@@ -498,8 +390,8 @@ struct ProfileView: View {
                         .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
                 }
             Text("Add")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(LoginPalette.primaryText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         .frame(width: 84)
     }
@@ -553,17 +445,20 @@ struct ProfileView: View {
                 } footer: {
                     Text("A PIN locks this person on this login. Leave it empty for an unlocked profile.")
                 }
+                .zelefinRowBackground()
                 Section {
                     Button("Create Profile") {
                         Task { await createHouseholdProfile() }
                     }
                     .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSwitchingProfile)
                 }
+                .zelefinRowBackground()
                 if let householdError {
                     Section {
                         Text(householdError)
                             .foregroundStyle(.red)
                     }
+                    .zelefinRowBackground()
                 }
             }
             .zelefinSettingsChrome(title: "Add Profile")
@@ -608,20 +503,7 @@ struct ProfileView: View {
     }
 
     private var addUserLabel: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "person.badge.plus")
-                .font(.body.weight(.medium))
-                .foregroundStyle(.tint)
-                .frame(width: 28, alignment: .center)
-            Text(addUserTitle)
-                .font(.body.weight(.medium))
-                .foregroundStyle(LoginPalette.primaryText)
-            Spacer(minLength: 8)
-            SettingsChevron()
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .accessibilityLabel(addUserTitle)
+        Label(addUserTitle, systemImage: "person.badge.plus")
     }
 
     private func accountRow(_ account: SavedSession, isCurrent: Bool) -> some View {
@@ -776,62 +658,40 @@ struct AddAccountView: View {
     private var addForm: some View {
         Form {
             Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "server.rack")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(AccentPreferences.current)
-                        .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(serverLabel)
-                            .font(.body.weight(.medium))
-                        Text("This server")
-                            .font(.caption)
-                            .foregroundStyle(LoginPalette.secondaryText)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(AccentPreferences.current)
-                }
+                LabeledContent("Server", value: serverLabel)
             } footer: {
                 Text(session.usesSilo
                      ? "New accounts are added on the Silo server you’re already using. After you sign in, pick a household profile."
                      : "New users are added on the server you’re already using.")
             }
+            .zelefinRowBackground()
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsLabeledField(label: session.usesSilo ? "Username or email" : "Username", systemImage: "person.fill") {
-                        TextField(session.usesSilo ? "Username or email" : "Username", text: $username)
-                            .textContentType(.username)
-                            .keyboardType(session.usesSilo ? .emailAddress : .default)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    }
-                    SettingsCardDivider()
-                    SettingsLabeledField(label: "Password", systemImage: "lock.fill") {
-                        SecureField("Password", text: $password)
-                            .textContentType(.password)
-                    }
-                }
+                TextField(session.usesSilo ? "Username or email" : "Username", text: $username)
+                    .textContentType(.username)
+                    .keyboardType(session.usesSilo ? .emailAddress : .default)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $password)
+                    .textContentType(.password)
             } header: {
                 Text("Sign In")
             }
+            .zelefinRowBackground()
 
             Section {
-                SettingsPrimaryButton(
-                    title: session.usesSilo ? "Add Account" : "Add User",
-                    isBusy: isConnecting,
-                    enabled: canSubmit
-                ) {
+                Button(session.usesSilo ? "Add Account" : "Add User") {
                     Task { await add() }
                 }
+                .disabled(!canSubmit || isConnecting)
             }
+            .zelefinRowBackground()
 
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
                 }
+                .zelefinRowBackground()
             }
         }
         .zelefinSettingsChrome(title: session.usesSilo ? "Add Account" : "Add User")

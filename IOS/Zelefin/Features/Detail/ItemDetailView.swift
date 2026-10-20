@@ -13,6 +13,9 @@ struct ItemDetailView: View {
     @State private var item: MediaItem?
     @State private var seasons: [MediaItem] = []
     @State private var episodes: [MediaItem] = []
+    @State private var channel: MediaItem?
+    @State private var youtubeChromeVisible = true
+    @State private var heroLock = HeroHeightLock()
     @State private var trailers: [TitleTrailer] = []
     @State private var extras: [TitleExtra] = []
     @State private var additionalParts: [MediaItem] = []
@@ -53,7 +56,9 @@ struct ItemDetailView: View {
     }
 
     init(item: MediaItem) {
-        if let seriesID = item.seriesDetailItemID {
+        if item.isYouTube {
+            self.init(itemID: item.id, preview: item)
+        } else if let seriesID = item.seriesDetailItemID {
             self.init(
                 itemID: seriesID,
                 preview: item.seriesShowcasePreview(),
@@ -66,10 +71,8 @@ struct ItemDetailView: View {
 
     var body: some View {
         page
-            .fullScreenCover(item: $playingItem, onDismiss: {
+            .presentsPlayerFromRoot($playingItem) {
                 Task { await refreshPlaybackProgress() }
-            }) { item in
-                PlayerView(item: item)
             }
             .fullScreenCover(item: $playingWebTrailer) { trailer in
                 if let url = trailer.externalWatchURL {
@@ -188,10 +191,21 @@ struct ItemDetailView: View {
                 if isLoading {
                     ProgressView().tint(.white)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let item, item.isYouTube {
+                    YouTubeDetailPage(
+                        item: item,
+                        channel: channel,
+                        videos: episodes,
+                        onPlay: { playingItem = $0 },
+                        onChangeItem: { self.item = $0 },
+                        onChangeChannel: { channel = $0 },
+                        onChangeVideos: { episodes = $0 },
+                        chromeVisible: $youtubeChromeVisible
+                    )
                 } else if let item {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            hero(for: item, width: geo.size.width, height: PosterMetrics.heroHeight(for: geo.size))
+                            hero(for: item, width: geo.size.width, height: heroLock.height(for: geo.size))
 
                             if item.kind == .series, !seasons.isEmpty {
                                 seasonsSection
@@ -259,58 +273,84 @@ struct ItemDetailView: View {
                     .scrollIndicators(.hidden)
                     .scrollClipDisabled()
                     .zelefinScrollEdgeHidden()
+                    .zelefinPinnedBottomEdge()
                 } else {
                     ContentUnavailableView("Title Unavailable", systemImage: "film")
                 }
             }
+            .onAppear { heroLock.lock(geo.size) }
+            .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
         }
         .background(Color.black.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
-        .zelefinPushedChrome(contentIgnoresTopSafeArea: true, hidesToolbarBackground: true) {
+        .zelefinPushedChrome(
+            contentIgnoresTopSafeArea: true,
+            hidesToolbarBackground: true,
+            chromeVisible: item?.isYouTube != true || youtubeChromeVisible
+        ) {
             if let item {
                 detailTrailingChrome(for: item)
             }
         }
         .tint(.white)
+        .onChange(of: itemID) { _, _ in
+            youtubeChromeVisible = true
+        }
         .task { await load() }
     }
 
     private func detailTrailingChrome(for item: MediaItem) -> some View {
         HStack(spacing: 8) {
             Menu {
-                TitleUserActions(
-                    item: item,
-                    onChange: { self.item = $0 },
-                    onCollections: session.usesSilo ? nil : { showsCollectionEditor = true },
-                    onPlayElsewhere: session.usesSilo ? nil : { showsPlayOnDevice = true },
-                    onSyncPlay: session.usesSilo || !item.kind.usesVideoPlayer
-                        ? nil
-                        : { showsSyncPlay = true },
-                    onRefreshMetadata: session.isAdministrator
-                        ? { Task { await refreshMetadata() } }
-                        : nil,
-                    onRemoteImage: session.isAdministrator && !session.usesSilo
-                        ? { showsRemoteImages = true }
-                        : nil,
-                    onDelete: session.isAdministrator && !session.usesSilo
-                        ? { showsDeleteConfirm = true }
-                        : nil,
-                    onIdentify: session.isAdministrator && !session.usesSilo
-                        ? { showsIdentify = true }
-                        : nil,
-                    onEditMetadata: session.isAdministrator && !session.usesSilo
-                        ? { showsEditMetadata = true }
-                        : nil
-                )
-                if item.kind == .movie || item.kind == .episode {
-                    Divider()
-                    TitlePlaybackMenus(
+                if item.isYouTube {
+                    YouTubeUserActions(
                         item: item,
-                        audioTracks: audioTracks,
-                        subtitleTracks: subtitleTracks,
-                        streamRevision: mediaStreamRevision,
-                        onAddSubtitles: { subtitleSearchItem = item }
+                        channel: channel,
+                        onPlay: { playYouTube(item) },
+                        onChange: { self.item = $0 },
+                        onPlayElsewhere: session.usesSilo ? nil : { showsPlayOnDevice = true },
+                        onSyncPlay: session.usesSilo || !item.kind.usesVideoPlayer
+                            ? nil
+                            : { showsSyncPlay = true },
+                        onRefreshMetadata: session.isAdministrator
+                            ? { Task { await refreshMetadata() } }
+                            : nil
                     )
+                } else {
+                    TitleUserActions(
+                        item: item,
+                        onChange: { self.item = $0 },
+                        onCollections: session.usesSilo ? nil : { showsCollectionEditor = true },
+                        onPlayElsewhere: session.usesSilo ? nil : { showsPlayOnDevice = true },
+                        onSyncPlay: session.usesSilo || !item.kind.usesVideoPlayer
+                            ? nil
+                            : { showsSyncPlay = true },
+                        onRefreshMetadata: session.isAdministrator
+                            ? { Task { await refreshMetadata() } }
+                            : nil,
+                        onRemoteImage: session.isAdministrator && !session.usesSilo
+                            ? { showsRemoteImages = true }
+                            : nil,
+                        onDelete: session.isAdministrator && !session.usesSilo
+                            ? { showsDeleteConfirm = true }
+                            : nil,
+                        onIdentify: session.isAdministrator && !session.usesSilo
+                            ? { showsIdentify = true }
+                            : nil,
+                        onEditMetadata: session.isAdministrator && !session.usesSilo
+                            ? { showsEditMetadata = true }
+                            : nil
+                    )
+                    if item.kind == .movie || item.kind == .episode {
+                        Divider()
+                        TitlePlaybackMenus(
+                            item: item,
+                            audioTracks: audioTracks,
+                            subtitleTracks: subtitleTracks,
+                            streamRevision: mediaStreamRevision,
+                            onAddSubtitles: { subtitleSearchItem = item }
+                        )
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -916,6 +956,12 @@ struct ItemDetailView: View {
             isLoading = false
             await loadStreamTracks(for: loaded)
 
+            if loaded.isYouTube {
+                await loadYouTubeDetail(library: library, loaded: loaded)
+                persistSnapshot()
+                return
+            }
+
             async let fetchedTrailers = library.trailers(for: loaded)
             async let fetchedExtras = library.specialFeatures(for: loaded.id)
             async let fetchedThemes = library.themeVideos(for: loaded.id)
@@ -986,11 +1032,53 @@ struct ItemDetailView: View {
         guard let library = session.library else { return }
         guard let loaded = try? await library.item(id: itemID) else { return }
         item = loaded
-        if loaded.kind == .series {
+        if loaded.isYouTube {
+            await loadYouTubeVideos(library: library, loaded: loaded)
+        } else if loaded.kind == .series {
             let fetched = (try? await library.episodes(seriesID: loaded.id)) ?? []
             episodes = MediaItem.orderedShowEpisodes(fetched, seasons: seasons)
         }
         persistSnapshot()
+    }
+
+    private func loadYouTubeDetail(library: any LibraryServing, loaded: MediaItem) async {
+        let channelID = loaded.kind == .series ? loaded.id : loaded.seriesID
+        if loaded.kind == .series {
+            channel = loaded
+        } else if let channelID {
+            channel = try? await library.item(id: channelID)
+        } else {
+            channel = nil
+        }
+        await loadYouTubeVideos(library: library, loaded: loaded)
+        seasons = []
+        selectedSeasonID = nil
+        scrolledEpisodeID = nil
+        trailers = []
+        extras = []
+        related = []
+        credits = []
+        additionalParts = []
+        collections = []
+    }
+
+    private func loadYouTubeVideos(library: any LibraryServing, loaded: MediaItem) async {
+        let channelID = loaded.kind == .series ? loaded.id : loaded.seriesID
+        guard let channelID else {
+            episodes = []
+            return
+        }
+        let fetched = (try? await library.episodes(seriesID: channelID)) ?? []
+        episodes = MediaItem.orderedYouTubeVideos(fetched)
+    }
+
+    private func playYouTube(_ item: MediaItem) {
+        if item.kind == .series {
+            let resume = episodes.first(where: \.showsResumeProgress)
+            playingItem = resume ?? episodes.first ?? item
+            return
+        }
+        playingItem = item
     }
 
     private func refreshCollections() async {

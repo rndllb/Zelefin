@@ -111,7 +111,7 @@ final class PlayerModel {
         do {
             switch pipeline {
             case .appleNative:
-                configureAudioSession()
+                await PlaybackAudioSession.activate()
                 await seekNativeToResumeIfNeeded()
                 player?.play()
                 setPlaybackRate(PlaybackPreferences.defaultRate)
@@ -120,6 +120,7 @@ final class PlayerModel {
                 hasFirstFrame = true
             case .directDecode:
                 try Task.checkCancellation()
+                await PlaybackAudioSession.activate()
                 await waitUntilSurfaceReady()
                 try Task.checkCancellation()
                 try await startDirectPlay()
@@ -820,9 +821,13 @@ final class PlayerModel {
                     } else if case .playing = state {
                         self?.isPaused = false
                     }
-                    if case .ended = state {
-                        if self?.plan.isLive != true {
-                            self?.isFinished = true
+                    if case .ended = state, let self, self.plan.isLive != true {
+                        // A slow first load can hit end-of-stream before any frame. That is a
+                        // failed start, not the end of the title, and must not close the player.
+                        if self.hasFirstFrame {
+                            self.isFinished = true
+                        } else {
+                            self.errorMessage = "The server stopped sending video before playback started."
                         }
                     }
                     if case .error(let message) = state {
@@ -1182,12 +1187,6 @@ final class PlayerModel {
         let player = AVPlayer(playerItem: item)
         player.appliesMediaSelectionCriteriaAutomatically = true
         return player
-    }
-
-    private func configureAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback)
-        try? session.setActive(true)
     }
 }
 

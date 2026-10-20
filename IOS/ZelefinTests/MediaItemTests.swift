@@ -324,6 +324,44 @@ final class MediaItemProgressTests: XCTestCase {
         XCTAssertEqual(target.id, "e2")
         XCTAssertEqual(target.playActionDurationLabel, "30m")
         XCTAssertEqual(show.playActionDurationLabel, "22h")
+        XCTAssertEqual(
+            MediaItem.heroPlaybackItem(
+                title: MediaItem(
+                    id: "season-1",
+                    name: "Season 1",
+                    kind: .season,
+                    overview: nil,
+                    year: 2023,
+                    runtime: nil,
+                    officialRating: nil,
+                    genres: [],
+                    seriesName: "Silo",
+                    seasonIndex: 1,
+                    episodeIndex: nil,
+                    playbackPosition: 0,
+                    unplayedCount: nil,
+                    isPlayed: false,
+                    primaryImageTag: nil,
+                    thumbImageTag: nil,
+                    backdropImageTag: nil,
+                    backdropImageTags: [],
+                    logoImageTag: nil,
+                    parentBackdropItemID: nil,
+                    parentThumbItemID: nil,
+                    parentThumbImageTag: nil,
+                    parentLogoItemID: nil,
+                    parentLogoImageTag: nil,
+                    seriesThumbImageTag: nil,
+                    seriesID: "show",
+                    imageItemID: nil,
+                    queueKind: .resume,
+                    videoRange: .sdr,
+                    audioFormat: .surround
+                ),
+                episodes: [watched, current]
+            ).id,
+            "e2"
+        )
     }
 
     func testEpisodeLabel() {
@@ -792,6 +830,229 @@ final class PlaybackQueueMenuLayoutTests: XCTestCase {
         XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(isWatched: false), "Mark as Watched")
         XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(isWatched: true), "Mark as Unwatched")
     }
+
+    func testYouTubeMenuCopy() {
+        var video = MediaItem(
+            id: "v1",
+            name: "A Video",
+            kind: .episode,
+            overview: nil,
+            year: 2024,
+            runtime: 3600,
+            officialRating: nil,
+            genres: [],
+            seriesName: "Channel One",
+            seasonIndex: 1,
+            episodeIndex: 1,
+            playbackPosition: 600,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "c1",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown,
+            youTubeID: "dQw4w9wg"
+        )
+        XCTAssertEqual(PlaybackQueueMenuLayout.playTitle(for: video), "Resume")
+        XCTAssertEqual(PlaybackQueueMenuLayout.goToTitle(for: video), "Go to Channel")
+        XCTAssertEqual(PlaybackQueueMenuLayout.goToSymbol(for: video), "person.crop.circle")
+        XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(for: video), "Mark as Watched")
+
+        video.playbackPosition = 0
+        let channel = MediaItem(
+            id: "c1",
+            name: "Channel One",
+            kind: .series,
+            overview: nil,
+            year: 2024,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown,
+            youTubeID: "UCchannel"
+        )
+        XCTAssertEqual(PlaybackQueueMenuLayout.playTitle(for: channel), "Play Latest")
+        XCTAssertEqual(PlaybackQueueMenuLayout.watchedTitle(for: channel), "Mark Channel as Watched")
+    }
+}
+
+final class YouTubeMediaTests: XCTestCase {
+    func testYouTubeLabelsAndURL() {
+        var video = Self.video(id: "v1", name: "A Video", seriesName: "A Channel")
+        video.youTubeID = "abc123"
+        video.playbackPosition = 120
+        video.premiereDate = Calendar.current.date(byAdding: .day, value: -3, to: Date())
+        XCTAssertTrue(video.isYouTube)
+        XCTAssertEqual(video.kindLabel, "Video")
+        XCTAssertEqual(video.continueWatchingTitle, "A Video")
+        XCTAssertEqual(video.youTubeURL, URL(string: "https://www.youtube.com/watch?v=abc123"))
+        XCTAssertEqual(video.continueWatchingCaption, "A Channel · 58m")
+
+        let channel = Self.channel(id: "c1", name: "A Channel", youTubeID: "UCabc")
+        XCTAssertEqual(channel.kindLabel, "Channel")
+        XCTAssertEqual(channel.youTubeURL, URL(string: "https://www.youtube.com/channel/UCabc"))
+    }
+
+    func testYouTubeMapperAndCounts() {
+        XCTAssertEqual(ItemMapper.youTubeID(from: ["TubeArchivist": "abc"]), "abc")
+        XCTAssertEqual(ItemMapper.youTubeID(from: ["tubearchivist": "xyz"]), "xyz")
+        XCTAssertNil(ItemMapper.youTubeID(from: ["Tmdb": "11"]))
+
+        let raw = ServerCatalogCounts(movies: 10, shows: 8, episodes: 40)
+        let split = raw.separatingYouTube(ServerCatalogCounts(movies: 0, shows: 0, episodes: 0, channels: 3, videos: 12))
+        XCTAssertEqual(split.shows, 5)
+        XCTAssertEqual(split.episodes, 28)
+        XCTAssertEqual(split.channels, 3)
+        XCTAssertEqual(split.videos, 12)
+        XCTAssertTrue(split.showsHeaderStats)
+        XCTAssertTrue(ServerCatalogCounts(movies: 0, shows: 0, episodes: 0, videos: 4).showsHeaderStats)
+        XCTAssertFalse(ServerCatalogCounts(movies: 0, shows: 0, episodes: 0).showsHeaderStats)
+        XCTAssertEqual(
+            LibraryRoomCounts(movies: 0, shows: 0, episodes: 0, channels: 2, videos: 1).caption,
+            "2 channels · 1 video"
+        )
+    }
+
+    func testYouTubeTextHelpers() {
+        XCTAssertEqual(YouTubeText.videoLengthLabel(62), "1:02")
+        XCTAssertEqual(YouTubeText.videoLengthLabel(3723), "1:02:03")
+        XCTAssertNil(YouTubeText.videoLengthLabel(0))
+        XCTAssertEqual(YouTubeText.videoCountLabel(1), "1 video")
+        XCTAssertEqual(YouTubeText.videoCountLabel(4), "4 videos")
+        XCTAssertEqual(YouTubeText.plainDescription("Hello<br>world"), "Hello\nworld")
+        XCTAssertEqual(YouTubeText.plainDescription("<p>A &amp; B</p>"), "A & B")
+
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 11))!
+        let threeDays = calendar.date(byAdding: .day, value: -3, to: now)
+        let twoWeeks = calendar.date(byAdding: .day, value: -14, to: now)
+        XCTAssertEqual(YouTubeText.publishedAgo(now, now: now), "Today")
+        XCTAssertEqual(YouTubeText.publishedAgo(threeDays, now: now), "3 days ago")
+        XCTAssertEqual(YouTubeText.publishedAgo(twoWeeks, now: now), "2 weeks ago")
+    }
+
+    func testYouTubeVideosSortNewestFirst() {
+        let older = Self.video(id: "old", name: "Old", premiere: Date(timeIntervalSince1970: 1))
+        let newer = Self.video(id: "new", name: "New", premiere: Date(timeIntervalSince1970: 100))
+        XCTAssertEqual(MediaItem.orderedYouTubeVideos([older, newer]).map(\.id), ["new", "old"])
+    }
+
+    func testYouTubeChannelStaysOnItsOwnDetailPage() {
+        let video = Self.video(id: "v1", name: "Clip", seriesName: "Channel")
+        XCTAssertNotNil(video.seriesDetailItemID)
+        XCTAssertTrue(video.isYouTube)
+    }
+
+    private static func video(
+        id: String,
+        name: String,
+        seriesName: String? = nil,
+        premiere: Date? = nil
+    ) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: name,
+            kind: .episode,
+            overview: "<p>Hello<br>there</p>",
+            year: 2024,
+            runtime: 3600,
+            officialRating: nil,
+            genres: [],
+            seriesName: seriesName,
+            seasonIndex: 1,
+            episodeIndex: 1,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: "channel",
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown,
+            premiereDate: premiere,
+            youTubeID: "yt"
+        )
+    }
+
+    private static func channel(id: String, name: String, youTubeID: String) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: name,
+            kind: .series,
+            overview: nil,
+            year: 2024,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown,
+            youTubeID: youTubeID
+        )
+    }
 }
 
 final class HomeLayoutPreferencesTests: XCTestCase {
@@ -871,6 +1132,21 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         let next = layout.replacing(fresh)
         XCTAssertEqual(next.featured.first?.primaryImageTag, "new")
         XCTAssertEqual(next.sections.first?.items.map(\.primaryImageTag), ["new", "keep"])
+    }
+
+    func testHomeLayoutPlayUsesContinueWatchingEpisodeForThatShow() {
+        let resume = Self.item(id: "ep-resume", queueKind: .resume)
+        let other = Self.item(id: "ep-other", queueKind: .nextUp)
+        let layout = HomeLayout(
+            featured: [],
+            sections: HomeLayoutPreferences.playbackQueueSections(
+                resume: [resume],
+                nextUp: [other],
+                merge: false
+            )
+        )
+        XCTAssertEqual(layout.episode(forSeriesID: "silo")?.id, "ep-resume")
+        XCTAssertNil(layout.episode(forSeriesID: "adventure-time"))
     }
 
     func testRemovingAContinueWatchingTitleDropsEmptyQueueRows() {
@@ -1170,6 +1446,11 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertTrue(LibraryKind.liveTV.appearsInLibrary)
         XCTAssertTrue(LibraryKind.movies.appearsInLibrary)
         XCTAssertTrue(LibraryKind.shows.appearsInLibrary)
+        XCTAssertTrue(LibraryKind.youTube.appearsInLibrary)
+        XCTAssertFalse(LibraryKind.youTube.appearsOnHome)
+        XCTAssertEqual(LibraryKind.youTube.browseLabel, "YouTube")
+        XCTAssertEqual(LibraryKind.inferred(fromName: "YouTube"), .youTube)
+        XCTAssertEqual(LibraryKind.inferred(fromName: "TubeArchivist"), .youTube)
         XCTAssertTrue(LibraryKind.other.appearsInLibrary)
         XCTAssertTrue(LibraryKind.photos.appearsInLibrary)
         XCTAssertTrue(LibraryKind.homeVideos.appearsInLibrary)
@@ -1179,14 +1460,35 @@ final class HomeLayoutPreferencesTests: XCTestCase {
         XCTAssertFalse(LibraryKind.playlists.appearsInLibrary)
         XCTAssertFalse(LibraryKind.favorites.appearsInLibrary)
         XCTAssertEqual(LibraryKind.other.systemImage, "rectangle.stack")
+        let catalog = libraries.filter(\.libraryKind.appearsInLibrary)
         XCTAssertEqual(
             LibraryLayoutPreferences.displayed(
-                libraries.filter(\.libraryKind.appearsInLibrary),
+                catalog,
                 orderRaw: "mix,m,s",
                 hiddenRaw: "tv"
             ).map(\.id),
             ["mix", "m", "s", "cols", "home"]
         )
+        XCTAssertEqual(
+            LibraryLayoutPreferences.arranged(catalog, orderRaw: "").map(\.id),
+            ["cols", "m", "s", "mix", "home", "tv"]
+        )
+        XCTAssertEqual(
+            LibraryLayoutPreferences.displayed(catalog, orderRaw: "", hiddenRaw: "").map(\.id),
+            ["cols", "m", "s", "mix"]
+        )
+        XCTAssertEqual(
+            LibraryLayoutPreferences.resolvedHidden(from: "", libraries: catalog),
+            ["home", "tv"]
+        )
+        XCTAssertEqual(
+            LibraryLayoutPreferences.resolvedHidden(from: "none", libraries: catalog),
+            []
+        )
+        XCTAssertEqual(LibraryLayoutPreferences.hiddenRaw(from: []), "none")
+        let recordings = MediaLibrary(id: "rec", name: "Recordings", kind: .collection, libraryKind: .other)
+        XCTAssertTrue(recordings.isHiddenOnLibraryByDefault)
+        XCTAssertEqual(recordings.libraryCardRank, 4)
         XCTAssertEqual(
             LibraryLayoutPreferences.hiddenBlocks(from: "favorites,collections"),
             [.favorites, .collections]
@@ -1444,6 +1746,41 @@ final class HomeLayoutPreferencesTests: XCTestCase {
             audioFormat: .stereo
         )
     }
+
+    private static func item(id: String, primaryImageTag: String? = nil) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: id,
+            kind: .movie,
+            overview: nil,
+            year: 2025,
+            runtime: nil,
+            officialRating: nil,
+            genres: ["Action"],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: primaryImageTag,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+    }
 }
 
 final class SearchHistoryStoreTests: XCTestCase {
@@ -1479,6 +1816,67 @@ final class SearchHistoryStoreTests: XCTestCase {
             unplayedCount: nil,
             isPlayed: false,
             primaryImageTag: primaryImageTag,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+    }
+}
+
+final class NowPlayingStoreTests: XCTestCase {
+    func testSavesAndRestoresLastPlayedItemPerAccount() {
+        let defaults = UserDefaults(suiteName: "zelefin.now-playing.tests")!
+        defaults.removePersistentDomain(forName: "zelefin.now-playing.tests")
+        var item = Self.item(id: "dune", name: "Dune")
+        item.playbackPosition = 42
+
+        NowPlayingStore.save(item, for: "acct-a", defaults: defaults)
+        NowPlayingStore.save(Self.item(id: "other", name: "Other"), for: "acct-b", defaults: defaults)
+
+        let restored = NowPlayingStore.item(for: "acct-a", defaults: defaults)
+        XCTAssertEqual(restored?.id, "dune")
+        XCTAssertEqual(restored?.name, "Dune")
+        XCTAssertEqual(restored?.playbackPosition, 42)
+        XCTAssertEqual(NowPlayingStore.item(for: "acct-b", defaults: defaults)?.id, "other")
+    }
+
+    func testClearingRemovesPersistedItem() {
+        let defaults = UserDefaults(suiteName: "zelefin.now-playing.clear")!
+        defaults.removePersistentDomain(forName: "zelefin.now-playing.clear")
+        NowPlayingStore.save(Self.item(id: "dune", name: "Dune"), for: "acct-a", defaults: defaults)
+        NowPlayingStore.save(nil, for: "acct-a", defaults: defaults)
+        XCTAssertNil(NowPlayingStore.item(for: "acct-a", defaults: defaults))
+    }
+
+    private static func item(id: String, name: String) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: name,
+            kind: .movie,
+            overview: nil,
+            year: 2024,
+            runtime: 100,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: "art",
             thumbImageTag: nil,
             backdropImageTag: nil,
             backdropImageTags: [],
@@ -1900,6 +2298,42 @@ final class HeroMetricsTests: XCTestCase {
         let pad = CGSize(width: 1024, height: 1366)
         XCTAssertEqual(PosterMetrics.heroHeight(for: phone), max(680, 844 * 0.82))
         XCTAssertEqual(PosterMetrics.heroHeight(for: pad), max(680, 1366 * 0.82))
+    }
+
+    func testHeroHeightStaysPutWhenTheDockChangesHeight() {
+        var lock = HeroHeightLock()
+        lock.lock(CGSize(width: 440, height: 860))
+        let resting = PosterMetrics.heroHeight(for: CGSize(width: 440, height: 860))
+        lock.lock(CGSize(width: 440, height: 900))
+        XCTAssertEqual(lock.height(for: CGSize(width: 440, height: 900)), resting)
+        XCTAssertEqual(lock.height(for: CGSize(width: 440, height: 820)), resting)
+    }
+
+    func testBounceTurnsOffOnlyInTheBottomHalf() {
+        func bounces(_ offset: CGFloat, content: CGFloat = 2000) -> Bool {
+            BottomEdgeClamp.shouldBounce(
+                offsetY: offset,
+                contentHeight: content,
+                viewportHeight: 900,
+                insetTop: 0,
+                insetBottom: 100
+            )
+        }
+        XCTAssertTrue(bounces(-80), "pull to refresh at the top keeps its bounce")
+        XCTAssertTrue(bounces(500))
+        XCTAssertFalse(bounces(700))
+        XCTAssertFalse(bounces(1200))
+        XCTAssertTrue(bounces(40, content: 500), "short pages are left alone")
+    }
+
+    func testHeroHeightRemeasuresOnRotation() {
+        var lock = HeroHeightLock()
+        lock.lock(CGSize(width: 440, height: 860))
+        lock.lock(CGSize(width: 956, height: 400))
+        XCTAssertEqual(
+            lock.height(for: CGSize(width: 956, height: 400)),
+            PosterMetrics.heroHeight(for: CGSize(width: 956, height: 400))
+        )
     }
 }
 

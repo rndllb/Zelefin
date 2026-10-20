@@ -1,0 +1,6 @@
+Shader and refraction technique from AndroidLiquidGlassView
+https://github.com/QmDeve/AndroidLiquidGlassView (MIT, see LICENSE).
+
+Vendored because every published core AAR declares minCompileSdk=37.
+Shader: app/src/main/res/raw/liquidglass_effect.agsl (unchanged).
+Compose integration: app/src/main/java/app/zelefin/client/ui/LiquidGlass.kt.

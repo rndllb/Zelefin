@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewModule
@@ -465,6 +466,10 @@ private fun ServerStats(counts: LibraryCounts) {
         StatFact(counts.shows, "Shows", Modifier.weight(1f))
         StatDivider()
         StatFact(counts.episodes, "Episodes", Modifier.weight(1f))
+        if (counts.videos > 0) {
+            StatDivider()
+            StatFact(counts.videos, "Videos", Modifier.weight(1f))
+        }
     }
 }
 
@@ -847,7 +852,7 @@ private fun ArrangeSheet(
             Spacer(Modifier.height(28.dp))
             val from = order.indexOfFirst { it.id == dragging }
             order.forEachIndexed { index, room -> key(room.id) {
-                val shown = room.id !in layout.hidden
+                val shown = room.id !in layout.resolvedHidden(rooms)
                 val isDragging = room.id == dragging
                 val neighbor = when {
                     from < 0 || isDragging -> 0f
@@ -919,8 +924,9 @@ private fun ArrangeSheet(
                         if (!shown) Text("Hidden", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                     }
                     EyeButton(shown) {
-                        val hidden = if (shown) layout.hidden + room.id else layout.hidden - room.id
-                        onLayout(layout.copy(hidden = hidden))
+                        val hidden = layout.resolvedHidden(rooms).toMutableSet()
+                        if (shown) hidden += room.id else hidden -= room.id
+                        onLayout(layout.copy(hidden = hidden, usesDefaultHidden = false))
                     }
                     }
                 }
@@ -996,6 +1002,7 @@ private fun kindIcon(kind: LibraryKind): ImageVector = when (kind) {
     LibraryKind.LiveTV -> Icons.Filled.LiveTv
     LibraryKind.HomeVideos -> Icons.Filled.Videocam
     LibraryKind.Collections -> Icons.Filled.GridView
+    LibraryKind.YouTube -> Icons.Filled.Subscriptions
     else -> Icons.Filled.VideoLibrary
 }
 

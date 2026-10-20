@@ -489,10 +489,16 @@ enum LibraryLayoutPreferences {
                 ordered.append(library)
             }
         }
-        for library in libraries where remaining[library.id] != nil {
-            ordered.append(library)
-        }
-        return ordered
+        let leftovers = libraries.enumerated()
+            .filter { remaining[$0.element.id] != nil }
+            .sorted { lhs, rhs in
+                if lhs.element.libraryCardRank != rhs.element.libraryCardRank {
+                    return lhs.element.libraryCardRank < rhs.element.libraryCardRank
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+        return ordered + leftovers
     }
 
     static func displayed(
@@ -500,16 +506,27 @@ enum LibraryLayoutPreferences {
         orderRaw: String,
         hiddenRaw: String
     ) -> [MediaLibrary] {
-        let hidden = hiddenIDs(from: hiddenRaw)
+        let hidden = resolvedHidden(from: hiddenRaw, libraries: libraries)
         return arranged(libraries, orderRaw: orderRaw).filter { !hidden.contains($0.id) }
     }
 
     static func hiddenIDs(from raw: String) -> Set<String> {
-        Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+        if raw == shownAllToken { return [] }
+        return Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+    }
+
+    /// Empty means Live TV and recordings stay hidden. `none` means the user showed every room.
+    static func resolvedHidden(from raw: String, libraries: [MediaLibrary]) -> Set<String> {
+        if raw == shownAllToken { return [] }
+        if raw.isEmpty {
+            return Set(libraries.filter(\.isHiddenOnLibraryByDefault).map(\.id))
+        }
+        return hiddenIDs(from: raw)
     }
 
     static func hiddenRaw(from hidden: Set<String>) -> String {
-        hidden.sorted().joined(separator: ",")
+        if hidden.isEmpty { return shownAllToken }
+        return hidden.sorted().joined(separator: ",")
     }
 
     static func orderRaw(from libraries: [MediaLibrary]) -> String {

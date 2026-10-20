@@ -95,6 +95,13 @@ class SiloClient(
         emptyList()
     }
 
+    suspend fun changePassword(current: String, new: String) = withContext(Dispatchers.IO) {
+        val body = """{"current_password":${jsonString(current)},"new_password":${jsonString(new)}}"""
+        var response = call("/api/v2/account/password", method = "POST", body = body)
+        if (response.status !in 200..299) response = call("/api/v1/auth/account/password", method = "POST", body = body)
+        if (response.status !in 200..299) throw ZelefinException.server(errorMessage(response.body, response.status))
+    }
+
     suspend fun verifyPin(profileId: String, pin: String): String? = withContext(Dispatchers.IO) {
         val encoded = urlPath(profileId)
         val response = call(

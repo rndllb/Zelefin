@@ -27,6 +27,7 @@ struct PluginSettingsView: View {
             } else {
                 jellyfinPluginSections
                 openSubtitlesSection
+                tubeArchivistSection
                 seerrSignInSection
             }
         }
@@ -51,6 +52,7 @@ struct PluginSettingsView: View {
         } footer: {
             Text("Skip buttons appear during playback when the plugin is installed on this Jellyfin server.")
         }
+        .zelefinRowBackground()
 
         Section {
             pluginStatusRow("Jellyfin Enhanced", installed: session.jellyfinEnhancedAvailable)
@@ -59,6 +61,7 @@ struct PluginSettingsView: View {
         } footer: {
             Text("When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and write reviews or see awards on the title page.")
         }
+        .zelefinRowBackground()
 
         Section {
             pluginStatusRow("Zelefin", installed: session.companionAvailable)
@@ -71,6 +74,7 @@ struct PluginSettingsView: View {
                 Text("Notifications need this plugin. Open Settings → Notifications to install it on this server, or add the Zelefin catalog in Jellyfin. Restart Jellyfin after install.")
             }
         }
+        .zelefinRowBackground()
     }
 
     private var openSubtitlesSection: some View {
@@ -80,6 +84,29 @@ struct PluginSettingsView: View {
             Text("Open Subtitles")
         } footer: {
             Text("When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server.")
+        }
+        .zelefinRowBackground()
+    }
+
+    private var youTubeLibraries: [MediaLibrary] {
+        session.libraries.filter { $0.libraryKind == .youTube }
+    }
+
+    private var tubeArchivistSection: some View {
+        let rooms = youTubeLibraries
+        let installed = !rooms.isEmpty || session.libraries.contains {
+            $0.name.localizedCaseInsensitiveContains("TubeArchivist")
+        }
+        return Section {
+            pluginStatusRow("TubeArchivist Metadata", installed: installed)
+        } header: {
+            Text("TubeArchivist")
+        } footer: {
+            if rooms.isEmpty {
+                Text("When this plugin fills a Shows library, Zelefin lists it as its own YouTube library, with channels and videos kept apart from your movies and shows.")
+            } else {
+                Text("\(rooms.map(\.name).joined(separator: ", ")) appears as its own YouTube library, with channels and videos kept apart from your movies and shows.")
+            }
         }
     }
 
@@ -99,6 +126,7 @@ struct PluginSettingsView: View {
         } footer: {
             Text(siloRequestFooter)
         }
+        .zelefinRowBackground()
     }
 
     private var siloRequestFooter: String {
@@ -149,20 +177,14 @@ struct PluginSettingsView: View {
         } footer: {
             Text("Jellyseerr or Seerr lets you request movies and shows that are not on Jellyfin yet. Use your Jellyfin username and password. Search for a title, then tap Request.")
         }
+        .zelefinRowBackground()
     }
 
     private func pluginStatusRow(_ title: String, installed: Bool) -> some View {
-        HStack {
-            Text(title)
-                .font(.body.weight(.medium))
-                .foregroundStyle(LoginPalette.primaryText)
-            Spacer(minLength: 8)
-            SettingsStatusValue(
-                text: installed ? "Installed" : "Not on this server",
-                isPositive: installed
-            )
+        LabeledContent(title) {
+            Text(installed ? "Installed" : "Not on this server")
+                .foregroundStyle(installed ? Color.green : Color.red)
         }
-        .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), \(installed ? "Installed" : "Not on this server")")
     }
 
@@ -187,7 +209,12 @@ struct PluginSettingsView: View {
                 username: seerrUsername,
                 password: seerrPassword
             )
-            PluginSettings.seerrSession = signedIn
+            PluginSettings.rememberSignIn(
+                signedIn,
+                username: seerrUsername,
+                password: seerrPassword,
+                ownerAccountID: session.session?.accountID
+            )
             seerrDisplayName = signedIn.displayName
             seerrPassword = ""
             seerrStatus = "Signed in as \(signedIn.displayName)."
@@ -205,21 +232,20 @@ struct PluginSettingsView: View {
 
     private func refreshSeerrSession() async {
         guard !session.usesSilo else { return }
-        guard let client = PluginSettings.seerrClient else {
+        guard PluginSettings.seerrClient != nil else {
             seerrDisplayName = nil
             return
         }
-        do {
-            let user = try await client.currentUser()
+        if let user = await PluginSettings.refreshUser() {
             seerrDisplayName = user.displayLabel
-            if var saved = PluginSettings.seerrSession {
-                saved.displayName = user.displayLabel
-                PluginSettings.seerrSession = saved
-            }
-        } catch {
-            PluginSettings.clearSeerrSession()
-            seerrDisplayName = nil
-            seerrStatus = "Seerr session expired. Sign in again."
+            seerrStatus = nil
+            return
         }
+        if let saved = PluginSettings.seerrSession {
+            seerrDisplayName = saved.displayName
+            return
+        }
+        seerrDisplayName = nil
+        seerrStatus = "Seerr session expired. Sign in again."
     }
 }

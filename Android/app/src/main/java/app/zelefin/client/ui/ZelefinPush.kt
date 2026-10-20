@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,21 +98,27 @@ fun <T> ZelefinPush(
     content: @Composable (T) -> Unit,
 ) {
     val animating = motion.cover != null
+    val canvas = LocalZelefinCanvas.current
     Box(modifier.fillMaxSize().clipToBounds()) {
-        Box(Modifier.zelefinPushBase(motion, animating).fillMaxSize()) {
-            content(motion.base)
-            if (animating) {
+        // Keyed in one parent so a page keeps its state when it moves between the cover and base roles.
+        listOfNotNull(motion.base, motion.cover).forEach { page ->
+            key(page) {
+                val covering = page == motion.cover
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .graphicsLayer { alpha = motion.progress.coerceIn(0f, 1f) * 0.18f }
-                        .background(Color.Black),
-                )
-            }
-        }
-        motion.cover?.let { cover ->
-            Box(Modifier.zelefinPushCover(motion).fillMaxSize().background(LocalZelefinCanvas.current)) {
-                content(cover)
+                        .then(if (covering) Modifier.zelefinPushCover(motion).background(canvas) else Modifier.zelefinPushBase(motion, animating)),
+                ) {
+                    content(page)
+                    if (animating && !covering) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = motion.progress.coerceIn(0f, 1f) * 0.18f }
+                                .background(Color.Black),
+                        )
+                    }
+                }
             }
         }
     }

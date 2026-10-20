@@ -10,16 +10,22 @@ struct TabCustomizationView: View {
     @AppStorage(FeaturedHeroContent.storageKey) private var featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
     @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = true
     @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
+    @AppStorage(AppTab.startTabStorageKey) private var startTabRaw = AppTab.home.rawValue
+
+    @Environment(\.editMode) private var editMode
+
+    private var isEditing: Bool {
+        editMode?.wrappedValue.isEditing == true
+    }
 
     var body: some View {
         List {
             Section {
                 Toggle("Combine Continue Watching and Next Up", isOn: gatedMergeBinding)
-                    .tint(AccentPreferences.current)
-                    .font(.body.weight(.medium))
             } footer: {
                 Text(homeFooterCopy)
             }
+            .zelefinRowBackground()
 
             Section {
                 Picker("Content", selection: $featuredHeroContent) {
@@ -32,11 +38,16 @@ struct TabCustomizationView: View {
             } footer: {
                 Text("What the Home hero cycles through. Recently Added is the default. Random picks a new set when Home refreshes.")
             }
+            .zelefinRowBackground()
 
             Section {
                 ForEach(displayedHomeRows) { row in
-                    Toggle(isOn: homeRowVisibilityBinding(for: row)) {
+                    if isEditing {
                         Label(row.title, systemImage: row.systemImage)
+                    } else {
+                        Toggle(isOn: homeRowVisibilityBinding(for: row)) {
+                            Label(row.title, systemImage: row.systemImage)
+                        }
                     }
                 }
                 .onMove(perform: moveHomeRows)
@@ -45,26 +56,40 @@ struct TabCustomizationView: View {
             } footer: {
                 Text(homeRowsFooterCopy)
             }
-            .environment(\.editMode, .constant(.active))
+            .zelefinRowBackground()
+
+            Section {
+                Picker("Page", selection: $startTabRaw) {
+                    ForEach(AppTab.startPageChoices) { tab in
+                        Text(tab.title).tag(tab.rawValue)
+                    }
+                }
+            } header: {
+                Text("Start Page")
+            } footer: {
+                Text("The page Zelefin opens to when you launch it. Home is the default.")
+            }
+            .zelefinRowBackground()
 
             if UIDevice.current.userInterfaceIdiom != .pad {
                 Section {
                     Toggle("Show Tab Names", isOn: $showsTabNames)
                 }
+                .zelefinRowBackground()
             }
 
             Section {
                 ForEach(AppTab.ordered(from: tabOrderRaw).filter { tab in
                     !(session.usesSilo && tab == .liveTV)
                 }) { tab in
-                    Toggle(isOn: visibilityBinding(for: tab)) {
-                        Label {
-                            Text(tab.title)
-                        } icon: {
-                            TabBarIcon(assetName: tab.iconAsset, systemImage: tab.systemImage)
+                    if isEditing {
+                        Label(tab.title, systemImage: tab.systemImage)
+                    } else {
+                        Toggle(isOn: visibilityBinding(for: tab)) {
+                            Label(tab.title, systemImage: tab.systemImage)
                         }
+                        .disabled(!tab.canHide)
                     }
-                    .disabled(!tab.canHide)
                 }
                 .onMove(perform: moveTabs)
             } header: {
@@ -72,17 +97,13 @@ struct TabCustomizationView: View {
             } footer: {
                 Text(tabFooterCopy)
             }
-            .environment(\.editMode, .constant(.active))
+            .zelefinRowBackground()
 
             if !pinnableLibraries.isEmpty {
                 Section {
                     ForEach(pinnableLibraries) { library in
                         Toggle(isOn: dockLibraryBinding(for: library)) {
-                            Label {
-                                Text(library.name)
-                            } icon: {
-                                TabBarIcon(assetName: "IconsaxLibrary", systemImage: "book")
-                            }
+                            Label(library.name, systemImage: "books.vertical")
                         }
                     }
                 } header: {
@@ -90,6 +111,7 @@ struct TabCustomizationView: View {
                 } footer: {
                     Text(libraryDockFooter)
                 }
+                .zelefinRowBackground()
             }
 
             Section {
@@ -103,8 +125,14 @@ struct TabCustomizationView: View {
                     tabCustomization = AppTab.defaultCustomization()
                 }
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Interface")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                EditButton()
+            }
+        }
         .onChange(of: mergeContinueAndNextUp) {
             Task {
                 await session.refreshHome()
@@ -145,7 +173,7 @@ struct TabCustomizationView: View {
             : (showsTabNames
                 ? "Each dock icon shows its name. The iPhone dock holds 5 tabs, including Search. "
                 : "The dock shows icons only. Turn Show Tab Names on to put a name under each icon. The iPhone dock holds 5 tabs, including Search. ")
-        return names + "Drag to reorder. Turn off a tab to hide it from the tab bar. On iPad, you can also tap Edit at the top of the sidebar."
+        return names + "Turn off a tab to hide it from the tab bar. Tap Edit to drag rows into a new order. On iPad, you can also tap Edit at the top of the sidebar."
     }
 
     private var homeFooterCopy: String {
@@ -158,9 +186,9 @@ struct TabCustomizationView: View {
 
     private var homeRowsFooterCopy: String {
         if mergeContinueAndNextUp {
-            "Drag to reorder. Turn off a row to hide it from Home. Next Up only appears when Combine Continue Watching and Next Up is off."
+            "Turn off a row to hide it from Home. Tap Edit to drag rows into a new order. Next Up only appears when Combine Continue Watching and Next Up is off."
         } else {
-            "Drag to reorder. Turn off a row to hide it from Home."
+            "Turn off a row to hide it from Home. Tap Edit to drag rows into a new order."
         }
     }
 
@@ -285,6 +313,7 @@ struct AppearanceSettingsView: View {
             } footer: {
                 Text("Accent color tints buttons, highlights, and icons throughout the app.")
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Appearance")
     }

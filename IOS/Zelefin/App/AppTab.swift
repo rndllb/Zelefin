@@ -21,6 +21,16 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     static let defaultOrderRaw = "home,movies,shows,liveTV,collections,library,favorites"
     static let hiddenByDefault: Set<AppTab> = [.liveTV, .collections, .favorites]
 
+    static let startTabStorageKey = "zelefin.start-tab"
+    /// The always-available content pages a user can pick as the app's launch destination.
+    static let startPageChoices: [AppTab] = [.home, .movies, .shows, .library]
+
+    /// The stored start page, or `.home` when the value is missing or not a valid start page.
+    static func startTab(from raw: String) -> AppTab {
+        guard let tab = AppTab(rawValue: raw), startPageChoices.contains(tab) else { return .home }
+        return tab
+    }
+
     var id: String { rawValue }
 
     var title: String {
@@ -144,7 +154,7 @@ enum DockLibraryPreferences {
     /// A custom library such as Anime can sit in the dock. Movies, Shows, Live TV, and Collections already have their own tabs.
     static func canPin(_ library: MediaLibrary) -> Bool {
         switch library.libraryKind {
-        case .other, .homeVideos, .photos:
+        case .other, .youTube, .homeVideos, .photos:
             true
         default:
             false

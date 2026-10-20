@@ -25,6 +25,7 @@ struct SiloUsersView: View {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
                         }
+                        .zelefinRowBackground()
                     }
                     Section {
                         ForEach(users) { account in
@@ -41,6 +42,7 @@ struct SiloUsersView: View {
                             }
                         }
                     }
+                    .zelefinRowBackground()
                 }
                 .refreshable { await reload(showProgress: false) }
             }
@@ -89,41 +91,32 @@ struct SiloCreateUserView: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsLabeledField(label: "Username", systemImage: "person.fill") {
-                        TextField("Username", text: $username)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    }
-                    SettingsCardDivider()
-                    SettingsLabeledField(label: "Email", systemImage: "envelope.fill") {
-                        TextField("Email", text: $email)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
-                    }
-                    SettingsCardDivider()
-                    SettingsLabeledField(label: "Password", systemImage: "lock.fill") {
-                        SecureField("Password", text: $password)
-                            .textContentType(.newPassword)
-                    }
-                    SettingsCardDivider()
-                    Toggle("Administrator", isOn: $isAdmin)
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.medium))
-                }
+                TextField("Username", text: $username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("Email", text: $email)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                SecureField("Password", text: $password)
+                    .textContentType(.newPassword)
+                Toggle("Administrator", isOn: $isAdmin)
             } footer: {
                 Text("Silo requires at least 8 characters for a new password. A default household profile is created for this account.")
             }
+            .zelefinRowBackground()
             Section {
-                SettingsPrimaryButton(title: "Create Account", isBusy: isSaving, enabled: canSave) {
+                Button("Create Account") {
                     Task { await save() }
                 }
+                .disabled(!canSave || isSaving)
             }
+            .zelefinRowBackground()
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
                 }
+                .zelefinRowBackground()
             }
         }
         .zelefinSettingsChrome(title: "Add Account")
@@ -190,76 +183,48 @@ struct SiloUserEditorView: View {
     var body: some View {
         Form {
             Section {
-                VStack(spacing: 14) {
-                    SettingsHeroGlyph(systemImage: "person.fill")
-                    Text(account.username)
-                        .font(.title2.weight(.semibold))
-                    SettingsChip(
-                        icon: isAdmin ? "checkmark.shield.fill" : "person.fill",
-                        leading: isEnabled ? (isAdmin ? "Administrator" : "User") : "Disabled",
-                        trailing: account.email
-                    )
+                LabeledContent("Username", value: account.username)
+                if let email = account.email, !email.isEmpty {
+                    LabeledContent("Email", value: email)
                 }
-                .frame(maxWidth: .infinity)
-                .settingsHeroRow()
+                LabeledContent("Status", value: isEnabled ? (isAdmin ? "Administrator" : "User") : "Disabled")
             }
+            .zelefinRowBackground()
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsInfoRow(label: "Username", value: account.username)
-                    if let email = account.email, !email.isEmpty {
-                        SettingsCardDivider()
-                        SettingsInfoRow(label: "Email", value: email)
-                    }
-                    SettingsCardDivider()
-                    Toggle("Administrator", isOn: $isAdmin)
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.medium))
-                    SettingsCardDivider()
-                    Toggle("Enabled", isOn: $isEnabled)
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.medium))
-                    SettingsPrimaryButton(title: "Save Access", isBusy: isSaving) {
-                        Task { await saveAccess() }
-                    }
-                    .padding(.top, 16)
+                Toggle("Administrator", isOn: $isAdmin)
+                Toggle("Enabled", isOn: $isEnabled)
+                Button("Save Access") {
+                    Task { await saveAccess() }
                 }
+                .disabled(isSaving)
             }
+            .zelefinRowBackground()
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsLabeledField(label: "New", systemImage: "lock.fill") {
-                        SecureField("New", text: $newPassword)
-                            .textContentType(.newPassword)
-                    }
-                    SettingsCardDivider()
-                    SettingsLabeledField(label: "Confirm", systemImage: "lock.fill") {
-                        SecureField("Confirm", text: $confirmPassword)
-                            .textContentType(.newPassword)
-                    }
-                    if !confirmPassword.isEmpty && newPassword != confirmPassword {
-                        Text("The new passwords do not match.")
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(LoginPalette.failure)
-                            .padding(.top, 12)
-                    }
-                    SettingsPrimaryButton(
-                        title: "Set Password",
-                        isBusy: isSaving,
-                        enabled: newPassword.count >= 8 && newPassword == confirmPassword
-                    ) {
-                        Task { await savePassword() }
-                    }
-                    .padding(.top, 16)
+                SecureField("New Password", text: $newPassword)
+                    .textContentType(.newPassword)
+                SecureField("Confirm Password", text: $confirmPassword)
+                    .textContentType(.newPassword)
+                if !confirmPassword.isEmpty && newPassword != confirmPassword {
+                    Text("The new passwords do not match.")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
                 }
+                Button("Set Password") {
+                    Task { await savePassword() }
+                }
+                .disabled(isSaving || newPassword.count < 8 || newPassword != confirmPassword)
             } footer: {
                 Text("At least 8 characters. This replaces the password for \(account.username).")
             }
+            .zelefinRowBackground()
 
             if let status {
                 Section {
                     SettingsStatusText(text: status, isError: statusIsError)
                 }
+                .zelefinRowBackground()
             }
 
             Section {
@@ -267,6 +232,7 @@ struct SiloUserEditorView: View {
                     showsDeleteConfirm = true
                 }
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: account.username)
         .confirmationDialog(
@@ -768,45 +734,37 @@ struct SiloCreateInvitationView: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsLabeledField(label: "Email", systemImage: "envelope.fill") {
-                        TextField("Email", text: $email)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
-                    }
-                    SettingsCardDivider()
-                    Toggle("Administrator", isOn: $isAdmin)
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.medium))
-                    SettingsCardDivider()
-                    SettingsLabeledField(label: "Note", systemImage: "text.quote") {
-                        TextField("Note (optional)", text: $note)
-                    }
-                }
+                TextField("Email", text: $email)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                Toggle("Administrator", isOn: $isAdmin)
+                TextField("Note (optional)", text: $note)
             } footer: {
                 Text("Silo emails the invite when mail is configured. The claim link is also copied so you can send it yourself.")
             }
+            .zelefinRowBackground()
             if let claimURL {
                 Section {
-                    VStack(alignment: .leading, spacing: 0) {
-                        SettingsInfoRow(label: "Claim link", value: claimURL.absoluteString)
-                        SettingsPrimaryButton(title: "Copy Link") {
-                            UIPasteboard.general.string = claimURL.absoluteString
-                        }
-                        .padding(.top, 16)
+                    LabeledContent("Claim Link", value: claimURL.absoluteString)
+                    Button("Copy Link") {
+                        UIPasteboard.general.string = claimURL.absoluteString
                     }
                 }
+                .zelefinRowBackground()
             }
             Section {
-                SettingsPrimaryButton(title: "Send Invite", isBusy: isSaving, enabled: email.contains("@")) {
+                Button("Send Invite") {
                     Task { await save() }
                 }
+                .disabled(isSaving || !email.contains("@"))
             }
+            .zelefinRowBackground()
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
                 }
+                .zelefinRowBackground()
             }
         }
         .zelefinSettingsChrome(title: "Invite")
@@ -873,6 +831,7 @@ struct SiloSessionsView: View {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
                         }
+                        .zelefinRowBackground()
                     }
                     Section {
                         ForEach(sessions) { playback in
@@ -909,6 +868,7 @@ struct SiloSessionsView: View {
                             }
                         }
                     }
+                    .zelefinRowBackground()
                 }
                 .refreshable { await load(showProgress: false) }
             }

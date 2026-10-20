@@ -44,6 +44,16 @@ struct ZelefinCompanionClient: Sendable {
         _ = await send(path: "/Zelefin/device", method: "POST", body: body)
     }
 
+    /// `POST /Zelefin/notification/test`. Nil when sent, otherwise the plugin's reason.
+    func sendTest() async -> String? {
+        guard let data = await send(path: "/Zelefin/notification/test", method: "POST") else {
+            return "The server could not send a test alert."
+        }
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        if object["ok"] as? Bool == true { return nil }
+        return object["error"] as? String ?? "The server could not send a test alert."
+    }
+
     func deleteDevice() async {
         let id = DeviceIdentity.deviceID()
         _ = await send(path: "/Zelefin/device/\(id)", method: "DELETE")

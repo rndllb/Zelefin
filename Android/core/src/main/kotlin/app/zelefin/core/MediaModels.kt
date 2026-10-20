@@ -59,7 +59,20 @@ data class MediaItem(
     val logoUrl: String? = null,
     val mediaSourceId: String? = null,
     val people: List<CreditPerson> = emptyList(),
+    /** ISO-8601 premiere date; TubeArchivist stores the YouTube publish date here. */
+    val premiereDate: String? = null,
+    val bannerImageTag: String? = null,
+    /** YouTube channel ID (series) or video ID (episode) from the TubeArchivist Metadata plugin. */
+    val youTubeId: String? = null,
 ) {
+    val isYouTube: Boolean get() = youTubeId != null
+
+    val youTubeUrl: String?
+        get() {
+            val id = youTubeId ?: return null
+            return if (kind == MediaKind.Series) "https://www.youtube.com/channel/$id" else "https://www.youtube.com/watch?v=$id"
+        }
+
     val progress: Double
         get() {
             val length = runtime ?: return 0.0
@@ -81,12 +94,12 @@ data class MediaItem(
         get() = progress > 0.02 && progress < 0.98
 
     val continueWatchingTitle: String
-        get() = if (kind == MediaKind.Episode) seriesName ?: name else name
+        get() = if (kind == MediaKind.Episode && !isYouTube) seriesName ?: name else name
 
     val episodeLabel: String?
         get() {
             if (kind != MediaKind.Episode) return null
-            if (seasonIndex == null || episodeIndex == null) return seriesName
+            if (isYouTube || seasonIndex == null || episodeIndex == null) return seriesName
             val remaining = runtime?.let { " · ${minutesLabel(max(0.0, it - playbackPosition), floor = true)}" }.orEmpty()
             return "S$seasonIndex, E$episodeIndex$remaining"
         }
@@ -94,6 +107,7 @@ data class MediaItem(
     val continueWatchingCaption: String?
         get() {
             val remaining = runtime?.let { minutesLabel(max(0.0, it - playbackPosition), floor = true) }
+            if (isYouTube) return listOfNotNull(seriesName, remaining).joinToString(" · ").ifEmpty { null }
             if (kind == MediaKind.Episode && seasonIndex != null && episodeIndex != null) {
                 return if (remaining != null) "S$seasonIndex, E$episodeIndex · $remaining" else "S$seasonIndex, E$episodeIndex"
             }
@@ -132,6 +146,13 @@ data class MediaItem(
         }
 
     val kindLabel: String
+        get() = when {
+            isYouTube && kind == MediaKind.Series -> "Channel"
+            isYouTube -> "Video"
+            else -> catalogKindLabel
+        }
+
+    private val catalogKindLabel: String
         get() = when (kind) {
             MediaKind.Movie -> "Movie"
             MediaKind.Series, MediaKind.Season, MediaKind.Episode -> "Show"
@@ -167,10 +188,14 @@ data class MediaItem(
 
     companion object {
         fun heroPlaybackItem(title: MediaItem, episodes: List<MediaItem>): MediaItem {
-            if (title.kind != MediaKind.Series) return title
+            if (title.kind != MediaKind.Series && title.kind != MediaKind.Season) return title
+            return preferredEpisode(episodes) ?: title
+        }
+
+        fun preferredEpisode(episodes: List<MediaItem>): MediaItem? {
             episodes.firstOrNull { !it.isWatched && it.playbackPosition > 5 }?.let { return it }
             episodes.firstOrNull { !it.isWatched }?.let { return it }
-            return episodes.firstOrNull() ?: title
+            return episodes.firstOrNull()
         }
 
         fun minutesLabel(interval: Double, floor: Boolean = false): String {
@@ -307,6 +332,9 @@ data class TitleDetail(
     val moreInfo: TitleMoreInfo = TitleMoreInfo(),
     val collections: List<TitleCollection> = emptyList(),
     val additionalParts: List<MediaItem> = emptyList(),
+    /** For a YouTube channel or video: the channel and its videos, newest first. */
+    val channel: MediaItem? = null,
+    val channelVideos: List<MediaItem> = emptyList(),
 )
 
 @Serializable

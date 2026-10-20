@@ -73,6 +73,10 @@ class JellyfinLibraryClient: @unchecked Sendable {
         artwork.backdrop(for: item, maxWidth: maxWidth)
     }
 
+    func bannerURL(for item: MediaItem, maxWidth: Int = 1600) -> URL? {
+        artwork.banner(for: item, maxWidth: maxWidth)
+    }
+
     func logoURL(for item: MediaItem, maxHeight: Int = 240) -> URL? {
         artwork.logo(for: item, maxHeight: maxHeight)
     }
@@ -90,6 +94,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
             primaryURL(for: item),
             artworkURL(for: item, style: .landscape),
             backdropURL(for: item),
+            bannerURL(for: item),
             logoURL(for: item)
         ]
         for url in candidates.compactMap({ $0 }) where seen.insert(url.absoluteString).inserted {
@@ -306,7 +311,49 @@ class JellyfinLibraryClient: @unchecked Sendable {
         let result = try await client.send(
             Paths.getUserViews(parameters: .init(userID: userID, isIncludeHidden: true))
         ).value
-        return (result.items ?? []).compactMap(ItemMapper.library(from:))
+        let rooms = (result.items ?? []).compactMap(ItemMapper.library(from:))
+        return await markingTubeArchivist(rooms)
+    }
+
+    /// A Shows library whose series carry the TubeArchivist provider ID becomes its own YouTube room.
+    private func markingTubeArchivist(_ rooms: [MediaLibrary]) async -> [MediaLibrary] {
+        await withTaskGroup(of: (Int, MediaLibrary).self) { group in
+            for (index, room) in rooms.enumerated() {
+                group.addTask {
+                    guard room.libraryKind == .shows, await self.isTubeArchivistLibrary(room) else {
+                        return (index, room)
+                    }
+                    return (
+                        index,
+                        MediaLibrary(id: room.id, name: room.name, kind: .series, libraryKind: .youTube)
+                    )
+                }
+            }
+            var mapped = rooms
+            for await (index, room) in group {
+                mapped[index] = room
+            }
+            return mapped
+        }
+    }
+
+    private func isTubeArchivistLibrary(_ library: MediaLibrary) async -> Bool {
+        let result = try? await client.send(
+            Paths.getItems(
+                parameters: .init(
+                    userID: userID,
+                    limit: 1,
+                    isRecursive: true,
+                    parentID: library.id,
+                    fields: [.providerIDs],
+                    includeItemTypes: [.series],
+                    enableUserData: false,
+                    enableTotalRecordCount: false,
+                    enableImages: false
+                )
+            )
+        ).value
+        return (result?.items ?? []).contains { ItemMapper.isTubeArchivist($0) }
     }
 
     /// Loads TMDB identifiers for movies and series already in this library.
@@ -443,17 +490,36 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     func serverCatalogCounts() async -> ServerCatalogCounts {
+        let raw: ServerCatalogCounts
         if let counts = try? await client.send(Paths.getItemCounts(userID: userID)).value {
-            return ServerCatalogCounts(
+            raw = ServerCatalogCounts(
                 movies: counts.movieCount ?? 0,
                 shows: counts.seriesCount ?? 0,
                 episodes: counts.episodeCount ?? 0
             )
+        } else {
+            async let movies = countItems(include: [.movie], parentID: nil)
+            async let shows = countItems(include: [.series], parentID: nil)
+            async let episodes = countItems(include: [.episode], parentID: nil)
+            raw = await ServerCatalogCounts(movies: movies, shows: shows, episodes: episodes)
         }
-        async let movies = countItems(include: [.movie], parentID: nil)
-        async let shows = countItems(include: [.series], parentID: nil)
-        async let episodes = countItems(include: [.episode], parentID: nil)
-        return await ServerCatalogCounts(movies: movies, shows: shows, episodes: episodes)
+        return raw.separatingYouTube(await youTubeCatalogCounts())
+    }
+
+    private func youTubeCatalogCounts() async -> ServerCatalogCounts {
+        let rooms = ((try? await libraries()) ?? []).filter { $0.libraryKind == .youTube }
+        return await withTaskGroup(of: LibraryRoomCounts.self) { group in
+            for room in rooms {
+                group.addTask { await self.roomCounts(for: room) }
+            }
+            var channels = 0
+            var videos = 0
+            for await counts in group {
+                channels += counts.channels
+                videos += counts.videos
+            }
+            return ServerCatalogCounts(movies: 0, shows: 0, episodes: 0, channels: channels, videos: videos)
+        }
     }
 
     func roomCounts(for library: MediaLibrary) async -> LibraryRoomCounts {
@@ -465,6 +531,10 @@ class JellyfinLibraryClient: @unchecked Sendable {
             async let shows = countItems(include: [.series], parentID: library.id)
             async let episodes = countItems(include: [.episode], parentID: library.id)
             return await LibraryRoomCounts(movies: 0, shows: shows, episodes: episodes)
+        case .youTube:
+            async let channels = countItems(include: [.series], parentID: library.id)
+            async let videos = countItems(include: [.episode], parentID: library.id)
+            return await LibraryRoomCounts(movies: 0, shows: 0, episodes: 0, channels: channels, videos: videos)
         case .liveTV:
             return LibraryRoomCounts(movies: 0, shows: 0, episodes: 0)
         default:
@@ -1390,7 +1460,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
     private func browseIncludeTypes(for library: MediaLibrary) -> [BaseItemKind] {
         switch library.libraryKind {
         case .movies: [.movie, .boxSet]
-        case .shows: [.series]
+        case .shows, .youTube: [.series]
         case .collections: [.boxSet]
         case .books: [.book]
         case .photos: [.photo, .photoAlbum]
@@ -1408,7 +1478,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
     func filterIncludeTypes(for kind: LibraryKind) -> [BaseItemKind] {
         switch kind {
         case .movies: [.movie]
-        case .shows: [.series]
+        case .shows, .youTube: [.series]
         case .collections: [.boxSet]
         case .favorites, .watchlist: [.movie, .series]
         case .books: [.book]
@@ -1427,7 +1497,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
     private func includeTypes(for library: MediaLibrary) -> [BaseItemKind] {
         switch library.libraryKind {
         case .movies: [.movie]
-        case .shows: [.series]
+        case .shows, .youTube: [.series]
         case .homeVideos: [.video, .movie]
         case .collections: [.boxSet]
         case .books: [.book]
@@ -1460,7 +1530,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
             async let shows = featuredLatest(include: [.series])
             return HomeLayoutPreferences.featured(
                 latestMovies: try await movies,
-                latestShows: try await shows
+                latestShows: (try await shows).filter { !$0.isYouTube }
             )
         case .continueWatching, .nextUp, .recommendations, .recentlyWatched:
             return []
@@ -1486,7 +1556,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         let items = (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
         return HomeLayoutPreferences.featured(
             latestMovies: items.filter { $0.kind == .movie },
-            latestShows: items.filter { $0.kind == .series }
+            latestShows: items.filter { $0.kind == .series && !$0.isYouTube }
         )
     }
 

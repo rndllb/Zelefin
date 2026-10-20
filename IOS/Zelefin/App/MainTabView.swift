@@ -10,8 +10,16 @@ struct MainTabView: View {
     @AppStorage(AppTab.liveTVHiddenDefaultKey) private var liveTVHiddenDefaultApplied = false
     @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = true
     @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
+    @AppStorage(AppTab.startTabStorageKey) private var startTabRaw = AppTab.home.rawValue
     @Environment(\.scenePhase) private var scenePhase
     @State private var dockSelection: DockSelection = .tab(.home)
+    @State private var didResolveStartTab = false
+
+    init() {
+        // Open on the page the user chose as their launch destination.
+        let raw = UserDefaults.standard.string(forKey: AppTab.startTabStorageKey) ?? AppTab.home.rawValue
+        _dockSelection = State(initialValue: .tab(AppTab.startTab(from: raw)))
+    }
 
     var body: some View {
         tabView
@@ -59,7 +67,7 @@ struct MainTabView: View {
                 .customizationBehavior(.disabled, for: .sidebar, .tabBar)
             }
 
-            Tab(value: DockSelection.search) {
+            Tab(value: DockSelection.search, role: .search) {
                 NavigationStack {
                     SearchView()
                 }
@@ -85,9 +93,11 @@ struct MainTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .modifier(MiniPlayerDockChrome(isEnabled: session.nowPlayingItem != nil))
         .background(TabBarTitleApplier(showsTitles: showsDockTitles, selection: dockSelection))
         .onAppear {
             applyHiddenTabDefaultsIfNeeded()
+            resolveStartSelectionIfNeeded()
             TabBarTitleChrome.applyAfterRestore(showsTitles: showsDockTitles)
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(350))
@@ -135,6 +145,14 @@ struct MainTabView: View {
             get: { tabCustomization },
             set: { tabCustomization = $0 }
         )
+    }
+
+    /// If the chosen start page is hidden from the dock, land on Home so launch never opens a missing tab.
+    private func resolveStartSelectionIfNeeded() {
+        guard !didResolveStartTab else { return }
+        didResolveStartTab = true
+        guard case let .tab(tab) = dockSelection, tab != .home, !dockTabs.contains(tab) else { return }
+        dockSelection = .tab(.home)
     }
 
     private func applyHiddenTabDefaultsIfNeeded() {
@@ -475,9 +493,12 @@ extension Notification.Name {
 @MainActor
 enum ProfilePresentation {
     static func show(_ destination: ProfileSheet) {
-        // The avatar menu is a presented popover. Waiting on any presented
-        // controller (the old path) sat on that menu and dropped HID handlers.
-        DispatchQueue.main.async {
+        // UIMenu is still dismissing when the action runs. Presenting a sheet
+        // in that window freezes the app and drops HID handlers. A short delay
+        // lets the popover finish without polling presentedViewController,
+        // which stayed true for the menu itself.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
             NotificationCenter.default.post(name: .zelefinProfileSheet, object: destination)
         }
     }
@@ -680,14 +701,13 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
         button.backgroundColor = .clear
         button.accessibilityLabel = accessibilityLabel
         button.accessibilityHint = "Shows profile, sessions, settings, and account options"
-        context.coordinator.installMenu(on: button)
+        context.coordinator.attachMenu(to: button)
         return button
     }
 
     func updateUIView(_ button: ProfileMenuHitButton, context: Context) {
         context.coordinator.parent = self
         button.accessibilityLabel = accessibilityLabel
-        context.coordinator.installMenu(on: button)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ProfileMenuHitButton, context: Context) -> CGSize? {
@@ -702,7 +722,17 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
             self.parent = parent
         }
 
-        func installMenu(on button: UIButton) {
+        func attachMenu(to button: UIButton) {
+            button.menu = UIMenu(children: [
+                UIDeferredMenuElement.uncached { [weak self] completion in
+                    DispatchQueue.main.async {
+                        completion(self?.menuChildren() ?? [])
+                    }
+                }
+            ])
+        }
+
+        func menuChildren() -> [UIMenuElement] {
             var rows: [UIMenuElement] = [
                 Self.action("Profile", "person.crop.circle") { [parent] in
                     parent.onProfile()
@@ -781,7 +811,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                     parent.onSettings()
                 }
             ])
-            button.menu = UIMenu(children: [
+            return [
                 UIMenu(options: .displayInline, children: rows),
                 UIMenu(
                     options: .displayInline,
@@ -795,7 +825,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                         }
                     ]
                 )
-            ])
+            ]
         }
 
         private static func action(
@@ -821,10 +851,8 @@ private final class ProfileMenuAction: @unchecked Sendable {
     }
 
     func run() {
-        DispatchQueue.main.async {
-            Task { @MainActor in
-                self.perform()
-            }
+        DispatchQueue.main.async { [perform] in
+            perform()
         }
     }
 }

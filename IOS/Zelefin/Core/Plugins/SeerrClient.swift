@@ -308,6 +308,9 @@ struct SeerrClient: Sendable {
         if AccessGateway.isChallenge(response: http, data: data) {
             throw ZelefinError.accessGateway
         }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw ZelefinError.seerrUnauthorized
+        }
         guard (200 ..< 300).contains(http.statusCode) else {
             throw ZelefinError.server(Self.errorMessage(from: data, status: http.statusCode))
         }

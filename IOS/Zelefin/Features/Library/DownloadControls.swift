@@ -172,6 +172,7 @@ struct DetailDownloadSharePill: View {
     @State private var errorMessage: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
     @State private var showsSeasonPicker = false
+    @State private var showsYouTubePicker = false
 
     var body: some View {
         let state: DownloadControlState = (session.usesSilo && !session.downloadsAvailable)
@@ -233,6 +234,17 @@ struct DetailDownloadSharePill: View {
             )
             .presentationCompactAdaptation(.popover)
         }
+        .popover(isPresented: $showsYouTubePicker) {
+            YouTubeDownloadMenu(
+                videos: episodes,
+                onCancel: { showsYouTubePicker = false },
+                onDownload: { picked in
+                    showsYouTubePicker = false
+                    Task { await enqueue(picked) }
+                }
+            )
+            .presentationCompactAdaptation(.popover)
+        }
     }
 
     private func share() {
@@ -260,6 +272,14 @@ struct DetailDownloadSharePill: View {
     }
 
     private func startDownload() async {
+        if item.isYouTube && item.kind == .series {
+            if episodes.count > 1 {
+                showsYouTubePicker = true
+                return
+            }
+            await enqueue(episodes)
+            return
+        }
         if item.kind == .series {
             let choices = SeasonDownloadChoice.options(seasons: seasons, episodes: episodes)
             if choices.count > 1 {
@@ -398,6 +418,75 @@ private struct ShowDownloadSeasonsMenu: View {
             Text(title)
                 .font(.body)
                 .foregroundStyle(tint)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct YouTubeDownloadMenu: View {
+    let videos: [MediaItem]
+    var onCancel: () -> Void
+    var onDownload: ([MediaItem]) -> Void
+
+    private var unwatched: [MediaItem] {
+        videos.filter { !$0.isWatched }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach([5, 10].filter { videos.count > $0 }, id: \.self) { count in
+                Button {
+                    onDownload(Array(videos.prefix(count)))
+                } label: {
+                    menuRow(title: "Latest \(count) Videos", systemImage: "arrow.down.to.line")
+                }
+                .buttonStyle(.plain)
+            }
+            if !unwatched.isEmpty, unwatched.count < videos.count {
+                Button {
+                    onDownload(unwatched)
+                } label: {
+                    menuRow(title: "Unwatched (\(unwatched.count))", systemImage: "arrow.down.to.line")
+                }
+                .buttonStyle(.plain)
+            }
+            if !videos.isEmpty {
+                Button {
+                    onDownload(videos)
+                } label: {
+                    menuRow(
+                        title: videos.count == 1 ? "Download Video" : "All \(videos.count) Videos",
+                        systemImage: "arrow.down.to.line"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            Rectangle()
+                .fill(.white.opacity(0.16))
+                .frame(height: 0.5)
+                .padding(.horizontal, 16)
+            Button(action: onCancel) {
+                menuRow(title: "Cancel", systemImage: "xmark", color: .red)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 250)
+        .padding(.vertical, 4)
+        .preferredColorScheme(.dark)
+    }
+
+    private func menuRow(title: String, systemImage: String, color: Color = .white) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(color)
+                .frame(width: 20, alignment: .center)
+            Text(title)
+                .font(.body)
+                .foregroundStyle(color)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)

@@ -557,6 +557,7 @@ enum SiloMapper {
         switch kind {
         case .movies: "movie"
         case .shows: "series"
+        case .youTube: nil
         case .collections: "collection"
         default: nil
         }
@@ -576,7 +577,7 @@ enum SiloMapper {
     static func mediaKind(fromLibrary kind: LibraryKind) -> MediaKind {
         switch kind {
         case .movies: .movie
-        case .shows: .series
+        case .shows, .youTube: .series
         case .liveTV: .liveTV
         case .collections: .collection
         case .playlists: .playlist

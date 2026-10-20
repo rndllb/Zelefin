@@ -132,28 +132,42 @@ struct SettingsPrimaryButton: View {
     let title: String
     var isBusy = false
     var enabled = true
+    var prominent = false
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Spacer(minLength: 0)
-                if isBusy {
-                    ProgressView()
-                        .tint(LoginPalette.actionLabel)
-                } else {
-                    Text(title)
-                        .font(.caption.weight(.bold))
-                        .tracking(0.8)
+        if prominent {
+            Button(action: action) {
+                HStack {
+                    Spacer(minLength: 0)
+                    if isBusy {
+                        ProgressView()
+                            .tint(LoginPalette.actionLabel)
+                    } else {
+                        Text(title)
+                            .font(.caption.weight(.bold))
+                            .tracking(0.8)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .modifier(LoginActionButtonStyle())
             }
-            .modifier(LoginActionButtonStyle())
+            .buttonStyle(.plain)
+            .disabled(!enabled || isBusy)
+            .opacity(!enabled || isBusy ? 0.42 : 1)
+            .accessibilityLabel(title)
+        } else {
+            Button(action: action) {
+                HStack {
+                    if isBusy {
+                        ProgressView()
+                    }
+                    Text(title)
+                }
+            }
+            .disabled(!enabled || isBusy)
+            .accessibilityLabel(title)
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled || isBusy)
-        .opacity(!enabled || isBusy ? 0.42 : 1)
-        .accessibilityLabel(title)
     }
 }
 
@@ -161,23 +175,32 @@ struct SettingsSecondaryButton: View {
     let title: String
     var role: ButtonRole?
     var enabled = true
+    var prominent = false
     let action: () -> Void
 
     var body: some View {
-        Button(role: role, action: action) {
-            HStack {
-                Spacer(minLength: 0)
-                Text(title)
-                    .font(.caption.weight(.bold))
-                    .tracking(0.8)
-                Spacer(minLength: 0)
+        if prominent {
+            Button(role: role, action: action) {
+                HStack {
+                    Spacer(minLength: 0)
+                    Text(title)
+                        .font(.caption.weight(.bold))
+                        .tracking(0.8)
+                    Spacer(minLength: 0)
+                }
+                .modifier(LoginSecondaryButtonStyle())
             }
-            .modifier(LoginSecondaryButtonStyle())
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.42)
+            .accessibilityLabel(title)
+        } else {
+            Button(role: role, action: action) {
+                Text(title)
+            }
+            .disabled(!enabled)
+            .accessibilityLabel(title)
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.42)
-        .accessibilityLabel(title)
     }
 }
 
@@ -187,8 +210,8 @@ struct SettingsStatusText: View {
 
     var body: some View {
         Text(text)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(isError ? LoginPalette.failure : LoginPalette.secondaryText)
+            .font(.footnote)
+            .foregroundStyle(isError ? Color.red : .secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -202,20 +225,19 @@ struct SettingsChip: View {
         HStack(spacing: 6) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.caption2.weight(.bold))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Text(leading)
-                .font(.caption.weight(.bold))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             if let trailing, !trailing.isEmpty {
                 Text(trailing)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .zelefinLiquidGlassCapsule(interactive: false)
     }
 }
 
@@ -235,14 +257,11 @@ struct SettingsHeroGlyph: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 52, weight: .medium))
-            .foregroundStyle(.white.opacity(0.92))
-            .frame(width: 132, height: 132)
-            .background(Color.white.opacity(0.08))
+            .font(.system(size: 36, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 72, height: 72)
+            .background(Color.secondary.opacity(0.14))
             .clipShape(Circle())
-            .padding(6)
-            .zelefinLiquidGlassCircle(interactive: false)
-            .frame(width: 144, height: 144)
             .accessibilityHidden(true)
     }
 }
@@ -252,13 +271,7 @@ struct SettingsInfoRow: View {
     let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SettingsFieldLabel(title: label)
-            Text(value)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(LoginPalette.fieldValue)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        LabeledContent(label, value: value)
     }
 }
 
@@ -268,19 +281,11 @@ struct SettingsLabeledField<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettingsFieldLabel(title: label)
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(LoginPalette.iconTint)
-                    .frame(width: 22, alignment: .center)
-                    .accessibilityHidden(true)
-                content()
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(LoginPalette.fieldValue)
-            }
+        LabeledContent(label) {
+            content()
         }
+        .accessibilityLabel(label)
+        .accessibilityHint(systemImage)
     }
 }
 
@@ -290,8 +295,8 @@ struct SettingsStatusValue: View {
 
     var body: some View {
         Text(text)
-            .font(.caption.weight(.bold))
-            .foregroundStyle(isPositive ? LoginPalette.success : LoginPalette.captionText)
+            .font(.subheadline)
+            .foregroundStyle(isPositive ? .secondary : .tertiary)
     }
 }
 
@@ -303,17 +308,15 @@ struct SettingsStackedRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(LoginPalette.primaryText)
             if !subtitle.isEmpty {
                 Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(LoginPalette.secondaryText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
             if !caption.isEmpty {
                 Text(caption)
-                    .font(.caption)
-                    .foregroundStyle(LoginPalette.captionText)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -348,8 +351,8 @@ struct SettingsNavRow: View {
                     .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(LoginPalette.secondaryText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
@@ -372,12 +375,12 @@ struct SettingsPersonRow: View {
             UserAvatarView(url: avatarURL, localImage: localImage, diameter: 48)
             VStack(alignment: .leading, spacing: 3) {
                 Text(name)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(LoginPalette.primaryText)
+                    .font(.body)
+                    .foregroundStyle(.primary)
                 if !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(LoginPalette.secondaryText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 0)

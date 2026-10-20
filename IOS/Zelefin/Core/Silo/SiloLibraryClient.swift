@@ -32,6 +32,10 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
         item.backdropURL ?? item.posterURL
     }
 
+    func bannerURL(for item: MediaItem, maxWidth: Int) -> URL? {
+        item.backdropURL ?? item.posterURL
+    }
+
     func logoURL(for item: MediaItem, maxHeight: Int) -> URL? { item.logoURL }
 
     func userAvatarURL(userID: String, tag: String?) -> URL? { nil }
@@ -381,6 +385,8 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
             async let shows = catalogTotal(types: ["series", "show"], libraryID: library.id)
             async let episodes = catalogTotal(types: ["episode"], libraryID: library.id)
             return await LibraryRoomCounts(movies: 0, shows: shows, episodes: episodes)
+        case .youTube:
+            return LibraryRoomCounts(movies: 0, shows: 0, episodes: 0)
         case .liveTV:
             return LibraryRoomCounts(movies: 0, shows: 0, episodes: 0)
         default:

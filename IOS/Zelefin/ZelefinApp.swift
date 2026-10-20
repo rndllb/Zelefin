@@ -20,7 +20,9 @@ enum InterfaceOrientationLock {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
             return
         }
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+        // No error handler: UIKit calls it off the main thread, and a closure written here is
+        // main-actor isolated, so Swift 6 traps when it runs.
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
     }
 }
 

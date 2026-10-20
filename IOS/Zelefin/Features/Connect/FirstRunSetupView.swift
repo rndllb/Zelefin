@@ -180,7 +180,8 @@ struct FirstRunSetupView: View {
                     SettingsPrimaryButton(
                         title: "Sign In",
                         isBusy: isSigningInToSeerr,
-                        enabled: canSignInToSeerr
+                        enabled: canSignInToSeerr,
+                        prominent: true
                     ) {
                         Task { await signInToSeerr() }
                     }
@@ -219,7 +220,8 @@ struct FirstRunSetupView: View {
                     SettingsPrimaryButton(
                         title: isInstallingPlugin ? "Installing…" : "Install Plugin",
                         isBusy: isInstallingPlugin,
-                        enabled: !isInstallingPlugin && !pluginNeedsRestart
+                        enabled: !isInstallingPlugin && !pluginNeedsRestart,
+                        prominent: true
                     ) {
                         Task { await installPlugin() }
                     }
@@ -227,7 +229,8 @@ struct FirstRunSetupView: View {
                     if pluginNeedsRestart {
                         SettingsSecondaryButton(
                             title: isRestarting ? "Restarting…" : "Restart Jellyfin",
-                            enabled: !isRestarting
+                            enabled: !isRestarting,
+                            prominent: true
                         ) {
                             Task { await restartServer() }
                         }
@@ -272,7 +275,7 @@ struct FirstRunSetupView: View {
             }
             .accessibilityLabel("Step \(stepIndex + 1) of \(steps.count)")
 
-            SettingsPrimaryButton(title: isLastStep ? "Finish Setup" : "Continue") {
+            SettingsPrimaryButton(title: isLastStep ? "Finish Setup" : "Continue", prominent: true) {
                 if isLastStep {
                     finish()
                 } else {
@@ -339,7 +342,12 @@ struct FirstRunSetupView: View {
                 username: seerrUsername,
                 password: seerrPassword
             )
-            PluginSettings.seerrSession = signedIn
+            PluginSettings.rememberSignIn(
+                signedIn,
+                username: seerrUsername,
+                password: seerrPassword,
+                ownerAccountID: session.session?.accountID
+            )
             seerrPassword = ""
             seerrStatus = "Signed in as \(signedIn.displayName)."
         } catch {

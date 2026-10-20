@@ -33,6 +33,7 @@ struct OpenSubtitlesSearchView: View {
                         : "Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash."
                 )
             }
+            .zelefinRowBackground()
 
             Section {
                 if isSearching && matches.isEmpty {
@@ -73,6 +74,7 @@ struct OpenSubtitlesSearchView: View {
             } header: {
                 Text("Results")
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Add Subtitles")
         .toolbar {

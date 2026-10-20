@@ -9,16 +9,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,9 +25,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -50,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -61,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -70,22 +64,11 @@ import androidx.compose.ui.unit.dp
 import app.zelefin.client.AppTab
 import app.zelefin.client.R
 
-/** Icon-only dock thickness. Labels need [DockLabeledBarHeight] so items don’t sit on the top edge. */
-val DockTabBarHeight = 54.dp
-
-private val DockLabeledBarHeight = 72.dp
-
-private val DockIconSize = 28.dp
-
-@Composable
-fun dockBarHeight(showsNames: Boolean = TabPreferences.showsNames): Dp =
-    if (showsNames) DockLabeledBarHeight else DockTabBarHeight
-
-/** Space scrolling content keeps clear of the edge-to-edge navigation bar. */
+/** Space scrolling content keeps clear of the floating dock, its mini player, and the navigation bar. */
 @Composable
 fun dockContentReserve(): Dp {
-    val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    return dockBarHeight() + nav
+    val mini = if (LocalDockChrome.current?.hasMiniPlayer == true) DockMiniPlayerHeight + DockGap else 0.dp
+    return dockBottomInset() + dockBarHeight() + mini + DockGap
 }
 
 internal val DockFill = Color(0xFF2C2C2E)
@@ -111,6 +94,10 @@ class GlassDisc(
     val secondaryDescription: String = "",
     onSecondaryClick: () -> Unit = {},
     val shape: Shape = CircleShape,
+    /** Drawn instead of [icon], e.g. the account photo. */
+    val face: (@Composable () -> Unit)? = null,
+    /** The page that owns the disc, so a page draws only its own discs while it animates. */
+    val page: Any? = null,
 ) {
     var bounds by mutableStateOf(Rect.Zero)
     var onClick: () -> Unit = onClick
@@ -119,6 +106,9 @@ class GlassDisc(
 }
 
 val LocalZelefinHaze = staticCompositionLocalOf<ZelefinHazeState?> { null }
+
+/** Set per page in the page transition; discs registered under it belong to that page. */
+val LocalGlassDiscPage = staticCompositionLocalOf<Any?> { null }
 val LocalZelefinGlassHost = staticCompositionLocalOf<ZelefinGlassHost?> { null }
 
 /** Corner radius for alerts and confirms. Action menus use [ZelefinMenuShape]. */
@@ -322,19 +312,48 @@ fun Modifier.zelefinGlassDisc(
     description: String,
     icon: ImageVector,
     onClick: () -> Unit,
+): Modifier = glassDisc(key, description, icon, onClick, face = null)
+
+/** A [zelefinGlassDisc] that draws [face] (e.g. the account photo) instead of an icon. */
+@Composable
+fun Modifier.zelefinGlassFaceDisc(
+    key: Any,
+    description: String,
+    onClick: () -> Unit,
+    face: @Composable () -> Unit,
+): Modifier = glassDisc(key, description, Icons.Filled.Favorite, onClick, face)
+
+@Composable
+private fun Modifier.glassDisc(
+    key: Any,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    face: (@Composable () -> Unit)?,
 ): Modifier {
     val host = LocalZelefinGlassHost.current ?: return this.clickable(onClick = onClick)
     val click = rememberUpdatedState(onClick)
-    DisposableEffect(host, key, description, icon) {
-        val disc = GlassDisc(key, description, icon, onClick = { click.value() })
-        host.discs = host.discs.filter { it.key != key } + disc
-        onDispose { host.discs = host.discs.filter { it.key != key } }
+    val latestFace = rememberUpdatedState(face)
+    val page = LocalGlassDiscPage.current
+    val owned = remember { mutableStateOf<GlassDisc?>(null) }
+    DisposableEffect(host, key, description, icon, face != null, page) {
+        val disc = GlassDisc(
+            key,
+            description,
+            icon,
+            onClick = { click.value() },
+            face = if (face != null) ({ latestFace.value?.invoke() }) else null,
+            page = page,
+        )
+        owned.value = disc
+        host.discs = host.discs + disc
+        onDispose { host.discs = host.discs.filter { it !== disc } }
     }
     SideEffect {
-        host.discs.firstOrNull { it.key == key }?.onClick = { click.value() }
+        owned.value?.onClick = { click.value() }
     }
     return this.onGloballyPositioned { coords ->
-        val disc = host.discs.firstOrNull { it.key == key } ?: return@onGloballyPositioned
+        val disc = owned.value?.takeIf { mine -> host.discs.any { it === mine } } ?: return@onGloballyPositioned
         val next = coords.boundsInRoot()
         if (disc.bounds != next) disc.bounds = next
     }
@@ -357,7 +376,9 @@ fun Modifier.zelefinGlassSplit(
     val host = LocalZelefinGlassHost.current ?: return this
     val leading = rememberUpdatedState(onLeading)
     val trailing = rememberUpdatedState(onTrailing)
-    DisposableEffect(host, key, leadingIcon, trailingIcon) {
+    val page = LocalGlassDiscPage.current
+    val owned = remember { mutableStateOf<GlassDisc?>(null) }
+    DisposableEffect(host, key, leadingIcon, trailingIcon, page) {
         val disc = GlassDisc(
             key = key,
             description = leadingDescription,
@@ -367,19 +388,21 @@ fun Modifier.zelefinGlassSplit(
             secondaryDescription = trailingDescription,
             onSecondaryClick = { trailing.value() },
             shape = RoundedCornerShape(percent = 50),
+            page = page,
         )
-        host.discs = host.discs.filter { it.key != key } + disc
-        onDispose { host.discs = host.discs.filter { it.key != key } }
+        owned.value = disc
+        host.discs = host.discs + disc
+        onDispose { host.discs = host.discs.filter { it !== disc } }
     }
     SideEffect {
-        host.discs.firstOrNull { it.key == key }?.let { disc ->
+        owned.value?.let { disc ->
             disc.onClick = { leading.value() }
             disc.onSecondaryClick = { trailing.value() }
             disc.badge = badge
         }
     }
     return this.onGloballyPositioned { coords ->
-        val disc = host.discs.firstOrNull { it.key == key } ?: return@onGloballyPositioned
+        val disc = owned.value?.takeIf { mine -> host.discs.any { it === mine } } ?: return@onGloballyPositioned
         val next = coords.boundsInRoot()
         if (disc.bounds != next) disc.bounds = next
     }
@@ -392,14 +415,21 @@ fun ZelefinForeground(host: ZelefinGlassHost) {
     }
 }
 
+/**
+ * Draws the discs. Above the page, [page] is null and every disc is drawn. Inside a page during
+ * a transition, only that page's discs are drawn, placed relative to the page so they slide with it.
+ */
 @Composable
-fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
-    val discs = host.discs
+fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost, page: Any? = null) {
+    // A key can be registered twice for a moment (a page drawn again under a closing sheet); the
+    // newest draws, and when it leaves the earlier one shows again instead of vanishing.
+    val discs = host.discs.filter { page == null || it.page == page }.asReversed().distinctBy { it.key }
     val density = LocalDensity.current
     if (discs.isEmpty()) return
-    Box(Modifier.fillMaxSize()) {
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    Box(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }) {
         discs.forEach { disc ->
-            val bounds = disc.bounds
+            val bounds = disc.bounds.translate(-origin)
             if (bounds.width <= 1f || bounds.height <= 1f) return@forEach
             val width = with(density) { bounds.width.toDp() }
             val height = with(density) { bounds.height.toDp() }
@@ -408,15 +438,19 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
                 Modifier
                     .offset { IntOffset(bounds.left.roundToInt(), bounds.top.roundToInt()) }
                     .size(width, height)
-                    .zelefinGlassChrome(hazeState, disc.shape)
-                    .then(if (split == null) Modifier.clickable { disc.onClick() } else Modifier),
+                    .then(if (split == null) Modifier.clickable(onClickLabel = disc.description) { disc.onClick() } else Modifier),
                 contentAlignment = Alignment.Center,
             ) {
+                // Same live liquid glass the dock uses, drawn behind the control's icon.
+                LiquidGlassPane(minOf(width, height) / 2, Modifier.matchParentSize())
                 val iconTint = MaterialTheme.colorScheme.onSurface
-                if (split == null) {
+                val face = disc.face
+                if (face != null) {
+                    face()
+                } else if (split == null) {
                     Icon(disc.icon, contentDescription = disc.description, tint = iconTint)
                 } else {
-                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxSize().clip(disc.shape), verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             Modifier
                                 .weight(1f)
@@ -464,64 +498,6 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost) {
 @Composable
 fun Modifier.zelefinHazeSource(state: ZelefinHazeState): Modifier = this
 
-@Composable
-fun ZelefinFloatingDock(
-    currentTab: AppTab,
-    hazeState: ZelefinHazeState,
-    onSelect: (AppTab) -> Unit,
-    modifier: Modifier = Modifier,
-    entries: List<DockEntry> = TabPreferences.dockEntries(emptyList()),
-    currentRoomId: String? = null,
-    showsNames: Boolean = TabPreferences.showsNames,
-    onSelectEntry: (DockEntry) -> Unit = { onSelect(it.tab) },
-) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = scheme.surfaceContainer,
-        contentColor = scheme.onSurfaceVariant,
-        tonalElevation = 3.dp,
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .height(dockBarHeight(showsNames)),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            entries.forEach { entry ->
-                val selected = currentTab == entry.tab && (entry.room == null || entry.room.id == currentRoomId)
-                NavigationBarItem(
-                    selected = selected,
-                    onClick = { onSelectEntry(entry) },
-                    icon = {
-                        DockTabIcon(
-                            tab = entry.tab,
-                            selected = selected,
-                            description = if (showsNames) null else entry.title,
-                            tint = if (selected) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
-                            modifier = Modifier.size(if (showsNames) 22.dp else DockIconSize),
-                        )
-                    },
-                    label = if (showsNames) {
-                        { Text(entry.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
-                    } else {
-                        null
-                    },
-                    alwaysShowLabel = showsNames,
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = scheme.onSecondaryContainer,
-                        selectedTextColor = scheme.onSurface,
-                        indicatorColor = scheme.secondaryContainer,
-                        unselectedIconColor = scheme.onSurfaceVariant,
-                        unselectedTextColor = scheme.onSurfaceVariant,
-                    ),
-                )
-            }
-        }
-    }
-}
-
 /** Dock and Interface settings share these glyphs (iOS `TabBarIcon`). */
 @Composable
 internal fun DockTabIcon(tab: AppTab, selected: Boolean, description: String?, tint: Color, modifier: Modifier = Modifier) {
@@ -542,6 +518,10 @@ fun Modifier.zelefinGlassChrome(hazeState: ZelefinHazeState, shape: Shape): Modi
     return this.zelefinGlassChrome(shape)
 }
 
+/**
+ * Menus, alerts, and other overlay surfaces. Over the page they sit on the dock's liquid glass
+ * (frosted heavier so rows stay readable); inside the page they keep the solid fill.
+ */
 @Composable
 fun Modifier.zelefinGlassChrome(shape: Shape): Modifier {
     return this
@@ -553,7 +533,7 @@ fun Modifier.zelefinGlassChrome(shape: Shape): Modifier {
             spotColor = Color.Black.copy(alpha = 0.24f),
         )
         .clip(shape)
-        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        .zelefinLiquidGlassBackground(shape, fallback = MaterialTheme.colorScheme.surfaceContainerHigh)
 }
 
 private fun dockIcon(tab: AppTab, selected: Boolean): Int = when (tab) {

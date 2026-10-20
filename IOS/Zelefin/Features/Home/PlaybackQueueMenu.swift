@@ -39,6 +39,14 @@ enum PlaybackQueueMenuLayout {
         kind == .episode ? "Play Episode" : "Play"
     }
 
+    static func playTitle(for item: MediaItem) -> String {
+        if item.isYouTube {
+            if item.kind == .series { return "Play Latest" }
+            return item.showsResumeProgress ? "Resume" : "Play"
+        }
+        return playTitle(for: item.kind)
+    }
+
     static func goToTitle(for kind: MediaKind) -> String {
         switch kind {
         case .episode, .season, .series:
@@ -48,12 +56,29 @@ enum PlaybackQueueMenuLayout {
         }
     }
 
+    static func goToTitle(for item: MediaItem) -> String {
+        item.isYouTube ? "Go to Channel" : goToTitle(for: item.kind)
+    }
+
     static func goToSymbol(for kind: MediaKind) -> String {
         switch kind {
         case .episode, .season, .series:
             "tv"
         default:
             "film"
+        }
+    }
+
+    static func goToSymbol(for item: MediaItem) -> String {
+        item.isYouTube ? "person.crop.circle" : goToSymbol(for: item.kind)
+    }
+
+    static func watchedTitle(for item: MediaItem) -> String {
+        switch (item.isYouTube && item.kind == .series, item.isWatched) {
+        case (true, true): "Mark Channel as Unwatched"
+        case (true, false): "Mark Channel as Watched"
+        case (false, true): "Mark as Unwatched"
+        case (false, false): "Mark as Watched"
         }
     }
 
@@ -99,23 +124,27 @@ struct PlaybackQueueMenuContent: View {
             : .unavailable
 
         if actions.contains(.play) {
-            Button(PlaybackQueueMenuLayout.playTitle(for: item.kind), systemImage: "play.fill") {
+            Button(PlaybackQueueMenuLayout.playTitle(for: item), systemImage: "play.fill") {
                 onPlay()
             }
         }
         if actions.contains(.goToShow) {
             NavigationLink {
-                ItemDetailView(item: item)
+                if item.isYouTube, let seriesID = item.seriesID, item.kind != .series {
+                    ItemDetailView(itemID: seriesID)
+                } else {
+                    ItemDetailView(item: item)
+                }
             } label: {
                 Label(
-                    PlaybackQueueMenuLayout.goToTitle(for: item.kind),
-                    systemImage: PlaybackQueueMenuLayout.goToSymbol(for: item.kind)
+                    PlaybackQueueMenuLayout.goToTitle(for: item),
+                    systemImage: PlaybackQueueMenuLayout.goToSymbol(for: item)
                 )
             }
         }
         if actions.contains(.markWatched) {
             Button(
-                PlaybackQueueMenuLayout.watchedTitle(isWatched: item.isWatched),
+                PlaybackQueueMenuLayout.watchedTitle(for: item),
                 systemImage: PlaybackQueueMenuLayout.watchedSymbol(isWatched: item.isWatched)
             ) {
                 onMarkWatched()

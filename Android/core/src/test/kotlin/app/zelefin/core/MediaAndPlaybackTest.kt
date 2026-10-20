@@ -123,6 +123,8 @@ class MediaItemTest {
         assertEquals("e2", target.id)
         assertEquals("30m", target.playActionDurationLabel)
         assertEquals("22h", show.playActionDurationLabel)
+        val season = MediaItem(id = "season-1", name = "Season 1", kind = MediaKind.Season, seriesId = "show")
+        assertEquals("e2", MediaItem.heroPlaybackItem(season, listOf(watched, current)).id)
     }
 
     @Test

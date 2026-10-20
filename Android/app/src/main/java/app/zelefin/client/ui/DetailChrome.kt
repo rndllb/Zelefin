@@ -1,6 +1,10 @@
 package app.zelefin.client.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -94,6 +98,7 @@ private sealed interface DetailSheet {
     data class Collections(val item: MediaItem) : DetailSheet
     data object Seasons : DetailSheet
     data class DownloadSeasons(val anchor: Rect) : DetailSheet
+    data class DownloadVideos(val anchor: Rect) : DetailSheet
     data class Subtitles(val item: MediaItem) : DetailSheet
     data class Review(val existing: app.zelefin.client.plugins.JellyfinEnhancedReview?) : DetailSheet
     data class RemotePlay(val item: MediaItem) : DetailSheet
@@ -212,12 +217,42 @@ fun DetailPage(
             var seasonId by remember(item.id, detail.seasons) { mutableStateOf(detail.seasons.firstOrNull()?.id) }
             var seasonJump by remember(item.id) { mutableStateOf<String?>(null) }
             val season = detail.seasons.firstOrNull { it.id == seasonId } ?: detail.seasons.firstOrNull()
+            var videoSort by remember(item.id) { mutableStateOf(YouTubeVideoSort.Latest) }
             val pageState = rememberLazyListState()
             LazyColumn(
                 state = pageState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = dockContentReserve()),
             ) {
+                if (item.isYouTube) {
+                    val onVideoMore = { video: MediaItem, anchor: Rect ->
+                        sheet = DetailSheet.More(video, anchor, TitleMenuContext.Episode)
+                    }
+                    if (item.kind == MediaKind.Series) {
+                        youTubeChannelItems(
+                            detail = detail,
+                            session = session,
+                            sort = videoSort,
+                            onSort = { videoSort = it },
+                            onPlay = onPlay,
+                            onOpenVideo = onOpen,
+                            onToggleFavorite = onToggleFavorite,
+                            onMore = onVideoMore,
+                        )
+                    } else {
+                        youTubeVideoItems(
+                            detail = detail,
+                            session = session,
+                            onPlay = onPlay,
+                            onOpenVideo = onOpen,
+                            onOpenChannel = onOpen,
+                            onToggleWatched = onToggleWatched,
+                            onToggleFavorite = onToggleFavorite,
+                            onMore = onVideoMore,
+                        )
+                    }
+                    return@LazyColumn
+                }
                 item(key = "hero") {
                     DetailHero(
                         item = item,
@@ -352,11 +387,32 @@ fun DetailPage(
                 item(key = "languages") { FactsBlock("Languages", detail.moreInfo.languages) }
                 item(key = "file") { FactsBlock("File", detail.moreInfo.file) }
             }
+            var chromeShown by remember(item.id) { mutableStateOf(true) }
+            if (item.isYouTube) {
+                LaunchedEffect(pageState) {
+                    var previous = 0
+                    var travel = 0
+                    snapshotFlow { pageState.firstVisibleItemIndex * 100_000 + pageState.firstVisibleItemScrollOffset }
+                        .collect { offset ->
+                            val delta = offset - previous
+                            previous = offset
+                            travel = if (delta != 0 && (delta > 0) != (travel > 0)) delta else travel + delta
+                            chromeShown = when {
+                                offset <= 40 -> true
+                                travel > 24 -> false
+                                travel < -24 -> true
+                                else -> chromeShown
+                            }
+                        }
+                }
+            }
+            val chromeShift by animateDpAsState(if (chromeShown) 0.dp else (-120).dp, tween(180), label = "detailChrome")
             if (!coversChrome) {
-                GlassBack(onBack, Modifier.align(Alignment.TopStart))
+                GlassBack(onBack, Modifier.align(Alignment.TopStart).offset(y = chromeShift))
                 Row(
                     Modifier
                         .align(Alignment.TopEnd)
+                        .offset(y = chromeShift)
                         .statusBarsPadding()
                         .padding(end = 12.dp, top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -364,7 +420,7 @@ fun DetailPage(
                 ) {
                     GlassMore { anchor ->
                         sheet = DetailSheet.More(
-                            MediaItem.heroPlaybackItem(item, detail.episodes),
+                            if (item.isYouTube) item else MediaItem.heroPlaybackItem(item, detail.episodes),
                             anchor,
                             TitleMenuContext.Detail,
                         )
@@ -375,7 +431,9 @@ fun DetailPage(
                         seasons = detail.seasons,
                         onShare = { shareTitle(context, item, session) },
                         onRemove = { downloadRemoval = it },
-                        onChooseSeasons = { sheet = DetailSheet.DownloadSeasons(it) },
+                        onChooseSeasons = {
+                            sheet = if (item.isYouTube) DetailSheet.DownloadVideos(it) else DetailSheet.DownloadSeasons(it)
+                        },
                     )
                 }
             }
@@ -476,7 +534,13 @@ fun DetailPage(
     TitleMoreOverlay(
         request = more?.let { TitleMoreRequest(it.item, it.context, it.anchor) },
         onDismiss = { sheet = null },
-        onPlay = onPlay,
+        onPlay = { target ->
+            if (target.isYouTube && target.kind == MediaKind.Series) {
+                detail?.channelVideos?.firstOrNull()?.let(onPlay)
+            } else {
+                onPlay(target)
+            }
+        },
         onOpen = onOpen,
         onToggleWatched = onToggleWatched,
         onToggleFavorite = onToggleFavorite,
@@ -511,6 +575,13 @@ fun DetailPage(
         onRefreshMetadata = actions.refreshMetadata?.let { refresh -> { target -> refresh(pageItem ?: target) } },
         onEditImages = actions.remoteArtwork?.let { { target -> sheet = DetailSheet.Images(pageItem ?: target) } },
         onDeleteFromLibrary = actions.deleteFromLibrary?.let { delete -> { target -> delete(pageItem ?: target) } },
+    )
+    val downloadVideos = sheet as? DetailSheet.DownloadVideos
+    YouTubeDownloadMenu(
+        videos = detail?.channelVideos.orEmpty(),
+        anchor = downloadVideos?.anchor ?: Rect.Zero,
+        visible = downloadVideos != null && detail != null,
+        onDismiss = { sheet = null },
     )
     val downloadSeasons = sheet as? DetailSheet.DownloadSeasons
     DownloadSeasonsSheet(
@@ -1313,6 +1384,15 @@ private fun GlassMore(modifier: Modifier = Modifier, onMore: (Rect) -> Unit) {
 }
 
 private fun shareTitle(context: android.content.Context, item: MediaItem, session: SavedSession?) {
+    item.youTubeUrl?.let { url ->
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, item.name)
+            putExtra(Intent.EXTRA_TEXT, "${item.name}\n$url")
+        }
+        context.startActivity(Intent.createChooser(send, "Share"))
+        return
+    }
     val serverUrl = session?.serverUrl ?: return
     val itemId = item.seriesDetailItemId ?: item.id
     val title = if (item.seriesDetailItemId == null) item.name else (item.seriesName ?: item.name)

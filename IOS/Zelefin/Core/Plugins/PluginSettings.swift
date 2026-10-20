@@ -6,10 +6,17 @@ struct SeerrSession: Codable, Equatable, Sendable {
     var displayName: String
 }
 
+struct SeerrCredentials: Codable, Equatable, Sendable {
+    var username: String
+    var password: String
+}
+
 enum PluginSettings {
     static let seerrURLKey = "zelefin.seerr.url"
     static let siloRequestSourceKey = "zelefin.silo.request-source"
+    static let seerrOwnerKey = "zelefin.seerr.owner"
     private static let seerrSessionAccount = "seerr-session"
+    private static let seerrCredentialsAccount = "seerr-credentials"
     private static let legacyAPIKeyAccount = "seerr-api-key"
     private static let secrets = SecretStore()
 
@@ -39,8 +46,55 @@ enum PluginSettings {
         }
     }
 
+    static var seerrCredentials: SeerrCredentials? {
+        get {
+            guard let raw = secrets.load(account: seerrCredentialsAccount),
+                  let data = raw.data(using: .utf8),
+                  let credentials = try? JSONDecoder().decode(SeerrCredentials.self, from: data),
+                  !credentials.username.isEmpty,
+                  !credentials.password.isEmpty
+            else { return nil }
+            return credentials
+        }
+        set {
+            if let newValue, let data = try? JSONEncoder().encode(newValue),
+               let raw = String(data: data, encoding: .utf8)
+            {
+                secrets.save(raw, account: seerrCredentialsAccount)
+            } else {
+                secrets.delete(account: seerrCredentialsAccount)
+            }
+        }
+    }
+
+    static var seerrOwnerAccountID: String? {
+        get {
+            let value = UserDefaults.standard.string(forKey: seerrOwnerKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return value?.isEmpty == false ? value : nil
+        }
+        set {
+            if let newValue, !newValue.isEmpty {
+                UserDefaults.standard.set(newValue, forKey: seerrOwnerKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: seerrOwnerKey)
+            }
+        }
+    }
+
     static var isSeerrConfigured: Bool {
         seerrURL != nil && seerrSession != nil
+    }
+
+    static func rememberSignIn(
+        _ session: SeerrSession,
+        username: String,
+        password: String,
+        ownerAccountID: String?
+    ) {
+        seerrSession = session
+        seerrCredentials = SeerrCredentials(username: username, password: password)
+        seerrOwnerAccountID = ownerAccountID
     }
 
     static var siloRequestSource: SiloRequestSource {
@@ -68,12 +122,69 @@ enum PluginSettings {
 
     static func clearSeerrSession() {
         seerrSession = nil
+        seerrCredentials = nil
+        seerrOwnerAccountID = nil
     }
 
-    /// Keep Seerr across relaunch. Drop it only when a different Jellyfin user is applied.
-    static func shouldClearSession(switchingFrom currentAccountID: String?, to nextAccountID: String) -> Bool {
-        guard let currentAccountID else { return false }
-        return currentAccountID != nextAccountID
+    /// Keep Seerr across relaunch and app updates. Drop it only when a different Jellyfin user is applied.
+    static func shouldClearSession(
+        switchingFrom currentAccountID: String?,
+        to nextAccountID: String,
+        ownerAccountID: String? = seerrOwnerAccountID
+    ) -> Bool {
+        if let currentAccountID, currentAccountID != nextAccountID { return true }
+        if let ownerAccountID, ownerAccountID != nextAccountID { return true }
+        return false
+    }
+
+    /// Confirms the stored cookie, or signs in again with the saved password. Network failures keep the session.
+    static func refreshUser() async -> SeerrUser? {
+        guard let client = seerrClient else { return nil }
+        do {
+            let user = try await client.currentUser()
+            if var saved = seerrSession {
+                saved.displayName = user.displayLabel
+                seerrSession = saved
+            }
+            return user
+        } catch {
+            guard error.isSeerrUnauthorized else { return nil }
+            return await reauthenticate()
+        }
+    }
+
+    private static func reauthenticate() async -> SeerrUser? {
+        guard let url = seerrURL, let credentials = seerrCredentials else {
+            clearSeerrSession()
+            return nil
+        }
+        do {
+            let signedIn = try await SeerrClient.signIn(
+                baseURL: url,
+                username: credentials.username,
+                password: credentials.password
+            )
+            seerrSession = signedIn
+            let user = try await SeerrClient(baseURL: url, session: signedIn).currentUser()
+            var saved = signedIn
+            saved.displayName = user.displayLabel
+            seerrSession = saved
+            return user
+        } catch {
+            if error.isSeerrUnauthorized {
+                clearSeerrSession()
+            }
+            return nil
+        }
+    }
+}
+
+extension Error {
+    var isSeerrUnauthorized: Bool {
+        if let error = self as? ZelefinError, case .seerrUnauthorized = error {
+            return true
+        }
+        return false
     }
 }
 

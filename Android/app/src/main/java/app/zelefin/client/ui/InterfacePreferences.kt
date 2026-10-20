@@ -350,7 +350,7 @@ object TabPreferences {
     }
 
     fun pinnable(rooms: List<LibraryRoom>): List<LibraryRoom> =
-        rooms.filter { it.kind == LibraryKind.Other || it.kind == LibraryKind.HomeVideos || it.kind == LibraryKind.Photos }
+        rooms.filter { it.kind in setOf(LibraryKind.Other, LibraryKind.YouTube, LibraryKind.HomeVideos, LibraryKind.Photos) }
 
     fun enabledTabCount(silo: Boolean): Int = order.count { tab -> tab.availableOnAndroid && isShown(tab) && !(silo && tab == DockTab.LiveTV) }
 
@@ -380,6 +380,28 @@ object TabPreferences {
     private const val LIBRARIES = "zelefin.dock-library-ids"
 }
 
+/** Which of the four main pages Zelefin opens to on launch. Local to this device; mirrors iOS `AppTab.startTab`. */
+object StartPagePreferences {
+    /** The always-available content pages a user can choose as the launch destination. */
+    val choices = listOf(DockTab.Home, DockTab.Movies, DockTab.Shows, DockTab.Library)
+
+    var tab by mutableStateOf(DockTab.Home)
+        private set
+
+    fun load(context: Context) {
+        val raw = prefs(context).getString(KEY, null)
+        tab = choices.firstOrNull { it.raw == raw } ?: DockTab.Home
+    }
+
+    fun setTab(context: Context, value: DockTab) {
+        val next = if (value in choices) value else DockTab.Home
+        tab = next
+        prefs(context).edit().putString(KEY, next.raw).apply()
+    }
+
+    private const val KEY = "zelefin.start-tab"
+}
+
 /** Picks the Home hero the same way iOS `HomeLayoutPreferences.hero` does. */
 object HomeHero {
     const val LIMIT = 8
@@ -400,6 +422,8 @@ fun loadInterfacePreferences(context: Context) {
     AccentPreferences.load(context)
     HomeLayoutPreferences.load(context)
     TabPreferences.load(context)
+    StartPagePreferences.load(context)
+    GlassPreferences.load(context)
 }
 
 private fun prefs(context: Context) = context.getSharedPreferences("zelefin.interface", Context.MODE_PRIVATE)

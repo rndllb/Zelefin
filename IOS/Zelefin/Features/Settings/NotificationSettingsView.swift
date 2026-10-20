@@ -9,6 +9,9 @@ struct NotificationSettingsView: View {
     @State private var isRestarting = false
     @State private var pluginNeedsRestart = false
     @State private var pluginStatus: String?
+    @State private var isSendingTest = false
+    @State private var testStatus: String?
+    @State private var testFailed = false
 
     var body: some View {
         List {
@@ -33,61 +36,67 @@ struct NotificationSettingsView: View {
     private var configuredSection: some View {
         Section {
             Toggle("Notifications", isOn: $isEnabled)
-                .tint(AccentPreferences.current)
-                .font(.body.weight(.medium))
+            if canSendTest {
+                Button(isSendingTest ? "Sending…" : "Send Test Alert") {
+                    Task { await sendTestAlert() }
+                }
+                .disabled(isSendingTest)
+            }
+            if let testStatus {
+                SettingsStatusText(text: testStatus, isError: testFailed)
+            }
         } footer: {
             Text(permissionFooter)
         }
+        .zelefinRowBackground()
     }
 
     private var pluginRequiredSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Zelefin plugin")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(LoginPalette.primaryText)
-                    Spacer(minLength: 8)
-                    SettingsStatusValue(
-                        text: pluginStatusLabel,
-                        isPositive: pluginNeedsRestart
-                    )
+            LabeledContent("Zelefin plugin") {
+                Text(pluginStatusLabel)
+                    .foregroundStyle(pluginNeedsRestart ? Color.orange : Color.red)
+            }
+            if canInstallPlugin {
+                Button(isInstallingPlugin ? "Installing…" : "Install Plugin") {
+                    Task { await installPlugin() }
                 }
-
-                Text(pluginRequiredCopy)
-                    .font(.subheadline)
-                    .foregroundStyle(LoginPalette.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if canInstallPlugin {
-                    SettingsPrimaryButton(
-                        title: isInstallingPlugin ? "Installing…" : "Install Plugin",
-                        isBusy: isInstallingPlugin,
-                        enabled: !isInstallingPlugin && !pluginNeedsRestart
-                    ) {
-                        Task { await installPlugin() }
+                .disabled(isInstallingPlugin || pluginNeedsRestart)
+                if pluginNeedsRestart {
+                    Button(isRestarting ? "Restarting…" : "Restart Jellyfin") {
+                        Task { await restartServer() }
                     }
-                    if pluginNeedsRestart {
-                        SettingsSecondaryButton(
-                            title: isRestarting ? "Restarting…" : "Restart Jellyfin",
-                            enabled: !isRestarting
-                        ) {
-                            Task { await restartServer() }
-                        }
-                    }
-                } else if !session.usesSilo, !session.isAdministrator, !session.isReviewDemo {
-                    SettingsStatusText(
-                        text: "Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account."
-                    )
+                    .disabled(isRestarting)
                 }
-
-                if let pluginStatus {
-                    SettingsStatusText(text: pluginStatus, isError: pluginStatus.contains("could not"))
-                }
+            } else if !session.usesSilo, !session.isAdministrator, !session.isReviewDemo {
+                Text("Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if let pluginStatus {
+                SettingsStatusText(text: pluginStatus, isError: pluginStatus.contains("could not"))
             }
         } footer: {
-            Text(pluginRequiredFooter)
+            Text(pluginRequiredCopy + " " + pluginRequiredFooter)
         }
+        .zelefinRowBackground()
+    }
+
+    /// Only administrators can ask the plugin to push; it rejects test alerts from other users.
+    private var canSendTest: Bool {
+        isEnabled
+            && session.isAdministrator
+            && !session.usesSilo
+            && (authorization == .authorized || authorization == .provisional || authorization == .ephemeral)
+    }
+
+    private func sendTestAlert() async {
+        isSendingTest = true
+        testStatus = nil
+        defer { isSendingTest = false }
+        let error = await session.sendCompanionTestAlert()
+        testFailed = error != nil
+        testStatus = error ?? "Sent. It should arrive in a few seconds."
     }
 
     private var canInstallPlugin: Bool {

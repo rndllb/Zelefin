@@ -120,6 +120,7 @@ fun AccountAvatarMenu(
         session,
         onClick = { open = !open },
         modifier = Modifier.onGloballyPositioned { anchor.value = it.boundsInRoot() },
+        floating = true,
     )
 }
 
@@ -282,10 +283,24 @@ fun AccountAvatar(
     onClick: () -> Unit,
     diameter: androidx.compose.ui.unit.Dp = 45.dp,
     modifier: Modifier = Modifier,
+    /** Page headers float the avatar on the dock's liquid glass, drawn above the page. */
+    floating: Boolean = false,
 ) {
     val inset = maxOf(3.dp, diameter * 0.08f)
     val photo = diameter - inset * 2
-    val initial = session?.userName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "Z"
+    if (floating && LocalZelefinGlassHost.current != null) {
+        Box(
+            modifier
+                .size(diameter)
+                .zelefinGlassFaceDisc(
+                    key = "account-avatar",
+                    description = "Account",
+                    onClick = onClick,
+                    face = { AvatarPhoto(session, photo) },
+                ),
+        )
+        return
+    }
     Box(
         modifier
             .size(diameter)
@@ -293,23 +308,29 @@ fun AccountAvatar(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier
-                .size(photo)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(initial, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
-            val url = session?.let(::avatarImageUrl)
-            if (url != null) {
-                CachedArtwork(
-                    url = url,
-                    contentDescription = session.userName,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(photo).clip(CircleShape),
-                )
-            }
+        AvatarPhoto(session, photo)
+    }
+}
+
+@Composable
+private fun AvatarPhoto(session: SavedSession?, photo: androidx.compose.ui.unit.Dp) {
+    val initial = session?.userName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "Z"
+    Box(
+        Modifier
+            .size(photo)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.12f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(initial, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
+        val url = session?.let(::avatarImageUrl)
+        if (url != null) {
+            CachedArtwork(
+                url = url,
+                contentDescription = session.userName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(photo).clip(CircleShape),
+            )
         }
     }
 }

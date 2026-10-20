@@ -2,7 +2,8 @@ import Foundation
 import JellyfinAPI
 
 enum ItemMapper {
-    static let listImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo]
+    static let tubeArchivistProvider = "TubeArchivist"
+    static let listImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo, .banner]
     static let liveTVImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo, .screenshot, .banner]
 
     static let homeFields: [ItemFields] = [
@@ -150,8 +151,21 @@ enum ItemMapper {
             tmdbID: JellyfinTmdbCatalog.tmdbID(from: dto.providerIDs),
             isFavorite: dto.userData?.isFavorite ?? false,
             likes: dto.userData?.isLikes,
-            premiereDate: dto.premiereDate
+            premiereDate: dto.premiereDate,
+            bannerImageTag: imageTag(from: dto, named: "Banner"),
+            youTubeID: youTubeID(from: dto.providerIDs)
         )
+    }
+
+    static func youTubeID(from providerIDs: [String: String]?) -> String? {
+        guard let providerIDs else { return nil }
+        return providerIDs.first {
+            $0.key.compare(tubeArchivistProvider, options: .caseInsensitive) == .orderedSame
+        }?.value
+    }
+
+    static func isTubeArchivist(_ dto: BaseItemDto) -> Bool {
+        youTubeID(from: dto.providerIDs) != nil
     }
 
     static func library(from dto: BaseItemDto) -> MediaLibrary? {
@@ -367,7 +381,7 @@ enum ItemMapper {
     private static func mediaKind(from libraryKind: LibraryKind) -> MediaKind {
         switch libraryKind {
         case .movies: .movie
-        case .shows: .series
+        case .shows, .youTube: .series
         default: .collection
         }
     }

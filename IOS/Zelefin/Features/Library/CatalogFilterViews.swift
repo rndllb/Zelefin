@@ -320,7 +320,7 @@ struct CatalogFilterSheet: View {
                         }
                     }
                 }
-                .listRowBackground(Color.white.opacity(0.08))
+                .zelefinRowBackground()
             }
         }
     }
@@ -334,7 +334,7 @@ struct CatalogFilterSheet: View {
                     } label: {
                         LabeledContent(title, value: summary(selected.wrappedValue, from: choices))
                     }
-                    .listRowBackground(Color.white.opacity(0.08))
+                    .zelefinRowBackground()
                 }
             }
         }
@@ -356,7 +356,7 @@ struct CatalogFilterSheet: View {
                     } label: {
                         LabeledContent("Years", value: yearSummary)
                     }
-                    .listRowBackground(Color.white.opacity(0.08))
+                    .zelefinRowBackground()
                 }
             }
         }
@@ -410,7 +410,7 @@ struct CatalogChoiceList: View {
                         }
                     }
                 }
-                .listRowBackground(Color.white.opacity(0.08))
+                .zelefinRowBackground()
             }
         }
         .listStyle(.plain)
@@ -454,7 +454,7 @@ struct CatalogSortSheet: View {
                                 }
                             }
                         }
-                        .listRowBackground(Color.white.opacity(0.08))
+                        .zelefinRowBackground()
                     }
                 }
                 if query.sort.allowsDirection {
@@ -495,6 +495,6 @@ struct CatalogSortSheet: View {
                 }
             }
         }
-        .listRowBackground(Color.white.opacity(0.08))
+        .zelefinRowBackground()
     }
 }

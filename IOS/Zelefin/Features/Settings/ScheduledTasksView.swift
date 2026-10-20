@@ -35,6 +35,7 @@ struct ScheduledTasksView: View {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
                         }
+                        .zelefinRowBackground()
                     }
                     if !running.isEmpty {
                         Section("Running") {
@@ -42,6 +43,7 @@ struct ScheduledTasksView: View {
                                 taskNavigation(task)
                             }
                         }
+                        .zelefinRowBackground()
                     }
                     ForEach(idleByCategory, id: \.category) { group in
                         Section(group.category) {
@@ -49,6 +51,7 @@ struct ScheduledTasksView: View {
                                 taskNavigation(task)
                             }
                         }
+                        .zelefinRowBackground()
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -187,6 +190,7 @@ struct ScheduledTaskDetailView: View {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
                         }
+                        .zelefinRowBackground()
                     }
                     Section {
                         VStack(alignment: .leading, spacing: 0) {
@@ -209,6 +213,7 @@ struct ScheduledTaskDetailView: View {
                             }
                         }
                     }
+                    .zelefinRowBackground()
                     if !task.summary.isEmpty {
                         Section {
                             Text(task.summary)
@@ -217,6 +222,7 @@ struct ScheduledTaskDetailView: View {
                         } header: {
                             Text("About")
                         }
+                        .zelefinRowBackground()
                     }
                     if task.lastStatus != nil || task.lastEnded != nil {
                         Section {
@@ -240,6 +246,7 @@ struct ScheduledTaskDetailView: View {
                         } header: {
                             Text("Last run")
                         }
+                        .zelefinRowBackground()
                     }
                     Section {
                         if task.canStart {
@@ -253,6 +260,7 @@ struct ScheduledTaskDetailView: View {
                             }
                         }
                     }
+                    .zelefinRowBackground()
                 }
             } else if errorMessage != nil {
                 ContentUnavailableView(

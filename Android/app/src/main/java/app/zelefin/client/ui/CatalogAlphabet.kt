@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.Text
@@ -23,6 +24,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.zelefin.core.MediaItem
@@ -68,6 +70,12 @@ fun CatalogAlphabetRail(
     var stackHeight by remember { mutableStateOf(0) }
     if (letters.isEmpty()) return
 
+    // Match iOS: a wide drag target, but the visible letters hug the trailing edge
+    // (their column center sits ~8dp in) instead of floating in the middle of the lane.
+    val hitWidth = 40.dp
+    val letterWidth = 18.dp
+    val trailingCenter = 8.dp
+
     fun selectAt(y: Float) {
         if (stackHeight <= 0 || letters.isEmpty()) return
         val slot = stackHeight.toFloat() / letters.size
@@ -83,12 +91,15 @@ fun CatalogAlphabetRail(
     Box(
         modifier
             .fillMaxHeight()
-            .width(40.dp),
+            .width(hitWidth)
+            // Shove the lane toward the edge so the centered letters land ~8dp from it;
+            // the extra hit width spills harmlessly off-screen, like iOS's overshoot.
+            .offset(x = hitWidth / 2 - trailingCenter),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
-                .width(40.dp)
+                .width(hitWidth)
                 .onSizeChanged { stackHeight = it.height }
                 .pointerInput(letters, items) {
                     awaitEachGesture {
@@ -112,7 +123,8 @@ fun CatalogAlphabetRail(
                     fontFamily = ZelefinFont,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
                     fontSize = 11.sp,
-                    modifier = Modifier.height(14.dp),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(letterWidth).height(14.dp),
                 )
             }
         }

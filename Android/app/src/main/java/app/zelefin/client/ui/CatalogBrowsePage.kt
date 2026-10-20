@@ -41,10 +41,15 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -308,7 +313,7 @@ private fun CatalogGrid(
                         LazyVerticalGrid(
                             state = gridState,
                             columns = GridCells.Fixed(count),
-                            contentPadding = PaddingValues(start = GridInset, end = GridInset + 18.dp, top = headerHeight, bottom = bottomInset),
+                            contentPadding = PaddingValues(start = GridInset, end = GridInset, top = headerHeight, bottom = bottomInset),
                             horizontalArrangement = Arrangement.spacedBy(GridColumnSpacing),
                             verticalArrangement = Arrangement.spacedBy(GridRowSpacing),
                             modifier = Modifier.fillMaxSize(),
@@ -670,6 +675,7 @@ private fun yearSummary(query: CatalogBrowseQuery): String {
     return "${years.size} selected"
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SheetBar(
     title: String,
@@ -681,58 +687,56 @@ internal fun SheetBar(
     onTrailing: (() -> Unit)? = null,
     onDone: (() -> Unit)? = null,
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.width(88.dp)) {
-            if (leading != null) {
-                TextButton(onClick = { onLeading?.invoke() }, enabled = leadingEnabled) {
-                    Text(leading, color = if (leadingEnabled) ZelefinCyan else ZelefinMuted)
-                }
-            }
-        }
-        Text(
-            title,
-            color = Color.White,
-            fontFamily = ZelefinFont,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 17.sp,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-        Box(Modifier.width(88.dp), contentAlignment = Alignment.CenterEnd) {
-            val action = onTrailing ?: onDone
-            val label = if (onTrailing != null) trailing else "Done"
-            val enabled = if (onTrailing != null) trailingEnabled else true
-            if (action != null) {
-                TextButton(onClick = action, enabled = enabled) {
-                    Text(label, color = if (enabled) Color.White else ZelefinMuted, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
+    val leadingIcon = when (leading) {
+        "Cancel", "Close" -> Icons.Outlined.Close
+        "Back" -> Icons.AutoMirrored.Outlined.ArrowBack
+        else -> null
     }
+    val action = onTrailing ?: onDone
+    val label = if (onTrailing != null) trailing else "Done"
+    val enabled = if (onTrailing != null) trailingEnabled else true
+    TopAppBar(
+        title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1) },
+        navigationIcon = {
+            when {
+                leading == null -> Unit
+                leadingIcon != null -> IconButton(onClick = { onLeading?.invoke() }, enabled = leadingEnabled) {
+                    Icon(leadingIcon, contentDescription = leading)
+                }
+                else -> TextButton(onClick = { onLeading?.invoke() }, enabled = leadingEnabled) { Text(leading) }
+            }
+        },
+        actions = {
+            if (action != null) {
+                if (label == "Refresh") {
+                    IconButton(onClick = action, enabled = enabled) { Icon(Icons.Outlined.Refresh, contentDescription = label) }
+                } else {
+                    TextButton(onClick = action, enabled = enabled) { Text(label) }
+                }
+            }
+        },
+        windowInsets = WindowInsets(0, 0, 0, 0),
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = Color.Transparent,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    )
 }
 
 @Composable
 internal fun SectionLabel(text: String) {
-    Text(
-        text,
-        color = ZelefinMuted,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 32.dp, top = 18.dp, bottom = 6.dp),
-    )
+    SettingsSectionLabel(text)
 }
 
 @Composable
 private fun SectionGroup(content: @Composable () -> Unit) {
     Column(
         Modifier
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            .padding(horizontal = SettingsGroupMargin)
+            .clip(SettingsGroupShape)
+            .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
         content()
     }
@@ -744,12 +748,12 @@ private fun CheckRow(title: String, selected: Boolean, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = SettingsContentInset, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = Color.White, fontSize = 17.sp, modifier = Modifier.weight(1f))
+        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
         }
     }
 }

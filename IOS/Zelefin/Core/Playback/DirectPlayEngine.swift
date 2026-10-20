@@ -1,4 +1,5 @@
 import AetherEngine
+import AVFoundation
 import Foundation
 import UIKit
 
@@ -15,6 +16,28 @@ typealias DirectPlayVideoRoute = VideoRoute
 typealias DirectPlayAudioDelivery = AudioDelivery
 typealias DirectPlayPlaybackPhase = PlaybackPhase
 typealias DirectPlaySeekEvent = SeekEvent
+
+/// `AVAudioSession.setActive(true)` is a synchronous round trip to the audio server, and the
+/// first one after launch can hold the main thread long enough that the player ignores taps.
+/// Aether activates on the main actor during load; activating here first, off the main
+/// thread, turns that call into a no-op.
+enum PlaybackAudioSession {
+    static func activate() async {
+        await Task.detached(priority: .userInitiated) {
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .moviePlayback, policy: .default)
+            try? session.setSupportsMultichannelContent(true)
+            try? session.setActive(true)
+        }.value
+    }
+
+    /// For a player closed before anything played, so other apps' audio can resume.
+    static func deactivate() {
+        Task.detached(priority: .utility) {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+}
 
 /// How long Direct Play waits for SwiftUI to insert `AetherPlayerView` before `load()`.
 enum DirectPlaySurfaceGate {

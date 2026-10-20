@@ -155,7 +155,7 @@ Jellyfin administrators: users, libraries, plugins, scheduled tasks, activity, b
 
 ### ⚙️ Settings
 
-Appearance, home rows, playback languages, downloads, notifications, which tabs sit in the dock. Theme and poster text.
+Appearance, home rows, playback languages, downloads, notifications, which tabs sit in the dock, and the page the app opens to. Theme and poster text.
 
 </td>
 <td width="33%" valign="top">

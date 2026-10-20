@@ -28,6 +28,7 @@ struct SessionsView: View {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
                         }
+                        .zelefinRowBackground()
                     }
                     if !playing.isEmpty {
                         Section("Now Playing") {
@@ -40,6 +41,7 @@ struct SessionsView: View {
                                 .navigationLinkIndicatorVisibility(.hidden)
                             }
                         }
+                        .zelefinRowBackground()
                     }
                     if !idle.isEmpty {
                         Section("Connected") {
@@ -52,6 +54,7 @@ struct SessionsView: View {
                                 .navigationLinkIndicatorVisibility(.hidden)
                             }
                         }
+                        .zelefinRowBackground()
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -188,19 +191,23 @@ struct SessionDetailView: View {
                         Section("Playback") {
                             playbackCard(item)
                         }
+                        .zelefinRowBackground()
                     }
                     Section("Device") {
                         deviceCard(item)
                     }
+                    .zelefinRowBackground()
                     if let transcoding = item.transcoding {
                         Section("Transcoding") {
                             transcodingCard(transcoding)
                         }
+                        .zelefinRowBackground()
                     }
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
                         }
+                        .zelefinRowBackground()
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -267,22 +274,20 @@ struct SessionDetailView: View {
             } else {
                 UserAvatarView(
                     url: item.userID.flatMap { session.library?.userAvatarURL(userID: $0, tag: item.userImageTag) },
-                    diameter: 132
+                    diameter: 72
                 )
-                .padding(6)
-                .zelefinLiquidGlassCircle(interactive: false)
-                .frame(width: 144, height: 144)
             }
 
-            VStack(spacing: 10) {
+            VStack(spacing: 4) {
                 Text(item.title)
-                    .font(.title2.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                SettingsChip(
-                    icon: item.isThisDevice(session.session?.deviceID) ? "iphone" : "tv",
-                    leading: item.isPlaying ? (item.isPaused ? "Paused" : "Playing") : "Connected",
-                    trailing: item.deviceLabel
-                )
+                Text(item.isPlaying ? (item.isPaused ? "Paused" : "Playing") : "Connected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(item.deviceLabel)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
             }
 
             if item.isPlaying {
@@ -316,13 +321,7 @@ struct SessionDetailView: View {
             isComposingMessage = true
         } label: {
             Label("Message", systemImage: "text.bubble")
-                .font(.body.weight(.medium))
-                .foregroundStyle(LoginPalette.primaryText)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Color.white.opacity(0.08), in: Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
     }
 
     private func playbackCard(_ item: PlaybackSession) -> some View {

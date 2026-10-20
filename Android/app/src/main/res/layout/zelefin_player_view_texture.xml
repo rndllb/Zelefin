@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SDR only. A TextureView draws inside the view tree, so the liquid glass controls can refract
+     the picture. HDR keeps zelefin_player_view (SurfaceView) for the display's video path. -->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:keepScreenOn="true"
+    app:resize_mode="fit"
+    app:show_buffering="never"
+    app:shutter_background_color="@android:color/black"
+    app:surface_type="texture_view"
+    app:use_controller="false" />

@@ -135,6 +135,12 @@ private fun libraryKind(type: CollectionType?, name: String): LibraryKind = when
     else -> LibraryKind.inferred(name) ?: LibraryKind.Other
 }
 
+/** Channels and videos from the TubeArchivist Metadata plugin; needs `ItemFields.PROVIDER_IDS` on the request. */
+private fun BaseItemDto.isTubeArchivist(): Boolean =
+    providerIds?.keys?.any { it.equals(ItemMapper.TUBE_ARCHIVIST_PROVIDER, ignoreCase = true) } == true
+
+private fun List<BaseItemDto>.withoutTubeArchivist(): List<BaseItemDto> = filterNot { it.isTubeArchivist() }
+
 class JellyfinLibrary(
     context: Context,
     private val baseUrl: String,
@@ -245,7 +251,7 @@ class JellyfinLibrary(
                     enableUserData = true,
                     enableTotalRecordCount = false,
                 ),
-            ).content.items
+            ).content.items.withoutTubeArchivist()
         }
         val movies = latest(userId, BaseItemKind.MOVIE)
         val shows = latest(userId, BaseItemKind.SERIES)
@@ -301,7 +307,7 @@ class JellyfinLibrary(
             enableImages = true,
             enableImageTypes = imageTypes,
             enableUserData = true,
-        ).content.items
+        ).content.items.withoutTubeArchivist()
     }
 
     private suspend fun movieRecommendations(userId: UUID): List<HomeSection> = runCatching {
@@ -387,7 +393,7 @@ class JellyfinLibrary(
                 enableImageTypes = imageTypes,
                 enableTotalRecordCount = false,
             ),
-        ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        ).content.items.withoutTubeArchivist().mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
     }.getOrDefault(emptyList())
 
     /** Interface choices synced through Jellyfin display preferences, shared with iOS (`DisplayPreferencesSync`). */
@@ -409,17 +415,53 @@ class JellyfinLibrary(
     }
 
     suspend fun libraries(userId: UUID): List<LibraryRoom> = withContext(Dispatchers.IO) {
-        api.userViewsApi.getUserViews(userId = userId, includeHidden = true).content.items.mapNotNull { dto ->
-            val name = dto.name?.trim().orEmpty()
-            if (name.isEmpty()) return@mapNotNull null
-            LibraryRoom(id = dto.id.toString(), name = name, kind = libraryKind(dto.collectionType, name))
+        val views = api.userViewsApi.getUserViews(userId = userId, includeHidden = true).content.items
+        coroutineScope {
+            views.map { dto ->
+                async {
+                    val name = dto.name?.trim().orEmpty()
+                    if (name.isEmpty()) return@async null
+                    val kind = libraryKind(dto.collectionType, name)
+                    val youTube = kind == LibraryKind.Shows && isTubeArchivistLibrary(userId, dto.id)
+                    LibraryRoom(id = dto.id.toString(), name = name, kind = if (youTube) LibraryKind.YouTube else kind)
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+
+    /** A Shows library whose series carry the TubeArchivist provider ID (TubeArchivist Metadata plugin). */
+    private suspend fun isTubeArchivistLibrary(userId: UUID, libraryId: UUID): Boolean = runCatching {
+        api.itemsApi.getItems(
+            GetItemsRequest(
+                userId = userId,
+                parentId = libraryId,
+                recursive = true,
+                includeItemTypes = listOf(BaseItemKind.SERIES),
+                limit = 1,
+                fields = listOf(ItemFields.PROVIDER_IDS),
+                enableImages = false,
+                enableUserData = false,
+                enableTotalRecordCount = false,
+            ),
+        ).content.items.any { it.isTubeArchivist() }
+    }.getOrDefault(false)
+
+    /** Channel and video totals across the given YouTube libraries. */
+    suspend fun youTubeCounts(userId: UUID, rooms: List<LibraryRoom>): LibraryCounts = withContext(Dispatchers.IO) {
+        coroutineScope {
+            rooms.filter { it.kind == LibraryKind.YouTube }
+                .map { room -> async { roomCounts(userId, room) } }
+                .awaitAll()
+                .fold(LibraryCounts()) { sum, next ->
+                    sum.copy(channels = sum.channels + next.channels, videos = sum.videos + next.videos)
+                }
         }
     }
 
     fun scope(room: LibraryRoom): JellyfinScope = JellyfinScope(
         kinds = when (room.kind) {
             LibraryKind.Movies -> listOf(BaseItemKind.MOVIE, BaseItemKind.BOX_SET)
-            LibraryKind.Shows -> listOf(BaseItemKind.SERIES)
+            LibraryKind.Shows, LibraryKind.YouTube -> listOf(BaseItemKind.SERIES)
             LibraryKind.Collections -> listOf(BaseItemKind.BOX_SET)
             LibraryKind.Books -> listOf(BaseItemKind.BOOK)
             LibraryKind.Photos -> listOf(BaseItemKind.PHOTO, BaseItemKind.PHOTO_ALBUM)
@@ -451,6 +493,7 @@ class JellyfinLibrary(
         when (room.kind) {
             LibraryKind.Movies -> LibraryCounts(movies = movies())
             LibraryKind.Shows -> LibraryCounts(shows = shows(), episodes = episodes())
+            LibraryKind.YouTube -> LibraryCounts(channels = shows(), videos = episodes())
             LibraryKind.LiveTV -> LibraryCounts()
             else -> LibraryCounts(movies(), shows(), episodes())
         }
@@ -705,7 +748,8 @@ class JellyfinLibrary(
                 break
             }
             if (page.items.isEmpty()) break
-            for (item in page.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }) {
+            val rows = if (scope.parentId == null) page.items.withoutTubeArchivist() else page.items
+            for (item in rows.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }) {
                 collected.putIfAbsent(item.id, item)
             }
             onPage(collected.values.toList())
@@ -826,10 +870,32 @@ class JellyfinLibrary(
         ItemMapper.mediaItem(dto.toSnapshot())
     }
 
+    /** Movies and episodes play as-is. A series or season resolves to the resume / next episode. */
+    suspend fun playableItem(userId: UUID, item: MediaItem): MediaItem = withContext(Dispatchers.IO) {
+        if (item.kind != MediaKind.Series && item.kind != MediaKind.Season) return@withContext item
+        val seriesId = if (item.kind == MediaKind.Season) item.seriesId ?: item.id else item.id
+        val episodeDtos = api.tvShowsApi.getEpisodes(
+            GetEpisodesRequest(
+                seriesId = UUID.fromString(seriesId),
+                userId = userId,
+                fields = listFields,
+                enableUserData = true,
+                enableImageTypes = imageTypes,
+            ),
+        ).content.items ?: emptyList()
+        val episodes = MediaItem.orderedEpisodes(episodeDtos.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) })
+        val hero = MediaItem.heroPlaybackItem(item, episodes)
+        if (hero.kind != MediaKind.Episode) {
+            throw ZelefinException.server("This show has no playable episodes.")
+        }
+        hero
+    }
+
     suspend fun detail(userId: UUID, id: String): TitleDetail = withContext(Dispatchers.IO) {
         val itemId = UUID.fromString(id)
         val dto = api.userLibraryApi.getItem(itemId, userId).content
         val item = ItemMapper.mediaItem(dto.toSnapshot()) ?: throw ZelefinException.server("This title could not be read.")
+        if (item.isYouTube) return@withContext youTubeDetail(userId, dto, item)
         val episodeDtos = if (item.kind == MediaKind.Series) {
             api.tvShowsApi.getEpisodes(
                 GetEpisodesRequest(
@@ -873,6 +939,42 @@ class JellyfinLibrary(
             trailers = trailers,
             moreInfo = facts,
             additionalParts = parts,
+        )
+    }
+
+    /** A TubeArchivist channel or video page: the channel plus every video, newest first. */
+    private suspend fun youTubeDetail(userId: UUID, dto: BaseItemDto, item: MediaItem): TitleDetail = coroutineScope {
+        val channelId = if (item.kind == MediaKind.Series) item.id else item.seriesId
+        val channel = async {
+            when {
+                item.kind == MediaKind.Series -> item
+                channelId == null -> null
+                else -> runCatching { api.userLibraryApi.getItem(UUID.fromString(channelId), userId).content }
+                    .getOrNull()?.let { ItemMapper.mediaItem(it.toSnapshot()) }
+            }
+        }
+        val videos = async {
+            if (channelId == null) return@async emptyList()
+            runCatching {
+                api.tvShowsApi.getEpisodes(
+                    GetEpisodesRequest(
+                        seriesId = UUID.fromString(channelId),
+                        userId = userId,
+                        fields = listFields,
+                        enableUserData = true,
+                        enableImageTypes = imageTypes,
+                    ),
+                ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+            }.getOrDefault(emptyList())
+                .sortedWith(compareByDescending<MediaItem> { it.premiereDate.orEmpty() }.thenByDescending { it.episodeIndex ?: 0 })
+        }
+        val channelVideos = videos.await()
+        TitleDetail(
+            item = item,
+            episodes = if (item.kind == MediaKind.Series) MediaItem.orderedEpisodes(channelVideos) else emptyList(),
+            moreInfo = TitleFacts.from(dto, item),
+            channel = channel.await(),
+            channelVideos = channelVideos,
         )
     }
 
@@ -1178,19 +1280,24 @@ class JellyfinLibrary(
         val client = app.zelefin.client.network.GatewayHttp.client.newBuilder()
             .callTimeout(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
             .build()
+        val token = api.accessToken.orEmpty()
+        // Jellyfin 10.11 turns off the legacy X-Emby-Token header by default, so send the
+        // MediaBrowser Authorization header as well.
         val request = okhttp3.Request.Builder()
             .url(url)
-            .header("X-Emby-Token", api.accessToken.orEmpty())
+            .header("Authorization", "MediaBrowser Token=\"$token\"")
+            .header("X-Emby-Token", token)
             .build()
-        runCatching {
-            val started = System.nanoTime()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                val bytes = response.body?.bytes()?.size ?: 0
-                if (bytes < 16_000) return@use null
-                app.zelefin.client.BitrateProbeResult.from(bytes, System.nanoTime() - started, transport)
+        val started = System.nanoTime()
+        val response = runCatching { client.newCall(request).execute() }.getOrNull() ?: return@withContext null
+        response.use {
+            if (!it.isSuccessful) {
+                throw ZelefinException.server("Jellyfin did not send the test file (HTTP ${it.code}). Check the connection and try again.")
             }
-        }.getOrNull()
+            val bytes = runCatching { it.body?.bytes()?.size ?: 0 }.getOrDefault(0)
+            if (bytes < 16_000) return@withContext null
+            app.zelefin.client.BitrateProbeResult.from(bytes, System.nanoTime() - started, transport)
+        }
     }
 
     /** Mirrors iOS `SessionStore.applyPlaybackLanguages` for the signed-in Jellyfin user. */
@@ -1300,7 +1407,7 @@ class JellyfinLibrary(
                 enableUserData = true,
                 enableImageTypes = imageTypes,
             ),
-        ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        ).content.items.withoutTubeArchivist().mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
     }.getOrDefault(emptyList())
 
     private suspend fun items(
@@ -1328,7 +1435,7 @@ class JellyfinLibrary(
             ItemFields.PEOPLE,
         )
         private val imageTypes = listOf(ImageType.PRIMARY, ImageType.THUMB, ImageType.BACKDROP, ImageType.LOGO)
-        private val catalogFields = listOf(ItemFields.GENRES, ItemFields.MEDIA_STREAMS, ItemFields.WIDTH, ItemFields.HEIGHT)
+        private val catalogFields = listOf(ItemFields.GENRES, ItemFields.MEDIA_STREAMS, ItemFields.PROVIDER_IDS, ItemFields.WIDTH, ItemFields.HEIGHT)
         private const val CatalogPageSize = 200
         private const val CatalogMaxItems = 20_000
 
@@ -1611,6 +1718,7 @@ internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
         communityRating = communityRating?.toDouble(),
         criticRating = criticRating?.toDouble(),
         providerIds = providerIds.orEmpty().mapNotNull { (key, value) -> value?.let { key to it } }.toMap(),
+        premiereDate = premiereDate?.toString(),
         people = people.orEmpty()
             .sortedBy { creditRankType(it.type.serialName) }
             .mapNotNull { person ->

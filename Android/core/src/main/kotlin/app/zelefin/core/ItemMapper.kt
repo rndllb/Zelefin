@@ -50,9 +50,12 @@ data class JellyfinItemSnapshot(
     val streams: List<JellyfinStreamSnapshot> = emptyList(),
     val width: Int? = null,
     val height: Int? = null,
+    val premiereDate: String? = null,
 )
 
 object ItemMapper {
+    const val TUBE_ARCHIVIST_PROVIDER = "TubeArchivist"
+
     fun mediaItem(snapshot: JellyfinItemSnapshot, queueKind: PlaybackQueueKind = PlaybackQueueKind.Resume): MediaItem? {
         val id = snapshot.id ?: return null
         val name = snapshot.name ?: return null
@@ -107,6 +110,11 @@ object ItemMapper {
             isFavorite = snapshot.favorite,
             isWatchlisted = snapshot.watchlisted,
             people = snapshot.people,
+            premiereDate = snapshot.premiereDate,
+            bannerImageTag = snapshot.imageTags["Banner"],
+            youTubeId = snapshot.providerIds.entries
+                .firstOrNull { it.key.equals(TUBE_ARCHIVIST_PROVIDER, true) }
+                ?.value?.trim()?.takeIf { it.isNotEmpty() },
         )
     }
 

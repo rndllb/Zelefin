@@ -15,6 +15,7 @@ struct NetworkSettingsView: View {
             } header: {
                 Text("This Connection")
             }
+            .zelefinRowBackground()
 
             Section {
                 Toggle("Auto-switch on home Wi-Fi", isOn: autoSwitchBinding)
@@ -28,6 +29,7 @@ struct NetworkSettingsView: View {
             } footer: {
                 Text("When you join a saved home network, Zelefin uses the local URL instead of the remote one.")
             }
+            .zelefinRowBackground()
 
             homeWiFiSection
 
@@ -81,6 +83,7 @@ struct NetworkSettingsView: View {
         } footer: {
             Text("Add the networks that should use the local URL.")
         }
+        .zelefinRowBackground()
     }
 
     private var profile: HomeNetworkProfile { session.homeNetworkProfile }

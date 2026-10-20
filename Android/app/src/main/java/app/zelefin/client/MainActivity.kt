@@ -18,10 +18,14 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -32,6 +36,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -67,8 +73,14 @@ import app.zelefin.client.ui.followPredictivePop
 import app.zelefin.client.ui.LocalCollectionPosters
 import app.zelefin.client.ui.LocalZelefinGlassHost
 import app.zelefin.client.ui.LocalZelefinHaze
+import app.zelefin.client.ui.DockChromeState
+import app.zelefin.client.ui.GlassSource
+import app.zelefin.client.ui.LocalDockChrome
+import app.zelefin.client.ui.LocalGlassDiscPage
+import app.zelefin.client.ui.LocalGlassSource
+import app.zelefin.client.ui.glassSource
 import app.zelefin.client.ui.ZelefinCyan
-import app.zelefin.client.ui.ZelefinFloatingDock
+import app.zelefin.client.ui.ZelefinGlassDock
 import app.zelefin.client.ui.ZelefinForeground
 import app.zelefin.client.ui.ZelefinGlassDiscs
 import app.zelefin.client.ui.ZelefinGlassHost
@@ -109,6 +121,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) ZelefinPush.handleLaunch(intent)
         enableEdgeToEdge()
+        app.zelefin.client.ui.GlassShaders.warmUp(this)
         setContent {
             val model: ZelefinModel = viewModel()
             val state by model.state.collectAsState()
@@ -173,35 +186,56 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(backdrop) {
                     if (backdrop !is Screen.Detail && backdrop !is Screen.Browse && backdrop != Screen.Library) detailCoversDock = false
                 }
-                val showDock = state.session != null && !sheetUp && when (backdrop) {
+                val hazeState = rememberZelefinHazeState()
+                val glassHost = remember { ZelefinGlassHost() }
+                val dockChrome = remember { DockChromeState() }
+                val glassSource = remember { GlassSource() }
+                // Keep the dock hidden for the whole player slide (open and close), so the tab bar never
+                // draws over the sheet while it travels; it reappears once the player has fully left.
+                val playerActive = navigation.currentState is Screen.Player || navigation.targetState is Screen.Player
+                val showDock = state.session != null && !sheetUp && !playerActive && when (backdrop) {
                     Screen.Library -> !detailCoversDock
                     is Screen.Detail -> !detailCoversDock
                     is Screen.Browse -> !detailCoversDock
                     else -> false
                 }
-                val hazeState = rememberZelefinHazeState()
-                val glassHost = remember { ZelefinGlassHost() }
+                val miniVisible = showDock && state.nowPlaying != null
+                SideEffect { dockChrome.hasMiniPlayer = miniVisible }
+                LaunchedEffect(state.tab, backdrop.pageKey()) { dockChrome.expand() }
                 CompositionLocalProvider(
                     LocalZelefinHaze provides hazeState,
                     LocalZelefinGlassHost provides glassHost,
                     LocalCollectionPosters provides model::collectionPosterMembers,
+                    LocalDockChrome provides dockChrome,
+                    LocalGlassSource provides glassSource,
                 ) {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
                     Box(
                         Modifier
                             .fillMaxSize()
+                            .glassSource(glassSource)
+                            .background(Color.Black)
+                            .nestedScroll(dockChrome.scroll)
                             .zelefinHazeSource(hazeState),
                     ) {
+                    // Glass drawn inside the page (discs mid-transition) would record the page into
+                    // itself; there it falls back to the frosted fill.
+                    CompositionLocalProvider(LocalGlassSource provides null) {
                         Box(Modifier.fillMaxSize().zelefinSheetBackdrop(sheetMotion.progress)) {
                             navigation.AnimatedContent(
                                 modifier = Modifier.fillMaxSize(),
                                 transitionSpec = { pageTransition() },
                                 contentKey = { it.pageKey() },
                             ) { screen ->
-                                Box(Modifier.fillMaxSize()) {
-                                    ZelefinScreen(screen, state, model, knownDetails) { detailCoversDock = it }
-                                    if (navigation.currentState != navigation.targetState && screen.isPushedPage()) {
-                                        ZelefinGlassDiscs(hazeState, glassHost)
+                                val page = screen.pageKey()
+                                CompositionLocalProvider(LocalGlassDiscPage provides page) {
+                                    Box(Modifier.fillMaxSize()) {
+                                        ZelefinScreen(screen, state, model, knownDetails) { detailCoversDock = it }
+                                        // Mid-transition each page carries its own floating buttons (Home's
+                                        // avatar and hero ⋯ included) so none blink out while it slides.
+                                        if (navigation.currentState != navigation.targetState) {
+                                            ZelefinGlassDiscs(hazeState, glassHost, page = page)
+                                        }
                                     }
                                 }
                             }
@@ -217,6 +251,22 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    }
+                    if (showDock) {
+                        ZelefinGlassDock(
+                            chrome = dockChrome,
+                            currentTab = state.tab,
+                            currentRoomId = state.dockRoomId,
+                            entries = app.zelefin.client.ui.TabPreferences.dockEntries(state.libraries),
+                            showsNames = app.zelefin.client.ui.TabPreferences.showsNames,
+                            nowPlaying = state.nowPlaying,
+                            session = state.session,
+                            onSelectEntry = { entry -> entry.room?.let(model::selectDockRoom) ?: model.selectTab(entry.tab) },
+                            onOpenNowPlaying = { model.playNowPlaying() },
+                            onStopNowPlaying = model::clearNowPlaying,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    }
                     if (!sheetUp && navigation.currentState == navigation.targetState) {
                         ZelefinForeground(glassHost)
                         ZelefinGlassDiscs(hazeState, glassHost)
@@ -226,18 +276,6 @@ class MainActivity : ComponentActivity() {
                     if (sheetUp) glassHost.content?.invoke()
                     app.zelefin.client.ui.DownloadNoticeAlert()
                     app.zelefin.client.ui.SessionMessageAlert()
-                    if (showDock) {
-                        ZelefinFloatingDock(
-                            currentTab = state.tab,
-                            hazeState = hazeState,
-                            onSelect = model::selectTab,
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                            entries = app.zelefin.client.ui.TabPreferences.dockEntries(state.libraries),
-                            currentRoomId = state.dockRoomId,
-                            showsNames = app.zelefin.client.ui.TabPreferences.showsNames,
-                            onSelectEntry = { entry -> entry.room?.let(model::selectDockRoom) ?: model.selectTab(entry.tab) },
-                        )
-                    }
                     if (state.busy && state.screen == Screen.Connect) {
                         CircularProgressIndicator(color = ZelefinCyan, modifier = Modifier.align(Alignment.Center))
                     }
@@ -416,6 +454,11 @@ private fun Screen.pushedReturn(): Screen? = when (this) {
     else -> null
 }
 
+/**
+ * The player opens and closes like Vellum Music: a full-screen sheet that slides up from the bottom
+ * and back down, using Vellum's springs. Translation only — the video SurfaceView can't be scaled,
+ * but it slides fine — so the sheet stays on top (high z) while it moves and the page sits behind it.
+ */
 private fun AnimatedContentTransitionScope<Screen>.pageTransition(): ContentTransform {
     val from = initialState
     val to = targetState
@@ -423,6 +466,12 @@ private fun AnimatedContentTransitionScope<Screen>.pageTransition(): ContentTran
     val pop = from.isPushedPage() && (to == from.pushedReturn() || !to.isPushedPage())
     val push = to.isPushedPage() && from !is Screen.Player && !pop
     return when {
+        to is Screen.Player && from !is Screen.Player ->
+            (slideInVertically(spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow)) { it } togetherWith ExitTransition.None)
+                .apply { targetContentZIndex = 2f }
+        from is Screen.Player && to !is Screen.Player ->
+            (EnterTransition.None togetherWith slideOutVertically(spring(dampingRatio = 0.95f, stiffness = Spring.StiffnessMedium)) { it })
+                .apply { targetContentZIndex = -1f }
         push -> (slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it / 3 })
             .apply { targetContentZIndex = 1f }
         pop -> (slideInHorizontally(spec) { -it / 3 } togetherWith slideOutHorizontally(spec) { it })

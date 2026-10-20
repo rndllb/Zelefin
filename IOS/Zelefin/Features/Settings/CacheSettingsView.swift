@@ -31,6 +31,7 @@ struct CacheSettingsView: View {
             } footer: {
                 Text("Posters, backdrops, and logos stay on this device. Auto-refresh retries artwork this server previously returned as missing.")
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Cache")
         .task { artwork = ArtworkCache.shared.usage() }
@@ -103,6 +104,7 @@ struct MetadataSettingsView: View {
             } footer: {
                 Text("Home rows, library catalogs, and title pages. Auto-refresh pulls anything this device has not cached yet.")
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Metadata")
         .task { metadata = CacheInventory.metadataUsage() }
@@ -160,11 +162,9 @@ private func cacheBucketRow(
     HStack {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.body.weight(.medium))
-                .foregroundStyle(LoginPalette.primaryText)
             Text(CacheInventory.formatBytes(bucket.bytes))
-                .font(.caption)
-                .foregroundStyle(LoginPalette.secondaryText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         Spacer(minLength: 8)
         Button("Clear", role: .destructive, action: clear)

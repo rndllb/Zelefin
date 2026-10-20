@@ -34,7 +34,6 @@ struct PlaybackSettingsView: View {
             }
             qualitySection
             watchingSection
-            playerSection
         }
         .zelefinSettingsChrome(title: "Playback")
         .task {
@@ -76,6 +75,7 @@ struct PlaybackSettingsView: View {
                     : "Titles start on the audio track in your preferred language when the file has one. Saved to your Jellyfin account."
             )
         }
+        .zelefinRowBackground()
         .disabled(serverPreferences == nil)
     }
 
@@ -104,6 +104,7 @@ struct PlaybackSettingsView: View {
         } footer: {
             Text((serverPreferences?.subtitleMode ?? .default).summary + " SDH prefers captions that describe music and sound. Style & Sync change how captions look and when they appear.")
         }
+        .zelefinRowBackground()
         .disabled(serverPreferences == nil)
     }
 
@@ -177,6 +178,7 @@ struct PlaybackSettingsView: View {
         } footer: {
             Text("Automatic uses the title default. A language is used when that track exists. Style & Sync change how captions look and when they appear.")
         }
+        .zelefinRowBackground()
         .onChange(of: audioLanguage) { _, code in
             Task { await session.applyPlaybackLanguages(audioCode: code, subtitleCode: subtitleLanguage) }
         }
@@ -218,6 +220,7 @@ struct PlaybackSettingsView: View {
         } footer: {
             Text(qualityFooter)
         }
+        .zelefinRowBackground()
     }
 
     private var watchingSection: some View {
@@ -228,7 +231,6 @@ struct PlaybackSettingsView: View {
                 }
             }
             Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
-            Toggle("Wi-Fi Only Downloads", isOn: $downloadWifiOnly)
             Picker("Skip Backward", selection: $skipBackward) {
                 ForEach(PlaybackSkipInterval.allCases) { interval in
                     Text(interval.title).tag(interval.rawValue)
@@ -239,24 +241,21 @@ struct PlaybackSettingsView: View {
                     Text(interval.title).tag(interval.rawValue)
                 }
             }
-        } header: {
-            Text("Watching")
-        } footer: {
-            Text("Speed, skip distance, and whether the next episode starts when this one ends.")
-        }
-    }
-
-    private var playerSection: some View {
-        Section {
-            Toggle("Use Native Video Player", isOn: $useNativeVideoPlayer)
+            Picker("Player Engine", selection: $useNativeVideoPlayer) {
+                Text("AetherEngine").tag(false)
+                Text("Native Player").tag(true)
+            }
+            .pickerStyle(.menu)
             if useNativeVideoPlayer {
                 Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
             }
+            Toggle("Wi-Fi Only Downloads", isOn: $downloadWifiOnly)
         } header: {
-            Text("Player")
+            Text("Watching")
         } footer: {
-            Text(playerFooter)
+            Text("Speed, skip distance, and whether the next episode starts when this one ends. " + playerFooter)
         }
+        .zelefinRowBackground()
     }
 
     private var qualityFooter: String {
@@ -290,12 +289,12 @@ struct PlaybackSettingsView: View {
             if useNativeVideoPlayer {
                 return "Apple’s player opens MP4 and HLS. MKV still Direct Plays on this device. Turn off Prefer fMP4 to ask Silo for MPEG-TS when HLS is required."
             }
-            return "Zelefin Direct Plays the original Silo file on this device, including HDR."
+            return "AetherEngine Direct Plays the original Silo file on this device, including HDR."
         }
         if useNativeVideoPlayer {
             return "Apple’s player opens MP4 and remuxed HLS. MKV remuxes on Jellyfin first. Turn off Prefer fMP4 to ask for MPEG-TS."
         }
-        return "Zelefin Direct Plays every stream on this device, including remuxed HLS."
+        return "AetherEngine Direct Plays every stream on this device, including remuxed HLS."
     }
 
     private func recommendedTitle(for result: BitrateProbeResult) -> String {

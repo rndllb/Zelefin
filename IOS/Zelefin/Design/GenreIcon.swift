@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Solid white genre mark, in the style of the genre icon sheet.
+/// Solid genre mark, in the style of the genre icon sheet.
 struct GenreIcon: View {
     let title: String
     var side: CGFloat
+    var tint: Color = .white
 
     var body: some View {
         let kind = GenreIconKind.matching(title)
@@ -15,11 +16,11 @@ struct GenreIcon: View {
                     .scaledToFit()
             } else {
                 GenreIconShape(kind: kind)
-                    .fill(.white, style: FillStyle(eoFill: true))
+                    .fill(tint, style: FillStyle(eoFill: true))
             }
         }
         .frame(width: side, height: side)
-        .foregroundStyle(.white)
+        .foregroundStyle(tint)
         .accessibilityHidden(true)
     }
 }

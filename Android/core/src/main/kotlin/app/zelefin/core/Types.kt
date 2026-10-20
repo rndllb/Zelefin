@@ -9,6 +9,7 @@ class ZelefinException(val code: Code, message: String = code.defaultMessage) : 
         AccessGateway(
             "This server is behind an access gateway such as Cloudflare Zero Trust or Pangolin. Add the gateway client ID and token, then try again.",
         ),
+        SeerrUnauthorized("Seerr session expired. Sign in again."),
         QuickConnectDisabled("Quick Connect is turned off on this server."),
         QuickConnectExpired("This Quick Connect code expired. Try again."),
         QuickConnectUnavailable("Jellyfin did not return a Quick Connect code."),
@@ -20,6 +21,7 @@ class ZelefinException(val code: Code, message: String = code.defaultMessage) : 
         fun missingUser() = ZelefinException(Code.MissingUser)
         fun missingStreamUrl() = ZelefinException(Code.MissingStreamUrl)
         fun accessGateway() = ZelefinException(Code.AccessGateway)
+        fun seerrUnauthorized() = ZelefinException(Code.SeerrUnauthorized)
         fun quickConnectDisabled() = ZelefinException(Code.QuickConnectDisabled)
         fun quickConnectExpired() = ZelefinException(Code.QuickConnectExpired)
         fun quickConnectUnavailable() = ZelefinException(Code.QuickConnectUnavailable)

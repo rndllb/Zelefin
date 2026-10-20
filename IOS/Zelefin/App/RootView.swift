@@ -6,13 +6,16 @@ struct RootView: View {
     @Environment(DeepLinkStore.self) private var deepLinks
     @Environment(\.openURL) private var openURL
     @State private var profileSheet: ProfileSheet?
+    @Namespace private var nowPlayingTransition
 
     var body: some View {
         rootContent
+            .environment(\.nowPlayingTransition, nowPlayingTransition)
             .sheet(item: $profileSheet) { destination in
                 ProfileSheetContainer(destination: destination)
                     .environment(session)
                     .environment(downloads)
+                    .environment(\.playsInLocalCover, true)
             }
             .modifier(RootNotificationModifier(profileSheet: $profileSheet))
             .modifier(RootSessionLifecycleModifier(profileSheet: $profileSheet))
@@ -30,6 +33,7 @@ struct RootView: View {
                 }
                 .environment(session)
                 .environment(downloads)
+                .environment(\.playsInLocalCover, true)
             }
             .fullScreenCover(item: Binding(
                 get: { session.pendingPlayerItem },
@@ -38,6 +42,7 @@ struct RootView: View {
                 PlayerView(item: item)
                     .environment(session)
                     .environment(downloads)
+                    .nowPlayingZoom(in: nowPlayingTransition)
             }
             .alert(
                 "Can't Open Title",

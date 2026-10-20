@@ -557,9 +557,7 @@ private struct SearchPage: View {
         } message: {
             Text(requestError ?? "")
         }
-        .fullScreenCover(item: $playingItem) { item in
-            PlayerView(item: item)
-        }
+        .presentsPlayerFromRoot($playingItem)
         .openSubtitlesSearch(item: $subtitleSearchItem)
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },

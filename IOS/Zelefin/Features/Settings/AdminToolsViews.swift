@@ -83,6 +83,7 @@ struct ServerBackupsView: View {
                     } footer: {
                         Text("A backup archives this server’s database and metadata. Restoring one restarts Jellyfin.")
                     }
+                    .zelefinRowBackground()
                     Section {
                         if backups.isEmpty {
                             SettingsStackedRow(title: "No backups on this server yet.")
@@ -106,6 +107,7 @@ struct ServerBackupsView: View {
                     } header: {
                         Text("Archives")
                     }
+                    .zelefinRowBackground()
                 }
                 .listStyle(.insetGrouped)
                 .refreshable { await load(showProgress: false) }
@@ -182,81 +184,52 @@ struct ServerBrandingView: View {
     var body: some View {
         Form {
             Section {
-                VStack(spacing: 14) {
-                    SettingsHeroGlyph(systemImage: "paintbrush.fill")
-                    Text("Branding")
-                        .font(.title2.weight(.semibold))
-                    SettingsChip(
-                        icon: "play.tv.fill",
-                        leading: "Jellyfin",
-                        trailing: serverLabel
-                    )
-                }
-                .frame(maxWidth: .infinity)
-                .settingsHeroRow()
+                LabeledContent("Server", value: serverLabel)
             }
+            .zelefinRowBackground()
 
             if let errorMessage {
                 Section {
                     SettingsStatusText(text: errorMessage, isError: true)
                 }
+                .zelefinRowBackground()
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsLabeledField(label: "Login disclaimer", systemImage: "text.quote") {
-                        TextField("Shown on the sign-in screen", text: $branding.loginDisclaimer, axis: .vertical)
-                            .lineLimit(3...8)
-                    }
-                    SettingsCardDivider()
-                    Toggle("Show splashscreen", isOn: $branding.splashscreenEnabled)
-                        .tint(AccentPreferences.current)
-                        .font(.body.weight(.medium))
-                }
+                TextField("Login Disclaimer", text: $branding.loginDisclaimer, axis: .vertical)
+                    .lineLimit(3...8)
+                Toggle("Show Splashscreen", isOn: $branding.splashscreenEnabled)
             } header: {
                 Text("Sign-In")
             }
+            .zelefinRowBackground()
 
             Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    SettingsFieldLabel(title: "CSS")
-                    TextField("CSS", text: $branding.customCSS, axis: .vertical)
-                        .lineLimit(4...12)
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(LoginPalette.fieldValue)
-                }
+                TextField("CSS", text: $branding.customCSS, axis: .vertical)
+                    .lineLimit(4...12)
+                    .font(.footnote.monospaced())
             } header: {
                 Text("Custom CSS")
             }
+            .zelefinRowBackground()
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    PhotosPicker(selection: $pickerItem, matching: .images) {
-                        HStack {
-                            Spacer(minLength: 0)
-                            Text("Upload Splashscreen")
-                                .font(.caption.weight(.bold))
-                                .tracking(0.8)
-                            Spacer(minLength: 0)
-                        }
-                        .modifier(LoginActionButtonStyle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Upload Splashscreen")
-                    SettingsSecondaryButton(title: "Remove Custom Splashscreen", role: .destructive) {
-                        Task { await deleteSplash() }
-                    }
-                    .padding(.top, 10)
+                PhotosPicker("Upload Splashscreen", selection: $pickerItem, matching: .images)
+                Button("Remove Custom Splashscreen", role: .destructive) {
+                    Task { await deleteSplash() }
                 }
             } header: {
                 Text("Splash Image")
             }
+            .zelefinRowBackground()
 
             Section {
-                SettingsPrimaryButton(title: "Save Branding", isBusy: isSaving, enabled: !isLoading) {
+                Button("Save Branding") {
                     Task { await save() }
                 }
+                .disabled(isSaving || isLoading)
             }
+            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Branding")
         .task { await load() }

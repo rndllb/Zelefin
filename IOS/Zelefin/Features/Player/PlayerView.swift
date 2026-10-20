@@ -20,10 +20,25 @@ struct PlayerView: View {
     @State private var liveBitrateOverride: Int?
     @State private var cinemaQueue: [MediaItem] = []
     @State private var cinemaIndex = 0
+    @State private var presentationSettled = false
+    @State private var didRetryStart = false
+    @State private var isOnScreen = true
+
+    /// Roughly the full-screen / zoom presentation. Building the video surface or unlocking
+    /// rotation before it ends stalls the animation part way up the screen.
+    private static let presentationDuration: Duration = .milliseconds(450)
 
     init(item: MediaItem) {
         self.item = item
         _activeItem = State(initialValue: item)
+    }
+
+    /// Spinner and close stay on top until the first frame, so a slow server never leaves
+    /// a black screen with auto-hidden controls.
+    private var showsLoadingOverlay: Bool {
+        guard fallbackError == nil else { return false }
+        guard let model else { return true }
+        return !model.hasFirstFrame && model.errorMessage == nil
     }
 
     var body: some View {
@@ -31,27 +46,45 @@ struct PlayerView: View {
             Color.black.ignoresSafeArea()
             if let model {
                 playerSurface(model)
-            } else {
+            }
+            if showsLoadingOverlay {
                 loadingSurface
+                    .transition(.opacity)
             }
             if let message = fallbackError {
                 errorOverlay(message)
             }
         }
+        .animation(.easeOut(duration: 0.2), value: showsLoadingOverlay)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .onAppear {
+        .task {
+            try? await Task.sleep(for: Self.presentationDuration)
+            guard !Task.isCancelled else { return }
+            presentationSettled = true
             InterfaceOrientationLock.setPhoneLandscapeAllowed(true)
         }
         .task {
+            session.rememberNowPlaying(activeItem)
+            Task { await PlaybackAudioSession.activate() }
             await prepareAndStart()
         }
         .task(id: liveAdaptiveMonitorID) {
             await monitorLiveAdaptive()
         }
         .onDisappear {
+            isOnScreen = false
             InterfaceOrientationLock.setPhoneLandscapeAllowed(false)
+            if let time = model?.currentTime {
+                session.updateNowPlayingPosition(time)
+            }
+            if model == nil {
+                PlaybackAudioSession.deactivate()
+            }
             model?.markPlaybackViewDismissed()
+        }
+        .onChange(of: activeItem) { _, item in
+            session.rememberNowPlaying(item)
         }
         .onChange(of: model?.isFinished) { _, finished in
             guard finished == true else { return }
@@ -59,8 +92,16 @@ struct PlayerView: View {
             Task { await advanceOrDismiss() }
         }
         .onChange(of: model?.errorMessage) { _, message in
-            guard let message, !didFallBackToRemux else { return }
-            guard let plan = model?.plan, plan.method == .directPlay else { return }
+            guard let message else { return }
+            if model?.hasFirstFrame != true, !didRetryStart {
+                didRetryStart = true
+                Task { await retryStart() }
+                return
+            }
+            guard !didFallBackToRemux, let plan = model?.plan, plan.method == .directPlay else {
+                fallbackError = message
+                return
+            }
             if OfflinePlaybackPolicy.shouldFallBackToRemux(isLocalFile: plan.streamURL.isFileURL) {
                 Task { await fallBackToRemux(from: message) }
                 return
@@ -129,13 +170,31 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             ProgressView()
+                .controlSize(.large)
                 .tint(.white)
+                .accessibilityLabel("Loading")
             loadingClose
         }
     }
 
+    private func waitForPresentation() async {
+        while !presentationSettled, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+    }
+
     private func prepareAndStart() async {
-        if let local = downloads.playbackPlan(for: activeItem, account: session.session) {
+        var target = item
+        if item.kind == .series || item.kind == .season {
+            do {
+                target = try await resolvePlayableItem(item)
+                activeItem = target
+            } catch {
+                fallbackError = error.localizedDescription
+                return
+            }
+        }
+        if let local = downloads.playbackPlan(for: target, account: session.session) {
             guard !Task.isCancelled else { return }
             appliedBitrate = nil
             liveBitrateOverride = nil
@@ -147,13 +206,13 @@ struct PlayerView: View {
             return
         }
         do {
-            let launch = session.launchOptions(for: item.id)
+            let launch = session.launchOptions(for: target.id)
             let maxBitrate = streamingBitrate(for: launch)
             appliedBitrate = maxBitrate
-            let featureStart = resumeOverride ?? item.playbackPosition
+            let featureStart = resumeOverride ?? target.playbackPosition
             let planTask = Task {
                 try await library.playbackPlan(
-                    for: item,
+                    for: target,
                     audioIndex: launch.audioIndex,
                     subtitleIndex: launch.subtitleStreamIndex,
                     maxBitrate: maxBitrate,
@@ -162,7 +221,7 @@ struct PlayerView: View {
                 )
             }
             let introTask: Task<[MediaItem], Never>? = (cinemaQueue.isEmpty && !launch.skipCinemaIntros)
-                ? Task { await library.cinemaIntros(for: item.id) }
+                ? Task { await library.cinemaIntros(for: target.id) }
                 : nil
             var plan: PlaybackPlan
             if isCinemaBumper {
@@ -177,7 +236,7 @@ struct PlayerView: View {
             } else {
                 plan = try await planTask.value
                 if let introTask, let intros = await finishedIfReady(introTask), !intros.isEmpty {
-                    cinemaQueue = intros + [item]
+                    cinemaQueue = intros + [target]
                     cinemaIndex = 0
                     activeItem = intros[0]
                     plan = try await library.playbackPlan(
@@ -188,7 +247,7 @@ struct PlayerView: View {
                         mediaSourceID: nil
                     )
                 } else {
-                    activeItem = item
+                    activeItem = target
                 }
             }
             resumeOverride = nil
@@ -222,6 +281,17 @@ struct PlayerView: View {
         }
     }
 
+    private func resolvePlayableItem(_ item: MediaItem) async throws -> MediaItem {
+        let seriesID = item.kind == .season ? (item.seriesID ?? item.id) : item.id
+        if let cached = session.homeLayout.episode(forSeriesID: seriesID) {
+            return cached
+        }
+        guard let library = session.library else {
+            throw ZelefinError.missingUser
+        }
+        return try await library.playableItem(for: item)
+    }
+
     /// Takes cinema intros only when they already finished during the playback-plan
     /// request. Waiting on `/Intros` was holding Play behind an extra server round trip.
     private func finishedIfReady<T: Sendable>(_ task: Task<T, Never>) async -> T? {
@@ -243,12 +313,13 @@ struct PlayerView: View {
         if let liveBitrateOverride {
             return liveBitrateOverride
         }
-        Task { await session.adaptiveBitrate.refreshIfNeeded(library: session.library) }
         if launch.resolvedQuality == .auto,
            let host = session.activeServerURL?.host,
            ServerURL.isInternalHost(host) {
             return PlaybackQuality.auto.bitsPerSecond
         }
+        // Off the home network only: the test download competes with the stream's first bytes.
+        Task { await session.adaptiveBitrate.refreshIfNeeded(library: session.library) }
         return session.adaptiveBitrate.resolvedBitsPerSecond(
             sourceBitrate: activeItem.sourceBitrate,
             launch: launch
@@ -348,6 +419,9 @@ struct PlayerView: View {
     }
 
     private func startPlayback(_ plan: PlaybackPlan, skipSegments: [SkipSegment]? = nil) async {
+        await waitForPresentation()
+        // Restarts run in unstructured tasks that outlive the view; never start after close.
+        guard !Task.isCancelled, isOnScreen else { return }
         let reporter = session.makePlaybackReporter(for: plan)
         let created = PlayerModel(plan: plan, reporter: reporter)
         created.onUserTransport = { action in
@@ -434,6 +508,19 @@ struct PlayerView: View {
         liveBitrateOverride = nil
         appliedBitrate = nil
         await prepareAndStart()
+    }
+
+    /// The first open after a cold start can fail while the server spins up; a reopen works.
+    private func retryStart() async {
+        let skip = model?.skipSegments ?? []
+        resumeOverride = model.map(\.currentTime).flatMap { $0 > 0 ? $0 : nil }
+        await model?.stop()
+        model = nil
+        fallbackError = nil
+        await prepareAndStart()
+        if let created = model, created.skipSegments.isEmpty {
+            created.skipSegments = skip
+        }
     }
 
     private func fallBackToRemux(from message: String) async {

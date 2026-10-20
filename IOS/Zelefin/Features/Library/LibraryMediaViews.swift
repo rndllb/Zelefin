@@ -95,6 +95,7 @@ struct PlaylistPickerSheet: View {
                         .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
+                .zelefinRowBackground()
                 Section("Playlists") {
                     if playlists.isEmpty {
                         Text("No playlists yet.")
@@ -107,6 +108,7 @@ struct PlaylistPickerSheet: View {
                         }
                     }
                 }
+                .zelefinRowBackground()
             }
             .navigationTitle("Add to Playlist")
             .toolbar {
@@ -220,6 +222,7 @@ struct RemoteImagePickerView: View {
         } header: {
             Text("Type")
         }
+        .zelefinRowBackground()
     }
 
     @ViewBuilder

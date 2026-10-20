@@ -29,6 +29,7 @@ struct CatalogBrowseView: View {
         switch libraryKind {
         case .movies: return "Movies from this server will show up here."
         case .shows: return "Shows from this server will show up here."
+        case .youTube: return "Channels from TubeArchivist will show up here."
         case .collections: return "Collections from this server will show up here."
         case .favorites: return "Movies and shows you mark as favorites will show up here."
         case .watchlist: return "Titles you add to Watchlist will show up here."
@@ -39,6 +40,7 @@ struct CatalogBrowseView: View {
     private var emptySymbol: String {
         switch libraryKind {
         case .shows: "tv"
+        case .youTube: "play.rectangle.fill"
         case .collections: "square.grid.2x2.fill"
         case .favorites: "heart.fill"
         case .watchlist: "text.badge.plus"
@@ -105,6 +107,7 @@ struct CatalogBrowseView: View {
             }
         }
         .zelefinScrollEdgeBlur()
+        .zelefinPinnedBottomEdge()
         .zelefinHeaderScrollVisibility($headerVisible)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())

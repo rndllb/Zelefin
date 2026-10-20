@@ -167,10 +167,12 @@ class PluginsController(
     fun refresh() {
         val current = session() ?: return
         detectedFor = current.accountId
-        if (PluginSettings.shouldClearSession(lastUser, current.accountId)) {
+        if (PluginSettings.shouldClearSession(lastUser, current.accountId, settings.seerrOwnerAccountId)) {
             settings.clearSeerrSession()
             _state.update { it.copy(seerrName = null, seerrUser = null) }
             _discover.value = DiscoverUiState()
+        } else if (settings.seerrSession != null && settings.seerrOwnerAccountId == null) {
+            settings.seerrOwnerAccountId = current.accountId
         }
         lastUser = current.accountId
         _state.update { it.copy(backend = current.backend, detecting = true) }
@@ -337,16 +339,16 @@ class PluginsController(
         }.getOrElse { if (it is CancellationException) throw it else JellyfinPluginState() }
         _state.update { it.copy(jellyfin = detected, isAdmin = admin, canManageSubtitles = canManage) }
         if (detected.companion) registerPush()
-        settings.seerrClient()?.let { client ->
-            runCatching { client.currentUser() }
-                .onSuccess { user -> _state.update { it.copy(seerrUser = user, seerrName = user.displayLabel) } }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    settings.clearSeerrSession()
-                    _state.update {
-                        it.copy(seerrName = null, seerrUser = null, seerrMessage = "Seerr session expired. Sign in again.")
-                    }
-                }
+        if (settings.seerrClient() != null) {
+            val user = settings.refreshUser()
+            val session = settings.seerrSession
+            _state.update {
+                it.copy(
+                    seerrUser = user,
+                    seerrName = user?.displayLabel ?: session?.displayName,
+                    seerrMessage = if (session == null) "Seerr session expired. Sign in again." else it.seerrMessage,
+                )
+            }
         }
     }
 
@@ -384,13 +386,14 @@ class PluginsController(
             return
         }
         _state.update { it.copy(seerrBusy = true, seerrMessage = null) }
+        val ownerAccountId = session()?.accountId
         scope.launch {
             runCatching { SeerrClient.signIn(normalized, username, password) }
-                .onSuccess { session ->
+                .onSuccess { signedIn ->
                     settings.seerrUrl = url.trim()
-                    settings.seerrSession = session
-                    val user = runCatching { SeerrClient(normalized, session).currentUser() }.getOrNull()
-                    val name = user?.displayLabel ?: session.displayName
+                    settings.rememberSignIn(signedIn, username, password, ownerAccountId)
+                    val user = runCatching { SeerrClient(normalized, signedIn).currentUser() }.getOrNull()
+                    val name = user?.displayLabel ?: signedIn.displayName
                     _state.update {
                         it.copy(
                             seerrUrl = url.trim(),

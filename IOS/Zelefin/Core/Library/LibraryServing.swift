@@ -6,18 +6,38 @@ struct ServerCatalogCounts: Equatable, Sendable {
     var movies: Int
     var shows: Int
     var episodes: Int
+    var channels: Int = 0
+    var videos: Int = 0
+
+    func separatingYouTube(_ youTube: ServerCatalogCounts) -> ServerCatalogCounts {
+        ServerCatalogCounts(
+            movies: movies,
+            shows: max(0, shows - youTube.channels),
+            episodes: max(0, episodes - youTube.videos),
+            channels: youTube.channels,
+            videos: youTube.videos
+        )
+    }
+
+    var showsHeaderStats: Bool {
+        movies + shows + episodes + videos > 0
+    }
 }
 
 struct LibraryRoomCounts: Equatable, Sendable {
     var movies: Int
     var shows: Int
     var episodes: Int
+    var channels: Int = 0
+    var videos: Int = 0
 
     var caption: String? {
         let parts = [
             Self.phrase(movies, singular: "movie", plural: "movies"),
             Self.phrase(shows, singular: "show", plural: "shows"),
-            Self.phrase(episodes, singular: "episode", plural: "episodes")
+            Self.phrase(episodes, singular: "episode", plural: "episodes"),
+            Self.phrase(channels, singular: "channel", plural: "channels"),
+            Self.phrase(videos, singular: "video", plural: "videos")
         ].compactMap { $0 }
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: " · ")
@@ -37,6 +57,7 @@ protocol LibraryServing: AnyObject, Sendable {
     func programStillURL(for item: MediaItem, channel: MediaItem?) -> URL?
     func primaryURL(for item: MediaItem, maxHeight: Int) -> URL?
     func backdropURL(for item: MediaItem, maxWidth: Int) -> URL?
+    func bannerURL(for item: MediaItem, maxWidth: Int) -> URL?
     func logoURL(for item: MediaItem, maxHeight: Int) -> URL?
     func userAvatarURL(userID: String, tag: String?) -> URL?
     func personImageURL(id: String, tag: String?, maxHeight: Int) -> URL?
@@ -181,6 +202,10 @@ extension LibraryServing {
         backdropURL(for: item, maxWidth: 1400)
     }
 
+    func bannerURL(for item: MediaItem) -> URL? {
+        bannerURL(for: item, maxWidth: 1600)
+    }
+
     func logoURL(for item: MediaItem) -> URL? {
         logoURL(for: item, maxHeight: 240)
     }
@@ -227,6 +252,22 @@ extension LibraryServing {
 
     func episodes(seriesID: String) async throws -> [MediaItem] {
         try await episodes(seriesID: seriesID, seasonID: nil)
+    }
+
+    /// Movies and episodes play as-is. A series or season resolves to the resume / next episode.
+    func playableItem(for item: MediaItem) async throws -> MediaItem {
+        guard item.kind == .series || item.kind == .season else { return item }
+        let seriesID = item.kind == .season ? (item.seriesID ?? item.id) : item.id
+        let seasonID = item.kind == .season ? item.id : nil
+        let fetched = try await episodes(seriesID: seriesID, seasonID: seasonID)
+        let episodes = item.isYouTube
+            ? MediaItem.orderedYouTubeVideos(fetched)
+            : MediaItem.orderedShowEpisodes(fetched, seasons: [])
+        let hero = MediaItem.heroPlaybackItem(title: item, episodes: episodes)
+        guard hero.kind == .episode else {
+            throw ZelefinError.server("This show has no playable episodes.")
+        }
+        return hero
     }
 
     func playbackPlan(for item: MediaItem) async throws -> PlaybackPlan {

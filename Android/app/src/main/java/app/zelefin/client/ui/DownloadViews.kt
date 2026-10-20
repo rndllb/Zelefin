@@ -240,7 +240,7 @@ internal fun DownloadSharePill(
                         DownloadControlState.Idle -> {
                             if (item.kind == MediaKind.Series) {
                                 val choices = SeasonDownloadChoice.options(seasons, episodes)
-                                if (choices.size > 1 && onChooseSeasons != null) {
+                                if (onChooseSeasons != null && (item.isYouTube || choices.size > 1)) {
                                     onChooseSeasons(bounds[0])
                                 } else {
                                     startSeasonDownload(choices.firstOrNull()?.seasonIndex?.let(::setOf), episodes, target)
@@ -260,7 +260,7 @@ internal fun DownloadSharePill(
     )
     // A new icon re-registers the capsule; carry the known bounds over so it does not blink for a frame.
     SideEffect {
-        val disc = host?.discs?.firstOrNull { it.key == key } ?: return@SideEffect
+        val disc = host?.discs?.lastOrNull { it.key == key } ?: return@SideEffect
         if (disc.bounds == Rect.Zero && bounds[0] != Rect.Zero) disc.bounds = bounds[0]
     }
 }
@@ -392,6 +392,58 @@ private fun DownloadMenuRow(
             }
         }
         Text(title, color = tint, fontFamily = ZelefinFont, fontSize = 17.sp)
+    }
+}
+
+/** Download choices for a TubeArchivist channel: newest videos, unwatched, or everything. [videos] is newest first. */
+@Composable
+internal fun YouTubeDownloadMenu(
+    videos: List<MediaItem>,
+    anchor: Rect,
+    visible: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val haze = LocalZelefinHaze.current
+    PresentZelefinOverlay(visible = visible && haze != null) {
+        val hazeState = haze ?: return@PresentZelefinOverlay
+        val unwatched = remember(videos) { videos.filter { !it.isWatched } }
+        AnchoredMenuFrame(anchor, alignTrailing = true, onDismiss) {
+            val run = LocalMenuAction.current
+            fun download(picked: List<MediaItem>) = run {
+                ZelefinDownloads.startAll(picked)
+                onDismiss()
+            }
+            Column(
+                Modifier
+                    .widthIn(max = 280.dp)
+                    .zelefinGlassChrome(hazeState, ZelefinMenuShape)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+                    .zelefinMenuWidth()
+                    .padding(vertical = 4.dp),
+            ) {
+                listOf(5, 10).filter { videos.size > it }.forEach { count ->
+                    DownloadMenuRow("Latest $count Videos", Icons.Outlined.Download, Color.White) { download(videos.take(count)) }
+                }
+                if (unwatched.isNotEmpty() && unwatched.size < videos.size) {
+                    DownloadMenuRow("Unwatched (${unwatched.size})", Icons.Outlined.Download, Color.White) { download(unwatched) }
+                }
+                if (videos.isNotEmpty()) {
+                    DownloadMenuRow(
+                        if (videos.size == 1) "Download Video" else "All ${videos.size} Videos",
+                        Icons.Outlined.Download,
+                        Color.White,
+                    ) { download(videos) }
+                }
+                Box(
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(DockBorder),
+                )
+                DownloadMenuRow("Cancel", Icons.Outlined.Close, DestructiveRed) { run(onDismiss) }
+            }
+        }
     }
 }
 

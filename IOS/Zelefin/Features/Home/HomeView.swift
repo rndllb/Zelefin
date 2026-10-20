@@ -6,6 +6,7 @@ struct HomeView: View {
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
     @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = ""
     @State private var headerVisible = true
+    @State private var heroLock = HeroHeightLock()
 
     private var homeFeed: [HomeFeedItem] {
         HomeLayoutPreferences.feed(
@@ -54,7 +55,7 @@ struct HomeView: View {
                                     case let .featured(items):
                                         let heroSize = CGSize(
                                             width: geo.size.width,
-                                            height: PosterMetrics.heroHeight(for: geo.size)
+                                            height: heroLock.height(for: geo.size)
                                         )
                                         FeaturedHero(items: items, size: heroSize) { title in
                                             session.library?.backdropURL(for: title)
@@ -71,6 +72,7 @@ struct HomeView: View {
                         .refreshable { await session.refreshHome() }
                         .scrollClipDisabled()
                         .zelefinScrollEdgeBlur()
+                        .zelefinPinnedBottomEdge()
                         .zelefinHeaderScrollVisibility($headerVisible)
                     }
                 }
@@ -79,6 +81,8 @@ struct HomeView: View {
                     .padding(.top, ScreenInsets.top)
                     .transition(.opacity)
             }
+            .onAppear { heroLock.lock(geo.size) }
+            .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
         }
         .background(Color.black.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
@@ -125,9 +129,7 @@ struct MediaRow: View {
                 .padding(.horizontal, 16)
             }
         }
-        .fullScreenCover(item: $playingItem) { item in
-            PlayerView(item: item)
-        }
+        .presentsPlayerFromRoot($playingItem)
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
@@ -359,9 +361,7 @@ struct ContinueWatchingListView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .zelefinPushedChrome(title: title) { EmptyView() }
-        .fullScreenCover(item: $playingItem) { item in
-            PlayerView(item: item)
-        }
+        .presentsPlayerFromRoot($playingItem)
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
@@ -472,7 +472,11 @@ struct CatalogCardGridView: View {
             .padding(16)
         }
         .background(Color.black.ignoresSafeArea())
-        .zelefinPushedChrome(title: section.title) { EmptyView() }
+        .zelefinScrollEdgeBlur()
+        .zelefinPinnedBottomEdge()
+        .navigationTitle(section.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
@@ -502,49 +506,66 @@ struct CatalogGridView: View {
     }
 
     var body: some View {
-        ScrollView {
-            if isLoading {
-                ProgressView()
-                    .tint(.white)
-                    .padding(.top, 80)
-                    .frame(maxWidth: .infinity)
-            } else if items.isEmpty {
-                ContentUnavailableView(
-                    browseQuery.isDefault ? "No Titles" : "No Matches",
-                    systemImage: "rectangle.stack",
-                    description: Text(browseQuery.isDefault ? "Nothing in this category yet." : "No titles match these filters.")
-                )
-                .padding(.top, 40)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    CatalogIndexBar(progress: indexProgress)
-                    LazyVGrid(columns: columns, spacing: 20) {
-                        ForEach(items) { item in
-                            NavigationLink {
-                                LibraryItemRoute(item: item)
-                            } label: {
-                                FillingPortraitPoster(
-                                    item: item,
-                                    imageURL: session.library?.primaryURL(for: item)
-                                )
+        ScrollViewReader { proxy in
+            ZStack {
+                ScrollView {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                            .padding(.top, 80)
+                            .frame(maxWidth: .infinity)
+                    } else if items.isEmpty {
+                        ContentUnavailableView(
+                            browseQuery.isDefault ? "No Titles" : "No Matches",
+                            systemImage: "rectangle.stack",
+                            description: Text(browseQuery.isDefault ? "Nothing in this category yet." : "No titles match these filters.")
+                        )
+                        .padding(.top, 40)
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            CatalogIndexBar(progress: indexProgress)
+                            LazyVGrid(columns: columns, spacing: 20) {
+                                ForEach(items) { item in
+                                    NavigationLink {
+                                        LibraryItemRoute(item: item)
+                                    } label: {
+                                        FillingPortraitPoster(
+                                            item: item,
+                                            imageURL: session.library?.primaryURL(for: item)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .id(item.id)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .padding(16)
+                            .padding(.trailing, 14)
                         }
                     }
-                    .padding(16)
+                }
+                if !items.isEmpty {
+                    CatalogAlphabetRail(items: items) { id in
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            proxy.scrollTo(id, anchor: .top)
+                        }
+                    }
                 }
             }
         }
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
-        .zelefinPushedChrome(title: title) {
-            CatalogFilterSortButtons(
-                filterCount: browseQuery.activeFilterCount,
-                sortTitle: browseQuery.sort.title,
-                onSort: { showSort = true },
-                onFilter: { showFilters = true }
-            )
-        }
+        .zelefinPinnedBottomEdge()
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .catalogFilterSortToolbar(
+            filterCount: browseQuery.activeFilterCount,
+            sortTitle: browseQuery.sort.title,
+            showFilters: $showFilters,
+            showSort: $showSort
+        )
         .catalogFilterSheets(
             query: $browseQuery,
             options: options,

@@ -10,6 +10,7 @@ import app.zelefin.core.TitleDetail
 import java.io.File
 import java.net.URI
 import java.time.Instant
+import java.util.concurrent.Executors
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -22,6 +23,8 @@ import kotlinx.serialization.json.Json
 class SnapshotStore(context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     private val root = File(context.cacheDir, "Zelefin")
+    /** Encoding a large catalog on the main thread stutters scrolling; saves run in order here. */
+    private val writer = Executors.newSingleThreadExecutor { task -> Thread(task, "zelefin-snapshots").apply { isDaemon = true } }
 
     fun loadHome(session: SavedSession): Pair<HomeFeed, List<LibraryRoom>>? {
         val file = file(HOME, session.userId, host(session.serverUrl))
@@ -122,15 +125,17 @@ class SnapshotStore(context: Context) {
     }
 
     private inline fun <reified T> write(folder: String, file: File, value: T) {
-        runCatching {
-            val directory = File(root, folder)
-            directory.mkdirs()
-            val data = json.encodeToString(value)
-            val temporary = File(directory, "${file.name}.tmp")
-            temporary.writeText(data)
-            if (!temporary.renameTo(file)) {
-                file.writeText(data)
-                temporary.delete()
+        writer.execute {
+            runCatching {
+                val directory = File(root, folder)
+                directory.mkdirs()
+                val data = json.encodeToString(value)
+                val temporary = File(directory, "${file.name}.tmp")
+                temporary.writeText(data)
+                if (!temporary.renameTo(file)) {
+                    file.writeText(data)
+                    temporary.delete()
+                }
             }
         }
     }

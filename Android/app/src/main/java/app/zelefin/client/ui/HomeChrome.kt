@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -59,7 +58,6 @@ import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -448,27 +446,18 @@ private fun FeaturedHero(
                     }
                 }
                 val moreAnchor = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+                // Drawn above the page on the dock's liquid glass, so it refracts the hero art.
                 Box(
                     Modifier
                         .size(48.dp)
-                        .shadow(
-                            elevation = 6.dp,
-                            shape = CircleShape,
-                            ambientColor = Color.Black.copy(alpha = 0.06f),
-                            spotColor = Color.Black.copy(alpha = 0.10f),
-                        )
-                        .clip(CircleShape)
-                        .background(DockFill)
-                        .border(0.5.dp, DockBorder, CircleShape)
                         .onGloballyPositioned { coords ->
                             val next = coords.boundsInRoot()
                             if (moreAnchor.value != next) moreAnchor.value = next
                         }
-                        .clickable { onMore(item, moreAnchor.value) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Filled.MoreHoriz, contentDescription = "More", tint = Color.White)
-                }
+                        .zelefinGlassDisc("hero-more", "More", Icons.Filled.MoreHoriz) {
+                            onMore(item, moreAnchor.value)
+                        },
+                )
             }
         }
         if (slides.size > 1) {

@@ -9,6 +9,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jellyfin.sdk.api.client.exception.InvalidStatusException
 import org.jellyfin.sdk.api.client.extensions.activityLogApi
 import org.jellyfin.sdk.api.client.extensions.backupApi
 import org.jellyfin.sdk.api.client.extensions.brandingApi
@@ -350,6 +351,19 @@ suspend fun JellyfinLibrary.resetUserPassword(userId: String) = withContext(Disp
 suspend fun JellyfinLibrary.setUserPassword(userId: String, newPassword: String) = withContext(Dispatchers.IO) {
     if (newPassword.isEmpty()) throw ZelefinException.server("Enter a new password.")
     sdk.userApi.updateUserPassword(UUID.fromString(userId), UpdateUserPassword(resetPassword = false, newPw = newPassword))
+    Unit
+}
+
+/** The signed-in user changing their own password; Jellyfin checks [current]. */
+suspend fun JellyfinLibrary.changeOwnPassword(userId: String, current: String, new: String) = withContext(Dispatchers.IO) {
+    try {
+        sdk.userApi.updateUserPassword(UUID.fromString(userId), UpdateUserPassword(currentPw = current, newPw = new, resetPassword = false))
+    } catch (error: InvalidStatusException) {
+        throw ZelefinException.server(
+            if (error.status == 401 || error.status == 403) "The current password is not right."
+            else "Jellyfin could not update the password (${error.status}).",
+        )
+    }
     Unit
 }
 

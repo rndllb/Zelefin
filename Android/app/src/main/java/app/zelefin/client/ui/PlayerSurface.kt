@@ -85,6 +85,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -140,6 +141,7 @@ import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
 import app.zelefin.core.PlaybackMethod
 import app.zelefin.core.PlaybackPlan
+import app.zelefin.core.VideoRange
 import app.zelefin.core.PlaybackResumePolicy
 import java.util.Locale
 import kotlin.math.min
@@ -609,11 +611,17 @@ fun PlayerSurface(
         (playbackState == Player.STATE_BUFFERING || (playbackState == Player.STATE_IDLE && playWhenReady))
     val showChrome = chromeVisible && !locked && !inPip && !suspended
 
+    // SDR plays on a TextureView so the liquid glass controls can refract the picture; HDR keeps the
+    // SurfaceView, which no layer can sample, and its controls fall back to tinted glass.
+    val videoGlass = remember { GlassSource() }
+    val sampleVideo = plan.item.videoRange == VideoRange.Sdr
+    CompositionLocalProvider(LocalGlassSource provides if (sampleVideo) videoGlass else null) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val configuration = LocalConfiguration.current
         AndroidView(
             factory = { viewContext ->
-                (LayoutInflater.from(viewContext).inflate(R.layout.zelefin_player_view, null) as PlayerView).apply {
+                val layout = if (sampleVideo) R.layout.zelefin_player_view_texture else R.layout.zelefin_player_view
+                (LayoutInflater.from(viewContext).inflate(layout, null) as PlayerView).apply {
                     this.player = player
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     playerView = this
@@ -640,7 +648,7 @@ fun PlayerSurface(
                     SubtitleAppearance.applyTo(view, fill = fillsScreen)
                 }
             },
-            modifier = Modifier.fillMaxSize(),
+            modifier = if (sampleVideo) Modifier.fillMaxSize().glassSource(videoGlass) else Modifier.fillMaxSize(),
         )
         Box(
             Modifier
@@ -870,6 +878,7 @@ fun PlayerSurface(
             onToggleStats = { showStats = !showStats },
             onAppearanceChange = { styleRevision += 1 },
         )
+    }
     }
 }
 

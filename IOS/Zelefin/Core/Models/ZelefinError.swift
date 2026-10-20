@@ -12,6 +12,7 @@ enum ZelefinError: LocalizedError, Sendable {
     case bitrateTestFailed
     case offlineFileUnreadable
     case accessGateway
+    case seerrUnauthorized
     case quickConnectDisabled
     case quickConnectExpired
     case quickConnectUnavailable
@@ -42,6 +43,8 @@ enum ZelefinError: LocalizedError, Sendable {
             "Zelefin could not open the downloaded file."
         case .accessGateway:
             "This server is behind an access gateway such as Cloudflare Zero Trust or Pangolin. Add the gateway client ID and token, then try again."
+        case .seerrUnauthorized:
+            "Seerr session expired. Sign in again."
         case .quickConnectDisabled:
             "Quick Connect is turned off on this server."
         case .quickConnectExpired:

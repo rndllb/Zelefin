@@ -63,6 +63,12 @@ import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.RemoveCircleOutline
 import app.zelefin.client.plugins.JellyfinEnhancedHomeHide
 import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.WatchLater
+import androidx.compose.ui.platform.LocalContext
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
 
@@ -353,6 +359,27 @@ private fun TitleMorePanel(
                 .zelefinMenuWidth()
                 .padding(vertical = 4.dp),
         ) {
+            if (item.isYouTube) {
+                YouTubeMoreRows(
+                    item = item,
+                    showGoTo = showGoTo,
+                    showRemote = showRemote,
+                    showSync = showSync,
+                    showRefresh = showRefresh,
+                    usesSilo = usesSilo,
+                    onPlay = onPlay,
+                    onOpen = onOpen,
+                    onToggleWatched = onToggleWatched,
+                    onDownload = onDownload,
+                    onToggleFavorite = onToggleFavorite,
+                    onToggleWatchlist = onToggleWatchlist,
+                    onHideFromHome = onHideFromHome,
+                    onPlayElsewhere = onPlayElsewhere,
+                    onSyncPlay = onSyncPlay,
+                    onRefreshMetadata = onRefreshMetadata,
+                )
+                return@Column
+            }
             MoreRow(if (item.kind == MediaKind.Episode) "Play Episode" else "Play", Icons.Filled.PlayArrow, onPlay)
             if (showGoTo) {
                 val show = item.kind == MediaKind.Episode || item.kind == MediaKind.Season || item.kind == MediaKind.Series
@@ -448,6 +475,99 @@ private fun TitleMorePanel(
                 }
             }
         }
+    }
+}
+
+/**
+ * TubeArchivist channels and videos: YouTube wording, Open in YouTube, and only actions that
+ * hold up for a TubeArchivist-managed library (no identify, metadata edits, collections,
+ * subtitle search, cinema intros, or file deletion).
+ */
+@Composable
+private fun YouTubeMoreRows(
+    item: MediaItem,
+    showGoTo: Boolean,
+    showRemote: Boolean,
+    showSync: Boolean,
+    showRefresh: Boolean,
+    usesSilo: Boolean,
+    onPlay: () -> Unit,
+    onOpen: () -> Unit,
+    onToggleWatched: () -> Unit,
+    onDownload: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onToggleWatchlist: (() -> Unit)?,
+    onHideFromHome: (() -> Unit)?,
+    onPlayElsewhere: (() -> Unit)?,
+    onSyncPlay: (() -> Unit)?,
+    onRefreshMetadata: (() -> Unit)?,
+) {
+    val context = LocalContext.current
+    val channel = item.kind == MediaKind.Series
+    MoreRow(
+        when {
+            channel -> "Play Latest"
+            item.showsResumeProgress -> "Resume"
+            else -> "Play"
+        },
+        Icons.Filled.PlayArrow,
+        onPlay,
+    )
+    if (showGoTo && !channel) MoreRow("Go to Channel", Icons.Outlined.AccountCircle, onOpen)
+    MoreRow(
+        when {
+            channel && item.isWatched -> "Mark Channel as Unwatched"
+            channel -> "Mark Channel as Watched"
+            item.isWatched -> "Mark as Unwatched"
+            else -> "Mark as Watched"
+        },
+        if (item.isWatched) Icons.Outlined.VisibilityOff else Icons.Outlined.CheckCircle,
+        onToggleWatched,
+    )
+    if (!channel) {
+        val downloadControl = app.zelefin.client.downloads.ZelefinDownloads.state.collectAsState().value.control(item)
+        if (downloadControl != app.zelefin.client.downloads.DownloadControlState.Unavailable) {
+            MoreRow(
+                when (downloadControl) {
+                    app.zelefin.client.downloads.DownloadControlState.Idle -> "Download Video"
+                    else -> downloadControl.menuTitle
+                },
+                when (downloadControl) {
+                    is app.zelefin.client.downloads.DownloadControlState.Downloading -> Icons.Outlined.StopCircle
+                    app.zelefin.client.downloads.DownloadControlState.Downloaded -> Icons.Filled.CheckCircle
+                    else -> Icons.Outlined.Download
+                },
+                onDownload,
+            )
+        }
+    }
+    MoreRow(
+        if (item.isFavorite) "Remove from Favorites" else "Add to Favorites",
+        if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+        onToggleFavorite,
+    )
+    if (!channel && onToggleWatchlist != null && !usesSilo) {
+        MoreRow(
+            if (item.isWatchlisted) "Remove from Watch Later" else "Save to Watch Later",
+            Icons.Outlined.WatchLater,
+            onToggleWatchlist,
+        )
+    }
+    if (onHideFromHome != null) MoreRow("Hide from Continue Watching", Icons.Outlined.RemoveCircleOutline, onHideFromHome)
+    item.youTubeUrl?.let { url ->
+        MoreRow("Open in YouTube", Icons.AutoMirrored.Outlined.OpenInNew, {
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        })
+    }
+    if (!channel && showRemote) {
+        MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = { onPlayElsewhere?.invoke() })
+    }
+    if (!channel && showSync) {
+        MoreRow("Watch Together…", Icons.Outlined.Groups, onClick = { onSyncPlay?.invoke() })
+    }
+    if (showRefresh) {
+        MenuHairline()
+        MoreRow("Refresh from TubeArchivist", Icons.Outlined.Refresh, dismissOnClick = false, onClick = { onRefreshMetadata?.invoke() })
     }
 }
 

@@ -37,9 +37,7 @@ struct LiveTVView: View {
         .sheet(isPresented: $showFilters) {
             LiveTVFilterSheet(selection: $programFilters)
         }
-        .fullScreenCover(item: $playingItem) { item in
-            PlayerView(item: item)
-        }
+        .presentsPlayerFromRoot($playingItem)
         .alert("Library", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -498,7 +496,7 @@ private struct LiveTVFilterSheet: View {
                                 }
                             }
                         }
-                        .listRowBackground(Color.white.opacity(0.08))
+                        .zelefinRowBackground()
                     }
                 }
             }
@@ -1236,6 +1234,7 @@ struct LiveTVProgramDetailView: View {
     @State private var restartItem: MediaItem?
     @State private var showsMoreInfo = false
     @State private var showsAboutPage = false
+    @State private var heroLock = HeroHeightLock()
 
     init(program: LiveProgram, playItem: MediaItem) {
         self.program = program
@@ -1250,7 +1249,7 @@ struct LiveTVProgramDetailView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         hero(
                             width: geo.size.width,
-                            height: PosterMetrics.heroHeight(for: geo.size),
+                            height: heroLock.height(for: geo.size),
                             now: context.date
                         )
 
@@ -1272,6 +1271,9 @@ struct LiveTVProgramDetailView: View {
                 .scrollIndicators(.hidden)
                 .scrollClipDisabled()
                 .zelefinScrollEdgeHidden()
+                .zelefinPinnedBottomEdge()
+                .onAppear { heroLock.lock(geo.size) }
+                .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -1302,9 +1304,7 @@ struct LiveTVProgramDetailView: View {
             .accessibilityLabel("More")
         }
         .tint(.white)
-        .fullScreenCover(item: $playingItem) { item in
-            PlayerView(item: item)
-        }
+        .presentsPlayerFromRoot($playingItem)
         .sheet(isPresented: $showsMoreInfo) {
             TitleMoreInfoView(item: program.item, info: TitleMoreInfo()) {
                 showsMoreInfo = false

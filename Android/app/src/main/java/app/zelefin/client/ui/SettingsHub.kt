@@ -1,29 +1,39 @@
 package app.zelefin.client.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.zelefin.core.SavedSession
+
+/** iOS 26 inset grouped list: borderless rounded sections, accent icons, secondary captions. */
+internal val SettingsGroupShape = RoundedCornerShape(26.dp)
+internal val SettingsGroupMargin = 16.dp
+internal val SettingsContentInset = 16.dp
 
 internal data class SettingsHubItem(
     val title: String,
@@ -33,84 +43,89 @@ internal data class SettingsHubItem(
     val onClick: () -> Unit,
 )
 
+/** Rows that share one bordered card, split by hairlines. */
 @Composable
 internal fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(content = content)
-    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = SettingsGroupMargin)
+            .clip(SettingsGroupShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        content = content,
+    )
 }
 
 @Composable
 internal fun SettingsGroupDivider() {
-    HorizontalDivider(Modifier.padding(start = 72.dp))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = SettingsContentInset + 36.dp)
+            .height(0.5.dp)
+            .background(IOSColors.separator),
+    )
 }
 
+/** Accent icon, white title, muted caption, chevron. */
 @Composable
 internal fun SettingsNavRow(
     title: String,
     icon: ImageVector,
     trailing: String? = null,
+    summary: String? = null,
     onClick: () -> Unit,
 ) {
-    ListItem(
-        headlineContent = {
-            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
-        leadingContent = {
-            Icon(icon, contentDescription = null)
-        },
-        trailingContent = {
-            Row {
-                if (!trailing.isNullOrBlank()) {
-                    Text(
-                        trailing,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        modifier = Modifier.padding(end = 4.dp),
-                    )
-                }
-                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = SettingsRowHeight)
+            .clickable(onClick = onClick)
+            .padding(horizontal = SettingsContentInset, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = SettingsRowText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            (summary ?: trailing)?.takeIf { it.isNotBlank() }?.let { text ->
+                Text(text, color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(onClick = onClick),
-    )
+        }
+        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+    }
 }
 
 @Composable
 internal fun SettingsProfileRow(session: SavedSession?, onClick: () -> Unit) {
     val name = session?.userName?.takeIf { it.isNotBlank() } ?: "Account"
     val handle = if (session?.usesSilo == true) "Silo account" else "Jellyfin account"
-    ListItem(
-        headlineContent = {
-            Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
-        supportingContent = {
-            Text(handle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
-        leadingContent = {
-            AccountAvatar(session, onClick = onClick, diameter = 44.dp)
-        },
-        trailingContent = {
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(onClick = onClick),
-    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(SettingsContentInset),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        AccountAvatar(session, onClick = onClick, diameter = 48.dp)
+        Column(Modifier.weight(1f)) {
+            Text(name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(handle, color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+    }
 }
 
+/** Small muted section caption above a card. */
 @Composable
 internal fun SettingsSectionLabel(title: String) {
     Text(
         title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+        color = IOSColors.secondaryLabel,
+        fontFamily = ZelefinFont,
+        fontSize = 13.sp,
+        modifier = Modifier.padding(start = SettingsGroupMargin + SettingsContentInset, end = SettingsGroupMargin + SettingsContentInset, top = 24.dp, bottom = 7.dp),
     )
 }
 
@@ -119,7 +134,7 @@ internal fun SettingsNavGroup(items: List<SettingsHubItem>) {
     SettingsGroup {
         items.forEachIndexed { index, item ->
             if (index > 0) SettingsGroupDivider()
-            SettingsNavRow(item.title, item.icon, onClick = item.onClick)
+            SettingsNavRow(item.title, item.icon, summary = item.caption, onClick = item.onClick)
         }
     }
 }
