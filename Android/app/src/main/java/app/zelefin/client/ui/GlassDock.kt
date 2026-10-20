@@ -122,11 +122,6 @@ class DockChromeState {
     var minimized by mutableStateOf(false)
         private set
     var hasMiniPlayer by mutableStateOf(false)
-    /** The mini player bar in root coordinates; Now Playing grows out of it, like Apple Music. */
-    var miniBar by mutableStateOf(Rect.Zero)
-    /** How collapsed the bar was, so the zoom card starts with the same layout. */
-    var miniCollapse by mutableFloatStateOf(0f)
-    val zoom = NowPlayingZoomState()
     private var travel = 0f
 
     /** Scrolling the page down collapses the dock; scrolling up, or pulling at the top, brings it back. */
@@ -274,7 +269,6 @@ fun ZelefinGlassDock(
                     item = nowPlaying,
                     session = session,
                     collapse = progress,
-                    chrome = chrome,
                     onOpen = onOpenNowPlaying,
                     onStop = onStopNowPlaying,
                     modifier = Modifier.matchParentSize().clip(RoundedCornerShape(miniHeight / 2)),
@@ -423,7 +417,6 @@ private fun DockMiniPlayer(
     item: MediaItem,
     session: SavedSession?,
     collapse: Float,
-    chrome: DockChromeState,
     onOpen: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
@@ -436,11 +429,7 @@ private fun DockMiniPlayer(
         collapse = collapse,
         onOpen = onOpen,
         modifier = modifier
-            .onGloballyPositioned {
-                bounds = it.boundsInRoot()
-                chrome.miniBar = bounds
-                chrome.miniCollapse = collapse
-            }
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
             .combinedClickable(
                 onClickLabel = "Open player",
                 onLongClick = { menuOpen = true },
@@ -474,10 +463,7 @@ private fun DockMiniPlayer(
     }
 }
 
-/**
- * The mini player's contents. The zoom overlay draws the same row (with [onOpen] null) so the
- * card starts out looking exactly like the bar it grows from.
- */
+/** The mini player's contents: artwork, title, and transport buttons. */
 @Composable
 internal fun MiniPlayerRow(
     item: MediaItem,
