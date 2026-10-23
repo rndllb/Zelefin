@@ -14,18 +14,13 @@ struct ProfileView: View {
     @State private var isUpdatingPhoto = false
     @State private var localAvatar: UIImage?
     @State private var pickerItem: PhotosPickerItem?
-    @State private var showsSiloAvatarPicker = false
     @State private var tokenVisible = false
     @State private var tokenCopied = false
-    @State private var pinProfile: SiloHouseholdProfile?
+    @State private var showsSiloAvatarPicker = false
+    @State private var pinProfile: SiloProfile?
     @State private var profilePIN = ""
-    @State private var isSwitchingProfile = false
     @State private var switchingProfileID: String?
-    @State private var householdError: String?
-    @State private var showsAddProfile = false
-    @State private var newProfileName = ""
-    @State private var newProfilePIN = ""
-    @State private var newProfileIsChild = false
+    @State private var profileError: String?
     @FocusState private var passwordField: PasswordField?
 
     var body: some View {
@@ -35,29 +30,26 @@ struct ProfileView: View {
             }
             .zelefinRowBackground()
 
-            if session.usesSilo {
+            if session.hasSiloLink, !session.siloProfiles.isEmpty {
                 Section {
-                    householdStrip
-                    if let householdError, !showsAddProfile {
-                        Text(householdError)
+                    profileStrip
+                    if let profileError {
+                        Text(profileError)
                             .font(.footnote)
                             .foregroundStyle(.red)
-                            .zelefinRowBackground()
                     }
                 } header: {
                     Text("Who’s watching")
                 } footer: {
-                    Text("Continue Watching, recommendations, and watched flags follow the selected profile — not the account password.")
+                    Text("Continue Watching, recommendations, and watched flags follow the selected profile.")
                 }
+                .zelefinRowBackground()
             }
 
             if let current = session.session {
                 Section("Server") {
                     LabeledContent("Server", value: current.displayServer)
                     LabeledContent("Address", value: current.serverURL.absoluteString)
-                    if current.usesSilo, let profile = current.profileName, !profile.isEmpty {
-                        LabeledContent("Profile", value: profile)
-                    }
                 }
                 .zelefinRowBackground()
             }
@@ -89,7 +81,7 @@ struct ProfileView: View {
                     }
                     .disabled(!canUpdatePassword || isSavingPassword)
                 } else {
-                    Text("This household profile cannot change the account password.")
+                    Text("Change this password in Silo. Its Jellyfin-compatible API cannot change it.")
                         .foregroundStyle(.secondary)
                 }
             } header: {
@@ -131,11 +123,9 @@ struct ProfileView: View {
                 }
                 addUserRow
             } header: {
-                Text(session.usesSilo ? "Accounts" : "Users")
+                Text(session.isSiloServer ? "Accounts" : "Users")
             } footer: {
-                Text(session.usesSilo
-                     ? "Saved logins stay on this device. People on a login are household profiles, not extra accounts."
-                     : "Add another person on \(serverLabel). Saved users stay on this device.")
+                Text(usersFooter)
             }
             .zelefinRowBackground()
         }
@@ -143,12 +133,6 @@ struct ProfileView: View {
         .onChange(of: pickerItem) { _, item in
             guard let item else { return }
             Task { await uploadPhoto(item) }
-        }
-        .sheet(isPresented: $showsSiloAvatarPicker) {
-            SiloAvatarPickerView()
-        }
-        .sheet(isPresented: $showsAddProfile) {
-            addProfileSheet
         }
         .alert(
             "PIN for \(pinProfile?.name ?? "this profile")",
@@ -165,18 +149,71 @@ struct ProfileView: View {
             }
             Button("Switch") {
                 guard let profile = pinProfile else { return }
-                Task { await switchHouseholdProfile(profile, pin: profilePIN) }
+                let pin = profilePIN
+                Task { await switchProfile(profile, pin: pin) }
             }
         } message: {
             Text("This profile is locked.")
         }
+        .task {
+            if session.hasSiloLink { await session.refreshSiloProfiles() }
+        }
+        .sheet(isPresented: $showsSiloAvatarPicker) {
+            SiloAvatarPickerView()
+        }
+    }
+
+    private var profileStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 18) {
+                ForEach(session.siloProfiles) { profile in
+                    let isCurrent = profile.id == session.currentSiloProfileID
+                    Button {
+                        selectProfile(profile)
+                    } label: {
+                        HouseholdProfileTile(
+                            profile: profile,
+                            isCurrent: isCurrent,
+                            isSelected: switchingProfileID == profile.id,
+                            size: 76
+                        )
+                        .opacity(switchingProfileID != nil && switchingProfileID != profile.id ? 0.5 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(switchingProfileID != nil || isCurrent)
+                    .accessibilityLabel(isCurrent ? "\(profile.name), watching" : "Switch to \(profile.name)")
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+    }
+
+    private func selectProfile(_ profile: SiloProfile) {
+        profileError = nil
+        if profile.hasPin {
+            profilePIN = ""
+            pinProfile = profile
+        } else {
+            Task { await switchProfile(profile, pin: nil) }
+        }
+    }
+
+    private func switchProfile(_ profile: SiloProfile, pin: String?) async {
+        switchingProfileID = profile.id
+        defer {
+            switchingProfileID = nil
+            pinProfile = nil
+            profilePIN = ""
+        }
+        do {
+            try await session.switchSiloProfile(profile, pin: pin)
+        } catch {
+            profileError = error.localizedDescription
+        }
     }
 
     private var displayName: String {
-        if session.usesSilo {
-            let profile = session.session?.profileName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !profile.isEmpty { return profile }
-        }
         let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? "Account" : name
     }
@@ -191,7 +228,7 @@ struct ProfileView: View {
     }
 
     private var canChangePassword: Bool {
-        !(session.usesSilo && !session.canChangeSiloPassword)
+        !session.isSiloServer
     }
 
     private var canUpdatePassword: Bool {
@@ -207,7 +244,7 @@ struct ProfileView: View {
 
     private var passwordFooter: String {
         if !canChangePassword {
-            return "Switch to the primary household profile to change this account password."
+            return "Silo keeps account passwords in its own settings."
         }
         return "Updates the password for this login on \(serverLabel)."
     }
@@ -233,13 +270,24 @@ struct ProfileView: View {
         return String(repeating: "•", count: min(28, max(12, accessToken.count)))
     }
 
-    private var canRemovePhoto: Bool {
-        if session.usesSilo {
-            return localAvatar != nil || session.householdProfiles.contains(where: {
-                $0.id == session.session?.profileID && $0.hasAvatar
-            })
+    private var usersFooter: String {
+        if session.hasSiloLink {
+            return "Switch household profiles under Who’s watching. Saved users stay on this device."
         }
+        if session.isSiloServer {
+            return "Add another household profile by signing in as username#profile. Saved users stay on this device."
+        }
+        return "Add another person on \(serverLabel). Saved users stay on this device."
+    }
+
+    private var canRemovePhoto: Bool {
+        guard !session.isSiloServer else { return false }
         return session.session?.userImageTag != nil || localAvatar != nil
+    }
+
+    /// Silo's Jellyfin-compatible API can't change pictures; Silo's own sign-in can.
+    private var canChangePhoto: Bool {
+        !session.isSiloServer || session.hasSiloLink
     }
 
     private func copyAccessToken() {
@@ -252,7 +300,9 @@ struct ProfileView: View {
 
     private var identityHero: some View {
         VStack(spacing: 12) {
-            if session.usesSilo {
+            if !canChangePhoto {
+                profileAvatar
+            } else if session.hasSiloLink {
                 Button {
                     showsSiloAvatarPicker = true
                 } label: {
@@ -263,7 +313,6 @@ struct ProfileView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(isUpdatingPhoto)
                 .accessibilityLabel("Change Profile Picture")
             } else {
                 ZStack(alignment: .bottomTrailing) {
@@ -289,7 +338,7 @@ struct ProfileView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(displayName), \(serverKindLabel), \(serverLabel)")
 
-            if canRemovePhoto, !session.usesSilo {
+            if canRemovePhoto {
                 Button("Remove Photo", role: .destructive) {
                     Task { await removePhoto() }
                 }
@@ -308,7 +357,7 @@ struct ProfileView: View {
     }
 
     private var serverKindLabel: String {
-        session.usesSilo ? "Silo" : "Jellyfin"
+        session.isSiloServer ? "Silo" : "Jellyfin"
     }
 
     private var profileAvatar: some View {
@@ -326,172 +375,8 @@ struct ProfileView: View {
         .accessibilityHidden(true)
     }
 
-    private var householdStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 18) {
-                ForEach(session.householdProfiles) { profile in
-                    let isCurrent = profile.id == session.session?.profileID
-                    Button {
-                        selectHouseholdProfile(profile)
-                    } label: {
-                        ZStack {
-                            HouseholdProfileTile(
-                                profile: profile,
-                                isCurrent: isCurrent,
-                                isSelected: switchingProfileID == profile.id,
-                                size: 76
-                            )
-                            if switchingProfileID == profile.id {
-                                Circle()
-                                    .fill(.black.opacity(0.45))
-                                    .frame(width: 76, height: 76)
-                                    .offset(y: -16)
-                                ProgressView()
-                                    .tint(.white)
-                                    .offset(y: -16)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSwitchingProfile || isCurrent)
-                    .accessibilityLabel(householdAccessibility(profile, isCurrent: isCurrent))
-                    .accessibilityAddTraits(isCurrent ? [.isSelected] : [.isButton])
-                }
-                if session.canChangeSiloPassword {
-                    Button {
-                        householdError = nil
-                        newProfileName = ""
-                        newProfilePIN = ""
-                        newProfileIsChild = false
-                        showsAddProfile = true
-                    } label: {
-                        addProfileTile
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSwitchingProfile)
-                    .accessibilityLabel("Add Profile")
-                }
-            }
-            .padding(.vertical, 8)
-        }
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-        .listRowBackground(Color.clear)
-    }
-
-    private var addProfileTile: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "plus")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.92))
-                .frame(width: 76, height: 76)
-                .background(Circle().fill(Color.white.opacity(0.08)))
-                .overlay {
-                    Circle()
-                        .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
-                }
-            Text("Add")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(width: 84)
-    }
-
-    private func householdAccessibility(_ profile: SiloHouseholdProfile, isCurrent: Bool) -> String {
-        var parts = [profile.name]
-        if isCurrent { parts.append("watching") }
-        if profile.isPrimary { parts.append("primary") }
-        if profile.isChild { parts.append("kids") }
-        if profile.hasPin { parts.append("PIN required") }
-        if !isCurrent { parts.append("switch profile") }
-        return parts.joined(separator: ", ")
-    }
-
-    private func selectHouseholdProfile(_ profile: SiloHouseholdProfile) {
-        householdError = nil
-        guard profile.id != session.session?.profileID else { return }
-        if profile.hasPin {
-            profilePIN = ""
-            pinProfile = profile
-            return
-        }
-        Task { await switchHouseholdProfile(profile, pin: nil) }
-    }
-
-    private func switchHouseholdProfile(_ profile: SiloHouseholdProfile, pin: String?) async {
-        isSwitchingProfile = true
-        switchingProfileID = profile.id
-        householdError = nil
-        defer {
-            isSwitchingProfile = false
-            switchingProfileID = nil
-            pinProfile = nil
-            profilePIN = ""
-        }
-        do {
-            try await session.applySiloProfile(profile, pin: pin)
-        } catch {
-            householdError = error.localizedDescription
-        }
-    }
-
-    private var addProfileSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Name", text: $newProfileName)
-                    Toggle("Kids profile", isOn: $newProfileIsChild)
-                    SecureField("PIN (optional)", text: $newProfilePIN)
-                        .keyboardType(.numberPad)
-                } footer: {
-                    Text("A PIN locks this person on this login. Leave it empty for an unlocked profile.")
-                }
-                .zelefinRowBackground()
-                Section {
-                    Button("Create Profile") {
-                        Task { await createHouseholdProfile() }
-                    }
-                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSwitchingProfile)
-                }
-                .zelefinRowBackground()
-                if let householdError {
-                    Section {
-                        Text(householdError)
-                            .foregroundStyle(.red)
-                    }
-                    .zelefinRowBackground()
-                }
-            }
-            .zelefinSettingsChrome(title: "Add Profile")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showsAddProfile = false }
-                }
-            }
-        }
-    }
-
-    private func createHouseholdProfile() async {
-        isSwitchingProfile = true
-        householdError = nil
-        defer { isSwitchingProfile = false }
-        do {
-            let pinValue = newProfilePIN.trimmingCharacters(in: .whitespacesAndNewlines)
-            try await session.createSiloProfile(
-                name: newProfileName,
-                pin: pinValue.isEmpty ? nil : pinValue,
-                isChild: newProfileIsChild
-            )
-            showsAddProfile = false
-            newProfileName = ""
-            newProfilePIN = ""
-            newProfileIsChild = false
-        } catch {
-            householdError = error.localizedDescription
-        }
-    }
-
     private var addUserTitle: String {
-        session.usesSilo ? "Add Account" : "Add User"
+        session.isSiloServer ? "Add Account" : "Add User"
     }
 
     private var addUserRow: some View {
@@ -622,54 +507,21 @@ struct AddAccountView: View {
     @State private var password = ""
     @State private var isConnecting = false
     @State private var errorMessage: String?
-    @State private var householdPick: [SiloHouseholdProfile] = []
 
     var body: some View {
-        Group {
-            if !householdPick.isEmpty {
-                SiloWhoIsWatchingView(
-                    profiles: householdPick,
-                    footerTitle: "Cancel",
-                    isBusy: isConnecting,
-                    errorMessage: errorMessage,
-                    onSelect: { profile, pin in
-                        await pick(profile, pin: pin)
-                    },
-                    onFooter: {
-                        errorMessage = nil
-                        householdPick = []
-                        session.cancelSiloProfilePick()
-                    }
-                )
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
-            } else {
-                addForm
-            }
-        }
-        .onDisappear {
-            householdPick = []
-            if session.pendingSiloSignIn != nil {
-                session.cancelSiloProfilePick()
-            }
-        }
-    }
-
-    private var addForm: some View {
         Form {
             Section {
                 LabeledContent("Server", value: serverLabel)
             } footer: {
-                Text(session.usesSilo
-                     ? "New accounts are added on the Silo server you’re already using. After you sign in, pick a household profile."
+                Text(session.isSiloServer
+                     ? "Sign in as username#profile to add another household profile on this Silo server."
                      : "New users are added on the server you’re already using.")
             }
             .zelefinRowBackground()
 
             Section {
-                TextField(session.usesSilo ? "Username or email" : "Username", text: $username)
+                TextField(session.isSiloServer ? "username#profile" : "Username", text: $username)
                     .textContentType(.username)
-                    .keyboardType(session.usesSilo ? .emailAddress : .default)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 SecureField("Password", text: $password)
@@ -680,7 +532,7 @@ struct AddAccountView: View {
             .zelefinRowBackground()
 
             Section {
-                Button(session.usesSilo ? "Add Account" : "Add User") {
+                Button(session.isSiloServer ? "Add Account" : "Add User") {
                     Task { await add() }
                 }
                 .disabled(!canSubmit || isConnecting)
@@ -694,7 +546,7 @@ struct AddAccountView: View {
                 .zelefinRowBackground()
             }
         }
-        .zelefinSettingsChrome(title: session.usesSilo ? "Add Account" : "Add User")
+        .zelefinSettingsChrome(title: session.isSiloServer ? "Add Account" : "Add User")
     }
 
     private var serverLabel: String {
@@ -711,23 +563,6 @@ struct AddAccountView: View {
         defer { isConnecting = false }
         do {
             try await session.addUserOnCurrentServer(username: username, password: password)
-            if let pending = session.pendingSiloSignIn {
-                householdPick = pending.profiles
-            } else {
-                dismiss()
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func pick(_ profile: SiloHouseholdProfile, pin: String?) async {
-        isConnecting = true
-        errorMessage = nil
-        defer { isConnecting = false }
-        do {
-            try await session.selectSiloProfile(profile, pin: pin)
-            householdPick = []
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

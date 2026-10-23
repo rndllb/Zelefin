@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B643BECC71EEC9BD7F6C21CD /* SiloProfileAvatars.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */; };
+		E6F868838381DB4F1661FADE /* SiloAvatarPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */; };
+		449A41989B7352DB77F72C8D /* SiloWhoIsWatchingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A800F38D20864B69E7F6E437 /* SiloWhoIsWatchingView.swift */; };
+		674F8B89B1E38845443E95F3 /* SiloAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 282E708AA97174988DDA13B3 /* SiloAccountClient.swift */; };
 		0122D784BA433B8A98EF6255 /* DeepLinkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2532A7E400B9EC5A2653B6B5 /* DeepLinkStore.swift */; };
 		07F14431A1CD07EDE33B7ADF /* PosterQualityBadgeStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2270D3618FBCD955D4102210 /* PosterQualityBadgeStack.swift */; };
 		0BC2FD5294C1F48F44B80A36 /* PosterPrefetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA52BE5DA482743457932DF /* PosterPrefetcher.swift */; };
@@ -14,7 +18,6 @@
 		0C9BA7440AD7C0585B83679A /* IntroSkipperClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000E30102DA9E9615FC4E396 /* IntroSkipperClient.swift */; };
 		0DF3A11C372D63C15F3DDBB8 /* DirectPlayPictureInPicture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E48B4EBA9121569599709D87 /* DirectPlayPictureInPicture.swift */; };
 		11429EA0816FD8D4E53B377F /* LoginChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66513F2821AF62BDE2DAD9E8 /* LoginChrome.swift */; };
-		11D092D86379D4BD64CE5E0D /* SiloPlaybackReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFFB923295161C9AFF5DD6D /* SiloPlaybackReporter.swift */; };
 		1382C2BB8A86CA24CE797E79 /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8B4845126B9041B9EC3DCE0 /* ItemDetailView.swift */; };
 		140A5BED3DD4472E3D49816B /* JellyfinByteRangeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C69D4FC449A5A69EC7217C20 /* JellyfinByteRangeReader.swift */; };
 		171029B1DCECFB111465241F /* PlayerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28D1FE8B38197504B3EBED4E /* PlayerModel.swift */; };
@@ -27,9 +30,7 @@
 		21EE13145E4831A498FFDEBF /* SeerrDiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533892AF69D1B7A279174A72 /* SeerrDiscoverView.swift */; };
 		223101D636CA3512D91FE604 /* HomeNetworkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF3B744FC3D25EFA7FBC7C2 /* HomeNetworkTests.swift */; };
 		24A542EDE832BBC84AF91CF9 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 959AD1E0A6E5CA2A60595B6C /* DeviceIdentity.swift */; };
-		24FA8D6821FA02058D7E71D8 /* SiloMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 861E5EF7C8C684359AD31A98 /* SiloMapper.swift */; };
 		25F99F407BA393BCDCFF2399 /* SeerrDiscover.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC535123280EBE8E0BC7162F /* SeerrDiscover.swift */; };
-		26148D40712BA1B9587DFACF /* MediaBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8E1C3415DC9813C849A03A /* MediaBackend.swift */; };
 		26611EBCD4260B2940974A40 /* LibraryAdminTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3962A2210D8735FC60C72ECC /* LibraryAdminTests.swift */; };
 		26E2641FFA58ABE8C3E08209 /* NetworkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07FE4B169BDB9A5AEE2E665B /* NetworkSettingsView.swift */; };
 		28C3A4A5337C545359F6B80C /* MediaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF605DE82AE378D8A40E1763 /* MediaModels.swift */; };
@@ -48,10 +49,8 @@
 		34D27A52A5A555F55CBD3515 /* SearchHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FD723FEAF5DE24252DABD24 /* SearchHistoryStore.swift */; };
 		357E574F3E9D980961C1E0F7 /* ReviewDemoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAED4C9AFE0CF63BDE79CBDD /* ReviewDemoTests.swift */; };
 		35BFA5527F1B486A4A0747FA /* HomeLayoutPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8CF0158CA4E96DCC858822 /* HomeLayoutPreferences.swift */; };
-		37D8FD9E23AE9D573F01CBB5 /* SiloModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E4BF6587F8DDCA256247DB /* SiloModels.swift */; };
 		37EDA9533C4933841E7D2961 /* PlaybackSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ED05B4032CD2584D621FC60 /* PlaybackSettingsView.swift */; };
 		38F108752DB25265F5ED6563 /* PluginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35520B035EA3BB6DD34F49EE /* PluginTests.swift */; };
-		3B4EDF3BE2F12232FE6E586F /* SiloLibraryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E044A37F3F5832959D681A8C /* SiloLibraryClient.swift */; };
 		3B83FD9055C5FC124A00F94B /* ZelefinCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAE3CF5DB0C1D55FAA66726B /* ZelefinCompanion.swift */; };
 		3F74FF77D3F4B662F926839A /* ZelefinPluginInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925F536FD5F4690C5DB9CBFF /* ZelefinPluginInstaller.swift */; };
 		3F84C46412246D084F528F93 /* JellyfinLibraryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7753376297B77BE467E0F6 /* JellyfinLibraryClient.swift */; };
@@ -59,7 +58,6 @@
 		40FA69DBA1FDD94D5400596D /* StreamContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41D3F4A07A3015F197B467F /* StreamContainer.swift */; };
 		427C8E2229091A2B74EB3F80 /* CatalogBrowseQueryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AE0DFA9F0CAC8044E53969 /* CatalogBrowseQueryTests.swift */; };
 		4388C610E2EE7598B587DF66 /* ReviewDemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97290F76986D28099B47DB7D /* ReviewDemo.swift */; };
-		449A41989B7352DB77F72C8D /* SiloWhoIsWatchingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A800F38D20864B69E7F6E437 /* SiloWhoIsWatchingView.swift */; };
 		45C113C7E80AD1EE7CDFD344 /* MediaItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5FA036EDA5443231414E95 /* MediaItemTests.swift */; };
 		4899D23EAB8A27AEE668841B /* AccentPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5B1B86F1D678D0BFFD0BB70 /* AccentPreferencesTests.swift */; };
 		4CA57B1DB2BEF0DAB03C84B6 /* TickClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F6473A39AADF9EEFBB2882 /* TickClock.swift */; };
@@ -81,14 +79,11 @@
 		646410A9FC8AA1CABDFF5AEA /* PlaybackLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D30B8F9F1066E9609DB972B /* PlaybackLanguage.swift */; };
 		65C09316AD058E76072CFA6D /* ServerReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA94D8320FAEB7BA7DB72AC0 /* ServerReachability.swift */; };
 		66754E8B244BA62D33F5B47F /* PlaybackReporting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3902BD7A1D804EF4A1AA4A1D /* PlaybackReporting.swift */; };
-		674F8B89B1E38845443E95F3 /* SiloAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 282E708AA97174988DDA13B3 /* SiloAPIClient.swift */; };
 		67CB59D76818020158739BE0 /* RemoteControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6359B9FE2041843E6943C81 /* RemoteControlTests.swift */; };
 		6AC9E6B35730A2A513BBCC80 /* LibraryAdminModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 070265A629701811298D8F42 /* LibraryAdminModels.swift */; };
-		6B0BE75CDA7893E764E0DCF5 /* SiloQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D4B85B6B89D4CCF6A65D35 /* SiloQuality.swift */; };
 		6E83D4DC725A900832A633D5 /* JellyfinServerCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44DDFC92F1C681332F066FCD /* JellyfinServerCapabilities.swift */; };
 		6F13E7C98A6B0D366847323C /* PosterQualityBadges.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452DDDB5A1A7276E7F56BF00 /* PosterQualityBadges.swift */; };
 		709653A45D3F39F6166C8AE4 /* TitleReviewsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 396744FF1DE6EA361C0647BB /* TitleReviewsSection.swift */; };
-		715EBA6DE30F749E584D1007 /* SiloRequestClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FD7DD4D7E31281B16E7521 /* SiloRequestClient.swift */; };
 		717EE62E2B16CAA7DB3472E6 /* JellyfinEnhancedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE9FA471A5F2AEFB32BF9AC /* JellyfinEnhancedTests.swift */; };
 		7532683369FA89714844C6FC /* ReviewDemoLibraryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C091BA2331F8DC32D4AABD5 /* ReviewDemoLibraryClient.swift */; };
 		75BFAEC5451A7D4B7696BB88 /* DeviceIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12AE4798231121612AAD2201 /* DeviceIdentityTests.swift */; };
@@ -106,7 +101,6 @@
 		85ED2DD1CF070E2E1ECB2567 /* LiveTVModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9FBDA36BFE60E688EA23B98 /* LiveTVModels.swift */; };
 		87AC8BBF623640763A06A4D7 /* EpisodeCarouselTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771117D10F521DABAE7167FC /* EpisodeCarouselTests.swift */; };
 		88882B2A8BC60119C3D248C0 /* LibraryAlertTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 895DB472FEB9A4088EA96244 /* LibraryAlertTests.swift */; };
-		8AAAF50391B20E9371EB0CA8 /* SiloAdminViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FC6DC4C89052D75DF51BD3C /* SiloAdminViews.swift */; };
 		8AB3E766364A64EA7E527DDC /* TitleAboutCardsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0692523832761A9ADDE6E155 /* TitleAboutCardsTests.swift */; };
 		8D5F2B3C0E194A7B25C9D301 /* SubtitleAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4E1A2B9D083F6A14B8C201 /* SubtitleAppearance.swift */; };
 		8D5F2B3C0E194A7B25C9D302 /* SubtitleAppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4E1A2B9D083F6A14B8C202 /* SubtitleAppearanceSettingsView.swift */; };
@@ -114,7 +108,6 @@
 		904986289BA0F01AF9B3883A /* SeerrClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B04FDA5715EFC42BDC77D688 /* SeerrClient.swift */; };
 		919AEBC2A175D03929FC7435 /* SecretStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E245B21B821E5525D4B7472 /* SecretStore.swift */; };
 		93E8A0E77039EED474882DBA /* UserManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F85E510FAA338DD66A1706E /* UserManagementView.swift */; };
-		94B19081EC99E4D40BE45A14 /* SiloTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DFF62ADF0A877CC19A7E62B /* SiloTests.swift */; };
 		97503FF179D34A21C7BB0E92 /* PlaybackPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B3C526F91B213FA4BDF40F /* PlaybackPipeline.swift */; };
 		97B8F81628DEF389E9B325D4 /* HomeNetworkPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32456D877338D465BE10367 /* HomeNetworkPreferences.swift */; };
 		97BB98EFF92061C0BB557483 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 24922459DACD88790DC64D2F /* Assets.xcassets */; };
@@ -148,7 +141,6 @@
 		ADDA2F41C8BE0EC02A85D520 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF6EB0885813E2A26F24857 /* ProfileView.swift */; };
 		AEA91F74A87B49B52FE925DE /* AccentColorPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E431DC1458DD9B8A575BE518 /* AccentColorPicker.swift */; };
 		B3B4A2E43EE3A06420EA07A6 /* TitleShareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A86D1BE86FF7A7D5D1C5BA18 /* TitleShareTests.swift */; };
-		B643BECC71EEC9BD7F6C21CD /* SiloProfileAvatars.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */; };
 		B87F2230574F51DB7C008706 /* JellyfinTmdbCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A049A2A3C763D6DBCCD33AF /* JellyfinTmdbCatalog.swift */; };
 		B90B4305A38D0DBC06D62915 /* DirectPlaySubtitleOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 354AF3BEFBAC89F7E6EE1765 /* DirectPlaySubtitleOverlay.swift */; };
 		B91A4EBC1918AD68F1EFEF33 /* TabCustomizationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4FE59017DB61C5773E8D6A /* TabCustomizationView.swift */; };
@@ -176,13 +168,10 @@
 		D9759B1E1966EC7C80A80B6B /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA790EDE34C897EBDDCBF6A8 /* HomeView.swift */; };
 		DB057223116A7E84F8C91524 /* JellyfinUserAdminClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 949B73625DCE33CFA6AB9D8A /* JellyfinUserAdminClient.swift */; };
 		DB541D3D8049970601FC31CE /* ArtworkURLBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6793B2714E2FA4DBFD1DA6D0 /* ArtworkURLBuilder.swift */; };
-		DC33178221FA60FAF8A2F894 /* SiloPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657C049FDD5D0C91B4B15322 /* SiloPlayback.swift */; };
 		DD383B2EC20A0FD7E562E8A7 /* AdminToolsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CCF8B7BCF68D1C4E89B760B /* AdminToolsViews.swift */; };
 		DFD81B1A6726AF18A3E22C91 /* QuickConnectClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D969926D1B2C56A73A41E141 /* QuickConnectClient.swift */; };
 		E3BD8FD1D84EE88C392E20D5 /* TitleAboutRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E27EF97B5903A36F10AF18 /* TitleAboutRow.swift */; };
 		E4BF757DA701C6AD91C49F7A /* SeerrRequestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8976E4C707E0FA34E637C1 /* SeerrRequestView.swift */; };
-		E6F868838381DB4F1661FADE /* SiloAvatarPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */; };
-		E7766A07FF28E02F5CA7B700 /* SiloDownloadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1745C549DD6805430973B71 /* SiloDownloadModels.swift */; };
 		E84E6FF0C59F6AAA0E50B687 /* AccentPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF24D35FA852C0BF61F8F20 /* AccentPreferences.swift */; };
 		ECEDB8B905CCBF53583EEA6B /* CachePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B29699E73366394F845A819 /* CachePreferences.swift */; };
 		EF413980E7A8078ABDB62755 /* DownloadControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC796E8C0A14B604A4384875 /* DownloadControls.swift */; };
@@ -195,7 +184,6 @@
 		F6DFD4C279DCAC02BE9BD43A /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4E2B90C9DECA3639523A79 /* MainTabView.swift */; };
 		FAD18320B08238727282766E /* TitleSpecsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA88CDCEDB6FB1FA5F4A26C /* TitleSpecsRow.swift */; };
 		FAEA902B02CC3EE0FCB3A9FC /* AccessGateway.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7940008AB391DA5EF5BF3770 /* AccessGateway.swift */; };
-		FD18F03101F02F5B55E9CBA6 /* SiloProfilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04DC2E5D77D98909C402BDF3 /* SiloProfilePickerView.swift */; };
 		FD6D5EE44F6769F9B9F618EA /* CatalogFilterViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74989C0C92FAD5BEF8817576 /* CatalogFilterViews.swift */; };
 		FE36F7202864E73A476E7E49 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367E0E143CAAF64A02812E01 /* LibraryView.swift */; };
 		FF1D639D93CCC0A026320507 /* LibraryAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E2AE060FC5F2C11DFE9D1F /* LibraryAlert.swift */; };
@@ -212,12 +200,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAvatarPickerView.swift; sourceTree = "<group>"; };
+		A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloProfileAvatars.swift; sourceTree = "<group>"; };
+		A800F38D20864B69E7F6E437 /* SiloWhoIsWatchingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloWhoIsWatchingView.swift; sourceTree = "<group>"; };
+		282E708AA97174988DDA13B3 /* SiloAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAccountClient.swift; sourceTree = "<group>"; };
 		000E30102DA9E9615FC4E396 /* IntroSkipperClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntroSkipperClient.swift; sourceTree = "<group>"; };
 		0081398D7523FCE17264C0D7 /* PluginSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSettingsView.swift; sourceTree = "<group>"; };
 		01253E1D158D0BBE9905263D /* SkipSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkipSegment.swift; sourceTree = "<group>"; };
 		031C51CE3CBE5E9195D22124 /* PlaybackStatsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackStatsOverlay.swift; sourceTree = "<group>"; };
 		03B72C645A75F7BB05FF93C8 /* DownloadRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadRecord.swift; sourceTree = "<group>"; };
-		04DC2E5D77D98909C402BDF3 /* SiloProfilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloProfilePickerView.swift; sourceTree = "<group>"; };
 		05E27EF97B5903A36F10AF18 /* TitleAboutRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleAboutRow.swift; sourceTree = "<group>"; };
 		0692523832761A9ADDE6E155 /* TitleAboutCardsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleAboutCardsTests.swift; sourceTree = "<group>"; };
 		070265A629701811298D8F42 /* LibraryAdminModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAdminModels.swift; sourceTree = "<group>"; };
@@ -230,7 +221,6 @@
 		1B24E8FADBBBCD16273C11EE /* PlaybackHTTPHeaders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackHTTPHeaders.swift; sourceTree = "<group>"; };
 		1B9F3D712FB881C88405D128 /* CatalogBrowseQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogBrowseQuery.swift; sourceTree = "<group>"; };
 		1D5715C9C8329E2D253C199A /* CacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheTests.swift; sourceTree = "<group>"; };
-		1DFF62ADF0A877CC19A7E62B /* SiloTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloTests.swift; sourceTree = "<group>"; };
 		1ED05B4032CD2584D621FC60 /* PlaybackSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSettingsView.swift; sourceTree = "<group>"; };
 		1F85E510FAA338DD66A1706E /* UserManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserManagementView.swift; sourceTree = "<group>"; };
 		2270D3618FBCD955D4102210 /* PosterQualityBadgeStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosterQualityBadgeStack.swift; sourceTree = "<group>"; };
@@ -238,14 +228,12 @@
 		24D87D81908990EEF26062A2 /* DirectPlayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectPlayEngine.swift; sourceTree = "<group>"; };
 		2532A7E400B9EC5A2653B6B5 /* DeepLinkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkStore.swift; sourceTree = "<group>"; };
 		26B3C526F91B213FA4BDF40F /* PlaybackPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackPipeline.swift; sourceTree = "<group>"; };
-		282E708AA97174988DDA13B3 /* SiloAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAPIClient.swift; sourceTree = "<group>"; };
 		28D1FE8B38197504B3EBED4E /* PlayerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerModel.swift; sourceTree = "<group>"; };
 		2AFAB17F8439301AE64CF160 /* LiveTVTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVTests.swift; sourceTree = "<group>"; };
 		2C95AA55AA39DDAC21F8C150 /* PlaybackReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackReporter.swift; sourceTree = "<group>"; };
 		2E245B21B821E5525D4B7472 /* SecretStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretStore.swift; sourceTree = "<group>"; };
 		2E51F94A5E4B3C0258DAD1BD /* PlaybackQueueMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackQueueMenu.swift; sourceTree = "<group>"; };
 		30B4132EA38DDF5C157F8AF3 /* OpenSubtitlesSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenSubtitlesSearchView.swift; sourceTree = "<group>"; };
-		30FD7DD4D7E31281B16E7521 /* SiloRequestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloRequestClient.swift; sourceTree = "<group>"; };
 		337D353434F2FA6B761C88F9 /* Zelefin.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Zelefin.entitlements; sourceTree = "<group>"; };
 		34790E1449A8CBE8D327D1E4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		354AF3BEFBAC89F7E6EE1765 /* DirectPlaySubtitleOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectPlaySubtitleOverlay.swift; sourceTree = "<group>"; };
@@ -260,7 +248,6 @@
 		3D7753376297B77BE467E0F6 /* JellyfinLibraryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinLibraryClient.swift; sourceTree = "<group>"; };
 		3E02F2F27D62E7BEC36C8902 /* CatalogSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogSnapshotStore.swift; sourceTree = "<group>"; };
 		3F106C6492A4DC94C84E4680 /* ScheduledTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTask.swift; sourceTree = "<group>"; };
-		3FC6DC4C89052D75DF51BD3C /* SiloAdminViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAdminViews.swift; sourceTree = "<group>"; };
 		3FD723FEAF5DE24252DABD24 /* SearchHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchHistoryStore.swift; sourceTree = "<group>"; };
 		41477F1EAFB8BA14BF0DAA87 /* PlaybackSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSessionTests.swift; sourceTree = "<group>"; };
 		43A7C44161BBD27AF47EFB94 /* HomeSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSnapshotStoreTests.swift; sourceTree = "<group>"; };
@@ -272,13 +259,11 @@
 		47D8AB5759D7649C01476168 /* ArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkCache.swift; sourceTree = "<group>"; };
 		4AA00042D68CFDE4D66A9828 /* TitleAboutPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleAboutPage.swift; sourceTree = "<group>"; };
 		4CF24D35FA852C0BF61F8F20 /* AccentPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentPreferences.swift; sourceTree = "<group>"; };
-		4D8E1C3415DC9813C849A03A /* MediaBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaBackend.swift; sourceTree = "<group>"; };
 		4E14D0E5EC6A8906776644E7 /* LibraryAlertCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlertCenter.swift; sourceTree = "<group>"; };
 		4E5E802541E0099E218AA1D7 /* ZelefinError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinError.swift; sourceTree = "<group>"; };
 		4EB149618554E68DACFC0809 /* Zelefin.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = Zelefin.icon; sourceTree = "<group>"; };
 		4EFFB00A3412B2338103E08D /* PushNotificationCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationCenter.swift; sourceTree = "<group>"; };
 		50A15815C057CE45878100BC /* Zelefin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zelefin.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		51D4B85B6B89D4CCF6A65D35 /* SiloQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloQuality.swift; sourceTree = "<group>"; };
 		52F6473A39AADF9EEFBB2882 /* TickClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickClock.swift; sourceTree = "<group>"; };
 		533892AF69D1B7A279174A72 /* SeerrDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeerrDiscoverView.swift; sourceTree = "<group>"; };
 		553FADF6F3C90EFC2BCED684 /* CatalogBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogBrowseView.swift; sourceTree = "<group>"; };
@@ -291,7 +276,6 @@
 		5D30B8F9F1066E9609DB972B /* PlaybackLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackLanguage.swift; sourceTree = "<group>"; };
 		5FA44AD1DF2E3D8CBCFA598B /* DownloadedItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadedItemsView.swift; sourceTree = "<group>"; };
 		62279349820CAD268B2F4B21 /* ScheduledTaskTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTaskTests.swift; sourceTree = "<group>"; };
-		657C049FDD5D0C91B4B15322 /* SiloPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloPlayback.swift; sourceTree = "<group>"; };
 		66513F2821AF62BDE2DAD9E8 /* LoginChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginChrome.swift; sourceTree = "<group>"; };
 		6793B2714E2FA4DBFD1DA6D0 /* ArtworkURLBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkURLBuilder.swift; sourceTree = "<group>"; };
 		68E3620DFE3228BDC6BBAC59 /* HomeSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSnapshotStore.swift; sourceTree = "<group>"; };
@@ -314,19 +298,15 @@
 		7C4E1A2B9D083F6A14B8C201 /* SubtitleAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleAppearance.swift; sourceTree = "<group>"; };
 		7C4E1A2B9D083F6A14B8C202 /* SubtitleAppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleAppearanceSettingsView.swift; sourceTree = "<group>"; };
 		7DB0AE9BE6FD098B818186F5 /* TitleShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleShare.swift; sourceTree = "<group>"; };
-		80E4BF6587F8DDCA256247DB /* SiloModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloModels.swift; sourceTree = "<group>"; };
 		826DC48E20D50B21A0ACA8E1 /* LibraryMediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryMediaViews.swift; sourceTree = "<group>"; };
 		827D07BC596A9C91C877571D /* PluginSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSettings.swift; sourceTree = "<group>"; };
 		82E2AE060FC5F2C11DFE9D1F /* LibraryAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlert.swift; sourceTree = "<group>"; };
-		861E5EF7C8C684359AD31A98 /* SiloMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloMapper.swift; sourceTree = "<group>"; };
 		8716D6D7DB0E6EE84349C3C8 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
 		88D3AD7E1BB3E4C6887F0775 /* RemoteControlHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlHub.swift; sourceTree = "<group>"; };
 		895DB472FEB9A4088EA96244 /* LibraryAlertTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlertTests.swift; sourceTree = "<group>"; };
 		8A8E1B72F3076BFF5FB5AEF9 /* UserAdminTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAdminTests.swift; sourceTree = "<group>"; };
 		8AA86195C514EBA32BDFE805 /* ServerURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerURL.swift; sourceTree = "<group>"; };
-		8BFFB923295161C9AFF5DD6D /* SiloPlaybackReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloPlaybackReporter.swift; sourceTree = "<group>"; };
 		8C00B759D4BA18400F011912 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
-		8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAvatarPickerView.swift; sourceTree = "<group>"; };
 		8DF6EB0885813E2A26F24857 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		909F77F95A03ADB69B10FE4F /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
 		90D91D4A7ED63602813594AF /* ConnectBrandMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectBrandMark.swift; sourceTree = "<group>"; };
@@ -345,16 +325,13 @@
 		9FA52BE5DA482743457932DF /* PosterPrefetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosterPrefetcher.swift; sourceTree = "<group>"; };
 		9FEE7EEAB1A7D487B6A6570E /* ItemDetailSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailSnapshotStoreTests.swift; sourceTree = "<group>"; };
 		A0012DAA2FD6085ADCF3ADF6 /* DownloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadStore.swift; sourceTree = "<group>"; };
-		A1745C549DD6805430973B71 /* SiloDownloadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloDownloadModels.swift; sourceTree = "<group>"; };
 		A1C4E7F02B8D4A1E9C3E0001 /* JellyfinCatalogExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinCatalogExtras.swift; sourceTree = "<group>"; };
 		A1C4E7F02B8D4A1E9C3E0003 /* CatalogAlphabetRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogAlphabetRail.swift; sourceTree = "<group>"; };
 		A1C4E7F02B8D4A1E9C3E0005 /* ItemAdminSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemAdminSheets.swift; sourceTree = "<group>"; };
 		A2B969AC0F726C1A82B6E4D9 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
 		A32456D877338D465BE10367 /* HomeNetworkPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNetworkPreferences.swift; sourceTree = "<group>"; };
-		A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloProfileAvatars.swift; sourceTree = "<group>"; };
 		A41D3F4A07A3015F197B467F /* StreamContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamContainer.swift; sourceTree = "<group>"; };
 		A4A9F260D3001AF2186355ED /* ItemMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemMapper.swift; sourceTree = "<group>"; };
-		A800F38D20864B69E7F6E437 /* SiloWhoIsWatchingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloWhoIsWatchingView.swift; sourceTree = "<group>"; };
 		A86D1BE86FF7A7D5D1C5BA18 /* TitleShareTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleShareTests.swift; sourceTree = "<group>"; };
 		A91D6C4E8B0F2753C6A4D1E7 /* GenreIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenreIcon.swift; sourceTree = "<group>"; };
 		AA8976E4C707E0FA34E637C1 /* SeerrRequestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeerrRequestView.swift; sourceTree = "<group>"; };
@@ -387,7 +364,6 @@
 		DE4E2B90C9DECA3639523A79 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		DF605DE82AE378D8A40E1763 /* MediaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaModels.swift; sourceTree = "<group>"; };
 		DFF3B744FC3D25EFA7FBC7C2 /* HomeNetworkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNetworkTests.swift; sourceTree = "<group>"; };
-		E044A37F3F5832959D681A8C /* SiloLibraryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloLibraryClient.swift; sourceTree = "<group>"; };
 		E2C49FCE1C9A8BE40BEB8FA8 /* ScheduledTasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTasksView.swift; sourceTree = "<group>"; };
 		E431DC1458DD9B8A575BE518 /* AccentColorPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentColorPicker.swift; sourceTree = "<group>"; };
 		E48B4EBA9121569599709D87 /* DirectPlayPictureInPicture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectPlayPictureInPicture.swift; sourceTree = "<group>"; };
@@ -421,6 +397,15 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		FB7A46CAF208627972F34E11 /* Silo */ = {
+			isa = PBXGroup;
+			children = (
+				282E708AA97174988DDA13B3 /* SiloAccountClient.swift */,
+				A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */,
+			);
+			path = Silo;
+			sourceTree = "<group>";
+		};
 		16D592DF20DEFF6D99678D9B /* Zelefin */ = {
 			isa = PBXGroup;
 			children = (
@@ -444,7 +429,6 @@
 			children = (
 				070265A629701811298D8F42 /* LibraryAdminModels.swift */,
 				D9FBDA36BFE60E688EA23B98 /* LiveTVModels.swift */,
-				4D8E1C3415DC9813C849A03A /* MediaBackend.swift */,
 				DF605DE82AE378D8A40E1763 /* MediaModels.swift */,
 				452DDDB5A1A7276E7F56BF00 /* PosterQualityBadges.swift */,
 				52F6473A39AADF9EEFBB2882 /* TickClock.swift */,
@@ -491,13 +475,11 @@
 				1ED05B4032CD2584D621FC60 /* PlaybackSettingsView.swift */,
 				0081398D7523FCE17264C0D7 /* PluginSettingsView.swift */,
 				8DF6EB0885813E2A26F24857 /* ProfileView.swift */,
+				8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */,
 				E2C49FCE1C9A8BE40BEB8FA8 /* ScheduledTasksView.swift */,
 				F640881A24CED4171B886BC9 /* SessionsView.swift */,
 				34790E1449A8CBE8D327D1E4 /* SettingsView.swift */,
 				7C4E1A2B9D083F6A14B8C202 /* SubtitleAppearanceSettingsView.swift */,
-				3FC6DC4C89052D75DF51BD3C /* SiloAdminViews.swift */,
-				8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */,
-				04DC2E5D77D98909C402BDF3 /* SiloProfilePickerView.swift */,
 				923BA489E02AD8CC7528F3DD /* SyncPlayView.swift */,
 				3A4FE59017DB61C5773E8D6A /* TabCustomizationView.swift */,
 				1F85E510FAA338DD66A1706E /* UserManagementView.swift */,
@@ -542,7 +524,6 @@
 				CAED4C9AFE0CF63BDE79CBDD /* ReviewDemoTests.swift */,
 				62279349820CAD268B2F4B21 /* ScheduledTaskTests.swift */,
 				70570648810229F4C3D58AD9 /* ServerURLTests.swift */,
-				1DFF62ADF0A877CC19A7E62B /* SiloTests.swift */,
 				0692523832761A9ADDE6E155 /* TitleAboutCardsTests.swift */,
 				F64E43CA185E26B5FCB2D86A /* TitleMoreInfoTests.swift */,
 				A86D1BE86FF7A7D5D1C5BA18 /* TitleShareTests.swift */,
@@ -581,8 +562,8 @@
 			children = (
 				90D91D4A7ED63602813594AF /* ConnectBrandMark.swift */,
 				A2B969AC0F726C1A82B6E4D9 /* ConnectView.swift */,
-				79A1654B5B98C27D30471577 /* FirstRunSetupView.swift */,
 				A800F38D20864B69E7F6E437 /* SiloWhoIsWatchingView.swift */,
+				79A1654B5B98C27D30471577 /* FirstRunSetupView.swift */,
 			);
 			path = Connect;
 			sourceTree = "<group>";
@@ -744,6 +725,7 @@
 		C192D89E46B7E9C3B966BC0B /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				FB7A46CAF208627972F34E11 /* Silo */,
 				B954BBB5B042662A71F43F0B /* Alerts */,
 				4F54AACE2FFFAB99A037B2E8 /* Downloads */,
 				530B1C3F98DA277CCC9821E5 /* Jellyfin */,
@@ -753,7 +735,6 @@
 				252AA3628DD33AC671096AA7 /* Playback */,
 				835DE220E2614A2ABA4D571B /* Plugins */,
 				EAE6369FF414AF120C05446C /* Session */,
-				FB7A46CAF208627972F34E11 /* Silo */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -802,23 +783,6 @@
 				768407D7FEFE84C273C70606 /* WiFiSSID.swift */,
 			);
 			path = Session;
-			sourceTree = "<group>";
-		};
-		FB7A46CAF208627972F34E11 /* Silo */ = {
-			isa = PBXGroup;
-			children = (
-				282E708AA97174988DDA13B3 /* SiloAPIClient.swift */,
-				A1745C549DD6805430973B71 /* SiloDownloadModels.swift */,
-				E044A37F3F5832959D681A8C /* SiloLibraryClient.swift */,
-				861E5EF7C8C684359AD31A98 /* SiloMapper.swift */,
-				80E4BF6587F8DDCA256247DB /* SiloModels.swift */,
-				657C049FDD5D0C91B4B15322 /* SiloPlayback.swift */,
-				8BFFB923295161C9AFF5DD6D /* SiloPlaybackReporter.swift */,
-				A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */,
-				51D4B85B6B89D4CCF6A65D35 /* SiloQuality.swift */,
-				30FD7DD4D7E31281B16E7521 /* SiloRequestClient.swift */,
-			);
-			path = Silo;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -966,6 +930,8 @@
 				A75CA7D7C26CBB2B73D366E7 /* CatalogSnapshotStore.swift in Sources */,
 				BE1B47F1109A3A44A4D7436D /* ConnectBrandMark.swift in Sources */,
 				76C1C02412837F4D637A43EE /* ConnectView.swift in Sources */,
+				449A41989B7352DB77F72C8D /* SiloWhoIsWatchingView.swift in Sources */,
+				674F8B89B1E38845443E95F3 /* SiloAccountClient.swift in Sources */,
 				0122D784BA433B8A98EF6255 /* DeepLinkStore.swift in Sources */,
 				24A542EDE832BBC84AF91CF9 /* DeviceIdentity.swift in Sources */,
 				CBBF41E4A5A1BA5A12DB8439 /* DirectPlayEngine.swift in Sources */,
@@ -1013,7 +979,6 @@
 				3053ECB15A6BEB6A1AB1B5C2 /* LiveTVView.swift in Sources */,
 				11429EA0816FD8D4E53B377F /* LoginChrome.swift in Sources */,
 				F6DFD4C279DCAC02BE9BD43A /* MainTabView.swift in Sources */,
-				26148D40712BA1B9587DFACF /* MediaBackend.swift in Sources */,
 				28C3A4A5337C545359F6B80C /* MediaModels.swift in Sources */,
 				26E2641FFA58ABE8C3E08209 /* NetworkSettingsView.swift in Sources */,
 				A553642E7940D08A172D0FAE /* NotificationSettingsView.swift in Sources */,
@@ -1039,6 +1004,8 @@
 				07F14431A1CD07EDE33B7ADF /* PosterQualityBadgeStack.swift in Sources */,
 				6F13E7C98A6B0D366847323C /* PosterQualityBadges.swift in Sources */,
 				ADDA2F41C8BE0EC02A85D520 /* ProfileView.swift in Sources */,
+				E6F868838381DB4F1661FADE /* SiloAvatarPickerView.swift in Sources */,
+				B643BECC71EEC9BD7F6C21CD /* SiloProfileAvatars.swift in Sources */,
 				9FF0240B0D480F0D3FCEDFD6 /* PushNotificationCenter.swift in Sources */,
 				DFD81B1A6726AF18A3E22C91 /* QuickConnectClient.swift in Sources */,
 				81895FDFECFEA53C84DAE8BA /* RemoteControlHub.swift in Sources */,
@@ -1063,20 +1030,6 @@
 				0C5002643CF0E644FD7F6697 /* SessionStore.swift in Sources */,
 				59C53F876F9F3256C4A1FAEE /* SessionsView.swift in Sources */,
 				3313E963D44272ED07173A02 /* SettingsView.swift in Sources */,
-				674F8B89B1E38845443E95F3 /* SiloAPIClient.swift in Sources */,
-				8AAAF50391B20E9371EB0CA8 /* SiloAdminViews.swift in Sources */,
-				E6F868838381DB4F1661FADE /* SiloAvatarPickerView.swift in Sources */,
-				E7766A07FF28E02F5CA7B700 /* SiloDownloadModels.swift in Sources */,
-				3B4EDF3BE2F12232FE6E586F /* SiloLibraryClient.swift in Sources */,
-				24FA8D6821FA02058D7E71D8 /* SiloMapper.swift in Sources */,
-				37D8FD9E23AE9D573F01CBB5 /* SiloModels.swift in Sources */,
-				DC33178221FA60FAF8A2F894 /* SiloPlayback.swift in Sources */,
-				11D092D86379D4BD64CE5E0D /* SiloPlaybackReporter.swift in Sources */,
-				B643BECC71EEC9BD7F6C21CD /* SiloProfileAvatars.swift in Sources */,
-				FD18F03101F02F5B55E9CBA6 /* SiloProfilePickerView.swift in Sources */,
-				6B0BE75CDA7893E764E0DCF5 /* SiloQuality.swift in Sources */,
-				715EBA6DE30F749E584D1007 /* SiloRequestClient.swift in Sources */,
-				449A41989B7352DB77F72C8D /* SiloWhoIsWatchingView.swift in Sources */,
 				99855C551BBFE4E9718618EA /* SkipSegment.swift in Sources */,
 				CB99EF44E406A58BAE1C3BDC /* SnapshotCoding.swift in Sources */,
 				40FA69DBA1FDD94D5400596D /* StreamContainer.swift in Sources */,
@@ -1132,7 +1085,6 @@
 				357E574F3E9D980961C1E0F7 /* ReviewDemoTests.swift in Sources */,
 				BF6C2D0C7B43EFDCF842F38A /* ScheduledTaskTests.swift in Sources */,
 				813D2091DB6802D83C564B4E /* ServerURLTests.swift in Sources */,
-				94B19081EC99E4D40BE45A14 /* SiloTests.swift in Sources */,
 				8AB3E766364A64EA7E527DDC /* TitleAboutCardsTests.swift in Sources */,
 				7B321AB8ADC209922D7327EC /* TitleMoreInfoTests.swift in Sources */,
 				B3B4A2E43EE3A06420EA07A6 /* TitleShareTests.swift in Sources */,

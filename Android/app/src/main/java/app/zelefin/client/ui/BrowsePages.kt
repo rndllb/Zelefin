@@ -146,7 +146,7 @@ fun BrowseScreen(
                         items = items,
                         context = if (page.shelf == HomeShelf.NextUp) TitleMenuContext.NextUp else TitleMenuContext.ContinueWatching,
                         session = session,
-                        usesSilo = session?.usesSilo == true,
+                        isSiloServer = session?.isSiloServer == true,
                         onBack = onBack,
                         onOpen = onOpen,
                         onPlay = onPlay,
@@ -161,7 +161,7 @@ fun BrowseScreen(
             is BrowsePage.Shelf -> PosterGridPage(page.title, page.items, session, onBack, onOpen)
             is BrowsePage.Trailers -> TrailerListPage(page.trailers, page.owner, session, onBack, onPlay)
             is BrowsePage.Cast -> CastListPage(page.people, session, onBack) { person ->
-                if (session?.usesSilo != true && person.id.isNotBlank()) {
+                if (person.id.isNotBlank()) {
                     onBrowse(BrowsePage.Library(LibraryRoute.Person(person.id, person.name)))
                 }
             }
@@ -214,7 +214,7 @@ private fun QueueListPage(
     items: List<MediaItem>,
     context: TitleMenuContext,
     session: SavedSession?,
-    usesSilo: Boolean,
+    isSiloServer: Boolean,
     onBack: () -> Unit,
     onOpen: (MediaItem) -> Unit,
     onPlay: (MediaItem) -> Unit,
@@ -250,7 +250,7 @@ private fun QueueListPage(
         onToggleWatched = onToggleWatched,
         onToggleFavorite = onToggleFavorite,
         onToggleWatchlist = onToggleWatchlist,
-        usesSilo = usesSilo,
+        isSiloServer = isSiloServer,
     )
 }
 
@@ -516,7 +516,6 @@ private fun CastListPage(
     onPerson: (CreditPerson) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val tappable = session?.usesSilo != true
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -527,7 +526,7 @@ private fun CastListPage(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .then(if (tappable) Modifier.clickable { onPerson(person) } else Modifier)
+                    .clickable { onPerson(person) }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -556,9 +555,7 @@ private fun CastListPage(
                         Text(person.roleLabel, color = BrowseCaption, fontFamily = ZelefinFont, fontSize = 13.sp, maxLines = 1)
                     }
                 }
-                if (tappable) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.35f))
-                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.35f))
             }
         }
     }

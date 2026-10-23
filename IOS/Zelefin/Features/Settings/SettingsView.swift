@@ -38,11 +38,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                session.usesSilo
-                    ? "Silo will refresh metadata for every library. This can take a while on a large server."
-                    : "Jellyfin will look for new files and refresh metadata. This can take a while on a large server."
-            )
+            Text("Jellyfin will look for new files and refresh metadata. This can take a while on a large server.")
         }
     }
 
@@ -56,7 +52,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountDisplayName)
                             .font(.body.weight(.semibold))
-                        Text(session.usesSilo ? "Silo account" : "Jellyfin account")
+                        Text(session.isSiloServer ? "Silo account" : "Jellyfin account")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -73,7 +69,7 @@ struct SettingsView: View {
             settingsRow("Notifications", systemImage: "bell", subtitle: "Alerts from your server") {
                 NotificationSettingsView()
             }
-            if !session.usesSilo {
+            if !session.isSiloServer {
                 settingsRow("Sessions", systemImage: "laptopcomputer.and.iphone", subtitle: "Devices signed in to Jellyfin") {
                     SessionsView()
                 }
@@ -105,56 +101,26 @@ struct SettingsView: View {
 
     private var serverSection: some View {
         Section {
-            if session.canAdministerSilo {
-                settingsRow("Accounts", systemImage: "person.2", subtitle: "People who can sign in to Silo") {
-                    SiloUsersView()
-                }
-                settingsRow("Invitations", systemImage: "envelope.badge", subtitle: "Invite links for new accounts") {
-                    SiloInvitationsView()
-                }
-                settingsRow("Sessions", systemImage: "laptopcomputer.and.iphone", subtitle: "Who is watching right now") {
-                    SiloSessionsView()
-                }
-                settingsRow("Devices", systemImage: "iphone", subtitle: "Signed-in devices") {
-                    SiloDevicesView()
-                }
-                settingsRow("Libraries", systemImage: "rectangle.stack", subtitle: "Folders and library types") {
-                    SiloLibrariesAdminView()
-                }
-                settingsRow("Nodes", systemImage: "server.rack", subtitle: "Storage and transcoding nodes") {
-                    SiloNodesView()
-                }
-                settingsRow("Scheduled Tasks", systemImage: "clock", subtitle: "Start, cancel, and watch progress") {
-                    SiloTasksView()
-                }
-                settingsRow("Activity Log", systemImage: "list.bullet", subtitle: "Sign-ins, scans, and failures") {
-                    SiloAuditLogView()
-                }
-                settingsRow("Server Logs", systemImage: "scroll", subtitle: "Diagnostics from the server") {
-                    SiloOperationalLogView()
-                }
-            } else {
-                settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls") {
-                    UserManagementView()
-                }
-                settingsRow("Scheduled Tasks", systemImage: "clock", subtitle: "Start, cancel, and watch progress") {
-                    ScheduledTasksView()
-                }
-                settingsRow("Activity Log", systemImage: "list.bullet", subtitle: "Sign-ins, scans, and failures") {
-                    ActivityLogView()
-                }
-                settingsRow("Backups", systemImage: "archivebox", subtitle: "Archive and restore this server") {
-                    ServerBackupsView()
-                }
-                settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
-                    ServerBrandingView()
-                }
+            settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls") {
+                UserManagementView()
+            }
+            settingsRow("Scheduled Tasks", systemImage: "clock", subtitle: "Start, cancel, and watch progress") {
+                ScheduledTasksView()
+            }
+            settingsRow("Activity Log", systemImage: "list.bullet", subtitle: "Sign-ins, scans, and failures") {
+                ActivityLogView()
+            }
+            settingsRow("Backups", systemImage: "archivebox", subtitle: "Archive and restore this server") {
+                ServerBackupsView()
+            }
+            settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
+                ServerBrandingView()
             }
             scanLibrariesRow
         } header: {
             Text("Server")
         } footer: {
-            Text(session.usesSilo ? "Administer this Silo server." : "Administer this Jellyfin server.")
+            Text("Administer this Jellyfin server.")
         }
         .zelefinRowBackground()
     }
@@ -235,7 +201,7 @@ struct SettingsView: View {
     }
 
     private var canAdminister: Bool {
-        session.canAdministerSilo || (session.isAdministrator && !session.usesSilo)
+        session.isAdministrator
     }
 
     private var accountDisplayName: String {

@@ -352,7 +352,7 @@ object TabPreferences {
     fun pinnable(rooms: List<LibraryRoom>): List<LibraryRoom> =
         rooms.filter { it.kind in setOf(LibraryKind.Other, LibraryKind.YouTube, LibraryKind.HomeVideos, LibraryKind.Photos) }
 
-    fun enabledTabCount(silo: Boolean): Int = order.count { tab -> tab.availableOnAndroid && isShown(tab) && !(silo && tab == DockTab.LiveTV) }
+    fun enabledTabCount(isSiloServer: Boolean): Int = order.count { tab -> tab.availableOnAndroid && isShown(tab) && !(isSiloServer && tab == DockTab.LiveTV) }
 
     fun enabledLibraryCount(rooms: List<LibraryRoom>): Int = pinnable(rooms).count { it.id in dockLibraryIds }
 

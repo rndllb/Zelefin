@@ -50,6 +50,42 @@ enum DownloadHTTP {
         }
         return trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
     }
+
+    /// Turns a refused download into the server's own reason. Silo answers 403 when Allow
+    /// downloads is off or the account may not download, and 503 when downloads aren't set up.
+    static func failure(statusCode: Int, body: Data?) -> ZelefinError {
+        let message = serverMessage(in: body)
+        switch statusCode {
+        case 401:
+            return .missingUser
+        case 403:
+            return .server(message ?? "This server doesn't allow downloads for this account.")
+        case 503:
+            return .server(message ?? "Downloads aren't available on this server.")
+        default:
+            return message.map(ZelefinError.server) ?? .downloadFailed
+        }
+    }
+
+    /// `Message` (Silo, older Jellyfin) or `detail` / `title` (Jellyfin problem details).
+    static func serverMessage(in body: Data?) -> String? {
+        guard let body, !body.isEmpty, body.count < 64 * 1024,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return nil
+        }
+        for key in ["Message", "message", "detail", "title"] {
+            if let text = (json[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+}
+
+/// Where a finished download landed: renamed to the extension the server's filename carries.
+struct DownloadedFile: Sendable {
+    let url: URL
+    let byteSize: Int64
 }
 
 enum DownloadTransfer {
@@ -59,7 +95,7 @@ enum DownloadTransfer {
         to destination: URL,
         knownSize: Int64 = 0,
         progress: @escaping @MainActor @Sendable (_ written: Int64, _ expected: Int64) -> Void
-    ) async throws -> Int64 {
+    ) async throws -> DownloadedFile {
         try await FileDownloadRunner.download(
             from: url,
             headers: headers,
@@ -87,7 +123,7 @@ private final class FileDownloadRunner: NSObject, URLSessionDownloadDelegate, @u
     private let destination: URL
     private let knownSize: Int64
     private let progress: @MainActor @Sendable (Int64, Int64) -> Void
-    private var continuation: CheckedContinuation<Int64, Error>?
+    private var continuation: CheckedContinuation<DownloadedFile, Error>?
     private var copiedSize: Int64 = 0
     private var session: URLSession?
     private var lastReport = Date.distantPast
@@ -98,7 +134,7 @@ private final class FileDownloadRunner: NSObject, URLSessionDownloadDelegate, @u
         to destination: URL,
         knownSize: Int64,
         progress: @escaping @MainActor @Sendable (Int64, Int64) -> Void
-    ) async throws -> Int64 {
+    ) async throws -> DownloadedFile {
         let runner = FileDownloadRunner(destination: destination, knownSize: knownSize, progress: progress)
         return try await runner.start(url: url, headers: headers)
     }
@@ -113,7 +149,7 @@ private final class FileDownloadRunner: NSObject, URLSessionDownloadDelegate, @u
         self.progress = progress
     }
 
-    private func start(url: URL, headers: [String: String]) async throws -> Int64 {
+    private func start(url: URL, headers: [String: String]) async throws -> DownloadedFile {
         let configuration = JellyfinNetworking.sessionConfiguration(cacheImages: false)
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 12 * 60 * 60
@@ -185,15 +221,26 @@ private final class FileDownloadRunner: NSObject, URLSessionDownloadDelegate, @u
             return
         }
         guard let response = task.response, DownloadHTTP.isSuccessfulFileResponse(response) else {
+            let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+            let body = try? Data(contentsOf: destination)
             try? FileManager.default.removeItem(at: destination)
-            finish(.failure(ZelefinError.downloadFailed))
+            finish(.failure(DownloadHTTP.failure(statusCode: status, body: body)))
             return
         }
         report(written: max(copiedSize, 1), httpExpected: max(copiedSize, knownSize), force: true)
-        finish(.success(copiedSize))
+        let ext = DownloadHTTP.pathExtension(from: response, fallback: destination.pathExtension)
+        var saved = destination
+        if ext != destination.pathExtension {
+            let renamed = destination.deletingPathExtension().appendingPathExtension(ext)
+            try? FileManager.default.removeItem(at: renamed)
+            if (try? FileManager.default.moveItem(at: destination, to: renamed)) != nil {
+                saved = renamed
+            }
+        }
+        finish(.success(DownloadedFile(url: saved, byteSize: copiedSize)))
     }
 
-    private func finish(_ result: Result<Int64, Error>) {
+    private func finish(_ result: Result<DownloadedFile, Error>) {
         guard let continuation else { return }
         self.continuation = nil
         session?.finishTasksAndInvalidate()

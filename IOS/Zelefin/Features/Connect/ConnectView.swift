@@ -1,19 +1,19 @@
 import SwiftUI
 
-/// Sign-in canvas. Pick Jellyfin or Silo, then Silo asks who is watching.
+/// Sign-in canvas for a Jellyfin server, or a Silo server through its Jellyfin-compatible API.
 struct ConnectView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("zelefin.last-server") private var storedAddress = ""
     @AppStorage("zelefin.last-username") private var storedUsername = ""
+    @AppStorage("zelefin.last-server-type") private var serverTypeRaw = SignInServerType.jellyfin.rawValue
     @State private var address = ""
     @State private var username = ""
     @State private var password = ""
     @FocusState private var focusedField: ConnectField?
     @State private var gatewayClientID = AccessGateway.clientID
     @State private var gatewayClientSecret = AccessGateway.clientSecret
-    @State private var selectedBackend: MediaBackend = .jellyfin
-    @State private var connectingBackend: MediaBackend?
+    @State private var isSigningIn = false
     @State private var isCheckingConnection = false
     @State private var signInError: String?
     @State private var testMessage: String?
@@ -87,6 +87,14 @@ struct ConnectView: View {
                         .padding(.bottom, 18)
                 }
 
+                if serverType == .silo {
+                    Text("Enter Silo's address and your Silo sign-in, then pick who's watching.")
+                        .font(.footnote)
+                        .foregroundStyle(LoginPalette.captionText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 18)
+                }
+
                 statusText
 
                 VStack(spacing: 12) {
@@ -94,7 +102,7 @@ struct ConnectView: View {
                     testConnectionButton
                 }
 
-                if selectedBackend == .jellyfin {
+                if serverType == .jellyfin {
                     if isUsingQuickConnect {
                         quickConnectPanel
                             .padding(.top, 22)
@@ -131,16 +139,26 @@ struct ConnectView: View {
             .accessibilityLabel("Zelefin")
 
             ConnectBackendPicker(
-                selection: $selectedBackend,
+                selection: serverTypeBinding,
                 tileSize: horizontalSizeClass == .regular ? 96 : 86
             )
         }
         .frame(maxWidth: .infinity)
-        .onChange(of: selectedBackend) { _, backend in
-            if backend != .jellyfin {
+        .onChange(of: serverTypeRaw) { _, _ in
+            if serverType != .jellyfin {
                 cancelQuickConnect()
             }
+            signInError = nil
+            testMessage = nil
         }
+    }
+
+    private var serverType: SignInServerType {
+        SignInServerType(rawValue: serverTypeRaw) ?? .jellyfin
+    }
+
+    private var serverTypeBinding: Binding<SignInServerType> {
+        Binding(get: { serverType }, set: { serverTypeRaw = $0.rawValue })
     }
 
     private var credentialsCard: some View {
@@ -167,25 +185,25 @@ struct ConnectView: View {
             cardDivider
 
             labeledField(
-                label: selectedBackend == .silo ? "USERNAME OR EMAIL" : "USERNAME",
+                label: serverType == .silo ? "USERNAME OR EMAIL" : "USERNAME",
                 systemImage: "person.fill"
             ) {
                 TextField(
                     "",
                     text: $username,
-                    prompt: Text(selectedBackend == .silo ? "username or you@example.com" : "username")
+                    prompt: Text(serverType == .silo ? "username or you@example.com" : "username")
                         .foregroundStyle(Color.white.opacity(0.55))
                 )
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
                 .textContentType(.username)
-                .keyboardType(selectedBackend == .silo ? .emailAddress : .default)
+                .keyboardType(serverType == .silo ? .emailAddress : .default)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.next)
                 .focused($focusedField, equals: .username)
                 .onSubmit { focusedField = .password }
-                .accessibilityLabel(selectedBackend == .silo ? "Username or email" : "Username")
+                .accessibilityLabel(serverType == .silo ? "Username or email" : "Username")
             }
 
             cardDivider
@@ -278,7 +296,7 @@ struct ConnectView: View {
                     .focused($focusedField, equals: .password)
                     .onSubmit {
                         guard canSubmit, !isBusy else { return }
-                        Task { await connect(backend: selectedBackend) }
+                        Task { await connect() }
                     }
 
                 Spacer(minLength: 0)
@@ -340,9 +358,9 @@ struct ConnectView: View {
     }
 
     private var signInButton: some View {
-        let signingIn = connectingBackend != nil
+        let signingIn = isSigningIn
         return Button {
-            Task { await connect(backend: selectedBackend) }
+            Task { await connect() }
         } label: {
             HStack(spacing: 8) {
                 if signingIn {
@@ -359,7 +377,7 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(!canSubmit || isBusy)
         .opacity((!canSubmit || isBusy) ? 0.42 : 1)
-        .accessibilityLabel(selectedBackend == .silo ? "Sign in with Silo" : "Sign in with Jellyfin")
+        .accessibilityLabel(serverType == .silo ? "Sign in with Silo" : "Sign in with Jellyfin")
     }
 
     private var testConnectionButton: some View {
@@ -484,7 +502,7 @@ struct ConnectView: View {
     }
 
     private var isBusy: Bool {
-        connectingBackend != nil || isCheckingConnection || isUsingQuickConnect
+        isSigningIn || isCheckingConnection || isUsingQuickConnect
     }
 
     private func persistCredentials() {
@@ -492,27 +510,27 @@ struct ConnectView: View {
         storedUsername = username
     }
 
-    private func connect(backend: MediaBackend) async {
-        guard connectingBackend == nil else { return }
+    private func connect() async {
+        guard !isSigningIn else { return }
         persistCredentials()
-        connectingBackend = backend
+        isSigningIn = true
         signInError = nil
         testMessage = nil
-        defer { connectingBackend = nil }
+        defer { isSigningIn = false }
 
         do {
             try await session.connect(
                 serverAddress: address,
                 username: username,
                 password: password,
-                backend: backend
+                serverType: serverType
             )
         } catch {
             signInError = error.localizedDescription
         }
     }
 
-    private func selectProfile(_ profile: SiloHouseholdProfile, pin: String?) async {
+    private func selectProfile(_ profile: SiloProfile, pin: String?) async {
         guard !isPickingProfile else { return }
         isPickingProfile = true
         signInError = nil
@@ -533,11 +551,16 @@ struct ConnectView: View {
 
         do {
             let url = try ServerURL.normalize(address)
-            let detected = await ServerProbe().detectBackend(at: url)
-            let reachability = await ServerProbe().checkReachability(at: url)
+            if await SiloAccountClient.isSiloAddress(url) {
+                testMessage = "Silo is reachable. Sign in with your Silo account."
+                testDidSucceed = true
+                return
+            }
+            let probe = ServerProbe()
+            let reachability = await probe.checkReachability(at: url)
             if reachability.isReachable {
-                testMessage = detected == .silo
-                    ? "Silo is reachable."
+                testMessage = await probe.isSiloServer(at: url)
+                    ? "Silo is reachable through its Jellyfin-compatible API."
                     : "Jellyfin is reachable."
             } else {
                 testMessage = reachability.message

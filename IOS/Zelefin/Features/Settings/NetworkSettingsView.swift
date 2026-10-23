@@ -89,7 +89,7 @@ struct NetworkSettingsView: View {
     private var profile: HomeNetworkProfile { session.homeNetworkProfile }
 
     private var localURLPlaceholder: String {
-        session.usesSilo ? "http://192.168.1.100" : "http://192.168.1.100:8096"
+        "http://192.168.1.100:8096"
     }
 
     private var unavailableWiFi: String {

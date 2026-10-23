@@ -188,7 +188,10 @@ struct LibraryView: View {
     }
 
     private var visibleJumpBlocks: [LibraryPageBlock] {
-        [LibraryPageBlock.favorites, .watchlist, .downloaded, .genres].filter { !hiddenPageBlocks.contains($0) }
+        [LibraryPageBlock.favorites, .watchlist, .downloaded, .genres].filter { block in
+            // The Watchlist is a Jellyfin playlist, and Silo's Jellyfin-compatible API has none.
+            !hiddenPageBlocks.contains(block) && !(block == .watchlist && session.isSiloServer)
+        }
     }
 
     private var jumpRow: some View {
@@ -264,7 +267,7 @@ struct LibraryView: View {
 
     private func eligibleLibraries(from source: [MediaLibrary]) -> [MediaLibrary] {
         var libraries = HomeLayoutPreferences.libraryTabLibraries(source)
-        if session.usesSilo {
+        if session.isSiloServer {
             libraries.removeAll { $0.libraryKind == .liveTV }
         }
         return libraries
@@ -925,7 +928,7 @@ struct LibraryItemsView: View {
     }
 
     var body: some View {
-        if library.libraryKind == .liveTV, !session.usesSilo {
+        if library.libraryKind == .liveTV, !session.isSiloServer {
             LiveTVView(showsBackButton: true)
         } else {
             catalogBody

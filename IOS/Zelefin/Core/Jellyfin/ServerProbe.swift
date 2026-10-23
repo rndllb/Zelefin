@@ -21,17 +21,19 @@ struct ServerProbe: Sendable {
         )
     }
 
-    /// Checks whether `url` answers as a Silo or Jellyfin server.
-    ///
-    /// Silo `/api/v1/health` is tried first so a host that also exposes Jellyfin
-    /// compatibility on another port is still recognized as Silo.
+    /// Silo's Jellyfin-compatible API calls itself "Jellyfin Server", but its branding always
+    /// carries Silo's fixed login disclaimer.
+    func isSiloServer(at url: URL) async -> Bool {
+        guard let disclaimer = await branding(at: url)?.loginDisclaimer else { return false }
+        return Self.isSiloDisclaimer(disclaimer)
+    }
+
+    static func isSiloDisclaimer(_ disclaimer: String) -> Bool {
+        disclaimer.range(of: "silo", options: .caseInsensitive) != nil
+    }
+
+    /// Checks whether `url` answers as a Jellyfin server.
     func checkReachability(at url: URL) async -> ServerReachability {
-        if let health = try? await siloHealth(at: url), health.isReady {
-            return .reachable(
-                serverName: health.displayName,
-                version: health.version ?? "Silo"
-            )
-        }
         do {
             let info = try await publicInfo(at: url)
             let trimmedName = info.serverName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -42,20 +44,5 @@ struct ServerProbe: Sendable {
         } catch {
             return ServerReachability(error: error)
         }
-    }
-
-    func siloHealth(at url: URL) async throws -> SiloHealth {
-        let client = SiloAPIClient(baseURL: url)
-        return try await client.health()
-    }
-
-    func detectBackend(at url: URL) async -> MediaBackend? {
-        if let health = try? await siloHealth(at: url), health.isReady {
-            return .silo
-        }
-        if (try? await publicInfo(at: url)) != nil {
-            return .jellyfin
-        }
-        return nil
     }
 }

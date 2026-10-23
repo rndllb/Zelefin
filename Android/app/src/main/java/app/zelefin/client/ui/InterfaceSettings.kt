@@ -103,7 +103,7 @@ fun AppearanceSettings() {
 fun InterfaceSettings(state: ZelefinUiState) {
     val model: ZelefinModel = viewModel()
     val context = LocalContext.current
-    val silo = state.session?.usesSilo == true
+    val silo = state.isSiloServer
     LaunchedEffect(Unit) { model.pullDisplayPreferences() }
 
     val merged = HomeLayoutPreferences.mergeContinueAndNextUp

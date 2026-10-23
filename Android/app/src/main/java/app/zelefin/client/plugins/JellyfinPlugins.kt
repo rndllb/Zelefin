@@ -3,7 +3,7 @@ package app.zelefin.client.plugins
 import app.zelefin.client.network.GatewayHttp
 import app.zelefin.core.AccessGateway
 import app.zelefin.core.ServerUrl
-import app.zelefin.core.SiloJson
+import app.zelefin.core.LenientJson
 import app.zelefin.core.ZelefinException
 import java.net.URLEncoder
 import kotlin.coroutines.cancellation.CancellationException
@@ -205,7 +205,7 @@ internal object PluginHttp {
 
 /** Case-insensitive JSON readers matching iOS `JellyfinEnhancedJSON` (PascalCase and camelCase keys). */
 internal object PluginJson {
-    fun parse(text: String): JsonElement? = runCatching { SiloJson.parse(text) }.getOrNull()
+    fun parse(text: String): JsonElement? = runCatching { LenientJson.parse(text) }.getOrNull()
 
     fun obj(text: String): JsonObject? = parse(text) as? JsonObject
 

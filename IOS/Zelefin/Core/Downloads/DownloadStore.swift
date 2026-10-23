@@ -252,9 +252,6 @@ final class DownloadStore {
     ) async throws {
         let plan = try await library.playbackPlan(for: target)
         try Task.checkCancellation()
-        // Backends resolve the download differently: Jellyfin hands back a direct
-        // original-file URL, while Silo registers a managed download, waits for the
-        // server to prepare it, and returns the ready file URL plus its row id.
         let asset = try await library.prepareDownloadAsset(for: target, plan: plan)
         try Task.checkCancellation()
         let downloadURL = asset.url
@@ -271,7 +268,7 @@ final class DownloadStore {
             current.bytesExpected = knownSize
             progress[itemID] = current
         }
-        let bytes = try await DownloadTransfer.download(
+        let file = try await DownloadTransfer.download(
             from: downloadURL,
             headers: headers,
             to: mediaURL,
@@ -302,14 +299,14 @@ final class DownloadStore {
 
         let record = DownloadedItem(
             item: target,
-            relativeMediaPath: relativePath(mediaURL),
+            relativeMediaPath: relativePath(file.url),
             relativeArtworkPath: artworkPath,
             relativeShowArtworkPath: showArtworkPath,
-            container: plan.container,
+            container: file.url.pathExtension.isEmpty ? plan.container : file.url.pathExtension,
             videoCodec: plan.videoCodec,
             videoRange: plan.videoRange,
             audioFormat: plan.audioFormat,
-            byteSize: bytes > 0 ? bytes : (plan.byteSize ?? 0),
+            byteSize: file.byteSize > 0 ? file.byteSize : (plan.byteSize ?? 0),
             userID: account.userID,
             serverHost: host,
             downloadedAt: Date(),

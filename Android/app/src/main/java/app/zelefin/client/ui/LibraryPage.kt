@@ -233,13 +233,14 @@ private fun LibraryHome(
 ) {
     var arranging by remember { mutableStateOf(false) }
     val sheet = rememberZelefinSheet(if (arranging) Unit else null)
-    val silo = state.session?.usesSilo == true
+    val silo = state.isSiloServer
     val eligible = state.libraries.libraryTabRooms(silo)
     val layout = state.libraryLayout
     val rooms = layout.displayed(eligible)
     val overview = state.libraryOverview
+    // The Watchlist is a Jellyfin playlist, and Silo serves no playlists.
     val jumps = listOf(LibraryPageBlock.Favorites, LibraryPageBlock.Watchlist, LibraryPageBlock.Genres)
-        .filter { it !in layout.hiddenBlocks }
+        .filter { it !in layout.hiddenBlocks && !(silo && it == LibraryPageBlock.Watchlist) }
     val collections = if (LibraryPageBlock.Collections in layout.hiddenBlocks) emptyList() else overview.collections.take(12)
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val headerHeight = statusTop + HeaderRowHeight
@@ -372,9 +373,7 @@ private fun LibraryHome(
                                 )
                             }
                             item(key = "collections") {
-                                CollectionGrid(collections, state.session) { item ->
-                                    if (state.session?.usesSilo == true) onRoute(LibraryRoute.Collection(item.id, item.name)) else onOpen(item)
-                                }
+                                CollectionGrid(collections, state.session, onOpen)
                             }
                         }
                     }

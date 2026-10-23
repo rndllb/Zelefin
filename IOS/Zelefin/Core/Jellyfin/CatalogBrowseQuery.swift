@@ -116,6 +116,14 @@ enum CatalogSortField: String, CaseIterable, Hashable, Sendable, Identifiable {
     }
 
     var allowsDirection: Bool { self != .random }
+
+    /// Sorts Silo's Jellyfin-compatible API applies; it falls back to its own order for the rest.
+    var isServedBySilo: Bool {
+        switch self {
+        case .name, .random, .communityRating, .dateAdded, .releaseDate: true
+        case .criticRating, .datePlayed, .parentalRating, .playCount, .runtime: false
+        }
+    }
 }
 
 struct CatalogFilterChoice: Identifiable, Hashable, Sendable {

@@ -5,7 +5,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,7 +51,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -64,12 +62,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.unit.Dp
 import app.zelefin.client.R
+import app.zelefin.client.SignInServerType
 import app.zelefin.client.ZelefinUiState
-import app.zelefin.core.MediaBackend
 
 private val Caption = Color.White.copy(alpha = 0.55f)
 private val Secondary = Color.White.copy(alpha = 0.72f)
@@ -81,9 +81,8 @@ private val CardShape = RoundedCornerShape(18.dp)
 @Composable
 fun ConnectScreen(
     state: ZelefinUiState,
-    onBackend: (MediaBackend) -> Unit,
     onTest: (String) -> Unit,
-    onSignIn: (String, String, String) -> Unit,
+    onSignIn: (String, String, String, SignInServerType) -> Unit,
     onQuickConnect: (String) -> Unit,
     onCancelQuickConnect: () -> Unit,
     onGateway: (String, String) -> Unit,
@@ -92,6 +91,10 @@ fun ConnectScreen(
     val prefs = context.getSharedPreferences("zelefin.connect", Context.MODE_PRIVATE)
     var url by rememberSaveable { mutableStateOf(prefs.getString("last-server", "").orEmpty()) }
     var username by rememberSaveable { mutableStateOf(prefs.getString("last-username", "").orEmpty()) }
+    var serverType by rememberSaveable {
+        mutableStateOf(SignInServerType.entries.firstOrNull { it.name == prefs.getString("last-server-type", null) } ?: SignInServerType.Jellyfin)
+    }
+    val silo = serverType == SignInServerType.Silo
     var password by rememberSaveable { mutableStateOf("") }
     var advanced by rememberSaveable { mutableStateOf(state.gatewayId.isNotBlank() || state.gatewaySecret.isNotBlank()) }
     var gatewayId by rememberSaveable { mutableStateOf(state.gatewayId) }
@@ -104,9 +107,17 @@ fun ConnectScreen(
     val wide = context.resources.configuration.smallestScreenWidthDp >= 600
     val markSize = if (wide) 196.dp else 168.dp
     val tileSize = if (wide) 96.dp else 86.dp
+    val chooseType = { type: SignInServerType ->
+        if (type != serverType) {
+            password = ""
+            if (type == SignInServerType.Silo && state.quickConnect != null) onCancelQuickConnect()
+            serverType = type
+        }
+    }
 
     LaunchedEffect(url) { prefs.edit().putString("last-server", url).apply() }
     LaunchedEffect(username) { prefs.edit().putString("last-username", username).apply() }
+    LaunchedEffect(serverType) { prefs.edit().putString("last-server-type", serverType.name).apply() }
     LaunchedEffect(gatewayId, gatewaySecret) { onGateway(gatewayId, gatewaySecret) }
 
     Box(
@@ -152,15 +163,9 @@ fun ConnectScreen(
                 )
                 Spacer(Modifier.height(22.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    BackendTile(MediaBackend.Jellyfin, state.backend == MediaBackend.Jellyfin, tileSize) {
-                        password = ""
-                        onBackend(MediaBackend.Jellyfin)
-                    }
+                    ServerTypeTile(SignInServerType.Jellyfin, !silo, tileSize) { chooseType(SignInServerType.Jellyfin) }
                     Spacer(Modifier.width(18.dp))
-                    BackendTile(MediaBackend.Silo, state.backend == MediaBackend.Silo, tileSize) {
-                        password = ""
-                        onBackend(MediaBackend.Silo)
-                    }
+                    ServerTypeTile(SignInServerType.Silo, silo, tileSize) { chooseType(SignInServerType.Silo) }
                 }
                 Spacer(Modifier.height(22.dp))
                 Column(
@@ -184,11 +189,11 @@ fun ConnectScreen(
                     )
                     LoginDivider(inset = true)
                     LoginField(
-                        label = if (state.backend == MediaBackend.Silo) "USERNAME OR EMAIL" else "USERNAME",
+                        label = if (silo) "USERNAME OR EMAIL" else "USERNAME",
                         value = username,
                         icon = Icons.Filled.Person,
-                        placeholder = if (state.backend == MediaBackend.Silo) "username or you@example.com" else "username",
-                        keyboard = if (state.backend == MediaBackend.Silo) KeyboardType.Email else KeyboardType.Text,
+                        placeholder = if (silo) "username or you@example.com" else "username",
+                        keyboard = if (silo) KeyboardType.Email else KeyboardType.Text,
                         ime = ImeAction.Next,
                         focusRequester = usernameFocus,
                         onIme = { passwordFocus.requestFocus() },
@@ -207,7 +212,7 @@ fun ConnectScreen(
                         focusRequester = passwordFocus,
                         onIme = {
                             focusManager.clearFocus()
-                            if (url.isNotBlank() && username.isNotBlank() && !state.busy) onSignIn(url, username, password)
+                            if (url.isNotBlank() && username.isNotBlank() && !state.busy) onSignIn(url, username, password, serverType)
                         },
                         underline = true,
                         onChange = { password = it },
@@ -275,7 +280,7 @@ fun ConnectScreen(
                 }
                 Spacer(Modifier.height(18.dp))
                 val handshake = state.quickConnect
-                if (handshake != null && state.backend == MediaBackend.Jellyfin) {
+                if (handshake != null && !silo) {
                     Column(
                         Modifier
                             .fillMaxWidth()
@@ -312,7 +317,7 @@ fun ConnectScreen(
                         filled = true,
                         enabled = canSignIn,
                         busy = state.busy,
-                        onClick = { onSignIn(url, username, password) },
+                        onClick = { onSignIn(url, username, password, serverType) },
                     )
                     Spacer(Modifier.height(10.dp))
                     LoginButton(
@@ -321,7 +326,7 @@ fun ConnectScreen(
                         enabled = url.isNotBlank() && !state.busy,
                         onClick = { onTest(url) },
                     )
-                    if (state.backend == MediaBackend.Jellyfin) {
+                    if (!silo) {
                         Spacer(Modifier.height(10.dp))
                         LoginButton(
                             title = "JELLYFIN QUICK CONNECT",
@@ -330,6 +335,16 @@ fun ConnectScreen(
                             onClick = { onQuickConnect(url) },
                         )
                     }
+                }
+                if (silo) {
+                    Text(
+                        "Enter Silo's address and your Silo sign-in, then pick who's watching.",
+                        color = Caption,
+                        fontFamily = ZelefinFont,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                    )
                 }
                 Spacer(Modifier.height(28.dp))
             }
@@ -349,8 +364,8 @@ fun ConnectScreen(
 }
 
 @Composable
-private fun BackendTile(backend: MediaBackend, selected: Boolean, size: Dp, onClick: () -> Unit) {
-    val silo = backend == MediaBackend.Silo
+private fun ServerTypeTile(type: SignInServerType, selected: Boolean, size: Dp, onClick: () -> Unit) {
+    val silo = type == SignInServerType.Silo
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
         Box(
             Modifier

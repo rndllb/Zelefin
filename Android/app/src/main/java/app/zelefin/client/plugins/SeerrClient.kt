@@ -2,7 +2,7 @@ package app.zelefin.client.plugins
 
 import app.zelefin.client.network.GatewayHttp
 import app.zelefin.core.AccessGateway
-import app.zelefin.core.SiloJson
+import app.zelefin.core.LenientJson
 import app.zelefin.core.ZelefinException
 import app.zelefin.core.arr
 import app.zelefin.core.bool
@@ -50,13 +50,6 @@ data class SeerrTitle(
         Movie("movie", "Movie"),
         Tv("tv", "Show"),
         ;
-
-        companion object {
-            fun fromSilo(mediaType: String?): Kind = when (mediaType?.lowercase()) {
-                "tv", "series", "show" -> Tv
-                else -> Movie
-            }
-        }
     }
 
     enum class Availability {
@@ -94,19 +87,6 @@ data class SeerrTitle(
                 1 -> Unknown
                 else -> Missing
             }
-
-            fun fromSilo(availability: String?, requestStatus: String?, requestable: Boolean?): Availability {
-                if (availability?.lowercase() == "available") return Available
-                return fromSiloRequestStatus(requestStatus, requestable)
-            }
-
-            fun fromSiloRequestStatus(status: String?, requestable: Boolean? = null): Availability =
-                when (status?.lowercase()) {
-                    "pending", "approved" -> Pending
-                    "queued", "downloading" -> Processing
-                    "completed" -> Available
-                    else -> if (requestable == false) Pending else Missing
-                }
         }
     }
 
@@ -184,7 +164,7 @@ data class SeerrCredentials(
 
     companion object {
         fun fromJson(raw: String?): SeerrCredentials? {
-            val json = raw?.let(SiloJson::objectOrNull) ?: return null
+            val json = raw?.let(LenientJson::objectOrNull) ?: return null
             val username = json.str("username").orEmpty()
             val password = json.str("password").orEmpty()
             if (username.isEmpty() || password.isEmpty()) return null
@@ -206,7 +186,7 @@ data class SeerrSession(
 
     companion object {
         fun fromJson(raw: String?): SeerrSession? {
-            val json = raw?.let(SiloJson::objectOrNull) ?: return null
+            val json = raw?.let(LenientJson::objectOrNull) ?: return null
             val name = json.str("cookieName") ?: return null
             val value = json.str("cookieValue") ?: return null
             return SeerrSession(name, value, json.str("displayName") ?: "Seerr")
@@ -280,7 +260,7 @@ class SeerrClient(
         val url = url(baseUrl, path, query)
         val response = withContext(Dispatchers.IO) { execute(url, "GET", null, cookieHeader()) }
         throwIfNeeded(response)
-        return runCatching { SiloJson.parse(response.body) }.getOrElse { throw unexpected() }
+        return runCatching { LenientJson.parse(response.body) }.getOrElse { throw unexpected() }
     }
 
     private suspend fun fetchObject(path: String, query: List<Pair<String, String>> = emptyList()): JsonObject =
@@ -338,7 +318,7 @@ class SeerrClient(
             val cookie = SeerrCookie.parse(response.headers, response.url)
                 ?: SeerrCookie.parse(response.headers, url)
                 ?: throw ZelefinException.server("Seerr signed in but did not return a session cookie.")
-            val user = SiloJson.objectOrNull(response.body)?.let(SeerrUser::parse)
+            val user = LenientJson.objectOrNull(response.body)?.let(SeerrUser::parse)
             return SeerrSession(
                 cookieName = cookie.first,
                 cookieValue = cookie.second,
@@ -383,7 +363,7 @@ class SeerrClient(
         }
 
         fun errorMessage(body: String, status: Int): String {
-            val json = SiloJson.objectOrNull(body)
+            val json = LenientJson.objectOrNull(body)
             if (json != null) {
                 for (key in listOf("message", "error")) {
                     val value = (json[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull

@@ -94,7 +94,7 @@ internal fun TitleMoreOverlay(
     onIdentify: ((MediaItem) -> Unit)? = null,
     onEditMetadata: ((MediaItem) -> Unit)? = null,
     onDownloadSeason: ((MediaItem) -> Unit)? = null,
-    usesSilo: Boolean = false,
+    isSiloServer: Boolean = false,
     skipCinemaIntros: Boolean = false,
     onToggleSkipCinema: () -> Unit = {},
     onCollections: (() -> Unit)? = null,
@@ -183,7 +183,7 @@ internal fun TitleMoreOverlay(
             TitleMorePanel(
                 hazeState = hazeState,
                 request = current,
-                usesSilo = usesSilo,
+                isSiloServer = isSiloServer,
                 skipCinemaIntros = skipCinemaIntros,
                 onDismiss = onDismiss,
                 onPlay = {
@@ -312,7 +312,7 @@ internal fun TitleMoreOverlay(
 private fun TitleMorePanel(
     hazeState: ZelefinHazeState,
     request: TitleMoreRequest,
-    usesSilo: Boolean,
+    isSiloServer: Boolean,
     skipCinemaIntros: Boolean,
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
@@ -338,7 +338,7 @@ private fun TitleMorePanel(
     val item = request.item
     val showGoTo = request.context != TitleMenuContext.Episode
     val library = request.context == TitleMenuContext.Detail
-    val showRemote = library && !usesSilo
+    val showRemote = library && !isSiloServer
     val showSync = showRemote && item.kind.usesVideoPlayer
     val showRefresh = isAdmin && onRefreshMetadata != null
     val showAdminRemote = isAdmin && showRemote
@@ -366,7 +366,7 @@ private fun TitleMorePanel(
                     showRemote = showRemote,
                     showSync = showSync,
                     showRefresh = showRefresh,
-                    usesSilo = usesSilo,
+                    isSiloServer = isSiloServer,
                     onPlay = onPlay,
                     onOpen = onOpen,
                     onToggleWatched = onToggleWatched,
@@ -415,7 +415,7 @@ private fun TitleMorePanel(
                 if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                 onToggleFavorite,
             )
-            if (onToggleWatchlist != null && !usesSilo) {
+            if (onToggleWatchlist != null && !isSiloServer) {
                 MoreRow(
                     if (item.isWatchlisted) "Remove from Watchlist" else "Add to Watchlist",
                     Icons.Outlined.PlaylistAdd,
@@ -490,7 +490,7 @@ private fun YouTubeMoreRows(
     showRemote: Boolean,
     showSync: Boolean,
     showRefresh: Boolean,
-    usesSilo: Boolean,
+    isSiloServer: Boolean,
     onPlay: () -> Unit,
     onOpen: () -> Unit,
     onToggleWatched: () -> Unit,
@@ -546,7 +546,7 @@ private fun YouTubeMoreRows(
         if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
         onToggleFavorite,
     )
-    if (!channel && onToggleWatchlist != null && !usesSilo) {
+    if (!channel && onToggleWatchlist != null && !isSiloServer) {
         MoreRow(
             if (item.isWatchlisted) "Remove from Watch Later" else "Save to Watch Later",
             Icons.Outlined.WatchLater,

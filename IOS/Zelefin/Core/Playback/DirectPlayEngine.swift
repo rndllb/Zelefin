@@ -54,7 +54,7 @@ enum DirectPlayLoadPolicy {
     }
 
     /// Remux/transcode HLS has no file to range-request; live MPEG-TS is an infinite pipe.
-    /// Silo `original_http` is Direct Play with no known size — open the session URL.
+    /// Direct Play with no known size opens the stream URL as-is.
     static func shouldOpenAsHTTPURL(
         method: PlaybackMethod,
         isHLS: Bool,
@@ -177,8 +177,7 @@ enum DirectPlayLoadOptions {
     }
 
     /// Server HLS remux/transcode has subtitle renditions on the playlist, not
-    /// demuxable packets. Open that playlist with AVPlayer the same way Silo's
-    /// iOS client does (`nativeRemoteHLS`).
+    /// demuxable packets. Open that playlist with AVPlayer.
     static func shouldUseNativeRemoteHLS(url: URL, container: String?) -> Bool {
         if PlaybackPipelineResolver.isHLS(url) { return true }
         return (container ?? "").lowercased().contains("hls")
@@ -218,7 +217,7 @@ enum DirectPlayLoadOptions {
     }
 }
 
-/// Plan track IDs are Silo combined indexes or catalog ordinals. Aether uses
+/// Plan track IDs are server stream indexes or catalog ordinals. Aether uses
 /// AVStream indexes for embedded cues and `100_000 + n` for sidecars.
 enum PlaybackSubtitleSelection {
     static func engineIndex(

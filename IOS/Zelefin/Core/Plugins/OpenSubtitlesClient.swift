@@ -131,14 +131,12 @@ struct RemoteSubtitleMatch: Identifiable, Hashable, Sendable {
     let title: String
     let detail: String
     let isHashMatch: Bool
-    var silo: SiloSubtitleDownloadKeys? = nil
 
-    init(id: String, title: String, detail: String, isHashMatch: Bool, silo: SiloSubtitleDownloadKeys? = nil) {
+    init(id: String, title: String, detail: String, isHashMatch: Bool) {
         self.id = id
         self.title = title
         self.detail = detail
         self.isHashMatch = isHashMatch
-        self.silo = silo
     }
 
     init?(_ info: RemoteSubtitleInfo) {

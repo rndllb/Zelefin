@@ -3,6 +3,25 @@ import JellyfinAPI
 
 enum ItemMapper {
     static let tubeArchivistProvider = "TubeArchivist"
+
+    /// The SDK's `CollectionType` rejects values Jellyfin doesn't define, and one bad library
+    /// fails the whole list. Silo labels movie-and-show libraries `mixed`, so unknown types are
+    /// dropped and those libraries decode untyped, like a Jellyfin mixed-content library.
+    static func decodeViews(_ data: Data) throws -> BaseItemDtoQueryResult {
+        let decoder = JellyfinJSONDate.decoder
+        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var items = root["Items"] as? [[String: Any]] else {
+            return try decoder.decode(BaseItemDtoQueryResult.self, from: data)
+        }
+        let known = Set(CollectionType.allCases.map(\.rawValue))
+        for index in items.indices {
+            if let type = items[index]["CollectionType"] as? String, !known.contains(type) {
+                items[index]["CollectionType"] = nil
+            }
+        }
+        root["Items"] = items
+        return try decoder.decode(BaseItemDtoQueryResult.self, from: JSONSerialization.data(withJSONObject: root))
+    }
     static let listImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo, .banner]
     static let liveTVImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo, .screenshot, .banner]
 

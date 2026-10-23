@@ -103,10 +103,6 @@ class PluginSettings(context: Context) {
         return SeerrClient(url, session)
     }
 
-    var siloRequestSource: SiloRequestSource
-        get() = SiloRequestSource.fromRaw(prefs.getString(SILO_REQUEST_SOURCE_KEY, null)) ?: SiloRequestSource.Seerr
-        set(value) = prefs.edit().putString(SILO_REQUEST_SOURCE_KEY, value.raw).apply()
-
     var autoSkipIntro: Boolean
         get() = prefs.getBoolean(AUTO_SKIP_INTRO_KEY, false)
         set(value) = prefs.edit().putBoolean(AUTO_SKIP_INTRO_KEY, value).apply()
@@ -119,7 +115,6 @@ class PluginSettings(context: Context) {
         const val PREFS_NAME = "zelefin.plugins"
         const val SECRETS_NAME = "zelefin.secrets"
         const val SEERR_URL_KEY = "zelefin.seerr.url"
-        const val SILO_REQUEST_SOURCE_KEY = "zelefin.silo.request-source"
         const val AUTO_SKIP_INTRO_KEY = "zelefin.playback.auto-skip-intro"
         const val AUTO_SKIP_CREDITS_KEY = "zelefin.playback.auto-skip-credits"
         private const val SEERR_SESSION_KEY = "seerr-session"

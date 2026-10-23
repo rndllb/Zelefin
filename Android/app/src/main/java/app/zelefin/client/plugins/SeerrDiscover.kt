@@ -14,11 +14,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
-/** A request backend the Discover UI can drive: Seerr directly, or a Silo server's request plugin. */
+/** A request backend the Discover UI can drive. */
 interface RequestCatalog {
-    /** True when a request is a single tap (Silo); false when the UI should offer Seerr's request options. */
-    val oneTapRequests: Boolean
-
     suspend fun search(term: String): List<SeerrTitle>
 
     suspend fun discoverHome(): List<DiscoverSection>
@@ -39,9 +36,6 @@ sealed class DiscoverQuery {
     data class TvGenre(val id: Int, val name: String) : DiscoverQuery()
     data class Studio(val id: Int, val name: String) : DiscoverQuery()
     data class Network(val id: Int, val name: String) : DiscoverQuery()
-    data class SiloGenre(val slug: String, val name: String, val mediaType: String) : DiscoverQuery()
-    data class SiloStudio(val slug: String, val name: String) : DiscoverQuery()
-    data class SiloNetwork(val slug: String, val name: String) : DiscoverQuery()
 
     val title: String
         get() = when (this) {
@@ -55,9 +49,6 @@ sealed class DiscoverQuery {
             is TvGenre -> name
             is Studio -> name
             is Network -> name
-            is SiloGenre -> name
-            is SiloStudio -> name
-            is SiloNetwork -> name
         }
 
     /** Stable key for navigation and list identity. */
@@ -73,19 +64,6 @@ sealed class DiscoverQuery {
             is TvGenre -> "tv-genre-$id"
             is Studio -> "studio-$id"
             is Network -> "network-$id"
-            is SiloGenre -> "silo-genre-$mediaType-$slug"
-            is SiloStudio -> "silo-studio-$slug"
-            is SiloNetwork -> "silo-network-$slug"
-        }
-
-    val siloSection: String?
-        get() = when (this) {
-            Trending -> "trending_movies"
-            PopularMovies -> "popular_movies"
-            UpcomingMovies -> "upcoming_movies"
-            PopularTv -> "popular_series"
-            UpcomingTv -> "on_air_series"
-            else -> null
         }
 
     val path: String
@@ -100,7 +78,6 @@ sealed class DiscoverQuery {
             is TvGenre -> "api/v1/discover/tv/genre/$id"
             is Studio -> "api/v1/discover/movies/studio/$id"
             is Network -> "api/v1/discover/tv/network/$id"
-            is SiloGenre, is SiloStudio, is SiloNetwork -> ""
         }
 
     fun queryItems(page: Int): List<Pair<String, String>> = when (this) {
@@ -153,23 +130,15 @@ data class SeerrGenreSliderItem(
     val id: Int,
     val name: String,
     val backdrops: List<String>? = null,
-    val siloSlug: String? = null,
-    val siloMediaType: String? = null,
+    val mediaType: String? = null,
 ) {
     val imageUrl: String? get() = SeerrClient.tmdbImageUrl(backdrops?.firstOrNull(), size = "w780")
 
     val discoverQuery: DiscoverQuery
-        get() {
-            siloSlug?.let { return DiscoverQuery.SiloGenre(it, name, siloMediaType ?: "movie") }
-            return if (siloMediaType == "series" || siloMediaType == "tv") {
-                DiscoverQuery.TvGenre(id, name)
-            } else {
-                DiscoverQuery.MovieGenre(id, name)
-            }
-        }
+        get() = if (mediaType == "tv") DiscoverQuery.TvGenre(id, name) else DiscoverQuery.MovieGenre(id, name)
 
     fun brand(): DiscoverBrand = DiscoverBrand(
-        id = "genre-${siloMediaType ?: "movie"}-${siloSlug ?: id.toString()}",
+        id = "genre-${mediaType ?: "movie"}-$id",
         name = name,
         imageUrl = imageUrl,
         kind = DiscoverBrandKind.Genre,
@@ -193,26 +162,17 @@ data class SeerrCompany(
     val name: String,
     val kind: Kind,
     val imageUrl: String?,
-    val siloSlug: String? = null,
 ) {
     enum class Kind { Studio, Network }
 
     val query: DiscoverQuery
-        get() {
-            siloSlug?.let { slug ->
-                return when (kind) {
-                    Kind.Studio -> DiscoverQuery.SiloStudio(slug, name)
-                    Kind.Network -> DiscoverQuery.SiloNetwork(slug, name)
-                }
-            }
-            return when (kind) {
-                Kind.Studio -> DiscoverQuery.Studio(id, name)
-                Kind.Network -> DiscoverQuery.Network(id, name)
-            }
+        get() = when (kind) {
+            Kind.Studio -> DiscoverQuery.Studio(id, name)
+            Kind.Network -> DiscoverQuery.Network(id, name)
         }
 
     fun brand(): DiscoverBrand = DiscoverBrand(
-        id = "${kind.name.lowercase()}-${siloSlug ?: id.toString()}",
+        id = "${kind.name.lowercase()}-$id",
         name = name,
         imageUrl = imageUrl,
         kind = if (kind == Kind.Studio) DiscoverBrandKind.Studio else DiscoverBrandKind.Network,
@@ -389,7 +349,6 @@ suspend fun SeerrClient.listedRequests(page: Int = 1): List<SeerrListedRequest> 
 
 suspend fun SeerrClient.discover(query: DiscoverQuery, page: Int = 1): DiscoverPage {
     if (query == DiscoverQuery.Requests) return recentRequestTitles(page)
-    if (query.path.isEmpty()) throw ZelefinException.server("That discovery row is only on Silo servers.")
     val json = fetch(query.path, query.queryItems(page)) as? JsonObject
         ?: throw ZelefinException.server("Seerr returned an unexpected response.")
     val payload = SeerrSearchResponse.parse(json)
@@ -412,7 +371,7 @@ suspend fun SeerrClient.genreSlider(kind: SeerrTitle.Kind): List<SeerrGenreSlide
     val items = (fetch(path, listOf("language" to "en")) as? JsonArray).orEmpty()
         .mapNotNull { (it as? JsonObject)?.let(SeerrGenreSliderItem::parse) }
     if (kind != SeerrTitle.Kind.Tv) return items
-    return items.map { it.copy(siloMediaType = "tv") }
+    return items.map { it.copy(mediaType = "tv") }
 }
 
 private suspend fun SeerrClient.recentRequestTitles(page: Int): DiscoverPage {
@@ -454,8 +413,6 @@ private suspend fun SeerrClient.title(request: SeerrListedRequest): SeerrTitle {
 
 /** Adapts [SeerrClient] to the shared [RequestCatalog] used by the Discover UI. */
 class SeerrRequestCatalog(val client: SeerrClient) : RequestCatalog {
-    override val oneTapRequests: Boolean = false
-
     override suspend fun search(term: String): List<SeerrTitle> = client.search(term)
 
     override suspend fun discoverHome(): List<DiscoverSection> = client.discoverHome().sections()

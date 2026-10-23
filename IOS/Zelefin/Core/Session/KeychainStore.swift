@@ -10,13 +10,14 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
     var userImageTag: String?
     var serverVersion: String?
     var serverName: String?
-    var backend: MediaBackend
-    var refreshToken: String?
-    var profileID: String?
-    var profileToken: String?
-    var profileName: String?
-    var userRole: String?
-    var isPrimaryProfile: Bool
+    /// A Silo server answering through its Jellyfin-compatible API, which leaves out Jellyfin's
+    /// administration, SyncPlay, playlists, remote control, and Live TV.
+    var isSiloServer: Bool
+    /// Present when Zelefin signed in through Silo's own sign-in and picked a household profile.
+    var siloLink: SiloLink?
+    /// Signed in through the Silo-native backend Zelefin no longer has; its tokens do not work
+    /// against the Jellyfin-compatible API, so the account is dropped on load.
+    private(set) var isRetiredSiloSignIn = false
 
     var id: String { accountID }
 
@@ -25,13 +26,19 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         return "\(host)|\(userID)"
     }
 
+    /// Silo's Jellyfin-compatible API names a profile's user `username#profile`; only the
+    /// profile is shown.
+    static func displayName(_ raw: String, isSiloServer: Bool) -> String {
+        guard isSiloServer, let hash = raw.lastIndex(of: "#") else { return raw }
+        let profile = raw[raw.index(after: hash)...].trimmingCharacters(in: .whitespacesAndNewlines)
+        return profile.isEmpty ? raw : profile
+    }
+
     var displayServer: String {
         let name = serverName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !name.isEmpty { return name }
         return serverURL.host ?? serverURL.absoluteString
     }
-
-    var usesSilo: Bool { backend == .silo }
 
     init(
         serverURL: URL,
@@ -42,13 +49,8 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         userImageTag: String? = nil,
         serverVersion: String? = nil,
         serverName: String? = nil,
-        backend: MediaBackend = .jellyfin,
-        refreshToken: String? = nil,
-        profileID: String? = nil,
-        profileToken: String? = nil,
-        profileName: String? = nil,
-        userRole: String? = nil,
-        isPrimaryProfile: Bool = false
+        isSiloServer: Bool = false,
+        siloLink: SiloLink? = nil
     ) {
         self.serverURL = serverURL
         self.accessToken = accessToken
@@ -58,13 +60,14 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         self.userImageTag = userImageTag
         self.serverVersion = serverVersion
         self.serverName = serverName
-        self.backend = backend
-        self.refreshToken = refreshToken
-        self.profileID = profileID
-        self.profileToken = profileToken
-        self.profileName = profileName
-        self.userRole = userRole
-        self.isPrimaryProfile = isPrimaryProfile
+        self.isSiloServer = isSiloServer
+        self.siloLink = siloLink
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case serverURL, accessToken, userID, userName, deviceID, userImageTag, serverVersion, serverName
+        case isSiloServer, siloLink
+        case backend
     }
 
     init(from decoder: Decoder) throws {
@@ -77,19 +80,41 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         userImageTag = try container.decodeIfPresent(String.self, forKey: .userImageTag)
         serverVersion = try container.decodeIfPresent(String.self, forKey: .serverVersion)
         serverName = try container.decodeIfPresent(String.self, forKey: .serverName)
-        backend = try container.decodeIfPresent(MediaBackend.self, forKey: .backend) ?? .jellyfin
-        refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
-        profileID = try container.decodeIfPresent(String.self, forKey: .profileID)
-        profileToken = try container.decodeIfPresent(String.self, forKey: .profileToken)
-        profileName = try container.decodeIfPresent(String.self, forKey: .profileName)
-        userRole = try container.decodeIfPresent(String.self, forKey: .userRole)
-        isPrimaryProfile = try container.decodeIfPresent(Bool.self, forKey: .isPrimaryProfile) ?? false
+        isSiloServer = try container.decodeIfPresent(Bool.self, forKey: .isSiloServer) ?? false
+        userName = Self.displayName(userName, isSiloServer: isSiloServer)
+        siloLink = try? container.decodeIfPresent(SiloLink.self, forKey: .siloLink)
+        isRetiredSiloSignIn = (try? container.decodeIfPresent(String.self, forKey: .backend)) == "silo"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(serverURL, forKey: .serverURL)
+        try container.encode(accessToken, forKey: .accessToken)
+        try container.encode(userID, forKey: .userID)
+        try container.encode(userName, forKey: .userName)
+        try container.encode(deviceID, forKey: .deviceID)
+        try container.encodeIfPresent(userImageTag, forKey: .userImageTag)
+        try container.encodeIfPresent(serverVersion, forKey: .serverVersion)
+        try container.encodeIfPresent(serverName, forKey: .serverName)
+        try container.encode(isSiloServer, forKey: .isSiloServer)
+        try container.encodeIfPresent(siloLink, forKey: .siloLink)
     }
 }
 
 struct SavedAccountBox: Codable, Equatable, Sendable {
     var accounts: [SavedSession]
     var currentID: String
+    /// Accounts left out on load because they came from the retired Silo-native sign-in.
+    private(set) var retiredSiloAccounts = 0
+
+    private enum CodingKeys: String, CodingKey {
+        case accounts, currentID
+    }
+
+    init(accounts: [SavedSession], currentID: String) {
+        self.accounts = accounts
+        self.currentID = currentID
+    }
 
     var current: SavedSession? {
         accounts.first { $0.accountID == currentID } ?? accounts.first
@@ -122,11 +147,17 @@ struct SavedAccountBox: Codable, Equatable, Sendable {
 
     static func decode(from data: Data) throws -> SavedAccountBox {
         let decoder = JSONDecoder()
-        if let box = try? decoder.decode(SavedAccountBox.self, from: data), !box.accounts.isEmpty {
-            return box
+        var box: SavedAccountBox
+        if let decoded = try? decoder.decode(SavedAccountBox.self, from: data), !decoded.accounts.isEmpty {
+            box = decoded
+        } else {
+            let session = try decoder.decode(SavedSession.self, from: data)
+            box = SavedAccountBox(accounts: [session], currentID: session.accountID)
         }
-        let session = try decoder.decode(SavedSession.self, from: data)
-        return SavedAccountBox(accounts: [session], currentID: session.accountID)
+        let retired = box.accounts.filter(\.isRetiredSiloSignIn).count
+        box.accounts.removeAll(where: \.isRetiredSiloSignIn)
+        box.retiredSiloAccounts = retired
+        return box
     }
 }
 

@@ -260,8 +260,7 @@ struct PlayerView: View {
                 usesNativePlayer: PlaybackPipelineResolver.prefersNativePlayer(
                     preference: PlaybackPreferences.useNativeVideoPlayer,
                     hasSidecarSubtitles: !plan.externalSubtitles.isEmpty
-                ),
-                keepOriginalFile: session.usesSilo
+                )
             ) {
                 plan = try await library.playbackPlan(
                     for: activeItem,
@@ -454,11 +453,14 @@ struct PlayerView: View {
             created.skipSegments = skipSegments
         } else if created.plan.isLive != true,
            OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
-           let client = session.client,
-           !session.usesSilo {
+           let client = session.client {
+            let readsCoreSegments = session.isSiloServer
             Task {
                 let skipper = IntroSkipperClient(client: client)
-                guard await skipper.isInstalled() else { return }
+                // Silo serves Jellyfin's MediaSegments itself; on Jellyfin they come from the Intro Skipper plugin.
+                if !readsCoreSegments {
+                    guard await skipper.isInstalled() else { return }
+                }
                 created.skipSegments = await skipper.segments(for: plan.item.id)
             }
         }

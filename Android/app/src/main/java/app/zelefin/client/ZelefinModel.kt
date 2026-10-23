@@ -5,7 +5,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.Uri
-import android.os.Build
 import app.zelefin.client.network.HomeNetwork
 import app.zelefin.client.network.HomeNetworkProfile
 import app.zelefin.client.network.HomeNetworkStore
@@ -71,20 +70,26 @@ import app.zelefin.client.push.ZelefinPush
 import app.zelefin.client.session.SessionSocket
 import app.zelefin.client.session.SessionVault
 import app.zelefin.client.session.SnapshotStore
-import app.zelefin.client.silo.SiloClient
+import app.zelefin.client.silo.SiloAccountClient
+import app.zelefin.client.silo.SiloHandoff
+import app.zelefin.client.silo.SiloHousehold
+import app.zelefin.client.silo.SiloNotice
+import app.zelefin.client.silo.SiloPinPrompt
+import app.zelefin.client.silo.SiloProfilePicker
 import app.zelefin.core.GatewaySecrets
+import app.zelefin.core.SiloAccount
+import app.zelefin.core.SiloAvatarPreset
+import app.zelefin.core.SiloProfile
+import app.zelefin.core.SiloTokens
 import app.zelefin.core.HomeFeed
-import app.zelefin.core.HouseholdProfile
-import app.zelefin.core.MediaBackend
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
 import app.zelefin.core.PlaybackPlan
 import app.zelefin.core.PlaybackResumePolicy
 import app.zelefin.core.QuickConnectHandshake
+import app.zelefin.core.SavedAccountsCodec
 import app.zelefin.core.SavedSession
-import app.zelefin.core.ServerReachability
 import app.zelefin.core.ServerUrl
-import app.zelefin.core.SiloPendingSignIn
 import app.zelefin.core.TitleDetail
 import app.zelefin.core.ZelefinException
 import java.util.UUID
@@ -131,8 +136,6 @@ data class LibraryRoom(
 
 sealed interface Screen {
     data object Connect : Screen
-    data class Profiles(val pending: SiloPendingSignIn) : Screen
-    data class Pin(val pending: SiloPendingSignIn, val profile: HouseholdProfile) : Screen
     data object Library : Screen
     data class Detail(val id: String, val returnTo: Screen = Library) : Screen
     data class Player(val plan: PlaybackPlan, val returnTo: Screen = Library) : Screen
@@ -146,7 +149,6 @@ data class ZelefinUiState(
     val screen: Screen = Screen.Connect,
     val tab: AppTab = AppTab.Home,
     val dockRoomId: String? = null,
-    val backend: MediaBackend = MediaBackend.Jellyfin,
     val busy: Boolean = false,
     val message: String? = null,
     val session: SavedSession? = null,
@@ -183,7 +185,14 @@ data class ZelefinUiState(
     val syncPlayPlaylistItemId: String? = null,
     /** Last title played on this account. Drives the dock's mini player. */
     val nowPlaying: MediaItem? = null,
-)
+    val siloPicker: SiloProfilePicker? = null,
+    val siloPin: SiloPinPrompt? = null,
+    val siloNotice: SiloNotice? = null,
+    val household: SiloHousehold = SiloHousehold(),
+) {
+    /** Signed in through Silo's Jellyfin-compatible API, which leaves several Jellyfin features out. */
+    val isSiloServer: Boolean get() = session?.isSiloServer == true
+}
 
 sealed interface PlayerDirective {
     data object Play : PlayerDirective
@@ -191,12 +200,17 @@ sealed interface PlayerDirective {
     data class Seek(val seconds: Double) : PlayerDirective
 }
 
-/** Settings → Add User / Add Account. [pending] is set while a Silo login waits for a household profile. */
+/** Settings → Add User. */
 data class AddAccountState(
     val busy: Boolean = false,
     val message: String? = null,
-    val pending: SiloPendingSignIn? = null,
-    val pinFor: HouseholdProfile? = null,
+)
+
+private class PendingSiloSignIn(
+    val client: SiloAccountClient,
+    val account: SiloAccount,
+    val jellyfinUrl: String,
+    val serverName: String?,
 )
 
 class ZelefinModel(application: Application) : AndroidViewModel(application) {
@@ -215,7 +229,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         scope = viewModelScope,
         session = { _state.value.session },
         allSessions = { vault.accounts() },
-        siloIdentity = { siloClient().identity() },
         tmdbCatalog = { jellyfinClient().tmdbCatalog(userUuid()) },
     )
     val state: StateFlow<ZelefinUiState> = _state.asStateFlow()
@@ -227,14 +240,18 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** The account whose Library rooms are loaded. Counts still refresh on resume and pull. */
     private var overviewLoadedFor: String? = null
     private val gridJobs = mutableMapOf<LibraryRoute, Job>()
-    private var silo: SiloClient? = null
     private var activePlan: PlaybackPlan? = null
     private var lastReported = 0.0
     private var localPlan: PlaybackPlan? = null
     private var quickConnectJob: Job? = null
+    /** A Silo sign-in waiting on the "Who's watching?" pick. */
+    private var siloPending: PendingSiloSignIn? = null
+    private var siloJob: Job? = null
+    private var householdJob: Job? = null
+    /** The native Silo client of the current account, keyed by its account id. */
+    private var siloClient: Pair<String, SiloAccountClient>? = null
     private val homeNetworks = HomeNetworkStore(application)
     private var routeJob: Job? = null
-    private var pendingSilo: SiloClient? = null
     private val sessionSocket = SessionSocket(application, viewModelScope)
     private val _playerDirectives = MutableSharedFlow<PlayerDirective>(replay = 1, extraBufferCapacity = 8)
     val playerDirectives: SharedFlow<PlayerDirective> = _playerDirectives.asSharedFlow()
@@ -246,25 +263,33 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     init {
         vault.applyGateway()
         val secrets = vault.loadGateway()
-        val saved = vault.current()
+        val dropped = vault.dropLegacySiloSessions()
+        val saved = vault.current()?.takeUnless { dropped?.droppedCurrent == true }
         _state.update {
-            it.copy(gatewayId = secrets.clientId, gatewaySecret = secrets.clientSecret, session = saved, accounts = vault.accounts())
+            it.copy(
+                gatewayId = secrets.clientId,
+                gatewaySecret = secrets.clientSecret,
+                session = saved,
+                accounts = vault.accounts(),
+                message = if (saved == null && dropped != null) SavedAccountsCodec.SiloSignInAgainMessage else null,
+            )
         }
         runCatching { application.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(networkCallback) }
         if (saved != null) {
             restore(saved)
-            _state.update { it.copy(screen = Screen.Library, backend = saved.backend) }
+            _state.update { it.copy(screen = Screen.Library) }
             applyStartPage()
             viewModelScope.launch {
                 applyCachedSnapshots(saved)
                 refreshLibrary()
             }
             bindSessionSocket(saved)
+            refreshHousehold()
         }
     }
 
     init {
-        ZelefinDownloads.attach(application, SessionDownloadBackend { silo }, _state.map { it.session })
+        ZelefinDownloads.attach(application, SessionDownloadBackend(), _state.map { it.session })
     }
 
     init {
@@ -320,10 +345,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         rememberNowPlaying(current.copy(playbackPosition = positionSeconds))
     }
 
-    fun setBackend(backend: MediaBackend) {
-        _state.update { it.copy(backend = backend, message = null) }
-    }
-
     fun saveGateway(id: String, secret: String) {
         vault.saveGateway(GatewaySecrets(id.trim(), secret.trim()))
         _state.update { it.copy(gatewayId = id.trim(), gatewaySecret = secret.trim()) }
@@ -332,27 +353,311 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun testConnection(rawUrl: String) {
         launch("Checking the server…") {
             val url = ServerUrl.normalize(rawUrl)
-            val backend = _state.value.backend
-            val reachability = probe(url, backend)
-            val message = if (reachability.isReachable) {
-                if (backend == MediaBackend.Silo) "Silo is reachable." else "Jellyfin is reachable."
-            } else {
-                reachability.message
+            if (SiloAccountClient.isSiloAddress(url)) {
+                _state.update { it.copy(busy = false, message = "Silo is reachable.") }
+                return@launch
+            }
+            val library = JellyfinLibrary(getApplication(), url)
+            val reachability = library.probe()
+            val message = when {
+                !reachability.isReachable -> reachability.message
+                library.detectSiloServer() == true -> "Silo is reachable."
+                else -> "Jellyfin is reachable."
             }
             _state.update { it.copy(busy = false, message = message) }
         }
     }
 
-    fun signIn(rawUrl: String, username: String, password: String) {
+    fun signIn(rawUrl: String, username: String, password: String, type: SignInServerType) {
         launch("Signing in…") {
             val url = ServerUrl.normalize(rawUrl)
-            val backend = _state.value.backend
-            when (backend) {
-                MediaBackend.Jellyfin -> signInJellyfin(url, username, password)
-                MediaBackend.Silo -> signInSilo(url, username, password)
+            val route = SignInRouting.route(type, SiloAccountClient.isSiloAddress(url)) { isSiloCompatAddress(url) }
+            when (route) {
+                SignInRoute.SiloNative -> {
+                    openSiloPicker(url, username.trim(), password)
+                    _state.update { it.copy(busy = false, message = null) }
+                }
+                SignInRoute.Jellyfin -> signInJellyfin(url, username, password)
+                is SignInRoute.Refused -> throw ZelefinException.server(route.message)
             }
         }
     }
+
+    /** Silo's Jellyfin-compatible API, by its branding; an unreachable server reports why instead. */
+    private suspend fun isSiloCompatAddress(url: String): Boolean {
+        val library = JellyfinLibrary(getApplication(), url)
+        library.detectSiloServer()?.let { return it }
+        val reachability = library.probe()
+        if (!reachability.isReachable) throw ZelefinException.server(reachability.message)
+        return false
+    }
+
+    /** `username#profile` only means something on Silo's Jellyfin-compatible address. */
+    private suspend fun isSiloSignIn(url: String, username: String): Boolean =
+        !username.contains('#') && SiloAccountClient.isSiloAddress(url)
+
+    /** Native Silo sign-in, then the household profiles and the Jellyfin-compatible address for the picker. */
+    private suspend fun openSiloPicker(url: String, username: String, password: String) {
+        if (username.isEmpty()) throw ZelefinException.server("Enter a username.")
+        val client = SiloAccountClient(url, onTokens = ::persistSiloTokens)
+        val signIn = client.login(username, password)
+        try {
+            val info = client.connectInfo()
+            val jellyfinUrl = info.requireJellyfinUrl()
+            val profiles = client.profiles().items
+            if (profiles.isEmpty()) throw ZelefinException.server("This Silo account has no profiles yet. Add one in Silo, then sign in again.")
+            siloPending?.client?.let(::logOutSiloQuietly)
+            siloPending = PendingSiloSignIn(client, signIn.account, jellyfinUrl, info.serverName)
+            _state.update {
+                it.copy(
+                    siloPicker = SiloProfilePicker(info.serverName ?: "Silo", signIn.account.username, profiles),
+                    siloPin = null,
+                )
+            }
+        } catch (error: Throwable) {
+            logOutSiloQuietly(client)
+            throw error
+        }
+    }
+
+    /** A tap on the "Who's watching?" picker. */
+    fun chooseSiloProfile(profile: SiloProfile) {
+        if (_state.value.siloPicker?.busyProfileId != null) return
+        if (profile.hasPin) {
+            _state.update { it.copy(siloPin = SiloPinPrompt(profile)) }
+            return
+        }
+        linkPendingProfile(profile, pin = null)
+    }
+
+    fun submitSiloPin(pin: String) {
+        val prompt = _state.value.siloPin ?: return
+        if (prompt.busy) return
+        val digits = pin.trim()
+        if (digits.isEmpty()) return
+        if (_state.value.siloPicker != null) linkPendingProfile(prompt.profile, digits) else switchSiloProfile(prompt.profile, digits)
+    }
+
+    fun cancelSiloPin() {
+        if (_state.value.siloPin?.busy == true) siloJob?.cancel()
+        _state.update {
+            it.copy(
+                siloPin = null,
+                siloPicker = it.siloPicker?.copy(busyProfileId = null),
+                household = it.household.copy(switchingTo = null),
+            )
+        }
+    }
+
+    /** "Use a different account": drops the pending Silo sign-in. */
+    fun cancelSiloPicker() {
+        siloJob?.cancel()
+        siloPending?.client?.let(::logOutSiloQuietly)
+        siloPending = null
+        _state.update { it.copy(siloPicker = null, siloPin = null, busy = false, addAccount = AddAccountState()) }
+    }
+
+    fun dismissSiloNotice() {
+        _state.update { it.copy(siloNotice = null) }
+    }
+
+    /** The Silo sign-in behind this account is gone; sign out so the user can sign in again. */
+    fun signInToSiloAgain() {
+        _state.update { it.copy(siloNotice = null) }
+        if (_state.value.session?.siloLink != null) signOut()
+    }
+
+    private fun linkPendingProfile(profile: SiloProfile, pin: String?) {
+        val pending = siloPending ?: return
+        siloJob?.cancel()
+        _state.update {
+            it.copy(
+                siloPicker = it.siloPicker?.copy(busyProfileId = profile.id, message = null),
+                siloPin = it.siloPin?.copy(busy = true, message = null),
+            )
+        }
+        siloJob = viewModelScope.launch {
+            runCatching {
+                val token = pin?.let { verifiedProfileToken(pending.client, profile, it) }
+                SiloHandoff.signIn(
+                    context = getApplication(),
+                    native = pending.client,
+                    account = pending.account,
+                    profile = profile,
+                    profileToken = token,
+                    jellyfinUrl = pending.jellyfinUrl,
+                    serverName = pending.serverName,
+                    deviceId = vault.deviceId,
+                )
+            }.onSuccess { session ->
+                siloPending = null
+                vault.save(session)
+                siloClient = session.accountId to pending.client
+                activate(session)
+            }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                val message = error.message ?: "Silo could not sign this profile in."
+                _state.update {
+                    if (it.siloPin != null) {
+                        it.copy(siloPin = it.siloPin.copy(busy = false, message = message), siloPicker = it.siloPicker?.copy(busyProfileId = null))
+                    } else {
+                        it.copy(siloPicker = it.siloPicker?.copy(busyProfileId = null, message = message))
+                    }
+                }
+            }
+        }
+    }
+
+    /** The PIN profile's token, or null when Silo unlocked it without one. */
+    private suspend fun verifiedProfileToken(client: SiloAccountClient, profile: SiloProfile, pin: String): String? {
+        val result = client.verifyPin(profile.id, pin)
+        if (!result.valid) throw ZelefinException.server("That PIN is not right. Try again.")
+        return result.profileToken
+    }
+
+    /** Reloads the household profiles of a Silo-linked account. */
+    fun refreshHousehold() {
+        val session = _state.value.session
+        val link = session?.siloLink
+        if (session == null || link == null) {
+            householdJob?.cancel()
+            if (_state.value.household != SiloHousehold()) _state.update { it.copy(household = SiloHousehold()) }
+            return
+        }
+        if (householdJob?.isActive == true) return
+        _state.update { it.copy(household = it.household.copy(loading = true)) }
+        householdJob = viewModelScope.launch {
+            runCatching { siloClientFor(session).profiles() }
+                .onSuccess { collection ->
+                    if (_state.value.session?.accountId != session.accountId) return@onSuccess
+                    _state.update {
+                        it.copy(
+                            household = it.household.copy(
+                                profiles = collection.items,
+                                avatarUploadEnabled = collection.avatarUploadEnabled,
+                                loading = false,
+                                message = null,
+                                signInExpired = false,
+                            ),
+                        )
+                    }
+                    collection.items.firstOrNull { it.id == link.profileId }?.let { applySiloProfile(session.accountId, it) }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    if (_state.value.session?.accountId != session.accountId) return@onFailure
+                    val expired = error.isSiloSignInExpired()
+                    _state.update {
+                        it.copy(household = it.household.copy(loading = false, message = error.message, signInExpired = expired))
+                    }
+                }
+        }
+    }
+
+    /**
+     * Moves this Silo-linked account to another household profile: a fresh Jellyfin session
+     * replaces the current one in place, and the old Jellyfin token is ended.
+     */
+    fun switchSiloProfile(profile: SiloProfile, pin: String? = null) {
+        val session = _state.value.session ?: return
+        val link = session.siloLink ?: return
+        if (profile.id == link.profileId) return
+        if (_state.value.household.switchingTo != null) return
+        if (profile.hasPin && pin == null) {
+            _state.update { it.copy(siloPin = SiloPinPrompt(profile)) }
+            return
+        }
+        siloJob?.cancel()
+        _state.update {
+            it.copy(
+                household = it.household.copy(switchingTo = profile.id, message = null),
+                siloPin = it.siloPin?.copy(busy = true, message = null),
+            )
+        }
+        siloJob = viewModelScope.launch {
+            runCatching {
+                val client = siloClientFor(session)
+                val token = pin?.let { verifiedProfileToken(client, profile, it) }
+                val info = client.connectInfo()
+                val next = SiloHandoff.signIn(
+                    context = getApplication(),
+                    native = client,
+                    account = link.account,
+                    profile = profile,
+                    profileToken = token,
+                    jellyfinUrl = info.requireJellyfinUrl(),
+                    serverName = info.serverName ?: session.serverName,
+                    deviceId = vault.deviceId,
+                )
+                client to next
+            }.onSuccess { (client, next) ->
+                if (_state.value.session?.accountId != session.accountId) return@onSuccess
+                sessionSocket.disconnect()
+                plugins.unregisterPush(session)
+                vault.replace(session.accountId, next)
+                siloClient = next.accountId to client
+                activate(next)
+                if (next.accessToken != session.accessToken) logOutJellyfinQuietly(session)
+            }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                val expired = error.isSiloSignInExpired()
+                val message = error.message ?: "Silo could not switch to ${profile.name}."
+                _state.update {
+                    val pinOpen = it.siloPin != null && !expired
+                    it.copy(
+                        household = it.household.copy(switchingTo = null, message = message, signInExpired = expired),
+                        siloPin = if (pinOpen) it.siloPin?.copy(busy = false, message = message) else null,
+                        siloNotice = if (pinOpen) null else SiloNotice("Couldn’t Switch Profile", message, signInAgain = expired),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun siloClientFor(session: SavedSession): SiloAccountClient {
+        val link = session.siloLink ?: throw ZelefinException.missingUser()
+        siloClient?.takeIf { it.first == session.accountId }?.let { return it.second }
+        val client = SiloAccountClient(link.nativeUrl, link.tokens, ::persistSiloTokens)
+        siloClient = session.accountId to client
+        return client
+    }
+
+    /** Saves a refreshed Silo token pair into whichever saved account held the old one. */
+    private fun persistSiloTokens(previous: SiloTokens?, next: SiloTokens) {
+        val stale = previous?.refreshToken ?: return
+        vault.accounts().filter { it.siloLink?.refreshToken == stale }.forEach { saved ->
+            val updated = saved.copy(siloLink = saved.siloLink?.withTokens(next))
+            vault.save(updated, select = false)
+            if (_state.value.session?.accountId == saved.accountId) {
+                _state.update { it.copy(session = updated, accounts = vault.accounts()) }
+            }
+        }
+    }
+
+    /** Keeps the saved profile name and picture in step with Silo. */
+    private fun applySiloProfile(accountId: String, profile: SiloProfile) {
+        val latest = _state.value.session?.takeIf { it.accountId == accountId } ?: return
+        val link = latest.siloLink ?: return
+        val updatedLink = link.withProfile(profile)
+        _state.update { state ->
+            state.copy(household = state.household.copy(profiles = state.household.profiles.map { if (it.id == profile.id) profile else it }))
+        }
+        if (updatedLink == link && latest.userName == profile.name) return
+        val updated = latest.copy(siloLink = updatedLink, userName = profile.name)
+        vault.save(updated, select = false)
+        _state.update { it.copy(session = updated, accounts = vault.accounts()) }
+    }
+
+    private fun logOutSiloQuietly(client: SiloAccountClient) {
+        viewModelScope.launch { runCatching { client.logout() } }
+    }
+
+    private fun logOutJellyfinQuietly(session: SavedSession) {
+        viewModelScope.launch { runCatching { JellyfinLibrary(getApplication(), session.serverUrl, session.accessToken).logout() } }
+    }
+
+    private fun Throwable.isSiloSignInExpired(): Boolean =
+        this is ZelefinException && code == ZelefinException.Code.SiloSignInExpired
 
     fun startQuickConnect(rawUrl: String) {
         quickConnectJob?.cancel()
@@ -366,9 +671,19 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 jellyfin = library
                 _state.update { it.copy(busy = false, quickConnect = handshake, message = null) }
                 val result = library.waitForQuickConnect(handshake)
-                storeJellyfin(url, result.accessToken.orEmpty(), result.user?.id?.toString().orEmpty(), result.user?.name ?: "Jellyfin", result.user?.primaryImageTag, null, null)
+                storeJellyfin(
+                    url = url,
+                    token = result.accessToken.orEmpty(),
+                    userId = result.user?.id?.toString().orEmpty(),
+                    userName = result.user?.name ?: "Jellyfin",
+                    imageTag = result.user?.primaryImageTag,
+                    serverName = null,
+                    serverVersion = null,
+                    isSiloServer = library.detectSiloServer() == true,
+                )
                 _state.update { it.copy(quickConnect = null, screen = Screen.Library, busy = false) }
                 refreshLibrary()
+                _state.value.session?.let(::bindSessionSocket)
             }.onFailure { error ->
                 if (error is CancellationException) return@onFailure
                 _state.update { it.copy(busy = false, quickConnect = null, message = error.message) }
@@ -382,24 +697,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(quickConnect = null, busy = false, message = null) }
     }
 
-    fun chooseProfile(profile: HouseholdProfile) {
-        val pending = (_state.value.screen as? Screen.Profiles)?.pending ?: return
-        if (profile.hasPin) {
-            _state.update { it.copy(screen = Screen.Pin(pending, profile), message = null) }
-        } else {
-            finishSilo(pending, profile, null)
-        }
-    }
-
-    fun submitPin(pin: String) {
-        val screen = _state.value.screen as? Screen.Pin ?: return
-        launch("Checking PIN…") {
-            val client = silo ?: throw ZelefinException.missingUser()
-            val token = client.verifyPin(screen.profile.id, pin)
-            finishSilo(screen.pending, screen.profile, token)
-        }
-    }
-
     /** On cold launch, open the page the user chose as their start page (Home by default). */
     private fun applyStartPage() {
         val start = app.zelefin.client.ui.StartPagePreferences.tab
@@ -410,10 +707,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectTab(tab: AppTab) {
-        val silo = _state.value.session?.backend == MediaBackend.Silo
         _state.update { it.copy(tab = tab, screen = Screen.Library) }
-        if (tab == AppTab.Movies || (tab == AppTab.Search && silo)) loadCatalog(AppTab.Movies)
-        if (tab == AppTab.Shows || (tab == AppTab.Search && silo)) loadCatalog(AppTab.Shows)
+        if (tab == AppTab.Movies) loadCatalog(AppTab.Movies)
+        if (tab == AppTab.Shows) loadCatalog(AppTab.Shows)
         if (tab == AppTab.Library) {
             _state.update { it.copy(libraryPath = emptyList()) }
             loadLibraryOverview()
@@ -437,12 +733,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(search = it.search.copy(term = term, loading = true)) }
         searchJob = viewModelScope.launch {
             kotlinx.coroutines.delay(SearchDebounceMillis)
-            val result = runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> siloClient().search(trimmed)
-                    else -> jellyfinClient().searchHints(userUuid(), trimmed)
-                }
-            }
+            val result = runCatching { jellyfinClient().searchHints(userUuid(), trimmed) }
             result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             val hits = result.getOrDefault(emptyList())
             _state.update { state ->
@@ -481,25 +772,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.search.genres.isNotEmpty()) return
         _state.update { it.copy(search = it.search.copy(genresLoading = true)) }
         viewModelScope.launch {
-            val genres = runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> {
-                        val items = _state.value.movies + _state.value.shows
-                        catalogOptionsFromItems(items).genres.map { LibraryGenre(it.id, it.name) }
-                    }
-                    else -> jellyfinClient().genres(userUuid(), limit = 48)
-                }
-            }.getOrDefault(emptyList()).collapsedGenres().take(24)
+            val genres = runCatching { jellyfinClient().genres(userUuid(), limit = 48) }
+                .getOrDefault(emptyList()).collapsedGenres().take(24)
             _state.update { it.copy(search = it.search.copy(genres = genres, genresLoading = false)) }
         }
     }
 
     fun openItem(item: MediaItem) {
-        // Silo collections are personal lists with no item page; Jellyfin BoxSets get one.
-        if (item.kind == MediaKind.Collection && _state.value.session?.usesSilo == true) {
-            openBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name)))
-            return
-        }
         val target = if (item.isYouTube && item.kind == MediaKind.Episode) item.id else item.seriesDetailItemId ?: item.id
         val current = _state.value.screen
         val returnTo = when (current) {
@@ -618,7 +897,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         refreshLibrary()
     }
 
-    fun sessionsClient(): JellyfinLibrary? = jellyfin.takeIf { _state.value.session?.usesSilo == false }
+    fun sessionsClient(): JellyfinLibrary? = jellyfin.takeIf { _state.value.session?.isSiloServer == false }
 
     /** Opens the title from a tapped alert (iOS `DeepLinkStore.openLibraryItem`). */
     fun openPushItem(rawId: String) {
@@ -696,7 +975,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             is Screen.Player -> screen.returnTo
             is Screen.Detail -> screen.returnTo
             is Screen.Browse -> screen.returnTo
-            is Screen.Pin -> Screen.Profiles(screen.pending)
             is Screen.Settings -> screen.returnTo
             is Screen.Profile -> screen.returnTo
             is Screen.SettingsTopic -> screen.backTo
@@ -708,7 +986,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun loadPerson(id: String): app.zelefin.core.CreditPerson? {
         val session = _state.value.session ?: return null
-        if (session.backend == MediaBackend.Silo) return null
         val userId = runCatching { UUID.fromString(session.userId) }.getOrNull() ?: return null
         return runCatching { jellyfinClient().person(userId, id) }.getOrNull()
     }
@@ -728,7 +1005,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** Cast portraits arrive once Jellyfin refreshes each person; swap them into the open title as they land. */
     private suspend fun fillCastPhotos(target: String, people: List<app.zelefin.core.CreditPerson>) {
         val session = _state.value.session ?: return
-        if (session.backend == MediaBackend.Silo || people.isEmpty()) return
+        if (people.isEmpty()) return
         val userId = runCatching { UUID.fromString(session.userId) }.getOrNull() ?: return
         runCatching {
             jellyfinClient().peopleWithPhotos(userId, people) { updated ->
@@ -759,7 +1036,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                         if (showing?.id == target) state.copy(detail = detail, busy = false) else state
                     }
                     launch { fillCastPhotos(target, detail.item.people) }
-                    if (_state.value.session?.backend != MediaBackend.Silo && (_state.value.screen as? Screen.Detail)?.id == target) {
+                    if ((_state.value.screen as? Screen.Detail)?.id == target) {
                         val collections = runCatching {
                             jellyfinClient().collectionsContaining(UUID.fromString(_state.value.session?.userId), target)
                         }.getOrDefault(emptyList())
@@ -802,10 +1079,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val played = !item.isWatched
         viewModelScope.launch {
             runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> if (played) siloClient().markWatched(item.id) else siloClient().markUnwatched(item.id)
-                    else -> if (played) jellyfinClient().markPlayed(item.id) else jellyfinClient().markUnplayed(item.id)
-                }
+                if (played) jellyfinClient().markPlayed(item.id) else jellyfinClient().markUnplayed(item.id)
             }.onSuccess {
                 _state.update { state -> state.withItem(item.id) { copy(isPlayed = played) } }
                 refreshLibrary()
@@ -816,12 +1090,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun toggleFavorite(item: MediaItem) {
         val favorite = !item.isFavorite
         viewModelScope.launch {
-            runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> siloClient().setFavorite(item.id, favorite)
-                    else -> jellyfinClient().setFavorite(item.id, favorite)
-                }
-            }.onSuccess {
+            runCatching { jellyfinClient().setFavorite(item.id, favorite) }.onSuccess {
                 _state.update { state -> state.withItem(item.id) { copy(isFavorite = favorite) } }
                 refreshLibrary()
             }.onFailure { error -> _state.update { it.copy(message = error.message) } }
@@ -829,7 +1098,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleWatchlist(item: MediaItem) {
-        if (_state.value.session?.usesSilo == true) return
+        if (_state.value.isSiloServer) return
         val watchlisted = !item.isWatchlisted
         viewModelScope.launch {
             runCatching { jellyfinClient().setWatchlisted(userUuid(), item.id, watchlisted) }
@@ -848,16 +1117,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun pickRandomTitle() {
         viewModelScope.launch {
             runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> {
-                        val pool = (_state.value.movies + _state.value.shows).ifEmpty {
-                            siloClient().catalog(null, null, CatalogBrowseQuery(sort = CatalogSortField.Random))
-                        }
-                        pool.randomOrNull() ?: throw ZelefinException.server("Nothing to pick yet.")
-                    }
-                    else -> jellyfinClient().randomTitle(userUuid())
-                        ?: throw ZelefinException.server("Nothing to pick yet.")
-                }
+                jellyfinClient().randomTitle(userUuid()) ?: throw ZelefinException.server("Nothing to pick yet.")
             }.onSuccess { openItem(it) }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
@@ -886,11 +1146,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     MediaKind.Series, MediaKind.Season -> {
                         val loaded = fromDetail?.takeIf {
                             it.item.id == item.id || it.item.id == item.seriesId || it.episodes.any { episode -> episode.id == item.id }
-                        } ?: if (_state.value.session?.usesSilo == true) {
-                            fromDetail
-                        } else {
-                            jellyfinClient().detail(userUuid(), item.seriesId ?: item.id)
-                        }
+                        } ?: jellyfinClient().detail(userUuid(), item.seriesId ?: item.id)
                         val all = loaded?.episodes.orEmpty()
                         if (item.kind == MediaKind.Season) all.filter { it.seasonIndex == item.seasonIndex } else all
                     }
@@ -906,13 +1162,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun loadCollections(itemId: String): CollectionEditor {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
-        if (session.usesSilo) throw ZelefinException.server("Collections aren't available on this server.")
+        if (session.isSiloServer) throw ZelefinException.server("Collections are edited in Silo.")
         return jellyfinClient().collectionEditor(UUID.fromString(session.userId), itemId)
     }
 
     suspend fun collectionPosterMembers(parentId: String): List<MediaItem> {
         val session = _state.value.session ?: return emptyList()
-        if (session.usesSilo) return emptyList()
         return runCatching {
             jellyfinClient().collectionPosterMembers(UUID.fromString(session.userId), parentId)
         }.getOrDefault(emptyList())
@@ -933,7 +1188,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         launch("Starting playback…") {
             val target = resolvePlaybackTarget(item)
             rememberNowPlaying(target)
-            if (!fromSyncPlay && _state.value.syncPlayGroupId != null && _state.value.session?.backend == MediaBackend.Jellyfin) {
+            if (!fromSyncPlay && _state.value.syncPlayGroupId != null && !_state.value.isSiloServer) {
                 runCatching { jellyfinClient().syncPlaySetQueue(target) }
                     .onFailure { error -> _state.update { it.copy(message = error.message) } }
             }
@@ -953,35 +1208,18 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 LocalPlayback.None -> Unit
             }
             val appContext = getApplication<Application>()
-            val audioLanguage = PlaybackPreferences.audioLanguage(appContext)
-            val subtitleLanguage = PlaybackPreferences.subtitleLanguage(appContext)
-            val plan = when (_state.value.session?.backend) {
-                // Like iOS, Silo starts from the original file; only a picked quality (or a live step) caps it.
-                MediaBackend.Silo -> siloClient().playback(
-                    item = target,
-                    appVersion = BuildConfig.VERSION_NAME,
-                    osVersion = Build.VERSION.RELEASE ?: "",
-                    model = Build.MODEL ?: "Android",
-                    maxBitrate = bitrateOverride ?: PlaybackPreferences.selectedQuality(appContext).takeIf { it != PlaybackQuality.Auto }?.bits,
-                    audioLanguage = audioLanguage,
-                    subtitleLanguage = subtitleLanguage,
-                )
-                else -> {
-                    val userId = UUID.fromString(_state.value.session?.userId)
-                    val client = jellyfinClient()
-                    if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client)
-                    // The user's Jellyfin account settings (Settings → Playback) decide the starting
-                    // streams, so the device-side language picks only apply to Silo.
-                    client.playback(
-                        userId,
-                        target,
-                        PlaybackPreferences.AUTOMATIC,
-                        PlaybackPreferences.AUTOMATIC,
-                        preferSdh = PlaybackPreferences.preferSdh(appContext),
-                    ) { sourceBitrate ->
-                        bitrateOverride ?: streamingCap(appContext, client, sourceBitrate)
-                    }
-                }
+            val userId = UUID.fromString(_state.value.session?.userId)
+            val client = jellyfinClient()
+            if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client)
+            // The user's account settings (Settings → Playback) decide the starting streams.
+            val plan = client.playback(
+                userId,
+                target,
+                PlaybackPreferences.AUTOMATIC,
+                PlaybackPreferences.AUTOMATIC,
+                preferSdh = PlaybackPreferences.preferSdh(appContext),
+            ) { sourceBitrate ->
+                bitrateOverride ?: streamingCap(appContext, client, sourceBitrate)
             }
             val reported = PlaybackResumePolicy.reportStartPosition(0.0, plan.startTimeSeconds)
             activePlan = plan
@@ -1072,13 +1310,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Theme song and video for a title page, when the user turned them on in Settings → Playback
-     * and Jellyfin has them. Null on Silo, which has no theme media.
+     * and the server has them. Silo serves theme songs only.
      */
     suspend fun themeMedia(itemId: String): ThemeMedia? {
         val context = getApplication<Application>()
         if (!PlaybackPreferences.themeSongs(context) && !PlaybackPreferences.themeVideos(context)) return null
         val session = _state.value.session ?: return null
-        if (session.usesSilo) return null
         val media = runCatching { jellyfinClient().themeMedia(itemId, UUID.fromString(session.userId)) }.getOrNull()
             ?: return null
         val videoUrl = media.videoUrl?.takeIf { PlaybackPreferences.themeVideos(context) }?.let { ServerRoute.rewrite(it) }
@@ -1098,24 +1335,19 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val transport = NetworkPathSnapshot.current(getApplication()).transport
         val size = AdaptiveBitratePolicy.SETTINGS_SAMPLE_BYTES
         val timeout = AdaptiveBitratePolicy.SETTINGS_PROBE_TIMEOUT_MILLIS
-        val result = if (session.usesSilo) {
-            siloClient().measureBitrate(size, timeout, transport)
-        } else {
-            jellyfinClient().measureBitrate(size, timeout, transport)
-        } ?: throw ZelefinException.server(
+        val result = jellyfinClient().measureBitrate(size, timeout, transport) ?: throw ZelefinException.server(
             "Zelefin could not download the demo file from this server. Check the connection and try again.",
         )
         AdaptiveBitrateStore.record(result, NetworkPathSnapshot.current(getApplication()))
         return result
     }
 
-    /** Stores the language picks and, on Jellyfin, mirrors them into the user's server configuration. */
+    /** Stores the language picks and mirrors them into the user's server configuration. */
     fun applyPlaybackLanguages(audioCode: String, subtitleCode: String) {
         val appContext = getApplication<Application>()
         PlaybackPreferences.setAudioLanguage(appContext, audioCode)
         PlaybackPreferences.setSubtitleLanguage(appContext, subtitleCode)
         val session = _state.value.session ?: return
-        if (session.usesSilo) return
         viewModelScope.launch {
             runCatching {
                 jellyfinClient().applyPlaybackLanguages(UUID.fromString(session.userId), audioCode, subtitleCode)
@@ -1126,7 +1358,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** Admin-only: starts a scan of every Jellyfin library. */
     suspend fun scanLibraries() {
         val session = _state.value.session
-        if (session == null || session.usesSilo) throw ZelefinException.server("Sign in to a Jellyfin server to scan its libraries.")
+        if (session == null || session.isSiloServer) throw ZelefinException.server("Sign in to a Jellyfin server to scan its libraries.")
         jellyfinClient().scanLibraries()
     }
 
@@ -1178,8 +1410,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun jellyfinPlaybackPreferences(): JellyfinPlaybackPreferences {
-        val session = _state.value.session
-        if (session == null || session.usesSilo) throw ZelefinException.server("Sign in to a Jellyfin server to change these settings.")
+        if (_state.value.session == null) throw ZelefinException.server("Sign in to change these settings.")
         return jellyfinClient().playbackPreferences()
     }
 
@@ -1188,8 +1419,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
      * aside; otherwise an older local pick would override what the user just chose.
      */
     suspend fun saveJellyfinPlaybackPreferences(preferences: JellyfinPlaybackPreferences) {
-        val session = _state.value.session
-        if (session == null || session.usesSilo) throw ZelefinException.server("Sign in to a Jellyfin server to change these settings.")
+        val session = _state.value.session ?: throw ZelefinException.server("Sign in to change these settings.")
         jellyfinClient().savePlaybackPreferences(UUID.fromString(session.userId), preferences)
         val appContext = getApplication<Application>()
         PlaybackPreferences.setAudioLanguage(appContext, PlaybackPreferences.AUTOMATIC)
@@ -1237,16 +1467,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         activePlan = null
         viewModelScope.launch {
             runCatching {
-                when (plan.item.kind) {
-                    else -> Unit
-                }
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> plan.playSessionId?.let { sessionId ->
-                        siloClient().report(sessionId, positionSeconds, paused = true)
-                        siloClient().stop(sessionId)
-                    }
-                    else -> jellyfinClient().reportStop(plan, positionSeconds)
-                }
+                jellyfinClient().reportStop(plan, positionSeconds)
             }
         }
     }
@@ -1255,10 +1476,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun refreshLibraryStats() {
         if (_state.value.session == null) return
         viewModelScope.launch {
-            val silo = _state.value.session?.backend == MediaBackend.Silo
-            val counts = runCatching {
-                if (silo) siloClient().serverCounts() else jellyfinServerCounts(_state.value.libraries)
-            }.getOrNull()
+            val counts = runCatching { jellyfinServerCounts(_state.value.libraries) }.getOrNull()
             if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
             if (_state.value.libraries.isNotEmpty()) loadRoomDetails(onlyMissing = false)
         }
@@ -1295,6 +1513,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val current = _state.value.session
         sessionSocket.disconnect()
         plugins.unregisterPush(current)
+        current?.let(::endSiloSession)
         val remaining = if (current != null) vault.remove(current.accountId) else null
         if (current == null) vault.clear()
         if (remaining != null) {
@@ -1302,8 +1521,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             return
         }
         jellyfin = null
-        silo = null
-        pendingSilo = null
+        householdJob?.cancel()
         plugins.reset()
         routeJob?.cancel()
         ServerRoute.set(null, null)
@@ -1329,127 +1547,57 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             signOut()
             return
         }
+        endSiloSession(account)
         vault.remove(account.accountId)
         _state.update { it.copy(accounts = vault.accounts()) }
     }
 
+    /** Best-effort native Silo logout for an account that is leaving this phone. */
+    private fun endSiloSession(account: SavedSession) {
+        val link = account.siloLink ?: return
+        val cached = siloClient?.takeIf { it.first == account.accountId }?.second
+        if (cached != null) siloClient = null
+        logOutSiloQuietly(cached ?: SiloAccountClient(link.nativeUrl, link.tokens))
+    }
+
     fun resetAddAccount() {
-        pendingSilo = null
         _state.update { it.copy(addAccount = AddAccountState()) }
     }
 
     /** Signs in another user without dropping the current one (iOS `AddAccountView`). */
     fun addAccount(rawUrl: String, username: String, password: String) {
-        val backend = _state.value.session?.backend ?: _state.value.backend
         _state.update { it.copy(addAccount = AddAccountState(busy = true)) }
         viewModelScope.launch {
             runCatching {
                 val url = ServerUrl.normalize(rawUrl)
                 val name = username.trim()
-                if (name.isEmpty()) throw ZelefinException.server(if (backend == MediaBackend.Silo) "Enter an email or username." else "Enter a username.")
-                when (backend) {
-                    MediaBackend.Jellyfin -> {
-                        val result = JellyfinLibrary(getApplication(), url).login(name, password)
-                        val user = result.user ?: throw ZelefinException.missingUser()
-                        val session = SavedSession(
-                            serverUrl = url,
-                            accessToken = result.accessToken.orEmpty(),
-                            userId = user.id.toString(),
-                            userName = user.name ?: name,
-                            deviceId = vault.deviceId,
-                            userImageTag = user.primaryImageTag,
-                            serverName = user.serverName,
-                            backend = MediaBackend.Jellyfin,
-                        )
-                        vault.save(session)
-                        activate(session)
-                    }
-                    MediaBackend.Silo -> {
-                        val client = newSilo(url)
-                        val auth = client.login(name, password)
-                        val label = runCatching { client.serverLabel() }.getOrNull()
-                        val profiles = client.profiles()
-                        val pending = SiloPendingSignIn(
-                            serverUrl = url,
-                            accessToken = auth.accessToken,
-                            refreshToken = auth.refreshToken,
-                            userId = auth.userId,
-                            userName = auth.userName,
-                            deviceId = vault.deviceId,
-                            serverName = label?.first,
-                            serverVersion = label?.second,
-                            userRole = auth.role,
-                            profiles = profiles,
-                        )
-                        pendingSilo = client
-                        val direct = pending.singleUnlockedProfile
-                            ?: if (profiles.isEmpty()) HouseholdProfile(id = auth.userId, name = auth.userName, isPrimary = true) else null
-                        if (direct != null) {
-                            completeAddedSilo(pending, direct, null)
-                        } else {
-                            _state.update { it.copy(addAccount = AddAccountState(pending = pending)) }
-                        }
-                    }
+                if (name.isEmpty()) throw ZelefinException.server("Enter a username.")
+                if (isSiloSignIn(url, name)) {
+                    openSiloPicker(url, name, password)
+                    _state.update { it.copy(addAccount = AddAccountState()) }
+                    return@runCatching
                 }
+                val library = JellyfinLibrary(getApplication(), url)
+                val result = library.login(name, password)
+                val user = result.user ?: throw ZelefinException.missingUser()
+                val isSilo = library.detectSiloServer() == true
+                val session = SavedSession(
+                    serverUrl = url,
+                    accessToken = result.accessToken.orEmpty(),
+                    userId = user.id.toString(),
+                    userName = SavedSession.displayName(user.name ?: name, isSilo),
+                    deviceId = vault.deviceId,
+                    userImageTag = user.primaryImageTag,
+                    serverName = user.serverName,
+                    isSiloServer = isSilo,
+                )
+                vault.save(session)
+                activate(session)
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 _state.update { it.copy(addAccount = it.addAccount.copy(busy = false, message = error.message ?: "Something went wrong.")) }
             }
         }
-    }
-
-    fun chooseAddedProfile(profile: HouseholdProfile) {
-        val pending = _state.value.addAccount.pending ?: return
-        if (profile.hasPin) {
-            _state.update { it.copy(addAccount = it.addAccount.copy(pinFor = profile, message = null)) }
-        } else {
-            completeAddedSilo(pending, profile, null)
-        }
-    }
-
-    fun submitAddedPin(pin: String) {
-        val add = _state.value.addAccount
-        val pending = add.pending ?: return
-        val profile = add.pinFor ?: return
-        val client = pendingSilo ?: return
-        _state.update { it.copy(addAccount = it.addAccount.copy(busy = true, message = null)) }
-        viewModelScope.launch {
-            runCatching { client.verifyPin(profile.id, pin.trim()) }
-                .onSuccess { token -> completeAddedSilo(pending, profile, token) }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    _state.update { it.copy(addAccount = it.addAccount.copy(busy = false, message = error.message ?: "That PIN is not correct.")) }
-                }
-        }
-    }
-
-    fun cancelAddedPin() {
-        _state.update { it.copy(addAccount = it.addAccount.copy(pinFor = null, message = null)) }
-    }
-
-    private fun completeAddedSilo(pending: SiloPendingSignIn, profile: HouseholdProfile, profileToken: String?) {
-        val client = pendingSilo ?: return
-        client.profileId = profile.id
-        client.profileToken = profileToken
-        val session = SavedSession(
-            serverUrl = pending.serverUrl,
-            accessToken = client.accessToken ?: pending.accessToken,
-            userId = pending.userId,
-            userName = pending.userName,
-            deviceId = pending.deviceId,
-            serverName = pending.serverName,
-            serverVersion = pending.serverVersion,
-            backend = MediaBackend.Silo,
-            refreshToken = client.refreshToken ?: pending.refreshToken,
-            profileId = profile.id,
-            profileToken = profileToken,
-            profileName = profile.name,
-            userRole = pending.userRole,
-            isPrimaryProfile = profile.isPrimary,
-        )
-        pendingSilo = null
-        vault.save(session)
-        activate(session)
     }
 
     /** Makes [session] the live account: fresh clients, plugin detection, and that account's cached home. */
@@ -1463,12 +1611,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         gridJobs.values.forEach(Job::cancel)
         gridJobs.clear()
         activePlan = null
+        householdJob?.cancel()
+        if (siloClient?.first != session.accountId) siloClient = null
         plugins.reset()
         restore(session)
         _state.update {
             ZelefinUiState(
                 screen = Screen.Library,
-                backend = session.backend,
                 session = session,
                 accounts = vault.accounts(),
                 gatewayId = it.gatewayId,
@@ -1484,12 +1633,19 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             refreshLibrary()
         }
         bindSessionSocket(session)
+        refreshHousehold()
     }
 
-    /** Uploads a new Jellyfin profile picture and saves the new image tag so every avatar reloads. */
+    /** Uploads a new profile picture (to Silo for a Silo-linked account) and saves it so every avatar reloads. */
     suspend fun updateProfilePhoto(uri: Uri) {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
-        if (session.usesSilo) throw ZelefinException.server("Change Silo profile pictures in Silo.")
+        session.siloLink?.let { link ->
+            val jpeg = AccountPhoto.jpeg(getApplication(), uri)
+            val profile = siloClientFor(session).uploadAvatar(link.profileId, link.profileToken, jpeg)
+            applySiloProfile(session.accountId, profile)
+            return
+        }
+        if (session.isSiloServer) throw ZelefinException.server("Change your profile picture in Silo.")
         val jpeg = AccountPhoto.jpeg(getApplication(), uri)
         AccountPhoto.upload(session, jpeg)
         val tag = AccountPhoto.imageTag(session)
@@ -1502,18 +1658,38 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     suspend fun changePassword(current: String, new: String) {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
         if (current.isBlank() || new.isBlank()) throw ZelefinException.server("Enter your current password and a new password.")
-        if (session.usesSilo) {
-            if (!session.isPrimaryProfile) throw ZelefinException.server("Switch to the primary household profile to change this password.")
-            if (new.length < 8) throw ZelefinException.server("Use at least 8 characters for the new password.")
-            siloClient().changePassword(current, new)
-        } else {
-            jellyfinClient().changeOwnPassword(session.userId, current, new)
-        }
+        if (session.isSiloServer) throw ZelefinException.server("Change your password in Silo.")
+        jellyfinClient().changeOwnPassword(session.userId, current, new)
+    }
+
+    /** Gives the current Silo profile one of Silo's premade avatars. */
+    suspend fun chooseSiloAvatarPreset(preset: SiloAvatarPreset) {
+        val session = _state.value.session ?: throw ZelefinException.missingUser()
+        val link = session.siloLink ?: throw ZelefinException.server("Premade pictures need a Silo sign-in.")
+        val profile = siloClientFor(session).setAvatarPreset(link.profileId, link.profileToken, preset.id)
+        applySiloProfile(session.accountId, profile)
+    }
+
+    /** The signed-in Silo profile, freshest copy first. */
+    fun currentSiloProfile(): SiloProfile? {
+        val link = _state.value.session?.siloLink ?: return null
+        return _state.value.household.profiles.firstOrNull { it.id == link.profileId } ?: link.profile
     }
 
     suspend fun removeProfilePhoto() {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
-        if (session.usesSilo) throw ZelefinException.server("Change Silo profile pictures in Silo.")
+        session.siloLink?.let { link ->
+            val current = currentSiloProfile() ?: link.profile
+            val client = siloClientFor(session)
+            if (current.avatarSource == "preset") {
+                applySiloProfile(session.accountId, client.setAvatarPreset(link.profileId, link.profileToken, presetId = null))
+            } else {
+                client.deleteAvatar(link.profileId, link.profileToken)
+                applySiloProfile(session.accountId, current.copy(avatarUrl = null, avatar = null, avatarSource = "none"))
+            }
+            return
+        }
+        if (session.isSiloServer) throw ZelefinException.server("Change your profile picture in Silo.")
         jellyfinClient().deleteUserImage(session.userId)
         val latest = _state.value.session?.takeIf { it.accountId == session.accountId } ?: return
         val updated = latest.copy(userImageTag = null)
@@ -1569,8 +1745,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
     }
 
+    /** Silo's socket only keeps alive: it has no SyncPlay and no remote control. */
     private fun bindSessionSocket(session: SavedSession) {
-        if (session.backend != MediaBackend.Jellyfin) {
+        if (session.isSiloServer) {
             sessionSocket.disconnect()
             return
         }
@@ -1685,10 +1862,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             (home.continueWatching + home.nextUp).filter { it.kind == MediaKind.Episode && it.seriesId == seriesId },
         )?.let { return it }
         val session = _state.value.session ?: return fromDetail
-        return when (session.backend) {
-            MediaBackend.Silo -> fromDetail
-            MediaBackend.Jellyfin -> jellyfinClient().playableItem(UUID.fromString(session.userId), fromDetail)
-        }
+        return jellyfinClient().playableItem(UUID.fromString(session.userId), fromDetail)
     }
 
     private suspend fun signInJellyfin(url: String, username: String, password: String) {
@@ -1704,63 +1878,11 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             imageTag = user.primaryImageTag,
             serverName = null,
             serverVersion = null,
+            isSiloServer = library.detectSiloServer() == true,
         )
         _state.update { it.copy(busy = false, screen = Screen.Library) }
         refreshLibrary()
         _state.value.session?.let(::bindSessionSocket)
-    }
-
-    private suspend fun signInSilo(url: String, username: String, password: String) {
-        val client = newSilo(url)
-        val auth = client.login(username.trim(), password)
-        silo = client
-        val label = runCatching { client.serverLabel() }.getOrNull()
-        val profiles = client.profiles()
-        val pending = SiloPendingSignIn(
-            serverUrl = url,
-            accessToken = auth.accessToken,
-            refreshToken = auth.refreshToken,
-            userId = auth.userId,
-            userName = auth.userName,
-            deviceId = vault.deviceId,
-            serverName = label?.first,
-            serverVersion = label?.second,
-            userRole = auth.role,
-            profiles = profiles,
-        )
-        val unlocked = pending.singleUnlockedProfile
-        if (unlocked != null) {
-            finishSilo(pending, unlocked, null)
-        } else if (profiles.isEmpty()) {
-            finishSilo(pending, HouseholdProfile(id = auth.userId, name = auth.userName, isPrimary = true), null)
-        } else {
-            _state.update { it.copy(busy = false, screen = Screen.Profiles(pending), message = null) }
-        }
-    }
-
-    private fun finishSilo(pending: SiloPendingSignIn, profile: HouseholdProfile, profileToken: String?) {
-        silo?.profileId = profile.id
-        silo?.profileToken = profileToken
-        val session = SavedSession(
-            serverUrl = pending.serverUrl,
-            accessToken = silo?.accessToken ?: pending.accessToken,
-            userId = pending.userId,
-            userName = pending.userName,
-            deviceId = pending.deviceId,
-            serverName = pending.serverName,
-            serverVersion = pending.serverVersion,
-            backend = MediaBackend.Silo,
-            refreshToken = silo?.refreshToken ?: pending.refreshToken,
-            profileId = profile.id,
-            profileToken = profileToken,
-            profileName = profile.name,
-            userRole = pending.userRole,
-            isPrimaryProfile = profile.isPrimary,
-        )
-        vault.save(session)
-        _state.update { it.copy(session = session, accounts = vault.accounts(), busy = false, screen = Screen.Library, message = null) }
-        refreshRoute()
-        refreshLibrary()
     }
 
     private fun storeJellyfin(
@@ -1771,17 +1893,18 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         imageTag: String?,
         serverName: String?,
         serverVersion: String?,
+        isSiloServer: Boolean,
     ) {
         val session = SavedSession(
             serverUrl = url,
             accessToken = token,
             userId = userId,
-            userName = userName,
+            userName = SavedSession.displayName(userName, isSiloServer),
             deviceId = vault.deviceId,
             userImageTag = imageTag,
             serverName = serverName,
             serverVersion = serverVersion,
-            backend = MediaBackend.Jellyfin,
+            isSiloServer = isSiloServer,
         )
         vault.save(session)
         _state.update { it.copy(session = session, accounts = vault.accounts()) }
@@ -1789,69 +1912,36 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun restore(saved: SavedSession) {
-        when (saved.backend) {
-            MediaBackend.Jellyfin -> jellyfin = JellyfinLibrary(getApplication(), saved.serverUrl, saved.accessToken)
-            MediaBackend.Silo -> {
-                val client = newSilo(saved.serverUrl)
-                client.accessToken = saved.accessToken
-                client.refreshToken = saved.refreshToken
-                client.profileId = saved.profileId
-                client.profileToken = saved.profileToken
-                silo = client
-            }
-        }
+        val library = JellyfinLibrary(getApplication(), saved.serverUrl, saved.accessToken)
+        jellyfin = library
+        viewModelScope.launch { refreshSiloDetection(saved, library) }
     }
 
-    private suspend fun probe(url: String, preferred: MediaBackend): ServerReachability {
-        val client = newSilo(url)
-        val siloLabel = runCatching { client.serverLabel() }.getOrNull()
-        if (siloLabel != null && (preferred == MediaBackend.Silo || preferred == MediaBackend.Jellyfin)) {
-            if (preferred == MediaBackend.Silo || siloLabel.first != "Silo" || preferred == MediaBackend.Silo) {
-                if (preferred == MediaBackend.Silo) return ServerReachability.Reachable(siloLabel.first, siloLabel.second)
-            }
-        }
-        if (preferred == MediaBackend.Silo) {
-            return siloLabel?.let { ServerReachability.Reachable(it.first, it.second) }
-                ?: ServerReachability.Failed("That address did not answer as a Silo server.")
-        }
-        if (siloLabel != null && preferred == MediaBackend.Jellyfin) {
-            // A host that answers Silo health is Silo even if the picker says Jellyfin.
-            return ServerReachability.Reachable(siloLabel.first, siloLabel.second)
-        }
-        return JellyfinLibrary(getApplication(), url).probe()
+    /** Keeps [SavedSession.isSiloServer] current, e.g. for accounts signed in before Silo was detected. */
+    private suspend fun refreshSiloDetection(saved: SavedSession, library: JellyfinLibrary) {
+        val silo = library.detectSiloServer() ?: return
+        val latest = _state.value.session?.takeIf { it.accountId == saved.accountId } ?: return
+        if (latest.isSiloServer == silo) return
+        val updated = latest.copy(isSiloServer = silo)
+        vault.save(updated)
+        _state.update { it.copy(session = updated, accounts = vault.accounts()) }
+        plugins.refresh()
+        bindSessionSocket(updated)
     }
 
     private suspend fun currentHome(): HomeFeed {
         val hero = app.zelefin.client.ui.HomeLayoutPreferences.heroContent
         return visibleHome(
-            when (_state.value.session?.backend) {
-                MediaBackend.Silo -> siloHero(siloClient().home(), hero)
-                else -> jellyfinClient().home(
-                    UUID.fromString(_state.value.session?.userId),
-                    JellyfinLibrary.HeroContent.entries.first { it.name == hero.name },
-                )
-            },
+            jellyfinClient().home(
+                UUID.fromString(_state.value.session?.userId),
+                JellyfinLibrary.HeroContent.entries.first { it.name == hero.name },
+            ),
         )
-    }
-
-    /** Silo serves its own hero; Random shuffles recently added, and queue sources use those rows. */
-    private fun siloHero(feed: HomeFeed, hero: app.zelefin.client.ui.FeaturedHeroContent): HomeFeed {
-        val homeHero = app.zelefin.client.ui.HomeHero
-        val picked = when (hero) {
-            app.zelefin.client.ui.FeaturedHeroContent.Random -> homeHero.fromPool((feed.recentMovies + feed.recentShows).shuffled())
-            app.zelefin.client.ui.FeaturedHeroContent.ContinueWatching -> homeHero.fromPool(feed.continueWatching)
-            app.zelefin.client.ui.FeaturedHeroContent.NextUp -> homeHero.fromPool(feed.nextUp)
-            app.zelefin.client.ui.FeaturedHeroContent.RecentlyWatched -> homeHero.fromPool(feed.recentlyWatched)
-            app.zelefin.client.ui.FeaturedHeroContent.Recommendations -> homeHero.fromPool(feed.recommendations.flatMap { it.items })
-            else -> emptyList()
-        }
-        return if (picked.isEmpty()) feed else feed.copy(featured = picked)
     }
 
     /** Pulls Interface and Library layout choices from Jellyfin display preferences (iOS `pullDisplayPreferences`). */
     fun pullDisplayPreferences() {
         val session = _state.value.session ?: return
-        if (session.backend != MediaBackend.Jellyfin) return
         viewModelScope.launch {
             val prefs = runCatching { jellyfinClient().displayPreferenceCustomPrefs(userUuid()) }.getOrNull() ?: return@launch
             if (_state.value.session?.accountId != session.accountId) return@launch
@@ -1889,8 +1979,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     /** Pushes Interface and Library layout choices to Jellyfin display preferences (iOS `pushDisplayPreferences`). */
     fun pushDisplayPreferences() {
-        val session = _state.value.session ?: return
-        if (session.backend != MediaBackend.Jellyfin) return
+        if (_state.value.session == null) return
         val layout = app.zelefin.client.ui.HomeLayoutPreferences
         val libraryLayout = _state.value.libraryLayout
         val prefs = mapOf(
@@ -1926,7 +2015,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     private fun visibleHome(feed: HomeFeed): HomeFeed {
         val session = _state.value.session ?: return feed
-        if (session.backend != MediaBackend.Jellyfin) return feed
         val app = getApplication<Application>()
         return feed.copy(
             continueWatching = HomeQueueHideStore.filter(app, feed.continueWatching, session.userId, JellyfinEnhancedHomeSurface.ContinueWatching),
@@ -1988,13 +2076,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun loadLibraryFilters(route: LibraryRoute) {
         viewModelScope.launch {
             val items = _state.value.libraryGrids[route]?.items.orEmpty()
-            val options = runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> catalogOptionsFromItems(items)
-                    else -> jellyfinClient().catalogFilters(userUuid(), jellyfinScope(route))
-                }
-            }.getOrDefault(catalogOptionsFromItems(items))
-            updateGrid(route) { copy(filters = options) }
+            val options = runCatching { jellyfinClient().catalogFilters(userUuid(), jellyfinScope(route)) }
+                .getOrDefault(catalogOptionsFromItems(items))
+            updateGrid(route) { copy(filters = options.forServer()) }
         }
     }
 
@@ -2021,6 +2105,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     private fun userUuid(): UUID = UUID.fromString(_state.value.session?.userId)
 
+    private fun CatalogBrowseQuery.forServer(): CatalogBrowseQuery = if (_state.value.isSiloServer) forSiloServer() else this
+
+    private fun CatalogFilterOptions.forServer(): CatalogFilterOptions = if (_state.value.isSiloServer) forSiloServer() else this
+
     private fun jellyfinScope(route: LibraryRoute): JellyfinScope {
         val titles = listOf(org.jellyfin.sdk.model.api.BaseItemKind.MOVIE, org.jellyfin.sdk.model.api.BaseItemKind.SERIES)
         return when (route) {
@@ -2039,7 +2127,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.libraryGrids[route]?.query != stored) {
             updateGrid(route) { copy(query = stored) }
         }
-        val query = stored
+        val query = stored.forServer()
         val effective = if (route == LibraryRoute.Favorites) {
             query.copy(statuses = query.statuses + CatalogStatusFilter.Favorite)
         } else {
@@ -2050,23 +2138,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         gridJobs[route] = viewModelScope.launch {
             val gridJob = this
             runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> {
-                        val client = siloClient()
-                        when (route) {
-                            is LibraryRoute.Room -> client.catalog(client.catalogType(route.room.kind), route.room.id, effective)
-                            is LibraryRoute.Genre -> client.catalog(null, null, effective.copy(genres = effective.genres + route.genre.name))
-                            LibraryRoute.Favorites -> client.catalog(null, null, effective)
-                            LibraryRoute.Watchlist -> emptyList()
-                            LibraryRoute.AllCollections -> client.catalog("collection", null, effective)
-                            else -> emptyList()
-                        }
-                    }
-                    else -> when (route) {
-                        LibraryRoute.Watchlist -> jellyfinClient().watchlistItems(userUuid())
-                        else -> jellyfinClient().browse(userUuid(), jellyfinScope(route), effective) { page ->
-                            if (gridJob.isActive) updateGrid(route) { copy(items = page, loading = false) }
-                        }
+                when (route) {
+                    LibraryRoute.Watchlist -> if (_state.value.isSiloServer) emptyList() else jellyfinClient().watchlistItems(userUuid())
+                    else -> jellyfinClient().browse(userUuid(), jellyfinScope(route), effective) { page ->
+                        if (gridJob.isActive) updateGrid(route) { copy(items = page, loading = false) }
                     }
                 }
             }.onSuccess { items ->
@@ -2082,15 +2157,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.libraryOverview.genres.isNotEmpty()) return
         _state.update { it.copy(libraryOverview = it.libraryOverview.copy(genresLoading = true)) }
         viewModelScope.launch {
-            val genres = runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> {
-                        val items = _state.value.movies + _state.value.shows
-                        catalogOptionsFromItems(items).genres.map { LibraryGenre(it.id, it.name) }
-                    }
-                    else -> jellyfinClient().genres(userUuid())
-                }
-            }.getOrDefault(emptyList())
+            val genres = runCatching { jellyfinClient().genres(userUuid()) }.getOrDefault(emptyList())
             _state.update { it.copy(libraryOverview = it.libraryOverview.copy(genres = genres, genresLoading = false)) }
         }
     }
@@ -2115,23 +2182,16 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             try {
                 _state.update { it.copy(librariesLoading = it.libraries.isEmpty()) }
                 if (_state.value.libraries.isNotEmpty()) loadRoomDetails()
-                val silo = _state.value.session?.backend == MediaBackend.Silo
                 val roomsReady = CompletableDeferred<List<LibraryRoom>>()
                 val countsJob = launch {
-                    val counts = runCatching {
-                        if (silo) siloClient().serverCounts() else jellyfinServerCounts(roomsReady.await())
-                    }.getOrNull()
+                    val counts = runCatching { jellyfinServerCounts(roomsReady.await()) }.getOrNull()
                     if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
                 }
-                if (!silo) {
-                    launch {
-                        val collections = jellyfinClient().collectionPreview(userUuid())
-                        _state.update { it.copy(libraryOverview = it.libraryOverview.copy(collections = collections)) }
-                    }
+                launch {
+                    val collections = jellyfinClient().collectionPreview(userUuid())
+                    _state.update { it.copy(libraryOverview = it.libraryOverview.copy(collections = collections)) }
                 }
-                runCatching {
-                    if (silo) siloClient().libraries() else jellyfinClient().libraries(userUuid())
-                }.onSuccess { rooms ->
+                runCatching { jellyfinClient().libraries(userUuid()) }.onSuccess { rooms ->
                     roomsReady.complete(rooms)
                     val changed = rooms != _state.value.libraries
                     overviewLoadedFor = account
@@ -2152,23 +2212,18 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadRoomDetails(onlyMissing: Boolean = false) {
         val state = _state.value
-        val silo = state.session?.backend == MediaBackend.Silo
-        val rooms = state.libraryLayout.displayed(state.libraries.libraryTabRooms(silo))
+        val rooms = state.libraryLayout.displayed(state.libraries.libraryTabRooms(state.isSiloServer))
         viewModelScope.launch {
             rooms.forEach { room ->
                 if (!onlyMissing || room.id !in state.libraryOverview.roomCounts) launch {
-                    val counts = runCatching {
-                        if (silo) siloClient().roomCounts(room) else jellyfinClient().roomCounts(userUuid(), room)
-                    }.getOrNull() ?: return@launch
+                    val counts = runCatching { jellyfinClient().roomCounts(userUuid(), room) }.getOrNull() ?: return@launch
                     _state.update {
                         it.copy(libraryOverview = it.libraryOverview.copy(roomCounts = it.libraryOverview.roomCounts + (room.id to counts)))
                     }
                 }
                 if (room.kind == LibraryKind.LiveTV || state.libraryOverview.covers[room.id]?.isNotEmpty() == true) return@forEach
                 launch {
-                    val covers = runCatching {
-                        if (silo) siloClient().previewItems(room) else jellyfinClient().previewItems(userUuid(), room)
-                    }.getOrDefault(emptyList())
+                    val covers = runCatching { jellyfinClient().previewItems(userUuid(), room) }.getOrDefault(emptyList())
                     if (covers.isEmpty()) return@launch
                     _state.update {
                         it.copy(libraryOverview = it.libraryOverview.copy(covers = it.libraryOverview.covers + (room.id to covers)))
@@ -2192,19 +2247,14 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun loadCatalogFilters(tab: AppTab) {
         viewModelScope.launch {
             val items = if (tab == AppTab.Movies) _state.value.movies else _state.value.shows
-            val options = runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> catalogOptionsFromItems(items)
-                    else -> {
-                        val kind = if (tab == AppTab.Movies) {
-                            org.jellyfin.sdk.model.api.BaseItemKind.MOVIE
-                        } else {
-                            org.jellyfin.sdk.model.api.BaseItemKind.SERIES
-                        }
-                        jellyfinClient().catalogFilters(UUID.fromString(_state.value.session?.userId), kind)
-                    }
-                }
-            }.getOrDefault(catalogOptionsFromItems(items))
+            val kind = if (tab == AppTab.Movies) {
+                org.jellyfin.sdk.model.api.BaseItemKind.MOVIE
+            } else {
+                org.jellyfin.sdk.model.api.BaseItemKind.SERIES
+            }
+            val options = runCatching { jellyfinClient().catalogFilters(userUuid(), kind) }
+                .getOrDefault(catalogOptionsFromItems(items))
+                .forServer()
             _state.update { if (tab == AppTab.Movies) it.copy(movieFilters = options) else it.copy(showFilters = options) }
         }
     }
@@ -2212,7 +2262,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private fun loadCatalog(tab: AppTab, refreshing: Boolean = false) {
         val session = _state.value.session
         val kind = if (tab == AppTab.Movies) "movies" else "shows"
-        val query = if (tab == AppTab.Movies) _state.value.movieQuery else _state.value.showQuery
+        val query = (if (tab == AppTab.Movies) _state.value.movieQuery else _state.value.showQuery).forServer()
         val empty = if (tab == AppTab.Movies) _state.value.movies.isEmpty() else _state.value.shows.isEmpty()
         _state.update {
             if (tab == AppTab.Movies) {
@@ -2235,24 +2285,16 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             runCatching {
-                when (_state.value.session?.backend) {
-                    MediaBackend.Silo -> {
-                        val type = if (tab == AppTab.Movies) "movie" else "series"
-                        siloClient().catalog(type, browse = query)
-                    }
-                    else -> {
-                        val itemKind = if (tab == AppTab.Movies) {
-                            org.jellyfin.sdk.model.api.BaseItemKind.MOVIE
-                        } else {
-                            org.jellyfin.sdk.model.api.BaseItemKind.SERIES
-                        }
-                        jellyfinClient().catalog(UUID.fromString(_state.value.session?.userId), itemKind, query) { page ->
-                            if (!catalogJob.isActive) return@catalog
-                            _state.update { state ->
-                                if (tab == AppTab.Movies) state.copy(movies = page, moviesLoading = false)
-                                else state.copy(shows = page, showsLoading = false)
-                            }
-                        }
+                val itemKind = if (tab == AppTab.Movies) {
+                    org.jellyfin.sdk.model.api.BaseItemKind.MOVIE
+                } else {
+                    org.jellyfin.sdk.model.api.BaseItemKind.SERIES
+                }
+                jellyfinClient().catalog(UUID.fromString(_state.value.session?.userId), itemKind, query) { page ->
+                    if (!catalogJob.isActive) return@catalog
+                    _state.update { state ->
+                        if (tab == AppTab.Movies) state.copy(movies = page, moviesLoading = false)
+                        else state.copy(shows = page, showsLoading = false)
                     }
                 }
             }.onSuccess { items ->
@@ -2277,36 +2319,15 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (tab == AppTab.Movies) movieCatalogJob = job else showCatalogJob = job
     }
 
-    private suspend fun loadDetail(id: String): TitleDetail = when (_state.value.session?.backend) {
-        MediaBackend.Silo -> siloClient().detail(id)
-        else -> jellyfinClient().detail(UUID.fromString(_state.value.session?.userId), id)
-    }
+    private suspend fun loadDetail(id: String): TitleDetail =
+        jellyfinClient().detail(UUID.fromString(_state.value.session?.userId), id)
 
     private suspend fun report(plan: PlaybackPlan, position: Double, paused: Boolean, start: Boolean) {
-        when (_state.value.session?.backend) {
-            MediaBackend.Silo -> {
-                val sessionId = plan.playSessionId ?: return
-                if (start) siloClient().report(sessionId, position, false) else siloClient().report(sessionId, position, paused)
-            }
-            else -> {
-                val library = jellyfinClient()
-                if (start) library.reportStart(plan, position) else library.reportProgress(plan, position, paused)
-            }
-        }
+        val library = jellyfinClient()
+        if (start) library.reportStart(plan, position) else library.reportProgress(plan, position, paused)
     }
 
     private fun jellyfinClient(): JellyfinLibrary = jellyfin ?: throw ZelefinException.missingUser()
-
-    private fun siloClient(): SiloClient = silo ?: throw ZelefinException.missingUser()
-
-    private fun newSilo(url: String) = SiloClient(
-        baseUrl = url,
-        deviceId = vault.deviceId,
-        deviceName = Build.MODEL ?: "Android",
-        formFactor = if (getApplication<Application>().resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "mobile",
-        appVersion = BuildConfig.VERSION_NAME,
-        osVersion = Build.VERSION.RELEASE ?: "",
-    )
 
     private fun ZelefinUiState.withItem(id: String, transform: MediaItem.() -> MediaItem): ZelefinUiState {
         fun List<MediaItem>.mapId() = map { if (it.id == id) it.transform() else it }

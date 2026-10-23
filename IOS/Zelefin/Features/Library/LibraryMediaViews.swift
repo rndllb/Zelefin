@@ -2,17 +2,9 @@ import SwiftUI
 
 struct LibraryItemRoute: View {
     let item: MediaItem
-    @Environment(SessionStore.self) private var session
 
     var body: some View {
         switch item.kind {
-        case .collection:
-            // Silo collections are personal lists with no item page; Jellyfin BoxSets get one.
-            if session.usesSilo {
-                CatalogGridView(title: item.name, query: .parent(item.id))
-            } else {
-                ItemDetailView(item: item)
-            }
         case .playlist:
             PlaylistDetailView(playlist: item)
         case .photo:

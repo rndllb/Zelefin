@@ -99,7 +99,7 @@ internal fun SettingsNavRow(
 @Composable
 internal fun SettingsProfileRow(session: SavedSession?, onClick: () -> Unit) {
     val name = session?.userName?.takeIf { it.isNotBlank() } ?: "Account"
-    val handle = if (session?.usesSilo == true) "Silo account" else "Jellyfin account"
+    val handle = if (session?.isSiloServer == true) "Silo account" else "Jellyfin account"
     Row(
         Modifier
             .fillMaxWidth()

@@ -56,10 +56,11 @@ import app.zelefin.client.ui.ConnectScreen
 import app.zelefin.client.ui.DetailScreen
 import app.zelefin.client.ui.DetailTitleActions
 import app.zelefin.client.ui.LibraryScreen
-import app.zelefin.client.ui.PinScreen
+import app.zelefin.client.ui.SiloNoticeDialog
+import app.zelefin.client.ui.SiloPinDialog
+import app.zelefin.client.ui.SiloProfilePickerScreen
 import app.zelefin.client.ui.PlayerScreen
 import app.zelefin.client.ui.ProfileScreen
-import app.zelefin.client.ui.ProfilesScreen
 import app.zelefin.client.ui.AddAccountTopicId
 import app.zelefin.client.ui.SettingsBarAction
 import app.zelefin.client.ui.SettingsScreen
@@ -140,7 +141,7 @@ class MainActivity : ComponentActivity() {
             }
             ZelefinTheme {
                 val handlesBack = when (val screen = state.screen) {
-                    Screen.Connect, is Screen.Profiles -> false
+                    Screen.Connect -> false
                     Screen.Library -> (state.tab == AppTab.Library && state.libraryPath.isNotEmpty()) ||
                         (state.tab == AppTab.Search && state.searchPath.isNotEmpty())
                     else -> true
@@ -279,6 +280,15 @@ class MainActivity : ComponentActivity() {
                     if (state.busy && state.screen == Screen.Connect) {
                         CircularProgressIndicator(color = ZelefinCyan, modifier = Modifier.align(Alignment.Center))
                     }
+                    state.siloPicker?.let { picker ->
+                        SiloProfilePickerScreen(picker, onChoose = model::chooseSiloProfile, onCancel = model::cancelSiloPicker)
+                    }
+                    state.siloPin?.let { prompt ->
+                        SiloPinDialog(prompt, onSubmit = model::submitSiloPin, onCancel = model::cancelSiloPin)
+                    }
+                    state.siloNotice?.let { notice ->
+                        SiloNoticeDialog(notice, onDismiss = model::dismissSiloNotice, onSignInAgain = model::signInToSiloAgain)
+                    }
                 }
                 }
             }
@@ -321,15 +331,12 @@ private fun ZelefinScreen(
 ) {    when (screen) {
         Screen.Connect -> ConnectScreen(
             state = state,
-            onBackend = model::setBackend,
             onTest = model::testConnection,
             onSignIn = model::signIn,
             onQuickConnect = model::startQuickConnect,
             onCancelQuickConnect = model::cancelQuickConnect,
             onGateway = model::saveGateway,
         )
-        is Screen.Profiles -> ProfilesScreen(screen.pending, model::chooseProfile)
-        is Screen.Pin -> PinScreen(screen.profile, state.busy, state.message, model::submitPin, model::back)
         Screen.Library -> LibraryScreen(
             state = state,
             onTab = model::selectTab,
@@ -426,7 +433,7 @@ private fun ZelefinScreen(
 }
 
 private fun detailActions(model: ZelefinModel, state: ZelefinUiState): DetailTitleActions {
-    val jellyfin = state.session?.usesSilo == false
+    val jellyfin = state.session != null && !state.isSiloServer
     return DetailTitleActions(
         onBrowse = model::openBrowse,
         onRefreshDetail = model::refreshDetail,
@@ -485,8 +492,6 @@ private fun Screen.pageKey(): String = when (this) {
     is Screen.Browse -> "browse:${page.title}:${page.hashCode()}"
     is Screen.Player -> "player:${plan.item.id}"
     is Screen.SettingsTopic -> "topic:$id"
-    is Screen.Pin -> "pin:${profile.id}"
-    is Screen.Profiles -> "profiles"
     is Screen.Profile -> "profile"
     is Screen.Settings -> "settings"
     Screen.Connect -> "connect"

@@ -5,7 +5,6 @@ struct PluginSettingsView: View {
     @AppStorage(PlaybackPreferences.autoSkipIntroKey) private var autoSkipIntro = false
     @AppStorage(PlaybackPreferences.autoSkipCreditsKey) private var autoSkipCredits = false
     @AppStorage(PluginSettings.seerrURLKey) private var seerrURL = ""
-    @AppStorage(PluginSettings.siloRequestSourceKey) private var siloRequestSourceRaw = SiloRequestSource.seerr.rawValue
     @State private var seerrUsername = ""
     @State private var seerrPassword = ""
     @State private var seerrDisplayName = PluginSettings.seerrSession?.displayName
@@ -13,23 +12,17 @@ struct PluginSettingsView: View {
     @State private var isSigningInToSeerr = false
 
     private var isSeerrSignedIn: Bool { seerrDisplayName != nil }
-    private var siloRequestSource: Binding<SiloRequestSource> {
-        Binding(
-            get: { SiloRequestSource(rawValue: siloRequestSourceRaw) ?? .seerr },
-            set: { siloRequestSourceRaw = $0.rawValue }
-        )
-    }
 
     var body: some View {
         Form {
-            if session.usesSilo {
-                siloRequestSection
+            if session.isSiloServer {
+                siloSkipSection
             } else {
                 jellyfinPluginSections
                 openSubtitlesSection
                 tubeArchivistSection
-                seerrSignInSection
             }
+            seerrSignInSection
         }
         .zelefinSettingsChrome(title: "Plugins")
         .task {
@@ -110,39 +103,17 @@ struct PluginSettingsView: View {
         }
     }
 
-    private var siloRequestSection: some View {
+    /// Silo has no Jellyfin plugins, but it finds intros and credits itself and serves them as media segments.
+    private var siloSkipSection: some View {
         Section {
-            pluginStatusRow("Seerr", installed: session.siloSeerrPluginAvailable)
-            pluginStatusRow("Sonarr & Radarr", installed: session.siloArrPluginAvailable)
-            if session.siloSeerrPluginAvailable && session.siloArrPluginAvailable {
-                Picker("Discover with", selection: siloRequestSource) {
-                    ForEach(SiloRequestSource.allCases) { source in
-                        Text(source.title).tag(source)
-                    }
-                }
-            }
+            Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
+            Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
         } header: {
-            Text("Requests")
+            Text("Skip Intro / Outro")
         } footer: {
-            Text(siloRequestFooter)
+            Text("Skip buttons appear during playback when Silo has found an intro or credits for the episode.")
         }
         .zelefinRowBackground()
-    }
-
-    private var siloRequestFooter: String {
-        if session.siloSeerrPluginAvailable && session.siloArrPluginAvailable {
-            return "Discover uses the plugin you pick. Sign-in to Seerr is not needed on Silo."
-        }
-        if session.siloArrPluginAvailable {
-            return "Discover uses this Silo server’s Sonarr and Radarr requests plugin."
-        }
-        if session.siloSeerrPluginAvailable {
-            return "Discover uses this Silo server’s Seerr plugin. You do not sign in to Seerr separately."
-        }
-        if session.siloRequestsEnabled {
-            return "Requests are on for this Silo server. Discover is in Search."
-        }
-        return "Install the Seerr plugin or the Sonarr & Radarr requests plugin on this Silo server to request titles from Search."
     }
 
     @ViewBuilder
@@ -231,7 +202,6 @@ struct PluginSettingsView: View {
     }
 
     private func refreshSeerrSession() async {
-        guard !session.usesSilo else { return }
         guard PluginSettings.seerrClient != nil else {
             seerrDisplayName = nil
             return

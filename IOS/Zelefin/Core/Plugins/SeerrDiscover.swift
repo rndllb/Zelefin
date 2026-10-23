@@ -11,9 +11,6 @@ enum SeerrDiscoverQuery: Hashable, Sendable {
     case tvGenre(id: Int, name: String)
     case studio(id: Int, name: String)
     case network(id: Int, name: String)
-    case siloGenre(slug: String, name: String, mediaType: String)
-    case siloStudio(slug: String, name: String)
-    case siloNetwork(slug: String, name: String)
 
     var title: String {
         switch self {
@@ -27,20 +24,6 @@ enum SeerrDiscoverQuery: Hashable, Sendable {
         case let .tvGenre(_, name): name
         case let .studio(_, name): name
         case let .network(_, name): name
-        case let .siloGenre(_, name, _): name
-        case let .siloStudio(_, name): name
-        case let .siloNetwork(_, name): name
-        }
-    }
-
-    var siloSection: String? {
-        switch self {
-        case .trending: "trending_movies"
-        case .popularMovies: "popular_movies"
-        case .upcomingMovies: "upcoming_movies"
-        case .popularTV: "popular_series"
-        case .upcomingTV: "on_air_series"
-        default: nil
         }
     }
 
@@ -56,7 +39,6 @@ enum SeerrDiscoverQuery: Hashable, Sendable {
         case let .tvGenre(id, _): "api/v1/discover/tv/genre/\(id)"
         case let .studio(id, _): "api/v1/discover/movies/studio/\(id)"
         case let .network(id, _): "api/v1/discover/tv/network/\(id)"
-        case .siloGenre, .siloStudio, .siloNetwork: ""
         }
     }
 
@@ -88,18 +70,14 @@ struct SeerrGenreSliderItem: Decodable, Identifiable, Hashable, Sendable {
     var id: Int
     var name: String
     var backdrops: [String]?
-    var siloSlug: String? = nil
-    var siloMediaType: String? = nil
+    var mediaType: String? = nil
 
     var imageURL: URL? {
         SeerrClient.tmdbImageURL(backdrops?.first, size: "w780")
     }
 
     var discoverQuery: SeerrDiscoverQuery {
-        if let siloSlug {
-            return .siloGenre(slug: siloSlug, name: name, mediaType: siloMediaType ?? "movie")
-        }
-        return siloMediaType == "series" || siloMediaType == "tv"
+        mediaType == "tv"
             ? .tvGenre(id: id, name: name)
             : .movieGenre(id: id, name: name)
     }
@@ -115,15 +93,8 @@ struct SeerrCompany: Identifiable, Hashable, Sendable {
     var name: String
     var kind: Kind
     var imageURL: URL?
-    var siloSlug: String? = nil
 
     var query: SeerrDiscoverQuery {
-        if let siloSlug {
-            switch kind {
-            case .studio: return .siloStudio(slug: siloSlug, name: name)
-            case .network: return .siloNetwork(slug: siloSlug, name: name)
-            }
-        }
         switch kind {
         case .studio: return .studio(id: id, name: name)
         case .network: return .network(id: id, name: name)
@@ -292,7 +263,7 @@ extension SeerrClient {
         guard kind == .tv else { return items }
         return items.map { item in
             var copy = item
-            copy.siloMediaType = "tv"
+            copy.mediaType = "tv"
             return copy
         }
     }

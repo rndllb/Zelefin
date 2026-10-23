@@ -1,38 +1,24 @@
 package app.zelefin.client.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,16 +26,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.zelefin.client.AppTab
@@ -58,50 +37,9 @@ import app.zelefin.client.PlayerDirective
 import app.zelefin.client.Screen
 import app.zelefin.client.ZelefinUiState
 import kotlinx.coroutines.flow.SharedFlow
-import app.zelefin.core.HouseholdProfile
-import app.zelefin.core.MediaBackend
 import app.zelefin.core.MediaItem
 import app.zelefin.core.PlaybackPlan
-import app.zelefin.core.SiloPendingSignIn
 import app.zelefin.core.TitleDetail
-
-@Composable
-fun ProfilesScreen(pending: SiloPendingSignIn, onChoose: (HouseholdProfile) -> Unit) {
-    Column(Modifier.fillMaxSize().background(ZelefinBlack).padding(24.dp)) {
-        Text("Who’s watching?", style = androidx.compose.material3.MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(24.dp))
-        LazyVerticalGrid(columns = GridCells.Adaptive(140.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            items(pending.profiles.size) { index ->
-                val profile = pending.profiles[index]
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickableNoRipple { onChoose(profile) }) {
-                    CachedArtwork(
-                        url = profile.avatarUrl,
-                        contentDescription = profile.name,
-                        modifier = Modifier.height(120.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
-                    Text(profile.name, modifier = Modifier.padding(top = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (profile.hasPin) Text("PIN", color = ZelefinMuted, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun PinScreen(profile: HouseholdProfile, busy: Boolean, message: String?, onSubmit: (String) -> Unit, onBack: () -> Unit) {
-    var pin by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().background(ZelefinBlack).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        TextButton(onClick = onBack) { Text("Back") }
-        Text(profile.name, style = androidx.compose.material3.MaterialTheme.typography.headlineLarge)
-        Text("Enter the profile PIN.", color = ZelefinMuted)
-        Field("PIN", pin, password = true) { pin = it.filter { char -> char.isDigit() } }
-        Button(onClick = { onSubmit(pin) }, enabled = pin.length >= 4 && !busy, colors = ButtonDefaults.buttonColors(containerColor = ZelefinCyan, contentColor = Color.Black)) {
-            Text("Continue")
-        }
-        message?.let { Text(it, color = ZelefinMuted) }
-    }
-}
 
 @Composable
 fun LibraryScreen(
@@ -163,7 +101,7 @@ fun LibraryScreen(
                     onSignOut,
                     onToggleWatched,
                     onToggleFavorite,
-                    onToggleWatchlist = if (state.session?.usesSilo == true) null else onToggleWatchlist,
+                    onToggleWatchlist = if (state.isSiloServer) null else onToggleWatchlist,
                     onHideFromHome = if (pluginState.hidesFromHome) onHideFromHome else null,
                     onSeeAll = onSeeAll,
                     onBrowse = onBrowse,
@@ -390,23 +328,3 @@ fun PlayerScreen(
         }
     }
 }
-
-@Composable
-private fun Field(label: String, value: String, password: Boolean = false, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = true,
-        visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = if (password && label == "PIN") KeyboardType.NumberPassword else KeyboardType.Text),
-        modifier = Modifier.fillMaxWidth(),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = ZelefinCyan,
-            cursorColor = ZelefinCyan,
-            focusedLabelColor = ZelefinCyan,
-        ),
-    )
-}
-
-private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)

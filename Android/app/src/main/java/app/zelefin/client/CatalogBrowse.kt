@@ -60,7 +60,28 @@ data class CatalogFilterOptions(
     val years: List<CatalogFilterChoice> = emptyList(),
     val studios: List<CatalogFilterChoice> = emptyList(),
     val languages: List<CatalogFilterChoice> = emptyList(),
-)
+    val sorts: List<CatalogSortField> = CatalogSortField.entries,
+    /** Features and Video Type, which filter on what the media files carry. */
+    val fileFilters: Boolean = true,
+) {
+    /** Silo's Jellyfin API ignores tag, studio-name, feature and video-type filters and the other sorts. */
+    fun forSiloServer(): CatalogFilterOptions = copy(
+        tags = emptyList(),
+        studios = emptyList(),
+        sorts = SiloSorts,
+        fileFilters = false,
+    )
+
+    companion object {
+        val SiloSorts = listOf(
+            CatalogSortField.Name,
+            CatalogSortField.Random,
+            CatalogSortField.CommunityRating,
+            CatalogSortField.DateAdded,
+            CatalogSortField.ReleaseDate,
+        )
+    }
+}
 
 data class CatalogBrowseQuery(
     val statuses: Set<CatalogStatusFilter> = emptySet(),
@@ -95,6 +116,15 @@ data class CatalogBrowseQuery(
         studios = emptySet(),
         audioLanguages = emptySet(),
         subtitleLanguages = emptySet(),
+    )
+
+    /** Drops what [CatalogFilterOptions.forSiloServer] hides, so a saved query cannot return an unfiltered grid. */
+    fun forSiloServer(): CatalogBrowseQuery = copy(
+        features = emptySet(),
+        videoKinds = emptySet(),
+        tags = emptySet(),
+        studios = emptySet(),
+        sort = if (sort in CatalogFilterOptions.SiloSorts) sort else CatalogSortField.Name,
     )
 
     /** SD+4K cannot be one Jellyfin query, so those two resolutions are fetched separately. */

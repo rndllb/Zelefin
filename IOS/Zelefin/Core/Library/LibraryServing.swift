@@ -341,7 +341,7 @@ enum LibraryServingDefaults {
 
 /// The concrete bytes source for an offline download: a URL plus the request
 /// headers needed to fetch it, and (for backends that track downloads
-/// server-side, like Silo) the id of the managed row to clean up on removal.
+/// server-side) the id of the managed row to clean up on removal.
 struct DownloadAsset: Sendable {
     let url: URL
     let headers: [String: String]

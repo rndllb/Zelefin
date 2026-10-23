@@ -119,7 +119,6 @@ struct SeerrDiscoverGridView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var requestTitle: SeerrTitle?
-    @State private var requestError: String?
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -162,14 +161,6 @@ struct SeerrDiscoverGridView: View {
                 }
             }
         }
-        .alert("Request", isPresented: Binding(
-            get: { requestError != nil },
-            set: { if !$0 { requestError = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(requestError ?? "")
-        }
     }
 
     private func gridCell(_ title: SeerrTitle, index: Int) -> some View {
@@ -193,16 +184,11 @@ struct SeerrDiscoverGridView: View {
         defer { isLoading = false }
         do {
             let payload: SeerrDiscoverPage
-            if session.usesSilo, let client = session.requestCatalog {
-                payload = try await client.discover(query, page: nextPage)
-            } else if let client = PluginSettings.seerrClient {
-                payload = try await client.discover(query, page: nextPage)
-            } else {
-                errorMessage = session.usesSilo
-                    ? "Requests are not available on this Silo server."
-                    : "Sign in to Seerr in Settings."
+            guard let client = PluginSettings.seerrClient else {
+                errorMessage = "Sign in to Seerr in Settings."
                 return
             }
+            payload = try await client.discover(query, page: nextPage)
             if replace {
                 titles = payload.titles
             } else {
@@ -219,25 +205,7 @@ struct SeerrDiscoverGridView: View {
 
     private func handleRequest(_ title: SeerrTitle) {
         guard !title.isInJellyfin(catalog: session.tmdbCatalog) else { return }
-        if session.usesSilo {
-            Task { await submitSiloRequest(title) }
-        } else {
-            requestTitle = title
-        }
-    }
-
-    private func submitSiloRequest(_ title: SeerrTitle) async {
-        guard let client = session.requestCatalog else {
-            requestError = "Requests are not available on this Silo server."
-            return
-        }
-        do {
-            try await client.request(title)
-            markRequested(title)
-            onRequested(title)
-        } catch {
-            requestError = error.localizedDescription
-        }
+        requestTitle = title
     }
 
     private func markRequested(_ title: SeerrTitle) {

@@ -433,7 +433,6 @@ private struct SearchPage: View {
     @State private var genres: [MediaItem] = []
     @State private var isLoadingResults = false
     @State private var requestTitle: SeerrTitle?
-    @State private var requestError: String?
     @State private var discoverHome = SeerrDiscoverHome()
     @State private var isLoadingDiscover = false
     @State private var discoverError: String?
@@ -476,13 +475,9 @@ private struct SearchPage: View {
                             discoverContent
                         } else {
                             ContentUnavailableView(
-                                session.usesSilo ? "Requests Are Off" : "Sign In to Seerr",
+                                "Sign In to Seerr",
                                 systemImage: "sparkles.rectangle.stack",
-                                description: Text(
-                                    session.usesSilo
-                                        ? "Install the Seerr plugin or Sonarr & Radarr requests on this Silo server, then open Plugins in Settings."
-                                        : "Add Seerr in Settings to request movies and shows."
-                                )
+                                description: Text("Add Seerr in Settings to request movies and shows.")
                             )
                             .padding(.top, 24)
                         }
@@ -548,14 +543,6 @@ private struct SearchPage: View {
                     markRequested(title)
                 }
             }
-        }
-        .alert("Request", isPresented: Binding(
-            get: { requestError != nil },
-            set: { if !$0 { requestError = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(requestError ?? "")
         }
         .presentsPlayerFromRoot($playingItem)
         .openSubtitlesSearch(item: $subtitleSearchItem)
@@ -816,13 +803,6 @@ private struct SearchPage: View {
     }
 
     private func loadDiscover() async {
-        if session.usesSilo, let client = session.requestCatalog {
-            if !discoverHome.isEmpty { return }
-            isLoadingDiscover = true
-            defer { isLoadingDiscover = false }
-            discoverHome = await client.discoverHome()
-            return
-        }
         guard let client = PluginSettings.seerrClient else { return }
         if !discoverHome.isEmpty { return }
         isLoadingDiscover = true
@@ -843,9 +823,7 @@ private struct SearchPage: View {
         if scope == .discover {
             hits = []
             do {
-                if session.usesSilo, let client = session.requestCatalog {
-                    seerrResults = try await client.search(term: trimmed)
-                } else if let client = PluginSettings.seerrClient {
+                if let client = PluginSettings.seerrClient {
                     seerrResults = try await client.search(term: trimmed)
                 } else {
                     seerrResults = []
@@ -865,24 +843,7 @@ private struct SearchPage: View {
 
     private func handleRequest(_ title: SeerrTitle) {
         guard !title.isInJellyfin(catalog: session.tmdbCatalog) else { return }
-        if session.usesSilo {
-            Task { await submitSiloRequest(title) }
-        } else {
-            requestTitle = title
-        }
-    }
-
-    private func submitSiloRequest(_ title: SeerrTitle) async {
-        guard let client = session.requestCatalog else {
-            requestError = "Requests are not available on this Silo server."
-            return
-        }
-        do {
-            try await client.request(title)
-            markRequested(title)
-        } catch {
-            requestError = error.localizedDescription
-        }
+        requestTitle = title
     }
 
     private func markRequested(_ title: SeerrTitle) {

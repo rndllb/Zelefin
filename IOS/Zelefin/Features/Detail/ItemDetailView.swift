@@ -341,8 +341,8 @@ struct ItemDetailView: View {
                         channel: channel,
                         onPlay: { playYouTube(item) },
                         onChange: { self.item = $0 },
-                        onPlayElsewhere: session.usesSilo ? nil : { showsPlayOnDevice = true },
-                        onSyncPlay: session.usesSilo || !item.kind.usesVideoPlayer
+                        onPlayElsewhere: session.isSiloServer ? nil : { showsPlayOnDevice = true },
+                        onSyncPlay: session.isSiloServer || !item.kind.usesVideoPlayer
                             ? nil
                             : { showsSyncPlay = true },
                         onRefreshMetadata: session.isAdministrator
@@ -353,24 +353,24 @@ struct ItemDetailView: View {
                     TitleUserActions(
                         item: item,
                         onChange: { self.item = $0 },
-                        onCollections: session.usesSilo || item.kind == .collection ? nil : { showsCollectionEditor = true },
-                        onPlayElsewhere: session.usesSilo ? nil : { showsPlayOnDevice = true },
-                        onSyncPlay: session.usesSilo || !item.kind.usesVideoPlayer
+                        onCollections: session.isSiloServer || item.kind == .collection ? nil : { showsCollectionEditor = true },
+                        onPlayElsewhere: session.isSiloServer ? nil : { showsPlayOnDevice = true },
+                        onSyncPlay: session.isSiloServer || !item.kind.usesVideoPlayer
                             ? nil
                             : { showsSyncPlay = true },
                         onRefreshMetadata: session.isAdministrator
                             ? { Task { await refreshMetadata() } }
                             : nil,
-                        onRemoteImage: session.isAdministrator && !session.usesSilo
+                        onRemoteImage: session.isAdministrator
                             ? { showsRemoteImages = true }
                             : nil,
-                        onDelete: session.isAdministrator && !session.usesSilo && item.kind != .collection
+                        onDelete: session.isAdministrator && item.kind != .collection
                             ? { showsDeleteConfirm = true }
                             : nil,
-                        onIdentify: session.isAdministrator && !session.usesSilo
+                        onIdentify: session.isAdministrator
                             ? { showsIdentify = true }
                             : nil,
-                        onEditMetadata: session.isAdministrator && !session.usesSilo
+                        onEditMetadata: session.isAdministrator
                             ? { showsEditMetadata = true }
                             : nil
                     )

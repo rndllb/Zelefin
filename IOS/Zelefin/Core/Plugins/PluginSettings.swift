@@ -13,7 +13,6 @@ struct SeerrCredentials: Codable, Equatable, Sendable {
 
 enum PluginSettings {
     static let seerrURLKey = "zelefin.seerr.url"
-    static let siloRequestSourceKey = "zelefin.silo.request-source"
     static let seerrOwnerKey = "zelefin.seerr.owner"
     private static let seerrSessionAccount = "seerr-session"
     private static let seerrCredentialsAccount = "seerr-credentials"
@@ -95,11 +94,6 @@ enum PluginSettings {
         seerrSession = session
         seerrCredentials = SeerrCredentials(username: username, password: password)
         seerrOwnerAccountID = ownerAccountID
-    }
-
-    static var siloRequestSource: SiloRequestSource {
-        get { SiloRequestSource(rawValue: UserDefaults.standard.string(forKey: siloRequestSourceKey) ?? "") ?? .seerr }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: siloRequestSourceKey) }
     }
 
     static var seerrClient: SeerrClient? {

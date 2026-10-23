@@ -129,20 +129,11 @@ final class PlaybackPipelineTests: XCTestCase {
         )
     }
 
-    func testSiloOriginalMKVKeepsDirectPlayWhenNativePlayerIsOn() {
-        let url = URL(string: "https://silo.example/api/v1/stream/abc")
+    func testOriginalMKVDirectDecodesAndNeedsRemuxForNativePlayer() {
+        let url = URL(string: "https://media.example/Videos/abc/stream.mkv?static=true")
         guard let url else {
             return XCTFail("URL")
         }
-        XCTAssertFalse(
-            PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
-                url: url,
-                method: .directPlay,
-                container: "mkv",
-                videoCodec: "hevc",
-                keepOriginalFile: true
-            )
-        )
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(
                 url: url,

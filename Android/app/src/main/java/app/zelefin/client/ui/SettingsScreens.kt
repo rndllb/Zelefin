@@ -113,7 +113,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import app.zelefin.client.PluginsController
 import app.zelefin.client.PluginsUiState
 import app.zelefin.client.ZelefinUiState
-import app.zelefin.client.plugins.SiloRequestSource
+import app.zelefin.client.plugins.JellyfinPluginState
 import java.io.File
 import android.net.Uri
 import androidx.activity.result.PickVisualMediaRequest
@@ -157,7 +157,7 @@ fun SettingsScreen(
     val model: ZelefinModel = viewModel()
     val pluginState by model.plugins.state.collectAsState()
     val scope = rememberCoroutineScope()
-    val jellyfin = session?.usesSilo != true
+    val jellyfin = !state.isSiloServer
     val showServer = session != null && jellyfin && pluginState.isAdmin
     var confirmScan by remember { mutableStateOf(false) }
     var scanMessage by remember(session?.accountId) { mutableStateOf<String?>(null) }
@@ -242,7 +242,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
     val model: ZelefinModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val silo = session?.usesSilo == true
+    val silo = state.isSiloServer
     var uploading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var removing by remember { mutableStateOf<SavedSession?>(null) }
@@ -253,7 +253,38 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
     var tokenVisible by remember { mutableStateOf(false) }
     var tokenCopied by remember { mutableStateOf(false) }
     val serverLabel = session?.displayServer?.takeIf { it.isNotBlank() } ?: "this server"
-    val canChangePassword = !silo || session?.isPrimaryProfile == true
+    val siloLink = session?.siloLink
+    val household = state.household
+    val canChangePhoto = session != null && (siloLink != null || !silo)
+    val canRemovePhoto = siloLink == null && !silo && session?.userImageTag != null
+    val canChangePassword = !silo
+    val usersTitle = if (silo) "Accounts" else "Users"
+    val addTitle = if (silo) "Add Account" else "Add User"
+    var avatarSheet by remember { mutableStateOf(false) }
+    val avatarMotion = rememberZelefinSheet(if (avatarSheet && siloLink != null) Unit else null)
+    LaunchedEffect(siloLink?.profileId) { if (siloLink != null) model.refreshHousehold() }
+    val profile = siloLink?.let { link -> household.profiles.firstOrNull { it.id == link.profileId } ?: link.profile }
+    PresentZelefinOverlay(visible = avatarMotion.displayed != null) {
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { avatarSheet = false },
+            ) { ZelefinSheetScrim(avatarMotion.progress) }
+            if (profile != null) {
+                ZelefinSheetSurface(avatarMotion.progress) {
+                    SiloAvatarSheet(
+                        profile = profile,
+                        uploadEnabled = household.avatarUploadEnabled,
+                        onChoosePreset = model::chooseSiloAvatarPreset,
+                        onUpload = model::updateProfilePhoto,
+                        onRemove = model::removeProfilePhoto,
+                        onClose = { avatarSheet = false },
+                    )
+                }
+            }
+        }
+    }
     val passwordMismatch = confirmPassword.isNotEmpty() && newPassword != confirmPassword
     val accessToken = session?.accessToken.orEmpty()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
@@ -321,16 +352,20 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
         SettingsCard {
             Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 val choosePhoto = {
-                    if (!uploading) picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    when {
+                        uploading -> Unit
+                        siloLink != null -> avatarSheet = true
+                        else -> picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
                 }
                 Box(Modifier.size(76.dp)) {
-                    AccountAvatar(session, onClick = { if (!silo) choosePhoto() }, diameter = 72.dp)
+                    AccountAvatar(session, onClick = { if (canChangePhoto) choosePhoto() }, diameter = 72.dp)
                     if (uploading) {
                         Box(Modifier.size(72.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.48f)), contentAlignment = Alignment.Center) {
                             IOSSpinner(color = Color.White)
                         }
                     }
-                    if (!silo && session != null) {
+                    if (canChangePhoto) {
                         Box(
                             Modifier
                                 .align(Alignment.BottomEnd)
@@ -346,7 +381,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    session?.profileName?.takeIf { silo } ?: session?.userName ?: "Account",
+                    session?.userName ?: "Account",
                     color = Color.White,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
@@ -360,7 +395,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                     fontSize = 15.sp,
                     textAlign = TextAlign.Center,
                 )
-                if (!silo && session?.userImageTag != null) {
+                if (canRemovePhoto) {
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "Remove Photo",
@@ -388,10 +423,51 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             InfoLine("Server", session?.displayServer ?: "—")
             SettingsCardDivider()
             InfoLine("Address", session?.serverUrl ?: "—")
-            session?.profileName?.takeIf { silo }?.let {
+            if (siloLink != null) {
                 SettingsCardDivider()
-                InfoLine("Profile", it)
+                InfoLine("Silo Account", siloLink.accountName)
             }
+        }
+        if (siloLink != null) {
+            SettingsHeader("Profiles")
+            SettingsCard {
+                val profiles = household.profiles
+                if (profiles.isEmpty()) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight), verticalAlignment = Alignment.CenterVertically) {
+                        if (household.loading) {
+                            IOSSpinner()
+                        } else {
+                            Text(
+                                household.message ?: "No household profiles.",
+                                style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
+                                modifier = Modifier.padding(vertical = 14.dp),
+                            )
+                        }
+                    }
+                }
+                profiles.forEachIndexed { index, profile ->
+                    if (index > 0) SettingsCardDivider()
+                    val current = profile.id == siloLink.profileId
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = SettingsRowHeight)
+                            .clickable(enabled = !current && household.switchingTo == null, role = Role.Button) { model.switchSiloProfile(profile) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        SiloProfileRowContent(profile, current = current, busy = household.switchingTo == profile.id)
+                    }
+                }
+                if (household.signInExpired) {
+                    SettingsCardDivider()
+                    SettingsActionRow("Sign In Again", onClick = model::signInToSiloAgain)
+                }
+            }
+            SettingsFooter(
+                if (household.signInExpired) household.message ?: "Your Silo sign-in expired. Sign in again."
+                else household.message?.takeIf { household.profiles.isNotEmpty() } ?: "Switch to another profile in this Silo household.",
+            )
         }
         SettingsHeader("Password")
         SettingsCard {
@@ -433,7 +509,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                 }
             } else {
                 Text(
-                    "This household profile cannot change the account password.",
+                    "Change this password in Silo.",
                     style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
                     modifier = Modifier.padding(vertical = 14.dp),
                 )
@@ -441,7 +517,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
         }
         SettingsFooter(
             if (canChangePassword) "Updates the password for this login on $serverLabel."
-            else "Switch to the primary household profile to change this account password.",
+            else "Silo manages the password for this login.",
         )
         if (accessToken.isNotEmpty()) {
             SettingsHeader("Device Token")
@@ -454,7 +530,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             }
             SettingsFooter("This token signs this device into $serverLabel. Copy it only into apps you trust.")
         }
-        SettingsHeader(if (silo) "Accounts" else "Users")
+        SettingsHeader(usersTitle)
         SettingsCard {
             session?.let { current ->
                 AccountRow(current, subtitle = "Signed in", current = true, onClick = null, onRemove = null)
@@ -483,16 +559,13 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
-                Text(if (silo) "Add Account" else "Add User", style = SettingsRowText, modifier = Modifier.weight(1f))
+                Text(addTitle, style = SettingsRowText, modifier = Modifier.weight(1f))
                 Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
             }
         }
         SettingsFooter(
-            if (silo) {
-                "Saved logins stay on this device. People on a login are household profiles, not extra accounts."
-            } else {
-                "Add another person on ${session?.displayServer ?: "this server"}. Saved users stay on this device."
-            },
+            if (silo) "Add another Silo account on ${session?.displayServer ?: "this server"}. Saved accounts stay on this device."
+            else "Add another person on ${session?.displayServer ?: "this server"}. Saved users stay on this device.",
         )
     }
 }
@@ -509,7 +582,7 @@ private fun AccountRow(account: SavedSession, subtitle: String, current: Boolean
     ) {
         AccountAvatarImage(account, 40.dp)
         Column(Modifier.weight(1f)) {
-            Text(account.profileName?.takeIf { account.usesSilo } ?: account.userName, style = SettingsRowText)
+            Text(account.userName, style = SettingsRowText)
             Text(subtitle, color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 13.sp)
         }
         if (current) {
@@ -522,69 +595,15 @@ private fun AccountRow(account: SavedSession, subtitle: String, current: Boolean
     }
 }
 
-/** iOS `AddAccountView`: sign in another user; Silo logins then pick a household profile. */
+/** iOS `AddAccountView`: sign in another user. */
 @Composable
 private fun AddAccountTopic(state: ZelefinUiState) {
     val model: ZelefinModel = viewModel()
     val add = state.addAccount
-    val silo = state.session?.usesSilo == true
-    val label = if (silo) "Add Account" else "Add User"
     var url by remember { mutableStateOf(state.session?.serverUrl.orEmpty()) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var pin by remember { mutableStateOf("") }
     DisposableEffect(Unit) { onDispose { model.resetAddAccount() } }
-    val pending = add.pending
-    if (pending != null) {
-        SettingsHeader("Who’s watching")
-        SettingsCard {
-            pending.profiles.forEachIndexed { index, profile ->
-                if (index > 0) CardDivider()
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !add.busy) {
-                            pin = ""
-                            model.chooseAddedProfile(profile)
-                        }
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(profile.name, style = SettingsRowText)
-                        val tags = listOfNotNull("Primary".takeIf { profile.isPrimary }, "Kids".takeIf { profile.isChild }, "PIN".takeIf { profile.hasPin })
-                        if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = Caption, fontFamily = ZelefinFont, fontSize = 13.sp)
-                    }
-                    if (add.pinFor?.id == profile.id) Icon(Icons.Outlined.Lock, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(18.dp))
-                }
-            }
-        }
-        add.pinFor?.let { profile ->
-            Spacer(Modifier.height(12.dp))
-            SettingsCard {
-                SettingsTextField(
-                    label = "PIN FOR ${profile.name.uppercase()}",
-                    value = pin,
-                    icon = Icons.Outlined.Lock,
-                    onChange = { pin = it.filter(Char::isDigit) },
-                    placeholder = "PIN",
-                    password = true,
-                    keyboard = KeyboardType.NumberPassword,
-                    ime = ImeAction.Go,
-                    onIme = { if (pin.isNotEmpty()) model.submitAddedPin(pin) },
-                )
-                SettingsCardDivider()
-                SettingsButton("Continue", primary = true, destructive = false, enabled = pin.isNotEmpty(), busy = add.busy) { model.submitAddedPin(pin) }
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-        SettingsCard {
-            SettingsButton("Cancel", primary = false, destructive = false, enabled = !add.busy, busy = false, onClick = model::resetAddAccount)
-        }
-        add.message?.let { AddAccountMessage(it) }
-        SettingsFooter("Continue Watching, recommendations, and watched flags follow the profile you pick.")
-        return
-    }
     SettingsHeader("Server")
     SettingsCard {
         SettingsTextField(
@@ -598,22 +617,19 @@ private fun AddAccountTopic(state: ZelefinUiState) {
         )
     }
     SettingsFooter(
-        if (silo) {
-            "New accounts are added on the Silo server you’re already using. After you sign in, pick a household profile."
-        } else {
-            "New users are added on the server you’re already using. Enter another address to add a user on a different Jellyfin server."
-        },
+        if (state.isSiloServer) "New accounts are added on the server you’re already using. Enter another address to add an account on a different server."
+        else "New users are added on the server you’re already using. Enter another address to add a user on a different Jellyfin server.",
     )
     SettingsHeader("Sign In")
     val canSubmit = url.isNotBlank() && username.isNotBlank() && password.isNotEmpty() && !add.busy
     SettingsCard {
         SettingsTextField(
-            label = if (silo) "USERNAME OR EMAIL" else "USERNAME",
+            label = "USERNAME",
             value = username,
             icon = Icons.Outlined.Person,
             onChange = { username = it },
-            placeholder = if (silo) "Username or email" else "Username",
-            keyboard = if (silo) KeyboardType.Email else KeyboardType.Text,
+            placeholder = "Username",
+            keyboard = KeyboardType.Text,
             ime = ImeAction.Next,
         )
         CardDivider()
@@ -629,7 +645,7 @@ private fun AddAccountTopic(state: ZelefinUiState) {
             onIme = { if (canSubmit) model.addAccount(url, username, password) },
         )
         SettingsCardDivider()
-        SettingsButton(label, primary = true, destructive = false, enabled = canSubmit, busy = add.busy) {
+        SettingsButton(if (state.isSiloServer) "Add Account" else "Add User", primary = true, destructive = false, enabled = canSubmit, busy = add.busy) {
             model.addAccount(url, username, password)
         }
         add.message?.let { AddAccountMessage(it) }
@@ -667,7 +683,7 @@ fun SettingsTopicScreen(
         "activity" -> "Activity Log"
         "backups" -> "Backups"
         "branding" -> "Branding"
-        AddAccountTopicId -> if (state.session?.usesSilo == true) "Add Account" else "Add User"
+        AddAccountTopicId -> if (state.isSiloServer) "Add Account" else "Add User"
         else -> when {
             id.startsWith("user:") -> "User"
             id.startsWith("scheduled-task:") -> "Task"
@@ -708,16 +724,13 @@ fun SettingsTopicScreen(
 private fun PlaybackTopic(state: ZelefinUiState) {
     val model: ZelefinModel = viewModel()
     val context = LocalContext.current
-    val silo = state.session?.usesSilo == true
-    var audio by remember { mutableStateOf(PlaybackPreferences.audioLanguage(context)) }
-    var subtitles by remember { mutableStateOf(PlaybackPreferences.subtitleLanguage(context)) }
+    val silo = state.isSiloServer
     var adaptive by remember { mutableStateOf(PlaybackPreferences.adaptiveBitrate(context)) }
     var quality by remember { mutableStateOf(PlaybackPreferences.selectedQuality(context)) }
     var rate by remember { mutableStateOf(PlaybackPreferences.defaultRate(context)) }
     var autoplay by remember { mutableStateOf(PlaybackPreferences.autoplayNext(context)) }
     var back by remember { mutableStateOf(PlaybackPreferences.skipBackward(context)) }
     var forward by remember { mutableStateOf(PlaybackPreferences.skipForward(context)) }
-    var preferSdh by remember { mutableStateOf(PlaybackPreferences.preferSdh(context)) }
     var playerEngine by remember { mutableStateOf(PlaybackPreferences.playerEngine(context)) }
     var wifiOnly by remember { mutableStateOf(PlaybackPreferences.downloadWifiOnly(context)) }
     var themeSongs by remember { mutableStateOf(PlaybackPreferences.themeSongs(context)) }
@@ -725,39 +738,7 @@ private fun PlaybackTopic(state: ZelefinUiState) {
     var themeVideoSound by remember { mutableStateOf(PlaybackPreferences.themeVideoSound(context)) }
     val languages = remember(context) { PlaybackLanguage.choices(context) }
 
-    if (silo) {
-        SettingsHeader("Languages")
-        SettingsCard {
-            SettingsMenuPicker(
-                label = "Audio",
-                choices = (listOf(PlaybackPreferences.AUTOMATIC) + languages).map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
-                selected = audio,
-                onSelect = {
-                    audio = it
-                    model.applyPlaybackLanguages(it, subtitles)
-                },
-            )
-            SettingsCardDivider()
-            SettingsMenuPicker(
-                label = "Subtitles",
-                choices = (listOf(PlaybackPreferences.AUTOMATIC, PlaybackPreferences.OFF) + languages)
-                    .map { SettingsChoice(it, PlaybackLanguage.displayName(it)) },
-                selected = subtitles,
-                onSelect = {
-                    subtitles = it
-                    model.applyPlaybackLanguages(audio, it)
-                },
-            )
-            SettingsCardDivider()
-            SettingsToggleRow("Prefer SDH Subtitles", preferSdh, {
-                preferSdh = it
-                PlaybackPreferences.setPreferSdh(context, it)
-            })
-        }
-        SettingsFooter("Automatic uses the title default. A language is used when that track exists. SDH prefers captions that describe music and sound.")
-    } else {
-        JellyfinPlaybackPreferencesSections(model, languages)
-    }
+    JellyfinPlaybackPreferencesSections(model, languages)
 
     SettingsHeader("Quality")
     SettingsCard {
@@ -779,11 +760,10 @@ private fun PlaybackTopic(state: ZelefinUiState) {
         PlaybackConnectionTest(model, signedIn = state.session != null, quality = quality)
     }
     SettingsFooter(
-        when {
-            adaptive && silo -> "Auto Direct Plays the original file. A lower Maximum Quality is the only start cap. Test Connection measures this path if playback later stalls."
-            adaptive -> "Auto Direct Plays when the file fits this connection. Jellyfin transcodes when it does not. Test Connection measures this path."
-            silo -> "Auto Direct Plays when the file fits this device. Lower quality asks Silo to transcode."
-            else -> "Auto Direct Plays when the file fits this device. Lower quality asks Jellyfin to transcode."
+        if (adaptive) {
+            "Auto Direct Plays when the file fits this connection. The server transcodes when it does not. Test Connection measures this path."
+        } else {
+            "Auto Direct Plays when the file fits this device. Lower quality asks the server to transcode."
         },
     )
 
@@ -844,13 +824,13 @@ private fun PlaybackTopic(state: ZelefinUiState) {
     }
     SettingsFooter("Speed, skip distance, and whether the next episode starts when this one ends. MPV uses libass for advanced subtitles.")
 
-    if (!silo) {
-        SettingsHeader("Theme Media")
-        SettingsCard {
-            SettingsToggleRow("Theme Songs", themeSongs, {
-                themeSongs = it
-                PlaybackPreferences.setThemeSongs(context, it)
-            })
+    SettingsHeader("Theme Media")
+    SettingsCard {
+        SettingsToggleRow("Theme Songs", themeSongs, {
+            themeSongs = it
+            PlaybackPreferences.setThemeSongs(context, it)
+        })
+        if (!silo) {
             SettingsCardDivider()
             SettingsToggleRow("Theme Videos", themeVideos, {
                 themeVideos = it
@@ -864,8 +844,14 @@ private fun PlaybackTopic(state: ZelefinUiState) {
                 })
             }
         }
-        SettingsFooter("Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on.")
     }
+    SettingsFooter(
+        if (silo) {
+            "Plays a title's theme song on its page. Silo has no theme videos."
+        } else {
+            "Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on."
+        },
+    )
 }
 
 @Composable
@@ -1175,7 +1161,7 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
     }
 
     if (!pluginState.companionAvailable) {
-        val silo = state.session?.usesSilo == true
+        val silo = state.isSiloServer
         val canInstall = !silo && pluginState.isAdmin
         SettingsCard {
             PluginStatusRow(
@@ -1186,7 +1172,7 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
             Text(
                 when {
                     silo ->
-                        "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. This Silo server cannot install that plugin, so notifications are not available here."
+                        "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Silo does not run Jellyfin plugins, so notifications are not available here."
                     pluginState.detecting -> "Checking this server for the Zelefin plugin…"
                     else ->
                         "Install the Zelefin plugin on this Jellyfin server to get lock-screen alerts. The plugin watches the library and can notify this phone when titles are added, a stream starts, someone comes online, a scheduled task begins, or a Seerr request comes in — including while Zelefin is closed."
@@ -1283,20 +1269,40 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
 private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
     val pluginState by plugins.state.collectAsState()
     LaunchedEffect(Unit) { plugins.refresh() }
-    if (state.session?.usesSilo == true) {
-        SiloRequestsSection(pluginState, plugins::setSiloSource)
-        return
-    }
     val jellyfin = pluginState.jellyfin
-    SettingsHeader("Intro Skipper")
+    val silo = state.isSiloServer
+    SettingsHeader(if (silo) "Skipping" else "Intro Skipper")
     SettingsCard {
-        PluginStatusRow("Skip Intro / Outro", jellyfin.introSkipper)
-        CardDivider()
+        if (!silo) {
+            PluginStatusRow("Skip Intro / Outro", jellyfin.introSkipper)
+            CardDivider()
+        }
         SettingsToggle("Automatically Skip Intros", pluginState.autoSkipIntro, plugins::setAutoSkipIntro)
         CardDivider()
         SettingsToggle("Automatically Skip Credits", pluginState.autoSkipCredits, plugins::setAutoSkipCredits)
     }
-    SettingsFooter("Skip buttons appear during playback when the plugin is installed on this Jellyfin server.")
+    SettingsFooter(
+        if (silo) {
+            "Skip buttons appear during playback when Silo has intro and credit markers for the title. Silo does not run Jellyfin plugins."
+        } else {
+            "Skip buttons appear during playback when the plugin is installed on this Jellyfin server."
+        },
+    )
+    if (!silo) JellyfinServerPlugins(state, jellyfin)
+
+    SettingsHeader("Seerr")
+    SeerrSignInCard(state, pluginState, plugins)
+    SettingsFooter(
+        if (silo) {
+            "Jellyseerr or Seerr lets you request movies and shows that are missing from Silo. Use your Seerr sign-in. Search for a title, then tap Request."
+        } else {
+            "Jellyseerr or Seerr lets you request movies and shows that are missing from Jellyfin. Use your Jellyfin username and password. Search for a title, then tap Request."
+        },
+    )
+}
+
+@Composable
+private fun JellyfinServerPlugins(state: ZelefinUiState, jellyfin: JellyfinPluginState) {
 
     SettingsHeader("Jellyfin Enhanced")
     SettingsCard { PluginStatusRow("Jellyfin Enhanced", jellyfin.enhanced) }
@@ -1332,12 +1338,6 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
         } else {
             "When this plugin fills a Shows library, Zelefin lists it as its own YouTube library, with channels and videos kept apart from your movies and shows."
         },
-    )
-
-    SettingsHeader("Seerr")
-    SeerrSignInCard(state, pluginState, plugins)
-    SettingsFooter(
-        "Jellyseerr or Seerr lets you request movies and shows that are missing from Jellyfin. Use your Jellyfin username and password. Search for a title, then tap Request.",
     )
 }
 
@@ -1406,51 +1406,6 @@ private fun SeerrSignInCard(state: ZelefinUiState, pluginState: PluginsUiState, 
             )
         }
     }
-}
-
-@Composable
-private fun SiloRequestsSection(pluginState: PluginsUiState, onSource: (SiloRequestSource) -> Unit) {
-    val caps = pluginState.silo
-    SettingsHeader("Requests")
-    SettingsCard {
-        PluginStatusRow("Seerr", caps.seerrPluginAvailable)
-        CardDivider()
-        PluginStatusRow("Sonarr & Radarr", caps.arrPluginAvailable)
-        if (caps.seerrPluginAvailable && caps.arrPluginAvailable) {
-            CardDivider()
-            Text(
-                "DISCOVER WITH",
-                color = Caption,
-                fontFamily = ZelefinFont,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-                letterSpacing = 0.6.sp,
-                modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
-            )
-            SiloRequestSource.entries.forEach { source ->
-                val selected = source == pluginState.siloSource
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onSource(source) }
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(source.title, style = SettingsRowText, modifier = Modifier.weight(1f))
-                    if (selected) Icon(Icons.Outlined.Check, contentDescription = "Selected", tint = ZelefinCyan, modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-    }
-    SettingsFooter(
-        when {
-            caps.seerrPluginAvailable && caps.arrPluginAvailable -> "Discover uses the plugin you pick. Silo handles the Seerr sign-in for you."
-            caps.arrPluginAvailable -> "Discover uses this Silo server’s Sonarr and Radarr requests plugin."
-            caps.seerrPluginAvailable -> "Discover uses this Silo server’s Seerr plugin. Silo handles the Seerr sign-in for you."
-            caps.requestsEnabled -> "Requests are on for this Silo server. Discover is in Search."
-            else -> "Install the Seerr plugin or the Sonarr & Radarr requests plugin on this Silo server to request titles from Search."
-        },
-    )
 }
 
 /** Fixed status colors, independent of the accent (iOS `LoginPalette.success`). */
@@ -1591,7 +1546,7 @@ private fun MetadataTopic() {
 @Composable
 private fun SessionsTopic(state: ZelefinUiState) {
     val session = state.session
-    if (session != null && !session.usesSilo) {
+    if (session != null && !session.isSiloServer) {
         SessionsPanel(session)
         return
     }
@@ -1621,9 +1576,9 @@ private fun AboutTopic(state: ZelefinUiState) {
     SettingsCard {
         InfoLine("Version", AppVersionLabel)
         InfoLine("Server", state.session?.displayServer ?: "—")
-        InfoLine("Backend", if (state.session?.usesSilo == true) "Silo" else "Jellyfin")
+        InfoLine("Server Type", if (state.isSiloServer) "Silo (Jellyfin API)" else "Jellyfin")
     }
-    SettingsFooter("A native Jellyfin and Silo client for Android.")
+    SettingsFooter("A native Jellyfin client for Android.")
     Spacer(Modifier.height(14.dp))
     SettingsCard {
         LinkRow("Privacy Policy") { open("https://zelefin.app/privacy") }
@@ -1697,7 +1652,7 @@ private fun NetworkTopic(state: ZelefinUiState) {
             value = localText,
             icon = Icons.Outlined.Home,
             onChange = { localText = it },
-            placeholder = if (session?.usesSilo == true) "http://192.168.1.100" else "http://192.168.1.100:8096",
+            placeholder = "http://192.168.1.100:8096",
             keyboard = KeyboardType.Uri,
             ime = ImeAction.Done,
         )

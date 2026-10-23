@@ -198,6 +198,7 @@ fun CatalogBrowsePage(
                 when (val page = motion.displayed) {
                     CatalogSheet.Sort -> SortSheet(
                         query = draft,
+                        sorts = options.sorts,
                         onChange = { draft = it },
                         onDone = {
                             sheet = null
@@ -445,14 +446,19 @@ private fun CatalogSortFilterPill(key: String, filterCount: Int, shown: Boolean,
 }
 
 @Composable
-private fun SortSheet(query: CatalogBrowseQuery, onChange: (CatalogBrowseQuery) -> Unit, onDone: () -> Unit) {
+private fun SortSheet(
+    query: CatalogBrowseQuery,
+    sorts: List<CatalogSortField>,
+    onChange: (CatalogBrowseQuery) -> Unit,
+    onDone: () -> Unit,
+) {
     Column(Modifier.fillMaxSize()) {
         SheetBar(title = "Sort", leading = null, onDone = onDone)
         LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
             item { SectionLabel("Sort By") }
             item {
                 SectionGroup {
-                    CatalogSortField.entries.forEach { field ->
+                    sorts.forEach { field ->
                         CheckRow(field.title, selected = query.sort == field) {
                             onChange(
                                 query.copy(
@@ -528,22 +534,24 @@ private fun FilterRoot(
                     }
                 }
             }
-            item { SectionLabel("Features") }
-            item {
-                SectionGroup {
-                    CatalogFeatureFilter.entries.forEach { value ->
-                        CheckRow(value.title, selected = value in query.features) {
-                            onChange(query.copy(features = query.features.toggled(value)))
+            if (options.fileFilters) {
+                item { SectionLabel("Features") }
+                item {
+                    SectionGroup {
+                        CatalogFeatureFilter.entries.forEach { value ->
+                            CheckRow(value.title, selected = value in query.features) {
+                                onChange(query.copy(features = query.features.toggled(value)))
+                            }
                         }
                     }
                 }
-            }
-            item { SectionLabel("Video Type") }
-            item {
-                SectionGroup {
-                    CatalogVideoKind.entries.forEach { value ->
-                        CheckRow(value.title, selected = value in query.videoKinds) {
-                            onChange(query.copy(videoKinds = query.videoKinds.toggled(value)))
+                item { SectionLabel("Video Type") }
+                item {
+                    SectionGroup {
+                        CatalogVideoKind.entries.forEach { value ->
+                            CheckRow(value.title, selected = value in query.videoKinds) {
+                                onChange(query.copy(videoKinds = query.videoKinds.toggled(value)))
+                            }
                         }
                     }
                 }

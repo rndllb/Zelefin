@@ -80,7 +80,7 @@ struct TabCustomizationView: View {
 
             Section {
                 ForEach(AppTab.ordered(from: tabOrderRaw).filter { tab in
-                    !(session.usesSilo && tab == .liveTV)
+                    !(session.isSiloServer && tab == .liveTV)
                 }) { tab in
                     if isEditing {
                         Label(tab.title, systemImage: tab.systemImage)
@@ -226,7 +226,7 @@ struct TabCustomizationView: View {
 
     private var enabledDockTabCount: Int {
         AppTab.ordered(from: tabOrderRaw).filter { tab in
-            if session.usesSilo && tab == .liveTV { return false }
+            if session.isSiloServer && tab == .liveTV { return false }
             return !tab.canHide || tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
         }.count
     }

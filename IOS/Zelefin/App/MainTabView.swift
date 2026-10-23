@@ -180,7 +180,7 @@ struct MainTabView: View {
 
     private var enabledTabs: [AppTab] {
         var ordered = AppTab.ordered(from: tabOrderRaw)
-        if session.usesSilo {
+        if session.isSiloServer {
             ordered.removeAll { $0 == .liveTV }
         }
         if UIDevice.current.userInterfaceIdiom == .pad {
@@ -598,14 +598,14 @@ struct ProfileMenu: View {
                 ProfileSystemMenuButton(
                     accessibilityLabel: showsName ? displayName : "Profile",
                     otherAccounts: session.otherAccounts,
-                    householdProfiles: session.householdProfiles,
-                    currentProfileID: session.session?.profileID,
-                    usesSilo: session.usesSilo,
+                    isSiloServer: session.isSiloServer,
+                    siloProfiles: session.siloProfiles,
+                    currentSiloProfileID: session.currentSiloProfileID,
                     onProfile: { ProfilePresentation.show(.profile) },
-                    onSessions: session.usesSilo
+                    onSessions: session.isSiloServer
                         ? nil
                         : { ProfilePresentation.show(.sessions) },
-                    onSyncPlay: session.usesSilo
+                    onSyncPlay: session.isSiloServer
                         ? nil
                         : { ProfilePresentation.show(.syncplay) },
                     onScheduledTasks: session.isAdministrator
@@ -618,7 +618,7 @@ struct ProfileMenu: View {
                         Task { await session.switchTo(account) }
                     },
                     onSwitchToProfile: { profile in
-                        Task { await switchHouseholdProfile(profile) }
+                        Task { await switchSiloProfile(profile) }
                     }
                 )
             }
@@ -648,16 +648,16 @@ struct ProfileMenu: View {
             .contentShape(Circle())
     }
 
-    private func switchHouseholdProfile(_ profile: SiloHouseholdProfile) async {
+    private func switchSiloProfile(_ profile: SiloProfile) async {
         var pin: String?
         if profile.hasPin {
-            pin = await ProfilePresentation.promptPIN(named: profile.name)
-            let trimmed = pin?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !trimmed.isEmpty else { return }
-            pin = trimmed
+            let entered = await ProfilePresentation.promptPIN(named: profile.name)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !entered.isEmpty else { return }
+            pin = entered
         }
         do {
-            try await session.applySiloProfile(profile, pin: pin)
+            try await session.switchSiloProfile(profile, pin: pin)
         } catch {
             await ProfilePresentation.showMessage(error.localizedDescription)
         }
@@ -670,9 +670,9 @@ struct ProfileMenu: View {
 private struct ProfileSystemMenuButton: UIViewRepresentable {
     var accessibilityLabel: String
     var otherAccounts: [SavedSession]
-    var householdProfiles: [SiloHouseholdProfile]
-    var currentProfileID: String?
-    var usesSilo: Bool
+    var isSiloServer: Bool
+    var siloProfiles: [SiloProfile]
+    var currentSiloProfileID: String?
     var onProfile: () -> Void
     var onSessions: (() -> Void)?
     var onSyncPlay: (() -> Void)?
@@ -681,7 +681,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
     var onSettings: () -> Void
     var onSignOut: () -> Void
     var onSwitchTo: (SavedSession) -> Void
-    var onSwitchToProfile: (SiloHouseholdProfile) -> Void
+    var onSwitchToProfile: (SiloProfile) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -735,32 +735,30 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                     parent.onProfile()
                 }
             ]
-            if parent.usesSilo {
+            let otherProfiles = parent.siloProfiles.filter { $0.id != parent.currentSiloProfileID }
+            if !otherProfiles.isEmpty {
                 let switchProfile = parent.onSwitchToProfile
-                let others = parent.householdProfiles.filter { $0.id != parent.currentProfileID }
-                if !others.isEmpty {
-                    let items = others.map { profile in
-                        var parts: [String] = []
-                        if profile.isChild { parts.append("Kids") }
-                        if profile.hasPin { parts.append("PIN") }
-                        let work = ProfileMenuAction { switchProfile(profile) }
-                        nonisolated(unsafe) let handler: (UIAction) -> Void = { _ in
-                            work.run()
-                        }
-                        return UIAction(
-                            title: profile.name,
-                            subtitle: parts.isEmpty ? nil : parts.joined(separator: " · "),
-                            handler: handler
-                        )
+                let items = otherProfiles.map { profile in
+                    var parts: [String] = []
+                    if profile.isChild { parts.append("Kids") }
+                    if profile.hasPin { parts.append("PIN") }
+                    let work = ProfileMenuAction { switchProfile(profile) }
+                    nonisolated(unsafe) let handler: (UIAction) -> Void = { _ in
+                        work.run()
                     }
-                    rows.append(
-                        UIMenu(
-                            title: "Switch Profile",
-                            image: UIImage(systemName: "person.crop.rectangle.stack"),
-                            children: items
-                        )
+                    return UIAction(
+                        title: profile.name,
+                        subtitle: parts.isEmpty ? nil : parts.joined(separator: " · "),
+                        handler: handler
                     )
                 }
+                rows.append(
+                    UIMenu(
+                        title: "Switch Profile",
+                        image: UIImage(systemName: "person.crop.rectangle.stack"),
+                        children: items
+                    )
+                )
             }
             if let onSessions = parent.onSessions {
                 rows.append(
@@ -794,14 +792,14 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                 }
                 rows.append(
                     UIMenu(
-                        title: parent.usesSilo ? "Switch Account" : "Switch User",
+                        title: parent.isSiloServer ? "Switch Account" : "Switch User",
                         image: UIImage(systemName: "person.2"),
                         children: users
                     )
                 )
             }
             rows.append(contentsOf: [
-                Self.action(parent.usesSilo ? "Add Account" : "Add User", "person.badge.plus") { [parent] in
+                Self.action(parent.isSiloServer ? "Add Account" : "Add User", "person.badge.plus") { [parent] in
                     parent.onAddUser()
                 },
                 Self.action("Settings", "gearshape") { [parent] in
@@ -877,13 +875,8 @@ struct ProfileSheetContainer: View {
                 SyncPlayView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .scheduledTasks:
-                if session.usesSilo {
-                    SiloTasksView()
-                        .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
-                } else {
-                    ScheduledTasksView()
-                        .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
-                }
+                ScheduledTasksView()
+                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
             case .settings:
                 SettingsView()
                     .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }

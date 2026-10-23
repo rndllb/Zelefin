@@ -1,6 +1,11 @@
 package app.zelefin.core
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @Serializable
 data class SavedSession(
@@ -12,13 +17,10 @@ data class SavedSession(
     val userImageTag: String? = null,
     val serverVersion: String? = null,
     val serverName: String? = null,
-    val backend: MediaBackend = MediaBackend.Jellyfin,
-    val refreshToken: String? = null,
-    val profileId: String? = null,
-    val profileToken: String? = null,
-    val profileName: String? = null,
-    val userRole: String? = null,
-    val isPrimaryProfile: Boolean = false,
+    /** Silo's Jellyfin-compatible API; see [SiloCompat] for what it leaves out. */
+    val isSiloServer: Boolean = false,
+    /** Present when signed in through Silo's own sign-in and household profiles. */
+    val siloLink: SiloLink? = null,
 ) {
     val accountId: String
         get() {
@@ -33,7 +35,13 @@ data class SavedSession(
             return serverUrl.substringAfter("://").substringBefore("/")
         }
 
-    val usesSilo: Boolean get() = backend == MediaBackend.Silo
+    companion object {
+        /** Silo's Jellyfin-compatible API names a profile's user `username#profile`; only the profile is shown. Matches iOS. */
+        fun displayName(raw: String, isSiloServer: Boolean): String {
+            if (!isSiloServer || '#' !in raw) return raw
+            return raw.substringAfterLast('#').trim().ifEmpty { raw }
+        }
+    }
 }
 
 @Serializable
@@ -50,6 +58,14 @@ data class SavedAccountBox(
         if (index >= 0) next[index] = session else next += session
         return copy(accounts = next, currentId = if (select) session.accountId else currentId)
     }
+
+    /** Puts [session] where [accountId] was (a profile switch) and selects it, dropping any older copy of it. */
+    fun replacing(accountId: String, session: SavedSession): SavedAccountBox {
+        val next = accounts.filterNot { it.accountId == session.accountId && it.accountId != accountId }.toMutableList()
+        val index = next.indexOfFirst { it.accountId == accountId }
+        if (index >= 0) next[index] = session else next += session
+        return SavedAccountBox(accounts = next, currentId = session.accountId)
+    }
 }
 
 @Serializable
@@ -60,6 +76,55 @@ data class GatewaySecrets(
     val isConfigured: Boolean get() = clientId.isNotBlank() && clientSecret.isNotBlank()
 }
 
+/**
+ * Saved accounts as read from disk. [droppedSilo] counts sign-ins made through the removed
+ * Silo-native backend; their tokens only worked on Silo's own API, so they are discarded.
+ */
+data class LoadedAccounts(
+    val box: SavedAccountBox?,
+    val droppedSilo: Int = 0,
+    val droppedCurrent: Boolean = false,
+)
+
+object SavedAccountsCodec {
+    const val SiloSignInAgainMessage = "Silo now signs in through its Jellyfin-compatible API. Sign in again."
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun decode(raw: String): LoadedAccounts {
+        val root = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return LoadedAccounts(null)
+        val currentId = (root["currentId"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        var dropped = 0
+        var droppedCurrent = false
+        val accounts = (root["accounts"] as? JsonArray).orEmpty().mapNotNull { element ->
+            val entry = element as? JsonObject ?: return@mapNotNull null
+            val session = runCatching { json.decodeFromJsonElement(SavedSession.serializer(), entry) }.getOrNull()
+            if (isLegacySilo(entry)) {
+                dropped += 1
+                if (session != null && session.accountId == currentId) droppedCurrent = true
+                return@mapNotNull null
+            }
+            session?.let { it.copy(userName = SavedSession.displayName(it.userName, it.isSiloServer)) }
+        }
+        return LoadedAccounts(SavedAccountBox(accounts, currentId), dropped, droppedCurrent)
+    }
+
+    fun encode(box: SavedAccountBox): String = json.encodeToString(SavedAccountBox.serializer(), box)
+
+    private fun isLegacySilo(entry: JsonObject): Boolean =
+        (entry["backend"] as? JsonPrimitive)?.contentOrNull?.trim().equals("Silo", ignoreCase = true)
+}
+
+/**
+ * Silo answers as "Jellyfin Server"; its fixed branding disclaimer is the only anonymous tell.
+ * Its Jellyfin API leaves out server administration, item editing, SyncPlay, playlists,
+ * remote control, Live TV, user-data ratings, collection editing, and server plugins.
+ */
+object SiloCompat {
+    fun isSiloDisclaimer(loginDisclaimer: String?): Boolean =
+        loginDisclaimer?.contains("silo", ignoreCase = true) == true
+}
+
 data class QuickConnectHandshake(val code: String, val secret: String) {
     val groupedCode: String
         get() {
@@ -67,32 +132,4 @@ data class QuickConnectHandshake(val code: String, val secret: String) {
             if (trimmed.length != 6) return trimmed
             return "${trimmed.take(3)}  ${trimmed.drop(3)}"
         }
-}
-
-@Serializable
-data class HouseholdProfile(
-    val id: String,
-    val name: String,
-    val avatarUrl: String? = null,
-    val hasPin: Boolean = false,
-    val isChild: Boolean = false,
-    val isPrimary: Boolean = false,
-)
-
-data class SiloPendingSignIn(
-    val serverUrl: String,
-    val accessToken: String,
-    val refreshToken: String?,
-    val userId: String,
-    val userName: String,
-    val deviceId: String,
-    val serverName: String?,
-    val serverVersion: String?,
-    val userRole: String?,
-    val profiles: List<HouseholdProfile>,
-) {
-    val needsProfileChoice: Boolean get() = profiles.size != 1 || profiles.any { it.hasPin }
-
-    val singleUnlockedProfile: HouseholdProfile?
-        get() = profiles.singleOrNull()?.takeIf { !it.hasPin }
 }

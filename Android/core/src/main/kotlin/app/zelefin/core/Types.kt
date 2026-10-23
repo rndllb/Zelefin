@@ -13,6 +13,7 @@ class ZelefinException(val code: Code, message: String = code.defaultMessage) : 
         QuickConnectDisabled("Quick Connect is turned off on this server."),
         QuickConnectExpired("This Quick Connect code expired. Try again."),
         QuickConnectUnavailable("Jellyfin did not return a Quick Connect code."),
+        SiloSignInExpired("Your Silo sign-in expired. Sign in again."),
         Server(""),
     }
 
@@ -25,16 +26,9 @@ class ZelefinException(val code: Code, message: String = code.defaultMessage) : 
         fun quickConnectDisabled() = ZelefinException(Code.QuickConnectDisabled)
         fun quickConnectExpired() = ZelefinException(Code.QuickConnectExpired)
         fun quickConnectUnavailable() = ZelefinException(Code.QuickConnectUnavailable)
+        fun siloSignInExpired() = ZelefinException(Code.SiloSignInExpired)
         fun server(message: String) = ZelefinException(Code.Server, message)
     }
-}
-
-enum class MediaBackend {
-    Jellyfin,
-    Silo,
-    ;
-
-    val usesHouseholdProfiles: Boolean get() = this == Silo
 }
 
 enum class MediaKind {

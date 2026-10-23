@@ -14,7 +14,7 @@ struct DownloadedItem: Identifiable, Hashable, Sendable, Codable {
     var userID: String
     var serverHost: String
     var downloadedAt: Date
-    /// For backends that track downloads server-side (Silo), the managed row id
+    /// For backends that track downloads server-side, the managed row id
     /// to delete when this download is removed. `nil` for direct downloads.
     var serverDownloadID: String? = nil
 }

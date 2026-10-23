@@ -18,10 +18,12 @@ final class SessionStore {
     private(set) var accounts: [SavedSession] = []
     private(set) var client: JellyfinClient?
     private(set) var library: (any LibraryServing)?
-    private(set) var siloAPI: SiloAPIClient?
+    /// Silo sign-in waiting for "Who's watching?".
     private(set) var pendingSiloSignIn: SiloPendingSignIn?
-    private(set) var householdProfiles: [SiloHouseholdProfile] = []
+    /// Household profiles of the signed-in Silo account, when Zelefin signed in through Silo.
+    private(set) var siloProfiles: [SiloProfile] = []
     private(set) var siloAvatarUploadEnabled = false
+    private var siloClient: SiloAccountClient?
     private(set) var isRestoring = true
     private(set) var needsFirstRunSetup = false
     private(set) var serverName: String?
@@ -33,18 +35,13 @@ final class SessionStore {
     var authNotice: String?
     private(set) var isLoadingHome = false
     private(set) var introSkipperAvailable = false
-    /// Whether offline downloads are offered for the active session. Always true
-    /// for Jellyfin; for Silo it reflects the server's download capability.
+    /// Whether offline downloads are offered for the active session.
     private(set) var downloadsAvailable = true
     private(set) var openSubtitlesAvailable = false
     private(set) var jellyfinEnhancedAvailable = false
     /// Plugin dashboard switch `Enable "Remove from Continue Watching"`.
     private(set) var jellyfinEnhancedRemoveContinueWatching = false
     private(set) var companionAvailable = false
-    private(set) var siloRequestsEnabled = false
-    private(set) var siloSeerrPluginAvailable = false
-    private(set) var siloArrPluginAvailable = false
-    private(set) var siloSubtitleProviders: [String] = []
     private(set) var isAdministrator = false
     private(set) var enableSubtitleManagement = false
     var syncPlayGroupID: String?
@@ -93,7 +90,8 @@ final class SessionStore {
     }
 
     func shouldShowAddSubtitles(for item: MediaItem) -> Bool {
-        if usesSilo { return false }
+        // Silo's Jellyfin-compatible API delivers subtitles but has no remote subtitle search.
+        guard !isSiloServer else { return false }
         return RemoteSubtitleOffer.shouldShowAddSubtitles(
             canManageSubtitles: canManageSubtitles,
             pluginAvailable: openSubtitlesAvailable,
@@ -102,21 +100,9 @@ final class SessionStore {
     }
 
     var isDiscoverAvailable: Bool {
-        if usesSilo {
-            return SiloRequestSource.discoverAvailable(
-                requestsEnabled: siloRequestsEnabled,
-                seerr: siloSeerrPluginAvailable,
-                arr: siloArrPluginAvailable,
-                preferred: PluginSettings.siloRequestSource
-            )
-        }
-        return PluginSettings.isSeerrConfigured
+        PluginSettings.isSeerrConfigured
     }
 
-    var requestCatalog: SiloRequestClient? {
-        guard usesSilo, isDiscoverAvailable, let siloAPI else { return nil }
-        return SiloRequestClient(api: siloAPI)
-    }
     private(set) var tmdbCatalog = JellyfinTmdbCatalog()
     private(set) var currentSSID: String?
     private(set) var activeRoute: HomeNetworkRoute = .remote
@@ -202,9 +188,9 @@ final class SessionStore {
     }
 
     func avatarURL(for account: SavedSession) -> URL? {
-        if account.usesSilo {
-            guard account.accountID == session?.accountID else { return nil }
-            return householdProfiles.first(where: { $0.id == account.profileID })?.avatarURL
+        if account.accountID == session?.accountID, let link = account.siloLink,
+           let avatar = siloProfiles.first(where: { $0.id == link.profileID })?.avatarURL {
+            return avatar
         }
         guard let client else { return nil }
         let revision = account.accountID == session?.accountID ? avatarRevision : 0
@@ -217,24 +203,20 @@ final class SessionStore {
 
     var isSignedIn: Bool { session != nil && library != nil }
 
-    var usesSilo: Bool { session?.usesSilo == true }
+    /// Signed in to a Silo server through its Jellyfin-compatible API, which serves no Jellyfin
+    /// administration, SyncPlay, playlists, remote control, or Live TV.
+    var isSiloServer: Bool { session?.isSiloServer == true }
 
-    var canAdministerSilo: Bool {
-        usesSilo && isAdministrator
-    }
+    /// Signed in through Silo's own sign-in, so profiles and profile pictures go through Silo.
+    var hasSiloLink: Bool { session?.siloLink != nil }
 
-    var canChangeSiloPassword: Bool {
-        usesSilo && (session?.isPrimaryProfile == true || session?.profileID == nil)
-    }
+    var currentSiloProfileID: String? { session?.siloLink?.profileID }
 
     var jellyfinLibrary: JellyfinLibraryClient? { library as? JellyfinLibraryClient }
 
     func makePlaybackReporter(for plan: PlaybackPlan) -> (any PlaybackReporting)? {
         guard OfflinePlaybackPolicy.shouldReportToServer(isLocalFile: plan.streamURL.isFileURL) else {
             return nil
-        }
-        if let api = siloAPI, let sessionID = plan.playSessionID, !sessionID.isEmpty {
-            return SiloPlaybackReporter(api: api, sessionID: sessionID)
         }
         if let client {
             return PlaybackReporter(client: client, plan: plan)
@@ -259,7 +241,12 @@ final class SessionStore {
 
     func restore() async {
         defer { isRestoring = false }
-        guard let box = try? vault.loadBox(), let saved = box.current else { return }
+        guard let box = try? vault.loadBox() else { return }
+        if box.retiredSiloAccounts > 0 {
+            try? vault.persist(box)
+            authNotice = "Silo now signs in through its Jellyfin-compatible API. Sign in again."
+        }
+        guard let saved = box.current else { return }
         accounts = box.accounts
         apply(saved, serverVersion: saved.serverVersion)
         await refreshSessionCapabilities()
@@ -269,7 +256,7 @@ final class SessionStore {
         guard let current = session else { throw ZelefinError.missingUser }
         let name = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
-            throw ZelefinError.server(current.usesSilo ? "Enter an email or username." : "Enter a username.")
+            throw ZelefinError.server("Enter a username.")
         }
         guard !password.isEmpty else {
             throw ZelefinError.server("Enter a password.")
@@ -277,8 +264,7 @@ final class SessionStore {
         try await connect(
             serverAddress: current.serverURL.absoluteString,
             username: name,
-            password: password,
-            backend: current.backend
+            password: password
         )
     }
 
@@ -286,121 +272,155 @@ final class SessionStore {
         serverAddress: String,
         username: String,
         password: String,
-        backend: MediaBackend
+        serverType: SignInServerType = .jellyfin
     ) async throws {
         let url = try probe.normalizedURL(from: serverAddress)
-        switch backend {
+        let isSiloMainAddress = await SiloAccountClient.isSiloAddress(url)
+        switch serverType {
         case .silo:
-            guard let health = try? await probe.siloHealth(at: url), health.isReady else {
-                throw ZelefinError.server("This address is not a Silo server. Use Sign in with Jellyfin, or check the URL.")
+            if isSiloMainAddress {
+                try await startSiloSignIn(url: url, username: username, password: password)
+                return
             }
-            try await connectSilo(
-                url: url,
-                health: health,
-                username: username,
-                password: password
-            )
+            guard await probe.isSiloServer(at: url) else {
+                throw ZelefinError.server("This isn't a Silo server. Choose Jellyfin, or check the address.")
+            }
         case .jellyfin:
-            if let health = try? await probe.siloHealth(at: url), health.isReady {
-                throw ZelefinError.server("This address is a Silo server. Use Sign in with Silo.")
+            if isSiloMainAddress {
+                throw ZelefinError.server("This is Silo's main address. Choose Silo, or enter Silo's Jellyfin-compatible address.")
             }
-            let info = try await probe.publicInfo(at: url)
-            let deviceID = DeviceIdentity.deviceID()
-            let jellyfin = JellyfinNetworking.client(url: url, deviceID: deviceID)
-            let auth = try await jellyfin.signIn(username: username, password: password)
-            try completeSignIn(
-                auth,
-                serverURL: url,
-                info: info,
-                deviceID: deviceID,
-                fallbackName: username,
-                client: jellyfin
-            )
         }
+        let info = try await probe.publicInfo(at: url)
+        let isSilo = await probe.isSiloServer(at: url)
+        let deviceID = DeviceIdentity.deviceID()
+        let jellyfin = JellyfinNetworking.client(url: url, deviceID: deviceID)
+        let auth = try await jellyfin.signIn(username: username, password: password)
+        try completeSignIn(
+            auth,
+            serverURL: url,
+            info: info,
+            isSiloServer: isSilo,
+            deviceID: deviceID,
+            fallbackName: username,
+            client: jellyfin
+        )
+    }
+
+    /// Silo's own sign-in: the account, its household profiles, and where its Jellyfin-compatible API is.
+    private func startSiloSignIn(url: URL, username: String, password: String) async throws {
+        let client = SiloAccountClient(baseURL: url)
+        try await client.login(username: username, password: password)
+        async let collection = client.profiles()
+        async let info = client.connectInfo()
+        let compatURL = try await info.compatibleURL()
+        let profiles = try await collection
+        pendingSiloSignIn = SiloPendingSignIn(
+            client: client,
+            nativeURL: url,
+            compatURL: compatURL,
+            profiles: profiles.items,
+            avatarUploadEnabled: profiles.avatarUploadEnabled
+        )
     }
 
     func cancelSiloProfilePick() {
+        if let client = pendingSiloSignIn?.client {
+            Task { await client.logout() }
+        }
         pendingSiloSignIn = nil
     }
 
-    func selectSiloProfile(_ profile: SiloHouseholdProfile, pin: String?) async throws {
-        guard let pending = pendingSiloSignIn else {
+    func selectSiloProfile(_ profile: SiloProfile, pin: String?) async throws {
+        guard let pending = pendingSiloSignIn else { throw ZelefinError.missingUser }
+        try await signInSiloProfile(
+            profile,
+            pin: pin,
+            client: pending.client,
+            nativeURL: pending.nativeURL,
+            compatURL: pending.compatURL,
+            replacing: nil
+        )
+        siloProfiles = pending.profiles
+        siloAvatarUploadEnabled = pending.avatarUploadEnabled
+        pendingSiloSignIn = nil
+    }
+
+    /// Switches the Silo account to another household profile without the password.
+    func switchSiloProfile(_ profile: SiloProfile, pin: String?) async throws {
+        guard let current = session, let link = current.siloLink, let client = siloClient else {
             throw ZelefinError.missingUser
         }
-        try await finishSiloSignIn(pending, profile: profile, pin: pin)
+        guard profile.id != link.profileID else { return }
+        try await signInSiloProfile(
+            profile,
+            pin: pin,
+            client: client,
+            nativeURL: link.nativeURL,
+            compatURL: current.serverURL,
+            replacing: current
+        )
     }
 
-    private func connectSilo(
-        url: URL,
-        health: SiloHealth,
-        username: String,
-        password: String
+    /// Approves a Jellyfin Quick Connect code for the profile through Silo's own API, then
+    /// collects it, so the Jellyfin-compatible session belongs to exactly that profile.
+    private func signInSiloProfile(
+        _ profile: SiloProfile,
+        pin: String?,
+        client: SiloAccountClient,
+        nativeURL: URL,
+        compatURL: URL,
+        replacing previous: SavedSession?
     ) async throws {
-        let deviceID = DeviceIdentity.deviceID()
-        let api = SiloAPIClient(baseURL: url, deviceID: deviceID)
-        let auth = try await api.login(username: username, password: password)
-        let profiles = try await api.profiles()
-        let pending = SiloPendingSignIn(
-            serverURL: url,
-            accessToken: auth.accessToken,
-            refreshToken: auth.refreshToken,
-            userID: String(auth.user.id),
-            userName: auth.user.username,
-            deviceID: deviceID,
-            serverName: health.displayName,
-            serverVersion: health.version,
-            userRole: auth.user.role,
-            profiles: profiles
-        )
-        pendingSiloSignIn = pending
-    }
-
-    private func finishSiloSignIn(
-        _ pending: SiloPendingSignIn,
-        profile: SiloHouseholdProfile,
-        pin: String?
-    ) async throws {
-        let api = SiloAPIClient(
-            baseURL: pending.serverURL,
-            accessToken: pending.accessToken,
-            refreshToken: pending.refreshToken,
-            deviceID: pending.deviceID
-        )
         var profileToken: String?
         if profile.hasPin {
             let trimmed = pin?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !trimmed.isEmpty else {
-                throw ZelefinError.server("Enter this profile's PIN.")
-            }
-            let result = try await api.verifyPIN(profileID: profile.id, pin: trimmed)
-            guard result.valid else {
-                throw ZelefinError.server("That PIN is not correct.")
-            }
-            profileToken = result.profileToken
+            guard !trimmed.isEmpty else { throw ZelefinError.server("Enter this profile's PIN.") }
+            profileToken = try await client.verifyPIN(profileID: profile.id, pin: trimmed)
         }
-        await api.setProfile(id: profile.id, token: profileToken)
-        let saved = SavedSession(
-            serverURL: pending.serverURL,
-            accessToken: pending.accessToken,
-            userID: pending.userID,
-            userName: profile.name.isEmpty ? pending.userName : profile.name,
-            deviceID: pending.deviceID,
-            userImageTag: nil,
-            serverVersion: pending.serverVersion,
-            serverName: pending.serverName,
-            backend: .silo,
-            refreshToken: pending.refreshToken,
-            profileID: profile.id,
-            profileToken: profileToken,
-            profileName: profile.name,
-            userRole: pending.userRole,
-            isPrimaryProfile: profile.isPrimary
+        let info = try await probe.publicInfo(at: compatURL)
+        let deviceID = DeviceIdentity.deviceID()
+        let jellyfin = JellyfinNetworking.client(url: compatURL, deviceID: deviceID)
+        let handshake = try await QuickConnectClient.start(on: jellyfin)
+        try await client.approveHandoff(code: handshake.code, profileID: profile.id, profileToken: profileToken)
+        let secret = try await QuickConnectClient.waitUntilAuthorized(
+            handshake,
+            on: jellyfin,
+            pollInterval: .milliseconds(500),
+            maximumPolls: 40
         )
-        pendingSiloSignIn = nil
-        householdProfiles = pending.profiles
-        apply(saved, siloAPI: api, serverVersion: pending.serverVersion)
-        persist(saved)
-        beginFirstRunSetupIfNeeded(for: saved)
+        let auth = try await jellyfin.signIn(quickConnectSecret: secret)
+        let link = SiloLink(
+            nativeURL: nativeURL,
+            accessToken: await client.accessToken,
+            refreshToken: await client.refreshToken,
+            profileID: profile.id,
+            profileName: profile.name,
+            profileHasPin: profile.hasPin,
+            profileToken: profileToken
+        )
+        try completeSignIn(
+            auth,
+            serverURL: compatURL,
+            info: info,
+            isSiloServer: true,
+            siloLink: link,
+            deviceID: deviceID,
+            fallbackName: profile.name,
+            client: jellyfin
+        )
+        guard let previous, previous.accountID != session?.accountID else { return }
+        if var box = try? vault.loadBox() {
+            _ = box.remove(id: previous.accountID)
+            if let session { box.upsert(session) }
+            try? vault.persist(box)
+            accounts = box.accounts
+        }
+        let stale = JellyfinNetworking.client(
+            url: previous.serverURL,
+            accessToken: previous.accessToken,
+            deviceID: previous.deviceID
+        )
+        Task { try? await stale.signOut() }
     }
 
     func connectReviewDemo() {
@@ -416,7 +436,11 @@ final class SessionStore {
         presentCode: @escaping @MainActor @Sendable (String) -> Void
     ) async throws {
         let url = try probe.normalizedURL(from: serverAddress)
+        if await SiloAccountClient.isSiloAddress(url) {
+            throw ZelefinError.siloNativeAddress
+        }
         let info = try await probe.publicInfo(at: url)
+        let isSilo = await probe.isSiloServer(at: url)
         let deviceID = DeviceIdentity.deviceID()
         let jellyfin = JellyfinNetworking.client(url: url, deviceID: deviceID)
 
@@ -435,6 +459,7 @@ final class SessionStore {
             auth,
             serverURL: url,
             info: info,
+            isSiloServer: isSilo,
             deviceID: deviceID,
             fallbackName: auth.user?.name ?? "User",
             client: jellyfin
@@ -445,6 +470,8 @@ final class SessionStore {
         _ auth: AuthenticationResult,
         serverURL: URL,
         info: PublicSystemInfo,
+        isSiloServer: Bool,
+        siloLink: SiloLink? = nil,
         deviceID: String,
         fallbackName: String,
         client jellyfin: JellyfinClient
@@ -457,11 +484,14 @@ final class SessionStore {
             serverURL: serverURL,
             accessToken: token,
             userID: userID,
-            userName: user.name ?? fallbackName,
+            userName: siloLink?.profileName
+                ?? SavedSession.displayName(user.name ?? fallbackName, isSiloServer: isSiloServer),
             deviceID: deviceID,
             userImageTag: user.primaryImageTag,
             serverVersion: info.version,
-            serverName: info.serverName
+            serverName: info.serverName,
+            isSiloServer: isSiloServer,
+            siloLink: siloLink
         )
         serverName = info.serverName
         apply(saved, client: jellyfin, serverVersion: info.version)
@@ -480,6 +510,9 @@ final class SessionStore {
 
     func signOut() async {
         homeTask?.cancel()
+        if let silo = siloClient {
+            Task { await silo.logout() }
+        }
         let remote = client
         let companion = remote.map(ZelefinCompanionClient.init)
         let remaining: SavedSession?
@@ -504,66 +537,11 @@ final class SessionStore {
         }
     }
 
-    func applySiloProfile(_ profile: SiloHouseholdProfile, pin: String?) async throws {
-        guard var saved = session, saved.usesSilo, let api = siloAPI else {
-            throw ZelefinError.missingUser
-        }
-        var profileToken: String?
-        if profile.hasPin {
-            let trimmed = pin?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !trimmed.isEmpty else {
-                throw ZelefinError.server("Enter this profile's PIN.")
-            }
-            let result = try await api.verifyPIN(profileID: profile.id, pin: trimmed)
-            guard result.valid else {
-                throw ZelefinError.server("That PIN is not correct.")
-            }
-            profileToken = result.profileToken
-        }
-        await api.setProfile(id: profile.id, token: profileToken)
-        saved.profileID = profile.id
-        saved.profileToken = profileToken
-        saved.profileName = profile.name
-        saved.isPrimaryProfile = profile.isPrimary
-        if !profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            saved.userName = profile.name
-        }
-        apply(saved, siloAPI: api, serverVersion: saved.serverVersion)
-        persist(saved)
-    }
-
-    func createSiloProfile(name: String, pin: String?, isChild: Bool) async throws {
-        guard let api = siloAPI else { throw ZelefinError.missingUser }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw ZelefinError.server("Enter a profile name.")
-        }
-        let created = try await api.createProfile(name: trimmed, pin: pin, isChild: isChild)
-        householdProfiles = (try? await api.profiles()) ?? [created]
-        try await applySiloProfile(created, pin: pin)
-    }
-
     func changePassword(current: String, new: String) async throws {
         let currentPassword = current.trimmingCharacters(in: .whitespacesAndNewlines)
         let newPassword = new.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !currentPassword.isEmpty, !newPassword.isEmpty else {
             throw ZelefinError.server("Enter your current password and a new password.")
-        }
-        if usesSilo {
-            guard let api = siloAPI else { throw ZelefinError.missingUser }
-            guard canChangeSiloPassword else {
-                throw ZelefinError.server("Switch to the primary household profile to change this password.")
-            }
-            let capability = try? await api.passwordCapability()
-            let minimum = capability?.minimumLength ?? 8
-            guard newPassword.count >= minimum else {
-                throw ZelefinError.server("Use at least \(minimum) characters for the new password.")
-            }
-            if capability?.canChange == false {
-                throw ZelefinError.server("This profile cannot change the account password.")
-            }
-            try await api.changePassword(current: currentPassword, new: newPassword)
-            return
         }
         guard let client, let session else { throw ZelefinError.missingUser }
         _ = try await client.send(
@@ -575,34 +553,21 @@ final class SessionStore {
     }
 
     func updateProfileImage(_ jpeg: Data) async throws {
-        if usesSilo {
-            try await updateSiloAvatar(jpeg: jpeg)
+        if let link = session?.siloLink, let siloClient {
+            guard jpeg.count <= 10 * 1_024 * 1_024 else {
+                throw ZelefinError.server("Choose a photo smaller than 10 MB.")
+            }
+            let updated = try await siloClient.uploadAvatar(
+                profileID: link.profileID,
+                profileToken: link.profileToken,
+                jpeg: jpeg
+            )
+            replaceSiloProfile(updated)
+            avatarRevision += 1
             return
         }
         guard let userID = session?.userID else { throw ZelefinError.missingUser }
         try await updateProfileImage(userID: userID, jpeg: jpeg)
-    }
-
-    func updateSiloAvatarPreset(_ presetID: String) async throws {
-        guard let api = siloAPI, let profileID = session?.profileID else {
-            throw ZelefinError.missingUser
-        }
-        let updated = try await api.updateProfileAvatar(
-            id: profileID,
-            preset: SiloProfileAvatars.presetRef(presetID)
-        )
-        applyUpdatedHouseholdProfile(updated)
-    }
-
-    func updateSiloAvatar(jpeg: Data) async throws {
-        guard jpeg.count <= 10 * 1_024 * 1_024 else {
-            throw ZelefinError.server("Choose a photo smaller than 10 MB.")
-        }
-        guard let api = siloAPI, let profileID = session?.profileID else {
-            throw ZelefinError.missingUser
-        }
-        let updated = try await api.uploadProfileAvatar(id: profileID, jpeg: jpeg)
-        applyUpdatedHouseholdProfile(updated)
     }
 
     func updateProfileImage(userID: String, jpeg: Data) async throws {
@@ -618,27 +583,21 @@ final class SessionStore {
     }
 
     func removeProfileImage() async throws {
-        if usesSilo {
-            try await removeSiloAvatar()
+        if let link = session?.siloLink, let siloClient {
+            let current = siloProfiles.first(where: { $0.id == link.profileID })
+            if current?.hasUploadedAvatar == true {
+                try await siloClient.deleteAvatar(profileID: link.profileID, profileToken: link.profileToken)
+                await refreshSiloProfiles()
+            } else {
+                replaceSiloProfile(
+                    try await siloClient.setAvatarPreset(profileID: link.profileID, profileToken: link.profileToken, preset: nil)
+                )
+            }
+            avatarRevision += 1
             return
         }
         guard let userID = session?.userID else { throw ZelefinError.missingUser }
         try await removeProfileImage(userID: userID)
-    }
-
-    func removeSiloAvatar() async throws {
-        guard let api = siloAPI, let profileID = session?.profileID else {
-            throw ZelefinError.missingUser
-        }
-        let current = householdProfiles.first(where: { $0.id == profileID })
-        if current?.isUploadedAvatar == true {
-            try await api.deleteProfileAvatar(id: profileID)
-            await refreshHouseholdProfiles()
-            avatarRevision += 1
-        } else {
-            let updated = try await api.updateProfileAvatar(id: profileID, preset: nil)
-            applyUpdatedHouseholdProfile(updated)
-        }
     }
 
     func removeProfileImage(userID: String) async throws {
@@ -790,7 +749,7 @@ final class SessionStore {
     /// Regular Play while already in a group should queue the title for everyone.
     @discardableResult
     func playIfSyncPlay(_ item: MediaItem) -> Bool {
-        guard syncPlayGroupID != nil, !usesSilo else { return false }
+        guard syncPlayGroupID != nil, !isSiloServer else { return false }
         Task { try? await playInSyncPlay(item) }
         return true
     }
@@ -859,7 +818,11 @@ final class SessionStore {
         guard let client else { return }
         guard let user = try? await client.send(Paths.getCurrentUser).value else { return }
         guard var saved = session else { return }
-        saved.userName = user.name ?? saved.userName
+        if let link = saved.siloLink {
+            saved.userName = link.profileName
+        } else if let name = user.name {
+            saved.userName = SavedSession.displayName(name, isSiloServer: saved.isSiloServer)
+        }
         saved.userImageTag = user.primaryImageTag
         session = saved
         persist(saved)
@@ -878,10 +841,10 @@ final class SessionStore {
         session = nil
         client = nil
         library = nil
-        siloAPI = nil
-        pendingSiloSignIn = nil
-        householdProfiles = []
+        siloClient = nil
+        siloProfiles = []
         siloAvatarUploadEnabled = false
+        pendingSiloSignIn = nil
         serverName = nil
         homeLayout = HomeLayout(featured: [], sections: [])
         libraries = []
@@ -892,10 +855,6 @@ final class SessionStore {
         jellyfinEnhancedAvailable = false
         jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
-        siloRequestsEnabled = false
-        siloSeerrPluginAvailable = false
-        siloArrPluginAvailable = false
-        siloSubtitleProviders = []
         isAdministrator = false
         enableSubtitleManagement = false
         syncPlayGroupID = nil
@@ -956,7 +915,6 @@ final class SessionStore {
     private func apply(
         _ saved: SavedSession,
         client existing: JellyfinClient? = nil,
-        siloAPI existingSilo: SiloAPIClient? = nil,
         serverVersion: String? = nil
     ) {
         if PluginSettings.shouldClearSession(switchingFrom: session?.accountID, to: saved.accountID) {
@@ -972,11 +930,7 @@ final class SessionStore {
             applyReviewDemo(saved)
             return
         }
-        if saved.usesSilo {
-            applySilo(saved, api: existingSilo, serverVersion: serverVersion)
-            return
-        }
-        siloAPI = nil
+        applySiloLink(saved)
         startHomeNetworkMonitor()
         let endpoint = homeNetworkEndpoint(for: saved)
         activeRoute = endpoint.route
@@ -998,10 +952,6 @@ final class SessionStore {
         jellyfinEnhancedAvailable = false
         jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
-        siloRequestsEnabled = false
-        siloSeerrPluginAvailable = false
-        siloArrPluginAvailable = false
-        siloSubtitleProviders = []
         isAdministrator = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
@@ -1014,98 +964,67 @@ final class SessionStore {
         Task { await loadHome(force: true) }
         Task { await refreshHomeNetworkSSID() }
         RemoteControlHub.shared.connect(client: jellyfin, session: saved)
-        if serverVersion == nil {
-            Task { await refreshServerCapabilities(at: endpoint.url) }
+        Task { await refreshServerCapabilities(at: endpoint.url) }
+    }
+
+    private func applySiloLink(_ saved: SavedSession) {
+        guard let link = saved.siloLink else {
+            siloClient = nil
+            siloProfiles = []
+            siloAvatarUploadEnabled = false
+            return
+        }
+        let client = SiloAccountClient(
+            baseURL: link.nativeURL,
+            accessToken: link.accessToken,
+            refreshToken: link.refreshToken
+        )
+        siloClient = client
+        let accountID = saved.accountID
+        Task {
+            await client.setTokenHandler { [weak self] access, refresh in
+                Task { @MainActor in
+                    self?.storeSiloTokens(access: access, refresh: refresh, accountID: accountID)
+                }
+            }
+            await refreshSiloProfiles()
         }
     }
 
-    private func applySilo(
-        _ saved: SavedSession,
-        api existing: SiloAPIClient?,
-        serverVersion: String?
-    ) {
-        RemoteControlHub.shared.disconnect()
-        startHomeNetworkMonitor()
-        let endpoint = homeNetworkEndpoint(for: saved)
-        activeRoute = endpoint.route
-        let api: SiloAPIClient
-        if let existing {
-            api = existing
-            Task {
-                await api.setBaseURL(endpoint.url)
-                await api.setProfile(id: saved.profileID, token: saved.profileToken)
-            }
-        } else {
-            api = SiloAPIClient(
-                baseURL: endpoint.url,
-                accessToken: saved.accessToken,
-                refreshToken: saved.refreshToken,
-                profileID: saved.profileID,
-                profileToken: saved.profileToken,
-                deviceID: saved.deviceID
+    private func storeSiloTokens(access: String, refresh: String, accountID: String) {
+        guard var saved = session, saved.accountID == accountID, var link = saved.siloLink else { return }
+        link.accessToken = access
+        link.refreshToken = refresh
+        saved.siloLink = link
+        session = saved
+        persist(saved)
+    }
+
+    /// Picks one of Silo's preset avatars (DiceBear styles) for the current profile.
+    func updateSiloAvatarPreset(_ presetID: String) async throws {
+        guard let link = session?.siloLink, let siloClient else { throw ZelefinError.missingUser }
+        replaceSiloProfile(
+            try await siloClient.setAvatarPreset(
+                profileID: link.profileID,
+                profileToken: link.profileToken,
+                preset: SiloProfileAvatars.presetRef(presetID)
             )
-        }
-        bindSiloTokenUpdates(api)
-        bindSiloSessionRevoked(api)
-        client = nil
-        siloAPI = api
-        library = SiloLibraryClient(api: api, profileID: saved.profileID ?? "")
-        serverName = saved.serverName ?? saved.serverURL.host
-        introSkipperAvailable = false
-        downloadsAvailable = false
-        openSubtitlesAvailable = true
-        jellyfinEnhancedAvailable = false
-        jellyfinEnhancedRemoveContinueWatching = false
-        companionAvailable = false
-        siloRequestsEnabled = false
-        siloSeerrPluginAvailable = false
-        siloArrPluginAvailable = false
-        siloSubtitleProviders = []
-        isAdministrator = (saved.userRole ?? "").lowercased() == "admin" && saved.isPrimaryProfile
-        enableSubtitleManagement = true
-        itemDetailMemory = [:]
-        libraryPage = LibraryPageCache()
-        playbackLaunchOptions = [:]
-        restoreSnapshot(for: saved)
-        Task { await loadHome(force: true) }
-        Task { await refreshHomeNetworkSSID() }
-        Task { await refreshHouseholdProfiles() }
-        Task { await refreshSessionCapabilities() }
+        )
+        avatarRevision += 1
     }
 
-    private func bindSiloTokenUpdates(_ api: SiloAPIClient) {
-        Task {
-            await api.setTokenHandler { [weak self] access, refresh in
-                Task { @MainActor in
-                    guard var saved = self?.session, saved.usesSilo else { return }
-                    saved.accessToken = access
-                    if let refresh {
-                        saved.refreshToken = refresh
-                    }
-                    self?.session = saved
-                    self?.persist(saved)
-                }
-            }
+    private func replaceSiloProfile(_ updated: SiloProfile) {
+        if let index = siloProfiles.firstIndex(where: { $0.id == updated.id }) {
+            siloProfiles[index] = updated
+        } else {
+            siloProfiles.append(updated)
         }
     }
 
-    private func bindSiloSessionRevoked(_ api: SiloAPIClient) {
-        Task {
-            await api.setSessionRevokedHandler { [weak self] in
-                Task { @MainActor in
-                    self?.handleSiloSessionRevoked()
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func handleSiloSessionRevoked() {
-        // The notifier is one-shot per client, but guard anyway: only act while
-        // a Silo session is actually signed in.
-        guard let saved = session, saved.usesSilo else { return }
-        Task { await signOut() }
-        authNotice = "Your Silo session expired. Please sign in again."
+    func refreshSiloProfiles() async {
+        guard let siloClient, let collection = try? await siloClient.profiles() else { return }
+        siloProfiles = collection.items
+        siloAvatarUploadEnabled = collection.avatarUploadEnabled
     }
 
     private func applyReviewDemo(_ saved: SavedSession) {
@@ -1116,17 +1035,12 @@ final class SessionStore {
         )
         client = jellyfin
         library = ReviewDemo.libraryClient(deviceID: saved.deviceID)
-        siloAPI = nil
         serverName = saved.serverName
         introSkipperAvailable = false
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
         jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
-        siloRequestsEnabled = false
-        siloSeerrPluginAvailable = false
-        siloArrPluginAvailable = false
-        siloSubtitleProviders = []
         isAdministrator = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
@@ -1182,10 +1096,6 @@ final class SessionStore {
         guard let saved = session, !ReviewDemo.isSession(saved) else { return }
         let endpoint = homeNetworkEndpoint(for: saved)
         activeRoute = endpoint.route
-        if saved.usesSilo {
-            Task { await siloAPI?.setBaseURL(endpoint.url) }
-            return
-        }
         if let client, HomeNetworkResolver.isSameEndpoint(client.configuration.url, endpoint.url) {
             return
         }
@@ -1215,15 +1125,20 @@ final class SessionStore {
     }
 
     private func refreshServerCapabilities(at url: URL) async {
-        guard !usesSilo else { return }
         guard let info = try? await probe.publicInfo(at: url) else { return }
+        let isSilo = await probe.isSiloServer(at: url)
         serverName = info.serverName
         library?.updateServerVersion(info.version)
         guard var saved = session else { return }
+        let flavorChanged = saved.isSiloServer != isSilo
         saved.serverVersion = info.version
         saved.serverName = info.serverName
+        saved.isSiloServer = isSilo
         session = saved
         persist(saved)
+        if flavorChanged {
+            await refreshSessionCapabilities()
+        }
     }
 
     func beginFirstRunSetupIfNeeded(for saved: SavedSession) {
@@ -1244,7 +1159,7 @@ final class SessionStore {
     func applyPlaybackLanguages(audioCode: String, subtitleCode: String) async {
         PlaybackPreferences.audioLanguageCode = audioCode
         PlaybackPreferences.subtitleLanguageCode = subtitleCode
-        guard !usesSilo, let client, let userID = session?.userID else { return }
+        guard let client, let userID = session?.userID else { return }
         var config = (try? await client.send(Paths.getCurrentUser).value.configuration) ?? UserConfiguration()
         let audio = audioCode == PlaybackLanguage.automaticCode ? "" : ServerLanguageCode.toServer(audioCode)
         let subtitle = (subtitleCode == PlaybackLanguage.automaticCode || subtitleCode == PlaybackLanguage.offCode)
@@ -1260,7 +1175,7 @@ final class SessionStore {
     }
 
     func jellyfinPlaybackPreferences() async throws -> JellyfinPlaybackPreferences {
-        guard !usesSilo, let client else {
+        guard let client else {
             throw ZelefinError.server("Sign in to a Jellyfin server to change these settings.")
         }
         let config = try await client.send(Paths.getCurrentUser).value.configuration ?? UserConfiguration()
@@ -1270,7 +1185,7 @@ final class SessionStore {
     /// Jellyfin picks the starting streams from these, so the device-side language picks
     /// step aside; otherwise an older local pick would override what the user just chose.
     func saveJellyfinPlaybackPreferences(_ preferences: JellyfinPlaybackPreferences) async throws {
-        guard !usesSilo, let client, let userID = session?.userID else {
+        guard let client, let userID = session?.userID else {
             throw ZelefinError.server("Sign in to a Jellyfin server to change these settings.")
         }
         let current = try await client.send(Paths.getCurrentUser).value.configuration ?? UserConfiguration()
@@ -1280,7 +1195,7 @@ final class SessionStore {
     }
 
     func installZelefinPlugin() async throws {
-        guard isAdministrator, let client, !usesSilo else {
+        guard isAdministrator, let client, !isSiloServer else {
             throw ZelefinError.server("Sign in as a Jellyfin administrator to install the Zelefin plugin.")
         }
         try await ZelefinPluginInstaller(client: client).install()
@@ -1288,17 +1203,13 @@ final class SessionStore {
     }
 
     func restartJellyfinAfterPluginInstall() async throws {
-        guard isAdministrator, let client, !usesSilo else {
+        guard isAdministrator, let client, !isSiloServer else {
             throw ZelefinError.server("Sign in as a Jellyfin administrator to restart this server.")
         }
         try await ZelefinPluginInstaller(client: client).restartServer()
     }
 
     func detectPlugins() async {
-        if usesSilo {
-            await detectSiloPlugins()
-            return
-        }
         guard let client else {
             introSkipperAvailable = false
             openSubtitlesAvailable = false
@@ -1333,43 +1244,8 @@ final class SessionStore {
         }
         companionAvailable = companion
         CompanionSettings.pluginInstalled = companionAvailable
-        siloRequestsEnabled = false
-        siloSeerrPluginAvailable = false
-        siloArrPluginAvailable = false
-        siloSubtitleProviders = []
         if companionAvailable {
             await registerCompanionPush()
-        }
-    }
-
-    private func detectSiloPlugins() async {
-        introSkipperAvailable = false
-        jellyfinEnhancedAvailable = false
-        jellyfinEnhancedRemoveContinueWatching = false
-        companionAvailable = false
-        CompanionSettings.pluginInstalled = false
-        openSubtitlesAvailable = false
-        siloSubtitleProviders = []
-        enableSubtitleManagement = false
-        guard let api = siloAPI else {
-            siloRequestsEnabled = false
-            siloSeerrPluginAvailable = false
-            siloArrPluginAvailable = false
-            return
-        }
-        var pluginIDs: [String] = []
-        if let listed = try? await api.siloPluginSettings() {
-            pluginIDs.append(contentsOf: listed.filter(\.isEnabled).map(\.pluginID))
-        }
-        if isAdministrator, let admin = try? await api.siloAdminPluginInstallations() {
-            pluginIDs.append(contentsOf: admin.filter(\.isEnabled).map(\.pluginID))
-        }
-        siloSeerrPluginAvailable = pluginIDs.contains { SiloRequestSource.matches($0, source: .seerr) }
-        siloArrPluginAvailable = pluginIDs.contains { SiloRequestSource.matches($0, source: .arr) }
-        if let status = try? await api.siloRequestStatus() {
-            siloRequestsEnabled = status.isEnabled
-        } else {
-            siloRequestsEnabled = siloSeerrPluginAvailable || siloArrPluginAvailable
         }
     }
 
@@ -1420,61 +1296,15 @@ final class SessionStore {
     }
 
     func refreshAdministratorStatus() async {
-        if usesSilo {
-            await refreshSiloAdministratorStatus()
-            return
-        }
         guard let client else { return }
         do {
             let user = try await client.send(Paths.getCurrentUser).value
-            isAdministrator = user.policy?.isAdministrator == true
+            // Silo's Jellyfin-compatible API has no administration routes, so its admins get none of Zelefin's server tools.
+            isAdministrator = user.policy?.isAdministrator == true && !isSiloServer
             enableSubtitleManagement = user.policy?.enableSubtitleManagement == true
         } catch {
             // Keep the last known admin flag so a blip cannot hide admin tools.
         }
-    }
-
-    private func refreshSiloAdministratorStatus() async {
-        if let me = try? await siloAPI?.currentUser(), var saved = session {
-            saved.userRole = me.role
-            session = saved
-            persist(saved)
-        }
-        isAdministrator = (session?.userRole ?? "").lowercased() == "admin"
-            && (session?.isPrimaryProfile ?? false)
-    }
-
-    private func refreshHouseholdProfiles() async {
-        guard let api = siloAPI else { return }
-        let list = try? await api.profileList()
-        householdProfiles = list?.entries ?? []
-        siloAvatarUploadEnabled = list?.avatarUploadEnabled ?? false
-        guard var saved = session, let profileID = saved.profileID,
-              let current = householdProfiles.first(where: { $0.id == profileID }) else { return }
-        var changed = false
-        if saved.isPrimaryProfile != current.isPrimary {
-            saved.isPrimaryProfile = current.isPrimary
-            changed = true
-        }
-        if saved.profileName != current.name {
-            saved.profileName = current.name
-            changed = true
-        }
-        if changed {
-            session = saved
-            persist(saved)
-            isAdministrator = (saved.userRole ?? "").lowercased() == "admin" && saved.isPrimaryProfile
-        }
-    }
-
-    private func applyUpdatedHouseholdProfile(_ updated: SiloHouseholdProfile) {
-        if let index = householdProfiles.firstIndex(where: { $0.id == updated.id }) {
-            householdProfiles[index] = updated
-        } else {
-            householdProfiles.append(updated)
-        }
-        avatarRevision += 1
-        Task { await refreshHouseholdProfiles() }
     }
 
     func userAdminClient() throws -> JellyfinUserAdminClient {
@@ -1829,4 +1659,13 @@ enum NowPlayingStore: Sendable {
     static func key(_ accountID: String) -> String {
         "zelefin.now-playing.\(accountID)"
     }
+}
+
+/// Silo sign-in after the password, before a household profile is picked.
+struct SiloPendingSignIn: Sendable {
+    let client: SiloAccountClient
+    let nativeURL: URL
+    let compatURL: URL
+    let profiles: [SiloProfile]
+    let avatarUploadEnabled: Bool
 }

@@ -18,9 +18,8 @@ struct FirstRunSetupView: View {
     @State private var isRestarting = false
 
     private var steps: [Step] {
-        var list: [Step] = [.welcome, .languages]
-        if !session.usesSilo {
-            list.append(.seerr)
+        var list: [Step] = [.welcome, .languages, .seerr]
+        if !session.isSiloServer {
             list.append(.plugin)
         }
         return list
@@ -253,8 +252,8 @@ struct FirstRunSetupView: View {
     }
 
     private var welcomeCopy: String {
-        session.usesSilo
-            ? "Pick the audio and subtitle languages you want on this profile."
+        session.isSiloServer
+            ? "A few optional choices for this Silo server: languages and Seerr requests."
             : "A few optional choices for this server: languages, Seerr requests, and the Zelefin plugin for lock-screen alerts."
     }
 

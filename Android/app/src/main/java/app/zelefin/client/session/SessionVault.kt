@@ -6,7 +6,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import app.zelefin.client.network.GatewayCredentials
 import app.zelefin.core.GatewaySecrets
+import app.zelefin.core.LoadedAccounts
 import app.zelefin.core.SavedAccountBox
+import app.zelefin.core.SavedAccountsCodec
 import app.zelefin.core.SavedSession
 import java.util.UUID
 import kotlinx.serialization.encodeToString
@@ -28,11 +30,31 @@ class SessionVault(context: Context) {
 
     fun loadAccounts(): SavedAccountBox? {
         val raw = prefs.getString(ACCOUNTS, null) ?: return null
-        return runCatching { json.decodeFromString<SavedAccountBox>(raw) }.getOrNull()
+        return SavedAccountsCodec.decode(raw).box
+    }
+
+    /** Removes sign-ins saved by the old Silo-native backend; null when there were none. */
+    fun dropLegacySiloSessions(): LoadedAccounts? {
+        val raw = prefs.getString(ACCOUNTS, null) ?: return null
+        val loaded = SavedAccountsCodec.decode(raw)
+        if (loaded.droppedSilo == 0) return null
+        val box = loaded.box
+        if (box == null || box.accounts.isEmpty()) {
+            clear()
+        } else {
+            prefs.edit().putString(ACCOUNTS, json.encodeToString(box)).apply()
+        }
+        return loaded
     }
 
     fun save(session: SavedSession, select: Boolean = true) {
         val box = (loadAccounts() ?: SavedAccountBox()).upsert(session, select)
+        prefs.edit().putString(ACCOUNTS, json.encodeToString(box)).apply()
+    }
+
+    /** Swaps the saved account [accountId] for [session] in place and selects it. */
+    fun replace(accountId: String, session: SavedSession) {
+        val box = (loadAccounts() ?: SavedAccountBox()).replacing(accountId, session)
         prefs.edit().putString(ACCOUNTS, json.encodeToString(box)).apply()
     }
 

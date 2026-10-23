@@ -1266,7 +1266,7 @@ struct PlaybackPlan: Hashable, Sendable {
     var versions: [MediaVersion] = []
     var isLive: Bool = false
     var liveStreamID: String? = nil
-    /// Full-file remux (Silo `original_http`) keeps the playhead on the client.
+    /// Full-file remux keeps the playhead on the client.
     var clientOwnsPlayhead: Bool = false
     var sourceVideo: SourceVideoFacts? = nil
 }

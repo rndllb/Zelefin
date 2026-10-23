@@ -221,7 +221,7 @@ struct TitlePlaybackMenus: View {
                     }
                 }
             }
-            if !session.usesSilo {
+            if !session.isSiloServer {
                 Button {
                     session.updateLaunchOptions(for: item.id) { $0.skipCinemaIntros.toggle() }
                 } label: {

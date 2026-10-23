@@ -449,7 +449,7 @@ object PlaybackLanguage {
         return pool.firstOrNull()?.index
     }
 
-    /** Jellyfin and Silo usually tag streams with ISO 639-2 codes ("eng"), the picker stores 639-1 ("en"). */
+    /** Jellyfin servers usually tag streams with ISO 639-2 codes ("eng"), the picker stores 639-1 ("en"). */
     fun alias(code: String): String? {
         if (code.length != 3) return null
         return runCatching {

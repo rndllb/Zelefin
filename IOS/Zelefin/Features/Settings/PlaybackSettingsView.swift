@@ -14,8 +14,6 @@ struct PlaybackSettingsView: View {
     @AppStorage(PlaybackPreferences.themeVideosKey) private var themeVideos = false
     @AppStorage(PlaybackPreferences.themeVideoSoundKey) private var themeVideoSound = false
     @AppStorage(PlaybackPreferences.defaultRateKey) private var defaultRate = 1.0
-    @AppStorage(PlaybackPreferences.audioLanguageKey) private var audioLanguage = PlaybackLanguage.automaticCode
-    @AppStorage(PlaybackPreferences.subtitleLanguageKey) private var subtitleLanguage = PlaybackLanguage.automaticCode
     @AppStorage(PlaybackPreferences.preferSDHKey) private var preferSDH = false
     @AppStorage(PlaybackPreferences.downloadWifiOnlyKey) private var downloadWifiOnly = false
 
@@ -29,24 +27,14 @@ struct PlaybackSettingsView: View {
 
     var body: some View {
         Form {
-            if session.usesSilo {
-                languageSection
-            } else {
-                serverAudioSection
-                serverSubtitleSection
-            }
+            serverAudioSection
+            serverSubtitleSection
             qualitySection
             watchingSection
-            if !session.usesSilo {
-                themeMediaSection
-            }
+            themeMediaSection
         }
         .zelefinSettingsChrome(title: "Playback")
-        .task {
-            if !session.usesSilo {
-                await loadServerPreferences()
-            }
-        }
+        .task { await loadServerPreferences() }
         .onChange(of: useNativeVideoPlayer) {
             if !useNativeVideoPlayer {
                 preferFMP4InHLS = true
@@ -157,50 +145,6 @@ struct PlaybackSettingsView: View {
         }
     }
 
-    // MARK: Device language picks (Silo)
-
-    private var languageSection: some View {
-        Section {
-            Picker("Audio", selection: $audioLanguage) {
-                ForEach(audioChoices, id: \.self) { code in
-                    Text(PlaybackLanguage.displayName(for: code)).tag(code)
-                }
-            }
-            Picker("Subtitles", selection: $subtitleLanguage) {
-                ForEach(subtitleChoices, id: \.self) { code in
-                    Text(PlaybackLanguage.displayName(for: code)).tag(code)
-                }
-            }
-            Toggle("Prefer SDH Subtitles", isOn: $preferSDH)
-            NavigationLink {
-                SubtitleAppearanceSettingsView()
-            } label: {
-                LabeledContent("Style & Sync") {
-                    Text(SubtitleAppearance.size.title)
-                }
-            }
-        } header: {
-            Text("Languages")
-        } footer: {
-            Text("Automatic uses the title default. A language is used when that track exists. Style & Sync change how captions look and when they appear.")
-        }
-        .zelefinRowBackground()
-        .onChange(of: audioLanguage) { _, code in
-            Task { await session.applyPlaybackLanguages(audioCode: code, subtitleCode: subtitleLanguage) }
-        }
-        .onChange(of: subtitleLanguage) { _, code in
-            Task { await session.applyPlaybackLanguages(audioCode: audioLanguage, subtitleCode: code) }
-        }
-    }
-
-    private var audioChoices: [String] {
-        [PlaybackLanguage.automaticCode] + SubtitleSearchLanguage.choices.map(\.code)
-    }
-
-    private var subtitleChoices: [String] {
-        [PlaybackLanguage.automaticCode, PlaybackLanguage.offCode] + SubtitleSearchLanguage.choices.map(\.code)
-    }
-
     private var qualitySection: some View {
         Section {
             Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
@@ -232,14 +176,19 @@ struct PlaybackSettingsView: View {
     private var themeMediaSection: some View {
         Section {
             Toggle("Theme Songs", isOn: $themeSongs)
-            Toggle("Theme Videos", isOn: $themeVideos)
-            if themeVideos {
-                Toggle("Theme Video Sound", isOn: $themeVideoSound)
+            // Silo's Jellyfin-compatible API serves theme songs but never theme videos.
+            if !session.isSiloServer {
+                Toggle("Theme Videos", isOn: $themeVideos)
+                if themeVideos {
+                    Toggle("Theme Video Sound", isOn: $themeVideoSound)
+                }
             }
         } header: {
             Text("Theme Media")
         } footer: {
-            Text("Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on.")
+            Text(session.isSiloServer
+                 ? "Plays a title's theme song on its page."
+                 : "Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on.")
         }
         .zelefinRowBackground()
     }
@@ -281,13 +230,9 @@ struct PlaybackSettingsView: View {
 
     private var qualityFooter: String {
         if adaptiveBitrate {
-            return session.usesSilo
-                ? "Auto Direct Plays the original file. A lower Maximum Quality is the only start cap. Test Connection measures this path if playback later stalls."
-                : "Auto Direct Plays when the file fits this connection. Jellyfin transcodes when it does not. Test Connection measures this path."
+            return "Auto Direct Plays when the file fits this connection. The server transcodes when it does not. Test Connection measures this path."
         }
-        return session.usesSilo
-            ? "Auto Direct Plays when the file fits this device. Lower quality asks Silo to transcode."
-            : "Auto Direct Plays when the file fits this device. Lower quality asks Jellyfin to transcode."
+        return "Auto Direct Plays when the file fits this device. Lower quality asks the server to transcode."
     }
 
     private var preferFMP4Binding: Binding<Bool> {
@@ -306,12 +251,6 @@ struct PlaybackSettingsView: View {
     }
 
     private var playerFooter: String {
-        if session.usesSilo {
-            if useNativeVideoPlayer {
-                return "Apple’s player opens MP4 and HLS. MKV still Direct Plays on this device. Turn off Prefer fMP4 to ask Silo for MPEG-TS when HLS is required."
-            }
-            return "AetherEngine Direct Plays the original Silo file on this device, including HDR."
-        }
         if useNativeVideoPlayer {
             return "Apple’s player opens MP4 and remuxed HLS. MKV remuxes on Jellyfin first. Turn off Prefer fMP4 to ask for MPEG-TS."
         }

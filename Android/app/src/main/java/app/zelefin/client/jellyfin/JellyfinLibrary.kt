@@ -33,6 +33,7 @@ import app.zelefin.core.PlaybackResumePolicy
 import app.zelefin.core.QuickConnectHandshake
 import app.zelefin.core.ServerReachability
 import app.zelefin.core.ServerUrl
+import app.zelefin.core.SiloCompat
 import app.zelefin.core.StreamResumeUrl
 import app.zelefin.core.StreamUrlBuilder
 import app.zelefin.core.TitleDetail
@@ -50,6 +51,7 @@ import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.HttpClientOptions
 import org.jellyfin.sdk.api.client.exception.InvalidStatusException
+import org.jellyfin.sdk.api.client.extensions.brandingApi
 import org.jellyfin.sdk.api.client.extensions.collectionApi
 import org.jellyfin.sdk.api.client.extensions.displayPreferencesApi
 import org.jellyfin.sdk.api.client.extensions.moviesApi
@@ -65,6 +67,7 @@ import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
 import org.jellyfin.sdk.api.client.extensions.quickConnectApi
 import org.jellyfin.sdk.api.client.extensions.searchApi
+import org.jellyfin.sdk.api.client.extensions.sessionApi
 import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.api.client.extensions.tvShowsApi
 import org.jellyfin.sdk.api.client.extensions.userApi
@@ -173,6 +176,13 @@ class JellyfinLibrary(
         }
     }
 
+    /** Null when the branding read fails, so a stored answer is kept while offline. */
+    suspend fun detectSiloServer(): Boolean? = withContext(Dispatchers.IO) {
+        runCatching { api.brandingApi.getBrandingOptions().content.loginDisclaimer }
+            .map(SiloCompat::isSiloDisclaimer)
+            .getOrNull()
+    }
+
     suspend fun login(username: String, password: String): AuthenticationResult = withContext(Dispatchers.IO) {
         val result = api.userApi.authenticateUserByName(
             AuthenticateUserByName(username = username, pw = password),
@@ -205,9 +215,13 @@ class JellyfinLibrary(
         }
     }
 
-    suspend fun waitForQuickConnect(handshake: QuickConnectHandshake): AuthenticationResult = withContext(Dispatchers.IO) {
+    /** Polls once per entry of [pauses], waiting that long after each unanswered check. */
+    suspend fun waitForQuickConnect(
+        handshake: QuickConnectHandshake,
+        pauses: List<Long> = List(150) { 2_000L },
+    ): AuthenticationResult = withContext(Dispatchers.IO) {
         var secret = handshake.secret
-        repeat(150) {
+        for (pause in pauses) {
             try {
                 val state = api.quickConnectApi.getQuickConnectState(secret).content
                 if (state.authenticated) {
@@ -221,9 +235,15 @@ class JellyfinLibrary(
                 if (error.status == 404 || error.status == 401) throw ZelefinException.quickConnectExpired()
                 throw error
             }
-            delay(2_000)
+            delay(pause)
         }
         throw ZelefinException.quickConnectExpired()
+    }
+
+    /** Ends this access token on the server (`POST /Sessions/Logout`). */
+    suspend fun logout() = withContext(Dispatchers.IO) {
+        api.sessionApi.reportSessionEnded()
+        Unit
     }
 
     suspend fun home(userId: UUID, hero: HeroContent = HeroContent.RecentlyAdded): HomeFeed = withContext(Dispatchers.IO) {
@@ -481,7 +501,7 @@ class JellyfinLibrary(
             LibraryCounts(
                 countItems(userId, listOf(BaseItemKind.MOVIE), null),
                 countItems(userId, listOf(BaseItemKind.SERIES), null),
-                countItems(userId, listOf(BaseItemKind.EPISODE), null),
+                countEpisodes(userId, null),
             )
         }
     }
@@ -489,7 +509,7 @@ class JellyfinLibrary(
     suspend fun roomCounts(userId: UUID, room: LibraryRoom): LibraryCounts = withContext(Dispatchers.IO) {
         val movies = suspend { countItems(userId, listOf(BaseItemKind.MOVIE), room.id) }
         val shows = suspend { countItems(userId, listOf(BaseItemKind.SERIES), room.id) }
-        val episodes = suspend { countItems(userId, listOf(BaseItemKind.EPISODE), room.id) }
+        val episodes = suspend { countEpisodes(userId, room.id) }
         when (room.kind) {
             LibraryKind.Movies -> LibraryCounts(movies = movies())
             LibraryKind.Shows -> LibraryCounts(shows = shows(), episodes = episodes())
@@ -497,6 +517,40 @@ class JellyfinLibrary(
             LibraryKind.LiveTV -> LibraryCounts()
             else -> LibraryCounts(movies(), shows(), episodes())
         }
+    }
+
+    /**
+     * Silo's Jellyfin-compatible API has no `/Items/Counts` and answers 0 for episodes across a
+     * library, but each series it lists carries its episode count in `RecursiveItemCount`. Matches iOS.
+     */
+    private suspend fun countEpisodes(userId: UUID, parentId: String?): Int {
+        val direct = countItems(userId, listOf(BaseItemKind.EPISODE), parentId)
+        if (direct > 0) return direct
+        var total = 0
+        var start = 0
+        val pageSize = 200
+        while (start < 20_000) {
+            val page = runCatching {
+                api.itemsApi.getItems(
+                    GetItemsRequest(
+                        userId = userId,
+                        parentId = parentId?.let(UUID::fromString),
+                        recursive = true,
+                        includeItemTypes = listOf(BaseItemKind.SERIES),
+                        fields = listOf(ItemFields.RECURSIVE_ITEM_COUNT),
+                        startIndex = start,
+                        limit = pageSize,
+                        enableUserData = false,
+                        enableImages = false,
+                        enableTotalRecordCount = true,
+                    ),
+                ).content
+            }.getOrNull() ?: break
+            total += page.items.sumOf { it.recursiveItemCount ?: 0 }
+            start += page.items.size
+            if (page.items.isEmpty() || start >= page.totalRecordCount) break
+        }
+        return total
     }
 
     private suspend fun countItems(userId: UUID, kinds: List<BaseItemKind>, parentId: String?): Int = runCatching {
@@ -555,6 +609,7 @@ class JellyfinLibrary(
                 recursive = true,
                 includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
                 fields = listOf(ItemFields.PROVIDER_IDS),
+                limit = CatalogMaxItems,
                 enableImages = false,
                 enableUserData = false,
                 enableTotalRecordCount = false,
@@ -950,8 +1005,9 @@ class JellyfinLibrary(
                 GetItemsRequest(
                     userId = userId,
                     parentId = itemId,
-                    sortBy = listOf(ItemSortBy.PREMIERE_DATE, ItemSortBy.SORT_NAME),
+                    sortBy = listOf(ItemSortBy.PREMIERE_DATE),
                     sortOrder = listOf(SortOrder.ASCENDING),
+                    limit = CatalogMaxItems,
                     fields = listFields,
                     enableUserData = true,
                     enableImageTypes = imageTypes,
@@ -1080,7 +1136,11 @@ class JellyfinLibrary(
         val target = item
         val resume = if (target.playbackPosition > PlaybackResumePolicy.THRESHOLD) target.playbackPosition else 0.0
         val itemDto = runCatching { api.userLibraryApi.getItem(UUID.fromString(target.id), userId).content }.getOrNull()
-        val firstSource = itemDto?.mediaSources?.firstOrNull()
+        // Silo gives every version its own source id (Jellyfin reuses the item id), so the
+        // version whose tracks are picked here is named in PlaybackInfo and matched in its answer.
+        val firstSource = itemDto?.mediaSources?.let { sources ->
+            sources.firstOrNull { it.id != null && it.id == target.mediaSourceId } ?: sources.firstOrNull()
+        }
         val streams = firstSource?.mediaStreams ?: itemDto?.mediaStreams.orEmpty()
         val sourceBitrate = firstSource?.bitrate?.takeIf { it > 0 }
             ?: streams.filter { it.type == MediaStreamType.VIDEO || it.type == MediaStreamType.AUDIO }
@@ -1128,6 +1188,7 @@ class JellyfinLibrary(
             itemId = UUID.fromString(target.id),
             data = PlaybackInfoDto(
                 userId = userId,
+                mediaSourceId = firstSource?.id,
                 maxStreamingBitrate = maxBitrate,
                 startTimeTicks = app.zelefin.core.TickClock.ticks(resume),
                 audioStreamIndex = audioIndex,
@@ -1144,7 +1205,9 @@ class JellyfinLibrary(
                 autoOpenLiveStream = true,
             ),
         ).content
-        val source = response.mediaSources.firstOrNull() ?: throw ZelefinException.server("The server did not return a playable stream.")
+        val source = response.mediaSources.firstOrNull { firstSource?.id != null && it.id == firstSource.id }
+            ?: response.mediaSources.firstOrNull()
+            ?: throw ZelefinException.server("The server did not return a playable stream.")
         val method = when {
             source.supportsDirectPlay -> PlaybackMethod.DirectPlay
             source.supportsDirectStream && !source.transcodingUrl.isNullOrBlank() -> PlaybackMethod.Remux
@@ -1297,11 +1360,14 @@ class JellyfinLibrary(
         val video = result?.themeVideosResult?.items?.firstOrNull()
         app.zelefin.client.ThemeMedia(
             songUrl = song?.let { themeSongUrl(it.id.toString(), userId) },
-            videoUrl = video?.let { themeVideoUrl(it.id.toString(), it.container) },
+            videoUrl = video?.let { themeVideoUrl(it.id.toString(), it.mediaSources?.firstOrNull()?.id, it.container) },
         )
     }
 
-    /** Universal audio, so the player gets a format it can open and the server transcodes the rest. */
+    /**
+     * Universal audio, so the player gets a format it can open and the server transcodes the rest.
+     * The fallback is AAC in M4A because Silo can only convert to that and answers 400 for MP3.
+     */
     private fun themeSongUrl(id: String, userId: UUID): String? {
         val base = api.baseUrl ?: return null
         val query = listOf(
@@ -1309,22 +1375,23 @@ class JellyfinLibrary(
             "DeviceId=${api.deviceInfo.id}",
             "MaxStreamingBitrate=320000",
             "Container=mp3,aac,m4a,m4b,flac,alac,wav,ogg,opus",
-            "TranscodingContainer=mp3",
+            "TranscodingContainer=m4a",
             "TranscodingProtocol=http",
-            "AudioCodec=mp3",
+            "AudioCodec=aac",
         ).joinToString("&")
         return ServerUrl.resolve(base, "/Audio/$id/universal?$query", api.accessToken)
     }
 
     /** Containers ExoPlayer opens stream as they are; anything else comes back as H.264 HLS. */
-    private fun themeVideoUrl(id: String, container: String?): String? {
+    private fun themeVideoUrl(id: String, mediaSourceId: String?, container: String?): String? {
         val base = api.baseUrl ?: return null
+        val sourceId = mediaSourceId?.takeIf { it.isNotBlank() } ?: id
         val containers = container.orEmpty().lowercase().split(",")
         if (containers.any { it in setOf("mp4", "m4v", "mov", "mkv", "webm") }) {
-            return ServerUrl.resolve(base, "/Videos/$id/stream?static=true&MediaSourceId=$id", api.accessToken)
+            return ServerUrl.resolve(base, "/Videos/$id/stream?static=true&MediaSourceId=$sourceId", api.accessToken)
         }
         val query = listOf(
-            "MediaSourceId=$id",
+            "MediaSourceId=$sourceId",
             "DeviceId=${api.deviceInfo.id}",
             "VideoCodec=h264",
             "AudioCodec=aac",
@@ -1816,6 +1883,7 @@ internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
         },
         width = width,
         height = height,
+        mediaSourceId = mediaSources?.firstOrNull()?.id?.takeIf { it.isNotBlank() },
     )
 }
 

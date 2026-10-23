@@ -584,7 +584,7 @@ struct YouTubeUserActions: View {
                 systemImage: item.isFavorite ? "heart.fill" : "heart"
             )
         }
-        if !isChannel, !session.usesSilo {
+        if !isChannel, !session.isSiloServer {
             Button {
                 Task { await toggleWatchLater() }
             } label: {
@@ -599,10 +599,10 @@ struct YouTubeUserActions: View {
                 openURL(url)
             }
         }
-        if !isChannel, let onPlayElsewhere, !session.usesSilo {
+        if !isChannel, let onPlayElsewhere, !session.isSiloServer {
             Button("Play on Another Device…", systemImage: "tv.badge.wifi", action: onPlayElsewhere)
         }
-        if !isChannel, let onSyncPlay, !session.usesSilo {
+        if !isChannel, let onSyncPlay, !session.isSiloServer {
             Button("Watch Together…", systemImage: "person.2.wave.2", action: onSyncPlay)
         }
         if let onRefreshMetadata {

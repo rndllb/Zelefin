@@ -16,6 +16,7 @@ enum ZelefinError: LocalizedError, Sendable {
     case quickConnectDisabled
     case quickConnectExpired
     case quickConnectUnavailable
+    case siloNativeAddress
     case server(String)
     case keychain(String)
 
@@ -51,6 +52,8 @@ enum ZelefinError: LocalizedError, Sendable {
             "This Quick Connect code expired. Try again."
         case .quickConnectUnavailable:
             "Jellyfin did not return a Quick Connect code."
+        case .siloNativeAddress:
+            "This is Silo's main address. Sign in with your Silo username and password, or use Quick Connect on Silo's Jellyfin-compatible address."
         case let .server(message), let .keychain(message):
             message
         }

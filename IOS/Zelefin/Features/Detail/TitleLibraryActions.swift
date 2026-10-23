@@ -208,7 +208,8 @@ struct TitleUserActions: View {
                 systemImage: item.isFavorite ? "heart.fill" : "heart"
             )
         }
-        if !session.usesSilo {
+        // Silo's Jellyfin-compatible API serves no playlists (the watchlist is one) and rejects likes.
+        if !session.isSiloServer {
             Button {
                 Task { await toggleWatchlist() }
             } label: {
@@ -217,22 +218,22 @@ struct TitleUserActions: View {
                     systemImage: item.isWatchlisted ? "text.badge.minus" : "text.badge.plus"
                 )
             }
-        }
-        Button {
-            Task { await setLikes(item.likes == true ? nil : true) }
-        } label: {
-            Label(
-                item.likes == true ? "Liked" : "Like",
-                systemImage: item.likes == true ? "hand.thumbsup.fill" : "hand.thumbsup"
-            )
-        }
-        Button {
-            Task { await setLikes(item.likes == false ? nil : false) }
-        } label: {
-            Label(
-                item.likes == false ? "Disliked" : "Dislike",
-                systemImage: item.likes == false ? "hand.thumbsdown.fill" : "hand.thumbsdown"
-            )
+            Button {
+                Task { await setLikes(item.likes == true ? nil : true) }
+            } label: {
+                Label(
+                    item.likes == true ? "Liked" : "Like",
+                    systemImage: item.likes == true ? "hand.thumbsup.fill" : "hand.thumbsup"
+                )
+            }
+            Button {
+                Task { await setLikes(item.likes == false ? nil : false) }
+            } label: {
+                Label(
+                    item.likes == false ? "Disliked" : "Dislike",
+                    systemImage: item.likes == false ? "hand.thumbsdown.fill" : "hand.thumbsdown"
+                )
+            }
         }
         if let onCollections {
             Button("Add to Collection…", systemImage: "folder.badge.plus", action: onCollections)
@@ -240,10 +241,10 @@ struct TitleUserActions: View {
         if let onPlaylists {
             Button("Add to Playlist…", systemImage: "list.bullet.rectangle", action: onPlaylists)
         }
-        if let onPlayElsewhere, !session.usesSilo {
+        if let onPlayElsewhere, !session.isSiloServer {
             Button("Play on Another Device…", systemImage: "tv.badge.wifi", action: onPlayElsewhere)
         }
-        if let onSyncPlay, !session.usesSilo {
+        if let onSyncPlay, !session.isSiloServer {
             Button("Play in SyncPlay…", systemImage: "person.2.wave.2", action: onSyncPlay)
         }
         if onRefreshMetadata != nil || onRemoteImage != nil || onDelete != nil {

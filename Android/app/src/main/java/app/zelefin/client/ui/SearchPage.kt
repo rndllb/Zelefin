@@ -159,7 +159,6 @@ fun SearchTabPage(
         val resolved = discoverState.resolved(title)
         when {
             resolved.availability == SeerrTitle.Availability.Available -> Unit
-            pluginState.oneTapRequests -> if (resolved.canRequest) plugins.requestOneTap(title)
             else -> requestTitle = title
         }
     }
@@ -333,10 +332,7 @@ private fun SearchHome(
         Box(Modifier.fillMaxSize().zelefinHazeSource(pageGlass)) {
         when {
             scope == SearchScope.Discover && discover != null -> discover.content(discoverTerm.trim(), headerHeight, bottomInset, dismissKeyboard, onScrollOffset)
-            scope == SearchScope.Discover -> DiscoverUnavailable(
-                usesSilo = state.session?.usesSilo == true,
-                topInset = headerHeight,
-            )
+            scope == SearchScope.Discover -> DiscoverUnavailable(topInset = headerHeight)
             !active -> GenreGrid(search.genres, search.genresLoading, headerHeight, bottomInset, onScrollOffset, onGenre)
             term.isEmpty() -> RecentList(
                 recents = search.recents,
@@ -827,13 +823,13 @@ private fun SearchRow(
 }
 
 @Composable
-private fun DiscoverUnavailable(usesSilo: Boolean, topInset: Dp) {
+private fun DiscoverUnavailable(topInset: Dp) {
     Column(
         Modifier.fillMaxWidth().padding(top = topInset + 40.dp, start = 32.dp, end = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            if (usesSilo) "Requests Are Off" else "Sign In to Seerr",
+            "Sign In to Seerr",
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
             fontSize = 22.sp,
@@ -841,11 +837,7 @@ private fun DiscoverUnavailable(usesSilo: Boolean, topInset: Dp) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            if (usesSilo) {
-                "Install the Seerr plugin or Sonarr & Radarr requests on this Silo server, then open Plugins in Settings."
-            } else {
-                "Add Seerr in Settings to request movies and shows."
-            },
+            "Add Seerr in Settings to request movies and shows.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 16.sp,
             textAlign = TextAlign.Center,

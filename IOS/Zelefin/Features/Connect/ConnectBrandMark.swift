@@ -37,9 +37,16 @@ struct ZelefinLoadingView: View {
     }
 }
 
+/// Which kind of server the sign-in form is for. Silo uses its own sign-in and household
+/// profiles; everything after that runs on its Jellyfin-compatible API.
+enum SignInServerType: String, CaseIterable, Sendable {
+    case jellyfin
+    case silo
+}
+
 /// Rounded-square Jellyfin / Silo marks under the Zelefin logo.
 struct ConnectBackendPicker: View {
-    @Binding var selection: MediaBackend
+    @Binding var selection: SignInServerType
     var tileSize: CGFloat = 86
 
     var body: some View {
@@ -50,7 +57,7 @@ struct ConnectBackendPicker: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func tile(_ backend: MediaBackend) -> some View {
+    private func tile(_ backend: SignInServerType) -> some View {
         let selected = selection == backend
         return Button {
             selection = backend

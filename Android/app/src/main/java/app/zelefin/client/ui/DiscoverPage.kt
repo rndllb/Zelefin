@@ -130,7 +130,7 @@ internal fun DiscoverPane(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(discover.hits, key = { it.id }) { hit ->
-                        SeerrRequestRow(discover.resolved(hit), discover, plugins) { onSelect(hit) }
+                        SeerrRequestRow(discover.resolved(hit), discover) { onSelect(hit) }
                     }
                 }
             }
@@ -295,7 +295,7 @@ private fun LibraryMark(modifier: Modifier, side: Dp) {
 }
 
 @Composable
-private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, plugins: PluginsUiState, onRequest: () -> Unit) {
+private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, onRequest: () -> Unit) {
     val onServer = title.availability.isOnServer
     val fullyOnServer = title.availability == SeerrTitle.Availability.Available ||
         (title.kind == SeerrTitle.Kind.Movie && onServer)
@@ -307,7 +307,7 @@ private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, plugin
         title.review == SeerrTitle.Review.PendingApproval -> "Pending"
         else -> title.buttonTitle
     }
-    val tappable = !fullyOnServer && (canRequest || (!plugins.oneTapRequests && title.requestId != null))
+    val tappable = !fullyOnServer && (canRequest || title.requestId != null)
     Column(Modifier.fillMaxWidth().then(if (tappable) Modifier.clickable(onClick = onRequest) else Modifier)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

@@ -299,18 +299,25 @@ class JellyfinLibraryClient: @unchecked Sendable {
         await catalogFilterOptions(parentID: nil, include: filterIncludeTypes(for: kind))
     }
 
-    private func ignoringErrors<T: Sendable>(_ work: @Sendable () async throws -> T) async -> T? {
+    private func ignoringErrors<T: Sendable>(
+        _ work: @Sendable () async throws -> T,
+        caller: String = #function
+    ) async -> T? {
         do {
             return try await work()
         } catch {
+            #if DEBUG
+            print("[Home] \(caller) failed: \(error)")
+            #endif
             return nil
         }
     }
 
     func libraries() async throws -> [MediaLibrary] {
-        let result = try await client.send(
-            Paths.getUserViews(parameters: .init(userID: userID, isIncludeHidden: true))
+        let data = try await client.data(
+            for: Paths.getUserViews(parameters: .init(userID: userID, isIncludeHidden: true))
         ).value
+        let result = try ItemMapper.decodeViews(data)
         let rooms = (result.items ?? []).compactMap(ItemMapper.library(from:))
         return await markingTubeArchivist(rooms)
     }
@@ -500,7 +507,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         } else {
             async let movies = countItems(include: [.movie], parentID: nil)
             async let shows = countItems(include: [.series], parentID: nil)
-            async let episodes = countItems(include: [.episode], parentID: nil)
+            async let episodes = countEpisodes(parentID: nil)
             raw = await ServerCatalogCounts(movies: movies, shows: shows, episodes: episodes)
         }
         return raw.separatingYouTube(await youTubeCatalogCounts())
@@ -529,18 +536,18 @@ class JellyfinLibraryClient: @unchecked Sendable {
             return LibraryRoomCounts(movies: movies, shows: 0, episodes: 0)
         case .shows:
             async let shows = countItems(include: [.series], parentID: library.id)
-            async let episodes = countItems(include: [.episode], parentID: library.id)
+            async let episodes = countEpisodes(parentID: library.id)
             return await LibraryRoomCounts(movies: 0, shows: shows, episodes: episodes)
         case .youTube:
             async let channels = countItems(include: [.series], parentID: library.id)
-            async let videos = countItems(include: [.episode], parentID: library.id)
+            async let videos = countEpisodes(parentID: library.id)
             return await LibraryRoomCounts(movies: 0, shows: 0, episodes: 0, channels: channels, videos: videos)
         case .liveTV:
             return LibraryRoomCounts(movies: 0, shows: 0, episodes: 0)
         default:
             async let movies = countItems(include: [.movie], parentID: library.id)
             async let shows = countItems(include: [.series], parentID: library.id)
-            async let episodes = countItems(include: [.episode], parentID: library.id)
+            async let episodes = countEpisodes(parentID: library.id)
             return await LibraryRoomCounts(movies: movies, shows: shows, episodes: episodes)
         }
     }
@@ -560,6 +567,43 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
     private func countItems(in library: MediaLibrary) async -> Int {
         await countItems(include: browseIncludeTypes(for: library), parentID: library.id)
+    }
+
+    /// Silo's Jellyfin-compatible API has no `/Items/Counts` and answers 0 for episodes across a
+    /// library, but each series it lists carries its episode count in `RecursiveItemCount`.
+    private func countEpisodes(parentID: String?) async -> Int {
+        let direct = await countItems(include: [.episode], parentID: parentID)
+        guard direct == 0 else { return direct }
+        return await summedSeriesEpisodeCounts(parentID: parentID)
+    }
+
+    private func summedSeriesEpisodeCounts(parentID: String?) async -> Int {
+        var total = 0
+        var start = 0
+        let pageSize = 200
+        while start < 20_000 {
+            guard let result = try? await client.send(
+                Paths.getItems(
+                    parameters: .init(
+                        userID: userID,
+                        startIndex: start,
+                        limit: pageSize,
+                        isRecursive: true,
+                        parentID: parentID,
+                        fields: [.recursiveItemCount],
+                        includeItemTypes: [.series],
+                        enableUserData: false,
+                        enableTotalRecordCount: true,
+                        enableImages: false
+                    )
+                )
+            ).value else { break }
+            let items = result.items ?? []
+            total += items.reduce(0) { $0 + ($1.recursiveItemCount ?? 0) }
+            start += items.count
+            if items.isEmpty || start >= (result.totalRecordCount ?? 0) { break }
+        }
+        return total
     }
 
     private func countItems(include: [BaseItemKind], parentID: String?) async -> Int {
@@ -1229,15 +1273,22 @@ class JellyfinLibraryClient: @unchecked Sendable {
             for (index, library) in libraries.enumerated() {
                 group.addTask {
                     let section: HomeSection?
-                    if library.libraryKind == .shows {
-                        section = try? await self.recentlyAddedShows(parentID: library.id)
-                    } else {
-                        section = try? await self.latestItems(
-                            include: self.includeTypes(for: library),
-                            title: library.libraryKind.recentlyAddedTitle(libraryName: library.name),
-                            id: "library-\(library.id)",
-                            parentID: library.id
-                        )
+                    do {
+                        if library.libraryKind == .shows {
+                            section = try await self.recentlyAddedShows(parentID: library.id)
+                        } else {
+                            section = try await self.latestItems(
+                                include: self.includeTypes(for: library),
+                                title: library.libraryKind.recentlyAddedTitle(libraryName: library.name),
+                                id: "library-\(library.id)",
+                                parentID: library.id
+                            )
+                        }
+                    } catch {
+                        #if DEBUG
+                        print("[Home] recently added for \(library.name) (\(library.libraryKind)) failed: \(error)")
+                        #endif
+                        section = nil
                     }
                     return (index, section)
                 }
@@ -1751,15 +1802,16 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     /// Universal audio, so AVPlayer gets a format it can open and the server transcodes the rest.
+    /// The fallback is AAC in M4A because Silo's Jellyfin-compatible API converts to nothing else.
     private func themeSongURL(id: String) -> URL? {
         let query = [
             "UserId=\(userID)",
             "DeviceId=\(DeviceIdentity.deviceID())",
             "MaxStreamingBitrate=320000",
             "Container=mp3,aac,m4a,m4b,flac,alac,wav",
-            "TranscodingContainer=mp3",
+            "TranscodingContainer=m4a",
             "TranscodingProtocol=http",
-            "AudioCodec=mp3"
+            "AudioCodec=aac"
         ].joined(separator: "&")
         return ServerURL.resolve(base: client.configuration.url, path: "/Audio/\(id)/universal?\(query)", token: client.accessToken)
     }

@@ -366,7 +366,7 @@ fun DetailPage(
                                 CastCard(
                                     person,
                                     session,
-                                    onClick = personRoute(person, session)?.let { route -> { actions.onBrowse(BrowsePage.Library(route)) } },
+                                    onClick = personRoute(person)?.let { route -> { actions.onBrowse(BrowsePage.Library(route)) } },
                                 )
                             }
                         }
@@ -566,10 +566,10 @@ fun DetailPage(
         onIdentify = actions.identifyHits?.let { { target -> sheet = DetailSheet.Identify(pageItem ?: target) } },
         onEditMetadata = actions.saveMetadata?.let { { target -> sheet = DetailSheet.Metadata(pageItem ?: target) } },
         onDownloadSeason = actions.downloadRelated,
-        usesSilo = session?.usesSilo == true,
+        isSiloServer = session?.isSiloServer == true,
         skipCinemaIntros = skipCinema,
         onCollections = detail?.item?.let { pageItem ->
-            if (session?.usesSilo == true || pageItem.kind == MediaKind.Collection) null else {
+            if (session?.isSiloServer == true || pageItem.kind == MediaKind.Collection) null else {
                 { sheet = DetailSheet.Collections(pageItem) }
             }
         },
@@ -622,8 +622,8 @@ fun DetailPage(
     )
 }
 
-private fun personRoute(person: app.zelefin.core.CreditPerson, session: SavedSession?): LibraryRoute.Person? =
-    if (session?.usesSilo == true || person.id.isBlank()) null else LibraryRoute.Person(person.id, person.name)
+private fun personRoute(person: app.zelefin.core.CreditPerson): LibraryRoute.Person? =
+    if (person.id.isBlank()) null else LibraryRoute.Person(person.id, person.name)
 
 @Composable
 private fun DetailHero(

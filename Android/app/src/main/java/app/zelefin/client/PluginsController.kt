@@ -23,15 +23,11 @@ import app.zelefin.client.plugins.SeerrRequestCatalog
 import app.zelefin.client.plugins.SeerrRequestDraft
 import app.zelefin.client.plugins.SeerrTitle
 import app.zelefin.client.plugins.SeerrUser
-import app.zelefin.client.plugins.SiloRequestCapabilities
-import app.zelefin.client.plugins.SiloRequestClient
-import app.zelefin.client.plugins.SiloRequestSource
 import app.zelefin.client.plugins.SkipSegment
 import app.zelefin.client.plugins.TmdbUserReview
 import app.zelefin.client.plugins.ZelefinCompanionClient
 import app.zelefin.client.plugins.ZelefinPluginInstaller
 import app.zelefin.client.push.ZelefinPush
-import app.zelefin.core.MediaBackend
 import app.zelefin.core.SavedSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -57,11 +53,9 @@ data class PluginsUiState(
     val seerrUser: SeerrUser? = null,
     val seerrBusy: Boolean = false,
     val seerrMessage: String? = null,
-    val silo: SiloRequestCapabilities = SiloRequestCapabilities.None,
-    val siloSource: SiloRequestSource = SiloRequestSource.Seerr,
     val autoSkipIntro: Boolean = false,
     val autoSkipCredits: Boolean = false,
-    val backend: MediaBackend = MediaBackend.Jellyfin,
+    val isSiloServer: Boolean = false,
     val pushEnabled: Boolean = true,
     val pushRegistered: Boolean = false,
     val pushBusy: Boolean = false,
@@ -72,26 +66,21 @@ data class PluginsUiState(
     val pluginNeedsRestart: Boolean = false,
     val pluginInstallMessage: String? = null,
 ) {
-    val companionAvailable: Boolean get() = backend == MediaBackend.Jellyfin && jellyfin.companion
+    val companionAvailable: Boolean get() = !isSiloServer && jellyfin.companion
 
-    val discoverAvailable: Boolean
-        get() = when (backend) {
-            MediaBackend.Silo -> silo.discoverAvailable(siloSource)
-            MediaBackend.Jellyfin -> seerrName != null
-        }
+    val discoverAvailable: Boolean get() = seerrName != null
 
-    val oneTapRequests: Boolean get() = backend == MediaBackend.Silo
     val canManageRequests: Boolean get() = seerrUser?.canManageRequests == true
 
     fun showsAddSubtitles(kind: app.zelefin.core.MediaKind): Boolean =
-        backend == MediaBackend.Jellyfin &&
+        !isSiloServer &&
             RemoteSubtitleOffer.shouldShowAddSubtitles(
                 canManageSubtitles,
                 jellyfin.openSubtitles,
                 RemoteSubtitleOffer.supportsRemoteSubtitles(kind),
             )
 
-    val hidesFromHome: Boolean get() = backend == MediaBackend.Jellyfin && jellyfin.enhanced
+    val hidesFromHome: Boolean get() = !isSiloServer && jellyfin.enhanced
 }
 
 data class DiscoverGridState(
@@ -131,7 +120,6 @@ class PluginsController(
     private val scope: CoroutineScope,
     private val session: () -> SavedSession?,
     private val allSessions: () -> List<SavedSession> = { listOfNotNull(session()) },
-    private val siloIdentity: () -> Map<String, String>,
     private val tmdbCatalog: suspend () -> JellyfinTmdbCatalog,
 ) {
     private val settings = PluginSettings(application)
@@ -139,7 +127,6 @@ class PluginsController(
         PluginsUiState(
             seerrUrl = settings.seerrUrl,
             seerrName = settings.seerrSession?.displayName,
-            siloSource = settings.siloRequestSource,
             autoSkipIntro = settings.autoSkipIntro,
             autoSkipCredits = settings.autoSkipCredits,
             pushEnabled = ZelefinPush.isEnabled(application),
@@ -175,13 +162,10 @@ class PluginsController(
             settings.seerrOwnerAccountId = current.accountId
         }
         lastUser = current.accountId
-        _state.update { it.copy(backend = current.backend, detecting = true) }
+        _state.update { it.copy(isSiloServer = current.isSiloServer, detecting = true) }
         detectJob?.cancel()
         detectJob = scope.launch {
-            when (current.backend) {
-                MediaBackend.Jellyfin -> detectJellyfin(current)
-                MediaBackend.Silo -> detectSilo(current)
-            }
+            detectJellyfin(current)
             _state.update { it.copy(detecting = false) }
         }
     }
@@ -197,7 +181,6 @@ class PluginsController(
         _state.update {
             it.copy(
                 jellyfin = JellyfinPluginState(),
-                silo = SiloRequestCapabilities.None,
                 isAdmin = false,
                 pushRegistered = false,
                 pushMessage = null,
@@ -224,7 +207,7 @@ class PluginsController(
     /** Removes this install from the plugin. Call before the session is cleared. */
     fun unregisterPush(current: SavedSession? = session()) {
         current ?: return
-        if (current.backend != MediaBackend.Jellyfin) return
+        if (current.isSiloServer) return
         val deviceId = ZelefinPush.deviceId(application)
         scope.launch {
             withContext(NonCancellable) {
@@ -243,7 +226,7 @@ class PluginsController(
         }
         // Every signed-in account may have registered this phone; the plugin must forget all of them.
         val servers = (allSessions() + listOfNotNull(session()))
-            .filter { it.backend == MediaBackend.Jellyfin }
+            .filterNot { it.isSiloServer }
             .distinctBy { it.serverUrl to it.accessToken }
         if (servers.isEmpty()) {
             _state.update { it.copy(pushRegistered = false) }
@@ -278,7 +261,7 @@ class PluginsController(
     /** Mirrors iOS `SessionStore.installZelefinPlugin()` and the Notifications settings install button. */
     fun installZelefinPlugin() {
         val current = session() ?: return
-        if (current.backend != MediaBackend.Jellyfin || !_state.value.isAdmin) {
+        if (current.isSiloServer || !_state.value.isAdmin) {
             _state.update { it.copy(pluginInstallMessage = "Sign in as a Jellyfin administrator to install the Zelefin plugin.") }
             return
         }
@@ -313,7 +296,7 @@ class PluginsController(
 
     fun restartJellyfin() {
         val current = session() ?: return
-        if (current.backend != MediaBackend.Jellyfin || !_state.value.isAdmin) return
+        if (current.isSiloServer || !_state.value.isAdmin) return
         _state.update { it.copy(pluginRestarting = true) }
         scope.launch {
             val result = runCatching { ZelefinPluginInstaller(current.serverUrl, current.accessToken).restartServer() }
@@ -332,6 +315,11 @@ class PluginsController(
     }
 
     private suspend fun detectJellyfin(current: SavedSession) {
+        if (current.isSiloServer) {
+            _state.update { it.copy(jellyfin = JellyfinPluginState(), isAdmin = false, canManageSubtitles = false) }
+            refreshSeerrUser()
+            return
+        }
         val (admin, subtitleManagement) = JellyfinPlugins.userPolicy(current.serverUrl, current.accessToken, current.userId)
         val canManage = RemoteSubtitleOffer.canManageSubtitles(admin, subtitleManagement)
         val detected = runCatching {
@@ -339,6 +327,10 @@ class PluginsController(
         }.getOrElse { if (it is CancellationException) throw it else JellyfinPluginState() }
         _state.update { it.copy(jellyfin = detected, isAdmin = admin, canManageSubtitles = canManage) }
         if (detected.companion) registerPush()
+        refreshSeerrUser()
+    }
+
+    private suspend fun refreshSeerrUser() {
         if (settings.seerrClient() != null) {
             val user = settings.refreshUser()
             val session = settings.seerrSession
@@ -352,29 +344,9 @@ class PluginsController(
         }
     }
 
-    private suspend fun detectSilo(current: SavedSession) {
-        val admin = current.userRole?.lowercase() in setOf("admin", "administrator", "owner")
-        val caps = runCatching { siloRequests(current).detectCapabilities(admin) }
-            .getOrElse { if (it is CancellationException) throw it else SiloRequestCapabilities.None }
-        _state.update { it.copy(silo = caps, isAdmin = admin) }
-    }
-
-    private fun siloRequests(current: SavedSession) = SiloRequestClient(
-        baseUrl = current.serverUrl,
-        accessToken = current.accessToken,
-        refreshToken = current.refreshToken,
-        profileId = current.profileId,
-        profileToken = current.profileToken,
-        identityHeaders = siloIdentity(),
-    )
-
     fun catalog(): RequestCatalog? {
-        val current = session() ?: return null
-        if (!_state.value.discoverAvailable) return null
-        return when (current.backend) {
-            MediaBackend.Silo -> siloRequests(current)
-            MediaBackend.Jellyfin -> settings.seerrClient()?.let(::SeerrRequestCatalog)
-        }
+        if (session() == null || !_state.value.discoverAvailable) return null
+        return settings.seerrClient()?.let(::SeerrRequestCatalog)
     }
 
     fun seerr(): SeerrClient? = settings.seerrClient()
@@ -428,12 +400,6 @@ class PluginsController(
         _state.update { it.copy(autoSkipCredits = value) }
     }
 
-    fun setSiloSource(source: SiloRequestSource) {
-        settings.siloRequestSource = source
-        _state.update { it.copy(siloSource = source) }
-        _discover.value = DiscoverUiState()
-    }
-
     fun loadDiscoverHome(force: Boolean = false) {
         val current = _discover.value
         if (!force && (current.sections.isNotEmpty() || current.loading)) return
@@ -441,11 +407,9 @@ class PluginsController(
         _discover.update { it.copy(loading = it.sections.isEmpty(), message = null) }
         homeJob?.cancel()
         homeJob = scope.launch {
-            if (session()?.backend == MediaBackend.Jellyfin) {
-                launch {
-                    val ids = runCatching { tmdbCatalog() }.getOrNull()
-                    if (ids != null) _discover.update { it.copy(catalog = ids) }
-                }
+            launch {
+                val ids = runCatching { tmdbCatalog() }.getOrNull()
+                if (ids != null) _discover.update { it.copy(catalog = ids) }
             }
             runCatching { catalog.discoverHome() }
                 .onSuccess { sections -> _discover.update { it.copy(sections = sections, loading = false) } }
@@ -505,22 +469,6 @@ class PluginsController(
         }
     }
 
-    /** One tap on Silo; Seerr requests go through [submitSeerr] from the request sheet. */
-    fun requestOneTap(title: SeerrTitle) {
-        val catalog = catalog() ?: return
-        _discover.update { it.copy(requesting = it.requesting + title.id) }
-        scope.launch {
-            runCatching { catalog.request(title) }
-                .onSuccess { markRequested(title) }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    _discover.update {
-                        it.copy(requesting = it.requesting - title.id, notice = error.message ?: "The request didn’t go through.")
-                    }
-                }
-        }
-    }
-
     suspend fun submitSeerr(title: SeerrTitle, draft: SeerrRequestDraft) {
         val client = seerr() ?: return
         client.request(draft)
@@ -559,14 +507,13 @@ class PluginsController(
 
     suspend fun skipSegments(itemId: String): List<SkipSegment> {
         val current = session() ?: return emptyList()
-        if (current.backend != MediaBackend.Jellyfin) return emptyList()
         return runCatching { IntroSkipperClient(current.serverUrl, current.accessToken).segments(itemId) }
             .getOrElse { if (it is CancellationException) throw it else emptyList() }
     }
 
     fun subtitles(): OpenSubtitlesClient? {
         val current = session() ?: return null
-        if (current.backend != MediaBackend.Jellyfin || !_state.value.jellyfin.openSubtitles) return null
+        if (current.isSiloServer || !_state.value.jellyfin.openSubtitles) return null
         return OpenSubtitlesClient(current.serverUrl, current.accessToken, current.userId)
     }
 
@@ -579,7 +526,7 @@ class PluginsController(
 
     private fun enhanced(): JellyfinEnhancedClient? {
         val current = session() ?: return null
-        if (current.backend != MediaBackend.Jellyfin || !_state.value.jellyfin.enhanced) return null
+        if (current.isSiloServer || !_state.value.jellyfin.enhanced) return null
         return JellyfinEnhancedClient(current.serverUrl, current.accessToken, current.userId)
     }
 

@@ -95,6 +95,28 @@ final class DownloadLayoutTests: XCTestCase {
         XCTAssertNil(DownloadHTTP.filenameExtension(fromContentDisposition: "inline"))
     }
 
+    func testRefusedDownloadsShowTheServersReason() {
+        let silo = #"{"Error":"Forbidden","Message":"You are not allowed to download this item"}"#.data(using: .utf8)
+        XCTAssertEqual(
+            DownloadHTTP.failure(statusCode: 403, body: silo).errorDescription,
+            "You are not allowed to download this item"
+        )
+        XCTAssertEqual(
+            DownloadHTTP.failure(statusCode: 403, body: nil).errorDescription,
+            "This server doesn't allow downloads for this account."
+        )
+        XCTAssertEqual(
+            DownloadHTTP.failure(statusCode: 503, body: Data("<html></html>".utf8)).errorDescription,
+            "Downloads aren't available on this server."
+        )
+        let problem = #"{"title":"Not Found","detail":"Media file not found"}"#.data(using: .utf8)
+        XCTAssertEqual(DownloadHTTP.failure(statusCode: 404, body: problem).errorDescription, "Media file not found")
+        XCTAssertEqual(
+            DownloadHTTP.failure(statusCode: 500, body: nil).errorDescription,
+            ZelefinError.downloadFailed.errorDescription
+        )
+    }
+
     func testByteCountUsesKnownSizeWhenHTTPOmitsLength() {
         XCTAssertEqual(DownloadByteCount.resolvedExpected(httpExpected: -1, knownSize: 1_000), 1_000)
         XCTAssertEqual(DownloadByteCount.resolvedExpected(httpExpected: 0, knownSize: 2_048), 2_048)

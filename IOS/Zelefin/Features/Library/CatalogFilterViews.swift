@@ -307,19 +307,29 @@ struct CatalogFilterSheet: View {
     @Binding var query: CatalogBrowseQuery
     var options: CatalogFilterOptions
     @Environment(\.dismiss) private var dismiss
+    @Environment(SessionStore.self) private var session
 
     var body: some View {
         NavigationStack {
             List {
                 section("Filters", CatalogStatusFilter.allCases, selection: $query.statuses) { $0.title }
-                section("Features", CatalogFeatureFilter.allCases, selection: $query.features) { $0.title }
-                section("Video Type", CatalogVideoKind.allCases, selection: $query.videoKinds) { $0.title }
+                // Silo's Jellyfin-compatible API ignores feature, video type, tag, and studio filters.
+                if !session.isSiloServer {
+                    section("Features", CatalogFeatureFilter.allCases, selection: $query.features) { $0.title }
+                }
+                if !session.isSiloServer {
+                    section("Video Type", CatalogVideoKind.allCases, selection: $query.videoKinds) { $0.title }
+                }
 
                 choiceLink("Genres", choices: options.genres, selected: $query.genres)
                 choiceLink("Parental Ratings", choices: options.officialRatings, selected: $query.officialRatings)
-                choiceLink("Tags", choices: options.tags, selected: $query.tags)
+                if !session.isSiloServer {
+                    choiceLink("Tags", choices: options.tags, selected: $query.tags)
+                }
                 yearLink()
-                choiceLink("Studios", choices: options.studios, selected: $query.studios)
+                if !session.isSiloServer {
+                    choiceLink("Studios", choices: options.studios, selected: $query.studios)
+                }
                 choiceLink("Audio Languages", choices: options.languages, selected: $query.audioLanguages)
                 choiceLink("Subtitle Languages", choices: options.languages, selected: $query.subtitleLanguages)
             }
@@ -480,12 +490,17 @@ struct CatalogChoiceList: View {
 struct CatalogSortSheet: View {
     @Binding var query: CatalogBrowseQuery
     @Environment(\.dismiss) private var dismiss
+    @Environment(SessionStore.self) private var session
+
+    private var sortFields: [CatalogSortField] {
+        session.isSiloServer ? CatalogSortField.allCases.filter(\.isServedBySilo) : CatalogSortField.allCases
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Sort By") {
-                    ForEach(CatalogSortField.allCases) { field in
+                    ForEach(sortFields) { field in
                         Button {
                             query.sort = field
                             if !field.allowsDirection {

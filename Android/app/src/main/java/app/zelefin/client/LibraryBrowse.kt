@@ -33,22 +33,13 @@ enum class LibraryKind(val browseLabel: String) {
             }
         }
 
-        fun fromSilo(raw: String?): LibraryKind = when (raw?.lowercase()) {
-            "movie", "movies" -> Movies
-            "show", "shows", "series", "tv" -> Shows
-            "collection", "collections" -> Collections
-            "live", "livetv", "live_tv" -> LiveTV
-            "music", "musicvideo", "musicvideos", "audio" -> Music
-            else -> Other
-        }
-
         fun stored(raw: String?): LibraryKind = entries.firstOrNull { it.name == raw } ?: Other
     }
 }
 
-/** Rooms the Library tab lists. Silo has no Live TV guide on this client. */
-fun List<LibraryRoom>.libraryTabRooms(silo: Boolean): List<LibraryRoom> =
-    filter { it.kind.appearsInLibrary && !(silo && it.kind == LibraryKind.LiveTV) }
+/** Rooms the Library tab lists. Silo's Jellyfin API has no Live TV. */
+fun List<LibraryRoom>.libraryTabRooms(isSiloServer: Boolean): List<LibraryRoom> =
+    filter { it.kind.appearsInLibrary && !(isSiloServer && it.kind == LibraryKind.LiveTV) }
 
 /** Collections, then Movies, then Shows, then other rooms. Live TV and recordings stay last. */
 val LibraryRoom.libraryCardRank: Int

@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.Request
 
 @Serializable
@@ -56,8 +58,6 @@ data class DownloadedItem(
     val userId: String,
     val serverHost: String,
     val downloadedAt: Long,
-    /** Managed row id on backends that track downloads server-side (Silo); removed with the file. */
-    val serverDownloadId: String? = null,
 )
 
 @Serializable
@@ -250,15 +250,11 @@ data class DownloadAsset(
     val headers: Map<String, String>,
     val container: String? = null,
     val knownSize: Long = 0,
-    val serverDownloadId: String? = null,
 )
 
-/** Resolves where a title's original file lives for the signed-in backend. */
+/** Resolves where a title's original file lives for the signed-in account. */
 interface DownloadBackend {
-    suspend fun available(session: SavedSession): Boolean
     suspend fun prepare(item: MediaItem, session: SavedSession): DownloadAsset
-    suspend fun finalize(session: SavedSession, serverDownloadId: String) {}
-    suspend fun deleteServer(session: SavedSession, serverDownloadId: String) {}
 
     /** Poster for the title, and for an episode the show's poster. */
     suspend fun artworkUrls(item: MediaItem, session: SavedSession): Pair<String?, String?>
@@ -313,13 +309,7 @@ object ZelefinDownloads {
             sessions.distinctUntilChanged().collectLatest { current ->
                 session = current
                 val account = current?.let { DownloadAccount(it.userId, host(it.serverUrl)) }
-                _state.update { it.copy(account = account, available = current != null && !current.usesSilo) }
-                if (current != null && current.usesSilo) {
-                    val usable = runCatching { backend.available(current) }
-                        .onFailure { if (it is CancellationException) throw it }
-                        .getOrDefault(false)
-                    _state.update { if (it.account == account) it.copy(available = usable) else it }
-                }
+                _state.update { it.copy(account = account, available = current != null) }
             }
         }
     }
@@ -410,12 +400,6 @@ object ZelefinDownloads {
             }
             persist(app)
         }
-        val serverId = record.serverDownloadId
-        val signedIn = session
-        val backend = backend
-        if (serverId != null && signedIn != null && backend != null) {
-            scope.launch { runCatching { backend.deleteServer(signedIn, serverId) } }
-        }
     }
 
     fun remove(row: DownloadRow) {
@@ -500,12 +484,10 @@ object ZelefinDownloads {
     private suspend fun perform(app: Context, target: MediaItem, account: SavedSession, backend: DownloadBackend, runId: String) {
         val folder = itemDirectory(app, account, target.id)
         val staging = File(folder, ".artwork-$runId")
-        var asset: DownloadAsset? = null
         var finished = false
         val partial = File(folder, "media.part")
         try {
             val resolved = backend.prepare(target, account)
-            asset = resolved
             coroutineScope { ensureActive() }
             folder.mkdirs()
             staging.mkdirs()
@@ -535,7 +517,6 @@ object ZelefinDownloads {
                 userId = account.userId,
                 serverHost = host(account.serverUrl),
                 downloadedAt = System.currentTimeMillis(),
-                serverDownloadId = resolved.serverDownloadId,
             )
             synchronized(lock) {
                 _state.update { state ->
@@ -544,19 +525,16 @@ object ZelefinDownloads {
                 persist(app)
             }
             finished = true
-            resolved.serverDownloadId?.let { id -> runCatching { backend.finalize(account, id) } }
         } catch (cancel: CancellationException) {
             val paused = _state.value.progress[target.id]?.paused == true
             if (!paused) partial.delete()
             throw cancel
-        } catch (_: Throwable) {
-            showNotice(DownloadNotice("Download", FailureMessage))
+        } catch (error: Throwable) {
+            showNotice(DownloadNotice("Download", (error as? DownloadRefused)?.message ?: FailureMessage))
         } finally {
             staging.deleteRecursively()
             if (!finished && _state.value.progress[target.id]?.paused != true) {
                 if (folder.listFiles().isNullOrEmpty()) folder.delete()
-                val serverId = asset?.serverDownloadId
-                if (serverId != null) scope.launch { runCatching { backend.deleteServer(account, serverId) } }
             }
         }
     }
@@ -578,7 +556,10 @@ object ZelefinDownloads {
             }
             try {
                 call.execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                    if (!response.isSuccessful) {
+                        val body = runCatching { response.peekBody(64 * 1024L).string() }.getOrNull()
+                        throw DownloadRefused(downloadFailureMessage(response.code, body))
+                    }
                     val type = response.header("Content-Type")?.lowercase()
                     if (type != null && type.contains("text/html")) throw IOException("Unexpected page")
                     val body = response.body ?: throw IOException("Empty body")
@@ -714,5 +695,27 @@ object ZelefinDownloads {
         val extension = filename.substringAfterLast('.', "").lowercase()
         if (extension.isEmpty() || extension.length > 5 || !extension.all { it.isLetterOrDigit() }) return null
         return if (extension == "matroska") "mkv" else extension
+    }
+}
+
+/** A download the server refused, carrying its own reason so the notice can say what to change. */
+internal class DownloadRefused(message: String) : IOException(message)
+
+/**
+ * Silo answers 403 when Allow downloads is off or the account may not download, and 503 when
+ * downloads aren't set up. Matches iOS `DownloadHTTP.failure`.
+ */
+internal fun downloadFailureMessage(code: Int, body: String?): String {
+    val message = body?.let { raw ->
+        val json = runCatching { Json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return@let null
+        listOf("Message", "message", "detail", "title").firstNotNullOfOrNull { key ->
+            (json[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.takeIf { it.isNotEmpty() }
+        }
+    }
+    return when (code) {
+        401 -> "Sign in again to continue."
+        403 -> message ?: "This server doesn't allow downloads for this account."
+        503 -> message ?: "Downloads aren't available on this server."
+        else -> message ?: ZelefinDownloads.FailureMessage
     }
 }

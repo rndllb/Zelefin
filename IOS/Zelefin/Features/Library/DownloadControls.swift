@@ -175,7 +175,7 @@ struct DetailDownloadSharePill: View {
     @State private var showsYouTubePicker = false
 
     var body: some View {
-        let state: DownloadControlState = (session.usesSilo && !session.downloadsAvailable)
+        let state: DownloadControlState = !session.downloadsAvailable
             ? .unavailable
             : downloads.control(for: item, episodes: episodes, account: session.session)
         let transfer = downloads.transfer(for: item, account: session.session)

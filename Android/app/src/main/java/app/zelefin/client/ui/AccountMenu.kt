@@ -22,12 +22,14 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.LiveTv
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +53,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.ZelefinModel
 import app.zelefin.core.SavedSession
 import app.zelefin.core.ServerUrl
+import app.zelefin.core.SiloAvatarUrl
+import app.zelefin.core.SiloProfile
 
 const val AddAccountTopicId = "add-account"
 
@@ -69,10 +73,15 @@ fun AccountAvatarMenu(
     var open by remember { mutableStateOf(false) }
     val anchor = remember { mutableStateOf(Rect.Zero) }
     val haze = LocalZelefinHaze.current
-    val showSessions = session?.usesSilo != true
-    val showSyncPlay = session?.usesSilo != true
-    val addLabel = if (session?.usesSilo == true) "Add Account" else "Add User"
+    val showSessions = session?.isSiloServer != true
+    val showSyncPlay = session?.isSiloServer != true
     val others = appState.accounts.filter { it.accountId != session?.accountId }
+    val currentProfileId = session?.siloLink?.profileId
+    val profiles = if (currentProfileId == null) emptyList() else appState.household.profiles.filter { it.id != currentProfileId }
+
+    LaunchedEffect(open) {
+        if (open && currentProfileId != null) model.refreshHousehold()
+    }
 
     PresentZelefinOverlay(visible = haze != null && open) {
         val hazeState = haze ?: return@PresentZelefinOverlay
@@ -81,7 +90,12 @@ fun AccountAvatarMenu(
                 anchor = anchor.value,
                 showSessions = showSessions,
                 showSyncPlay = showSyncPlay,
-                addLabel = addLabel,
+                silo = session?.isSiloServer == true,
+                profiles = profiles,
+                onSwitchProfile = { profile ->
+                    open = false
+                    model.switchSiloProfile(profile)
+                },
                 others = others,
                 onDismiss = { open = false },
                 onProfile = {
@@ -130,7 +144,9 @@ private fun DockGlassMenu(
     anchor: Rect,
     showSessions: Boolean,
     showSyncPlay: Boolean,
-    addLabel: String,
+    silo: Boolean,
+    profiles: List<SiloProfile>,
+    onSwitchProfile: (SiloProfile) -> Unit,
     others: List<SavedSession>,
     onDismiss: () -> Unit,
     onProfile: () -> Unit,
@@ -152,17 +168,36 @@ private fun DockGlassMenu(
             GlassMenuRow("Profile", Icons.Outlined.AccountCircle, onProfile)
             if (showSessions) GlassMenuRow("Sessions", Icons.Outlined.LiveTv, onSessions)
             if (showSyncPlay) GlassMenuRow("SyncPlay", Icons.Outlined.Groups, onSyncPlay)
+            if (profiles.isNotEmpty()) {
+                GlassMenuDivider()
+                GlassMenuCaption("Switch Profile")
+                profiles.forEach { profile -> GlassProfileRow(profile) { onSwitchProfile(profile) } }
+            }
             if (others.isNotEmpty()) {
                 GlassMenuDivider()
+                GlassMenuCaption(if (silo) "Switch Account" else "Switch User")
                 others.forEach { account -> GlassAccountRow(account) { onSwitch(account) } }
                 GlassMenuDivider()
             }
-            GlassMenuRow(addLabel, Icons.Outlined.PersonAdd, onAdd)
+            GlassMenuRow(if (silo) "Add Account" else "Add User", Icons.Outlined.PersonAdd, onAdd)
             GlassMenuRow("Settings", Icons.Outlined.Settings, onSettings)
             GlassMenuDivider()
             GlassMenuRow("Sign Out", Icons.AutoMirrored.Outlined.Logout, onSignOut, destructive = true)
         }
     }
+}
+
+@Composable
+private fun GlassMenuCaption(title: String) {
+    Text(
+        title,
+        color = DockInactive.copy(alpha = 0.6f),
+        fontFamily = ZelefinFont,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 13.sp,
+        maxLines = 1,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp),
+    )
 }
 
 @Composable
@@ -197,6 +232,34 @@ private fun GlassAccountRow(account: SavedSession, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(account.userName, color = DockInactive, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(account.displayServer, color = DockInactive.copy(alpha = 0.6f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun GlassProfileRow(profile: SiloProfile, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val run = LocalMenuAction.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .padding(horizontal = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (pressed) DockSelectedFill else Color.Transparent)
+            .clickable(interactionSource = interaction, indication = null) { run(onClick) }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SiloProfileAvatar(profile, 28.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(profile.name, color = DockInactive, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(siloProfileCaption(profile), color = DockInactive.copy(alpha = 0.6f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 1)
+        }
+        if (profile.hasPin) {
+            Icon(Icons.Outlined.Lock, contentDescription = "PIN", tint = DockInactive.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -336,10 +399,9 @@ private fun AvatarPhoto(session: SavedSession?, photo: androidx.compose.ui.unit.
 }
 
 fun avatarImageUrl(session: SavedSession): String? =
-    userAvatarUrl(session, session.userId, session.userImageTag)
+    session.siloLink?.profileAvatarUrl?.let(SiloAvatarUrl::displayable) ?: userAvatarUrl(session, session.userId, session.userImageTag)
 
 fun userAvatarUrl(session: SavedSession, userId: String, tag: String?): String? {
-    if (session.usesSilo) return null
     val stamped = tag?.takeIf { it.isNotBlank() }?.let { "&tag=$it" }.orEmpty()
     return ServerUrl.resolve(
         session.serverUrl,

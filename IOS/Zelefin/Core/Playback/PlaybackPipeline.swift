@@ -290,7 +290,7 @@ enum PlaybackPipelineResolver {
         )
     }
 
-    /// AVPlayer cannot overlay Silo/Jellyfin sidecar SRT/VTT files.
+    /// AVPlayer cannot overlay Jellyfin sidecar SRT/VTT files.
     static func prefersNativePlayer(preference: Bool, hasSidecarSubtitles: Bool) -> Bool {
         preference && !hasSidecarSubtitles
     }
@@ -314,16 +314,15 @@ enum PlaybackPipelineResolver {
     }
 
     /// AVPlayer cannot demux MKV or MPEG-4 ASP. Native-on asks Jellyfin for HLS
-    /// first. Silo keeps the original file — remuxing HDR there becomes a transcode.
+    /// first.
     static func needsServerRemuxForNativePlayer(
         url: URL,
         method: PlaybackMethod,
         container: String? = nil,
         videoCodec: String? = nil,
-        usesNativePlayer: Bool = true,
-        keepOriginalFile: Bool = false
+        usesNativePlayer: Bool = true
     ) -> Bool {
-        guard usesNativePlayer, !keepOriginalFile else { return false }
+        guard usesNativePlayer else { return false }
         if url.isFileURL { return false }
         return !canNativePlayerOpen(url: url, method: method, container: container, videoCodec: videoCodec)
     }
@@ -373,7 +372,7 @@ enum DirectPlaySeekPolicy {
 /// Where playback should begin. Direct Play files start at t=0 on the byte stream,
 /// so the client must open at the saved playhead. Jellyfin plans always set
 /// `clientOwnsPlayhead` because their HLS URLs carry no `StartTimeTicks` (see
-/// `StreamResumeURL`). Silo `original_http` is Direct Play of the full file.
+/// `StreamResumeURL`).
 enum PlaybackResumePolicy {
     static let threshold: TimeInterval = 5
 

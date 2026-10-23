@@ -38,7 +38,7 @@ Sign in with URL, username, and password. Extra accounts live in the profile she
 
 **🗄️ Silo** · ready
 
-Same app. Household profiles and PIN after login. Jellyfin-only dashboard tools stay hidden (users, plugins, backups, branding, tasks).
+Through Silo’s Jellyfin-compatible API: turn it on in Silo, then sign in as `username#profile` or with Quick Connect. Jellyfin-only tools Silo doesn’t serve stay hidden (admin dashboard, SyncPlay, playlists, remote play, Live TV).
 
 </td>
 <td width="33%" valign="top">
@@ -77,7 +77,7 @@ Movies, shows, collections, favorites, playlists. Filter by type, genre, year, r
 
 ### 🔎 Search
 
-Search the signed-in server. **Discover** and request missing titles when Seerr is signed in (or Silo’s request plugins).
+Search the signed-in server. **Discover** and request missing titles when Seerr is signed in.
 
 </td>
 </tr>
@@ -234,7 +234,7 @@ Needs Android 8 (API 26)+.
 </tr>
 </table>
 
-**Needs:** iOS 26, or Android 8+, and a Jellyfin or Silo server the device can reach.
+**Needs:** iOS 26, or Android 8+, and a Jellyfin server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
 
 ```bash
 cd IOS

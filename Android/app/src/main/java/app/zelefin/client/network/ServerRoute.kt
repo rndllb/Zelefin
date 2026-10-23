@@ -20,7 +20,7 @@ import okhttp3.Request
 /**
  * Sends requests meant for the saved (remote) server address to the local address while
  * this phone is on the home network. Every client shares [GatewayHttp.client], so one
- * interceptor covers the Jellyfin SDK, Silo, plugins, and artwork.
+ * interceptor covers the Jellyfin SDK, plugins, and artwork.
  */
 object ServerRoute {
     @Volatile
