@@ -51,6 +51,8 @@ final class PlayerModel {
     private let serverAudioID: Int?
     private let serverSubtitleID: Int?
     private var startedOnServerAudio = false
+    /// Jellyfin's audio pick, held until the first frame so the switch never reloads mid-startup.
+    private var pendingServerAudioID: Int?
     private var startedOnServerSubtitle = false
     var isFinished = false
     var skipSegments: [SkipSegment] = []
@@ -66,6 +68,9 @@ final class PlayerModel {
     private var playheadIsTrusted = true
     private var lastTrustedTime: TimeInterval = 0
     private var engineIsBuffering = false
+    private var readerIsStalled = false
+    private var networkReader: JellyfinByteRangeReader?
+    private var stallWatchTask: Task<Void, Never>?
     private var engineIsSeeking = false
     private var isSurfaceBound = false
     private var didStart = false
@@ -150,6 +155,10 @@ final class PlayerModel {
         cancellables.removeAll()
         sleepTimerTask?.cancel()
         sleepTimerTask = nil
+        stallWatchTask?.cancel()
+        stallWatchTask = nil
+        networkReader = nil
+        readerIsStalled = false
         retainedSubtitleCues = []
         subtitleCues = []
 
@@ -412,7 +421,7 @@ final class PlayerModel {
     }
 
     private func publishWaitState() {
-        let waiting = engineIsBuffering || engineIsSeeking
+        let waiting = engineIsBuffering || engineIsSeeking || readerIsStalled
         if isBuffering != waiting {
             isBuffering = waiting
         }
@@ -437,7 +446,14 @@ final class PlayerModel {
         return 0
     }
 
+    private func applyPendingServerAudio() {
+        guard hasFirstFrame, let id = pendingServerAudioID, let engine else { return }
+        pendingServerAudioID = nil
+        engine.selectAudioTrack(index: id)
+    }
+
     func selectAudio(id: Int) {
+        pendingServerAudioID = nil
         selectedAudioID = id
         engine?.selectAudioTrack(index: id)
     }
@@ -648,6 +664,8 @@ final class PlayerModel {
                     startPosition: resumeStartPosition,
                     options: options
                 )
+            } else {
+                watchForReaderStalls(reader)
             }
         }
         noteResumePlayhead()
@@ -657,6 +675,27 @@ final class PlayerModel {
         finishDeferredResumeIfNeeded()
     }
 
+    /// Polls the Direct Play reader so a dead link reads as rebuffering: the spinner shows and the
+    /// live adaptive monitor steps down to a transcode instead of leaving a silent frozen picture.
+    private func watchForReaderStalls(_ reader: JellyfinByteRangeReader) {
+        networkReader = reader
+        stallWatchTask?.cancel()
+        stallWatchTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, let reader = self.networkReader else { return }
+                let stalled = self.hasFirstFrame && !self.isPaused && !self.engineIsSeeking
+                    && ReaderStallPolicy.isStalled(
+                        secondsWithoutProgress: reader.secondsWithoutProgress,
+                        bufferedAhead: self.bufferedAheadSeconds
+                    )
+                guard stalled != self.readerIsStalled else { continue }
+                self.readerIsStalled = stalled
+                self.publishWaitState()
+            }
+        }
+    }
+
     private func observeEngine(_ engine: DirectPlayEngine) {
         engine.$hasFirstFrameReadyForDisplay
             .receive(on: DispatchQueue.main)
@@ -664,6 +703,7 @@ final class PlayerModel {
                 Task { @MainActor in
                     guard let self, ready else { return }
                     self.hasFirstFrame = true
+                    self.applyPendingServerAudio()
                     if let engine = self.engine {
                         self.updatePictureSize(from: engine)
                     }
@@ -723,13 +763,19 @@ final class PlayerModel {
                     if self.audioOptions != options {
                         self.audioOptions = options
                     }
-                    // Start on the audio stream Jellyfin chose for this user, not the file's flag.
+                    // Move to the stream Jellyfin chose only for another language, and only once the
+                    // first load has finished; see `StartingAudioPolicy`.
                     if !self.startedOnServerAudio {
                         self.startedOnServerAudio = true
                         if let wanted = self.serverAudioID,
-                           tracks.contains(where: { $0.id == wanted }),
-                           engine.activeAudioTrackIndex != wanted {
-                            engine.selectAudioTrack(index: wanted)
+                           let target = tracks.first(where: { $0.id == wanted }),
+                           engine.activeAudioTrackIndex != wanted,
+                           StartingAudioPolicy.shouldSwitch(
+                               engineLanguage: tracks.first(where: { $0.id == engine.activeAudioTrackIndex })?.language,
+                               serverLanguage: target.language
+                           ) {
+                            self.pendingServerAudioID = wanted
+                            self.applyPendingServerAudio()
                         }
                     }
                 }
@@ -978,25 +1024,34 @@ final class PlayerModel {
         ]
 
         if let engine {
-            let width = size.width > 0 ? size.width : CGFloat(engine.sourceVideoWidth)
-            let height = size.height > 0 ? size.height : CGFloat(engine.sourceVideoHeight)
-            let videoBitrate = engine.sourceVideoBitrate
-            sections.append(PlaybackStatsSection(title: "Video", rows: [
-                .init(label: "Codec", value: engine.sourceVideoCodecName?.uppercased() ?? "—"),
-                .init(label: "Size", value: pixelLabel(width: engine.sourceVideoWidth, height: engine.sourceVideoHeight)),
+            // A server transcode or remux plays through AVPlayer inside the engine, which never
+            // reads the source, so these fall back to what the server reported for the file.
+            let facts = plan.sourceVideo
+            let sourceWidth = engine.sourceVideoWidth > 0 ? Int(engine.sourceVideoWidth) : facts?.width ?? 0
+            let sourceHeight = engine.sourceVideoHeight > 0 ? Int(engine.sourceVideoHeight) : facts?.height ?? 0
+            let width = size.width > 0 ? size.width : CGFloat(sourceWidth)
+            let height = size.height > 0 ? size.height : CGFloat(sourceHeight)
+            var videoRows: [PlaybackStatsRow] = [
+                .init(label: "Codec", value: (engine.sourceVideoCodecName ?? facts?.codec ?? plan.videoCodec)?.uppercased() ?? "—"),
+                .init(label: "Size", value: pixelLabel(width: Int32(sourceWidth), height: Int32(sourceHeight))),
                 .init(label: "Display", value: pixelLabel(width: Int32(width.rounded()), height: Int32(height.rounded()))),
                 .init(label: "Aspect", value: PlaybackStats.aspectName(width: width, height: height)),
-                .init(label: "Frame rate", value: frameRateLabel(engine.sourceVideoFrameRate)),
-                .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(videoBitrate)),
+                .init(label: "Frame rate", value: frameRateLabel(engine.sourceVideoFrameRate ?? facts?.frameRate)),
+                .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(sourceVideoBitrate(engine: engine))),
                 .init(label: "Range", value: videoRangeLabel(engine)),
-                .init(label: "Container", value: engine.sourceContainerFormat?.uppercased() ?? plan.streamURL.pathExtension.uppercased())
-            ]))
+                .init(label: "Container", value: (engine.sourceContainerFormat ?? plan.container).uppercased())
+            ]
+            if plan.method != .directPlay, let stream = Self.transcodeBitrate(in: plan.streamURL) {
+                videoRows.append(.init(label: "Stream", value: PlaybackStats.bitrateLabel(Int64(stream))))
+            }
+            sections.append(PlaybackStatsSection(title: "Video", rows: videoRows))
 
             let audio = engine.audioTracks.first(where: { $0.id == engine.activeAudioTrackIndex })
                 ?? engine.audioTracks.first
+            let planAudio = plan.audioTracks.first(where: \.isSelected) ?? plan.audioTracks.first
             sections.append(PlaybackStatsSection(title: "Audio", rows: [
-                .init(label: "Track", value: audio.map(audioTitle) ?? "—"),
-                .init(label: "Codec", value: audio?.codec.uppercased() ?? "—"),
+                .init(label: "Track", value: audio.map(audioTitle) ?? planAudio?.title ?? "—"),
+                .init(label: "Codec", value: (audio?.codec ?? planAudio?.codec)?.uppercased() ?? "—"),
                 .init(label: "Layout", value: audio.map(channelLabel) ?? "—"),
                 .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(audio?.bitrate ?? 0)),
                 .init(label: "Delivery", value: audioDeliveryLabel(engine.audioDelivery))
@@ -1026,11 +1081,17 @@ final class PlayerModel {
                 .map { ClosedRange(uncheckedBounds: ($0.start.seconds, $0.end.seconds)) }
             let ahead = PlaybackStats.bufferedAhead(ranges: indicated, playhead: playhead)
             let size = item.presentationSize
+            let facts = plan.sourceVideo
             sections.append(PlaybackStatsSection(title: "Video", rows: [
-                .init(label: "Size", value: size.width > 0 ? "\(Int(size.width))×\(Int(size.height))" : "—"),
+                .init(label: "Codec", value: (facts?.codec ?? plan.videoCodec)?.uppercased() ?? "—"),
+                .init(label: "Size", value: facts.map { "\($0.width)×\($0.height)" } ?? "—"),
+                .init(label: "Display", value: size.width > 0 ? "\(Int(size.width))×\(Int(size.height))" : "—"),
                 .init(label: "Aspect", value: PlaybackStats.aspectName(width: size.width, height: size.height)),
+                .init(label: "Frame rate", value: frameRateLabel(facts?.frameRate)),
+                .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(Int64(facts?.bitrate ?? plan.item.sourceBitrate ?? 0))),
                 .init(label: "Range", value: plan.videoRange.displayName),
-                .init(label: "Audio", value: plan.audioFormat.displayName)
+                .init(label: "Audio", value: plan.audioFormat.displayName),
+                .init(label: "Container", value: plan.container.uppercased())
             ]))
             sections.append(PlaybackStatsSection(title: "Network", rows: [
                 .init(label: "Host", value: plan.streamURL.host ?? "—"),
@@ -1042,6 +1103,23 @@ final class PlayerModel {
         }
 
         return PlaybackStatsSnapshot(sections: sections)
+    }
+
+    private func sourceVideoBitrate(engine: DirectPlayEngine) -> Int64 {
+        if engine.sourceVideoBitrate > 0 { return engine.sourceVideoBitrate }
+        return Int64(plan.sourceVideo?.bitrate ?? plan.item.sourceBitrate ?? 0)
+    }
+
+    /// The bitrate Zelefin asked the server to transcode to, from the stream URL.
+    static func transcodeBitrate(in url: URL) -> Int? {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        for name in ["videobitrate", "maxstreamingbitrate"] {
+            if let raw = items.first(where: { $0.name.lowercased() == name })?.value,
+               let value = Int(raw), value > 0 {
+                return value
+            }
+        }
+        return nil
     }
 
     private func pixelLabel(width: Int32, height: Int32) -> String {
@@ -1058,20 +1136,20 @@ final class PlayerModel {
         return String(format: "%.3f fps", rate)
     }
 
+    /// The file's range first: `videoFormat` is what the panel shows, so an HDR10 title on an SDR
+    /// screen (base iPad) read as plain "SDR". The engine's own guidance is `sourceVideoFormat`
+    /// for media labels. Jellyfin's stream metadata covers a source the probe has not tagged yet.
     private func videoRangeLabel(_ engine: DirectPlayEngine) -> String {
-        var label: String
-        switch engine.videoFormat {
-        case .sdr: label = "SDR"
-        case .hdr10: label = "HDR10"
-        case .hdr10Plus: label = "HDR10+"
-        case .dolbyVision: label = "Dolby Vision"
-        case .hlg: label = "HLG"
-        }
+        var label = engine.sourceVideoFormat == .sdr && plan.videoRange != .sdr
+            ? plan.videoRange.displayName
+            : sourceRangeName(engine.sourceVideoFormat)
         if let profile = engine.sourceDVProfile {
             label += " P\(profile)"
         }
-        if engine.sourceVideoFormat != engine.videoFormat {
-            label += " (source \(sourceRangeName(engine.sourceVideoFormat)))"
+        if label != "SDR", engine.videoFormat == .sdr {
+            label += " (tone-mapped to SDR)"
+        } else if engine.videoFormat != engine.sourceVideoFormat, engine.videoFormat != .sdr {
+            label += " (shown as \(sourceRangeName(engine.videoFormat)))"
         }
         return label
     }

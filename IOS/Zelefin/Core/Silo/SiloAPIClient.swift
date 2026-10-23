@@ -866,7 +866,9 @@ actor SiloAPIClient {
         )
     }
 
-    func bitrateTestBytes(size: Int, fallbackURL: URL?) async throws -> Data {
+    /// [timer] sums body-transfer time across every request this makes, so the fallback rounds are
+    /// not charged a round trip each.
+    func bitrateTestBytes(size: Int, fallbackURL: URL?, timer: TransferTimer? = nil) async throws -> Data {
         let bounded = min(max(size, 32_000), 8_000_000)
         do {
             let data = try await sendData(
@@ -876,14 +878,15 @@ actor SiloAPIClient {
                 body: nil as EmptyJSON?,
                 authorized: true,
                 allowsRefreshRetry: true,
-                timeout: 25
+                timeout: 25,
+                timer: timer
             )
             if data.count >= 16_000 { return data }
         } catch let error as SiloHTTPError where error.isMissing {
             // Native Silo has no dedicated probe endpoint; fall through.
         }
         if let fallbackURL {
-            let data = try await downloadLimited(from: fallbackURL, limit: bounded)
+            let data = try await downloadLimited(from: fallbackURL, limit: bounded, timer: timer)
             if data.count >= 16_000 { return data }
         }
         var collected = Data()
@@ -901,7 +904,8 @@ actor SiloAPIClient {
                 body: nil as EmptyJSON?,
                 authorized: true,
                 allowsRefreshRetry: true,
-                timeout: 25
+                timeout: 25,
+                timer: timer
             )
             collected.append(chunk)
             try Task.checkCancellation()
@@ -912,7 +916,7 @@ actor SiloAPIClient {
         return collected
     }
 
-    private func downloadLimited(from url: URL, limit: Int) async throws -> Data {
+    private func downloadLimited(from url: URL, limit: Int, timer: TransferTimer? = nil) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
@@ -922,7 +926,7 @@ actor SiloAPIClient {
             request.setValue(value, forHTTPHeaderField: name)
         }
         AccessGateway.apply(&request)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request, delegate: timer)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw ZelefinError.bitrateTestFailed
         }
@@ -1121,7 +1125,8 @@ actor SiloAPIClient {
         body: Body?,
         authorized: Bool,
         allowsRefreshRetry: Bool,
-        timeout: TimeInterval = 60
+        timeout: TimeInterval = 60,
+        timer: TransferTimer? = nil
     ) async throws -> Data {
         let request = try makeRequest(
             path: path,
@@ -1130,18 +1135,19 @@ actor SiloAPIClient {
             body: body,
             authorized: authorized
         )
-        return try await perform(request, allowsRefreshRetry: allowsRefreshRetry, timeout: timeout)
+        return try await perform(request, allowsRefreshRetry: allowsRefreshRetry, timeout: timeout, timer: timer)
     }
 
     private func perform(
         _ request: URLRequest,
         allowsRefreshRetry: Bool,
-        timeout: TimeInterval = 60
+        timeout: TimeInterval = 60,
+        timer: TransferTimer? = nil
     ) async throws -> Data {
         var request = request
         request.timeoutInterval = timeout
         let urlSession = timeout > 60 ? playbackSession : session
-        let (data, response) = try await urlSession.data(for: request)
+        let (data, response) = try await urlSession.data(for: request, delegate: timer)
         guard let http = response as? HTTPURLResponse else {
             throw ZelefinError.server("The Silo server did not return a valid response.")
         }
@@ -1159,7 +1165,7 @@ actor SiloAPIClient {
             }
             var retry = request
             retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            return try await perform(retry, allowsRefreshRetry: false, timeout: timeout)
+            return try await perform(retry, allowsRefreshRetry: false, timeout: timeout, timer: timer)
         }
         if (200..<300).contains(http.statusCode) {
             return data

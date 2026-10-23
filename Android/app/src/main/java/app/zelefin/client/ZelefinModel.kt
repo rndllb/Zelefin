@@ -495,6 +495,11 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openItem(item: MediaItem) {
+        // Silo collections are personal lists with no item page; Jellyfin BoxSets get one.
+        if (item.kind == MediaKind.Collection && _state.value.session?.usesSilo == true) {
+            openBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name)))
+            return
+        }
         val target = if (item.isYouTube && item.kind == MediaKind.Episode) item.id else item.seriesDetailItemId ?: item.id
         val current = _state.value.screen
         val returnTo = when (current) {
@@ -964,6 +969,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 else -> {
                     val userId = UUID.fromString(_state.value.session?.userId)
                     val client = jellyfinClient()
+                    if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client)
                     // The user's Jellyfin account settings (Settings → Playback) decide the starting
                     // streams, so the device-side language picks only apply to Silo.
                     client.playback(
@@ -1005,6 +1011,17 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, client::measureBitrate) }
         }
         return AdaptiveBitrateStore.resolvedBitsPerSecond(context, sourceBitrate)
+    }
+
+    /**
+     * Off the home network with no recent sample for this network, measure before choosing: with
+     * nothing measured Auto Direct Plays the original, which is what froze on a weak hotspot.
+     * Costs at most the 4s probe timeout, once per network every 90s.
+     */
+    private suspend fun measureConnectionIfUnknown(context: Context, client: JellyfinLibrary) {
+        if (PlaybackPreferences.selectedQuality(context) != PlaybackQuality.Auto) return
+        if (ServerUrl.isInternalHost(playbackHost())) return
+        runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, client::measureBitrate) }
     }
 
     private fun playbackHost(): String {
@@ -1053,6 +1070,28 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         play(current.item.copy(playbackPosition = positionSeconds), bitrateOverride = bitsPerSecond)
     }
 
+    /**
+     * Theme song and video for a title page, when the user turned them on in Settings → Playback
+     * and Jellyfin has them. Null on Silo, which has no theme media.
+     */
+    suspend fun themeMedia(itemId: String): ThemeMedia? {
+        val context = getApplication<Application>()
+        if (!PlaybackPreferences.themeSongs(context) && !PlaybackPreferences.themeVideos(context)) return null
+        val session = _state.value.session ?: return null
+        if (session.usesSilo) return null
+        val media = runCatching { jellyfinClient().themeMedia(itemId, UUID.fromString(session.userId)) }.getOrNull()
+            ?: return null
+        val videoUrl = media.videoUrl?.takeIf { PlaybackPreferences.themeVideos(context) }?.let { ServerRoute.rewrite(it) }
+        // As in Jellyfin, a theme video is preferred and the song does not play alongside it.
+        val songUrl = media.songUrl?.takeIf { videoUrl == null && PlaybackPreferences.themeSongs(context) }
+            ?.let { ServerRoute.rewrite(it) }
+        return ThemeMedia(
+            songUrl = songUrl,
+            videoUrl = videoUrl,
+            videoSound = PlaybackPreferences.themeVideoSound(context),
+        ).takeIf { !it.isEmpty }
+    }
+
     /** Settings → Playback → Test Connection. Throws with the iOS copy when nothing downloads. */
     suspend fun testConnection(): BitrateProbeResult {
         val session = _state.value.session ?: throw ZelefinException.server("Sign in to test this connection.")
@@ -1066,7 +1105,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         } ?: throw ZelefinException.server(
             "Zelefin could not download the demo file from this server. Check the connection and try again.",
         )
-        AdaptiveBitrateStore.record(result)
+        AdaptiveBitrateStore.record(result, NetworkPathSnapshot.current(getApplication()))
         return result
     }
 

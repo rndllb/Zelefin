@@ -177,10 +177,13 @@ private fun CollectionCollage(posters: List<MediaItem>, session: SavedSession?, 
     }
 }
 
-/** Same hairline as Vellum Android `LyraArtwork`: clip, then a 0.5dp white edge at 10%. */
+/** Width of the glassy edge on cover art; matches iOS `PosterChrome.outlineWidth`. */
+internal val PosterOutlineWidth = 1.dp
+
+/** Same hairline as Vellum Android `LyraArtwork`: clip, then a white edge at 10%. */
 fun Modifier.posterChrome(corner: androidx.compose.ui.unit.Dp = 10.dp): Modifier {
     val shape = RoundedCornerShape(corner)
-    return clip(shape).border(width = 0.5.dp, color = Color.White.copy(alpha = 0.10f), shape = shape)
+    return clip(shape).border(width = PosterOutlineWidth, color = Color.White.copy(alpha = 0.10f), shape = shape)
 }
 
 fun heroArtwork(item: MediaItem, session: SavedSession?): String? =

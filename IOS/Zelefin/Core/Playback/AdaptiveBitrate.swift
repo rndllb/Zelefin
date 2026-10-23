@@ -56,6 +56,9 @@ struct BitrateProbeResult: Equatable, Sendable {
 
 enum AdaptiveBitratePolicy {
     static let utilization = 0.7
+    /// Cellular and metered links swing more than Wi-Fi at home, so playback claims less of what
+    /// was measured and lets the live monitor step up once the buffer proves the link holds.
+    static let meteredUtilization = 0.5
     static let cacheTTL: TimeInterval = 90
     static let playbackSampleBytes = 750_000
     static let settingsSampleBytes = 2_500_000
@@ -64,7 +67,31 @@ enum AdaptiveBitratePolicy {
 
     static func budgetBitsPerSecond(measured: Int?, path: NetworkPathSnapshot) -> Int {
         let raw = measured ?? path.estimatedBitsPerSecond
-        return max(PlaybackQuality.kbps420.rawValue, Int(Double(raw) * utilization))
+        let share = path.transport == .cellular || path.isExpensive || path.isConstrained
+            ? meteredUtilization
+            : utilization
+        return max(PlaybackQuality.kbps420.rawValue, Int(Double(raw) * share))
+    }
+
+    /// A sample that runs out its whole timeout is itself a measurement: the link moved at most
+    /// `bytes` in `timeout`. Returning nil there fell back to the optimistic path estimate, which is
+    /// how a phone hotspot that reads as Wi-Fi ended up Direct Playing the original.
+    /// Quick failures (an HTTP error, no route) carry no speed information and stay nil.
+    static func timedOutProbe(
+        bytes: Int,
+        timeout: TimeInterval,
+        elapsed: TimeInterval,
+        transport: NetworkTransport,
+        now: Date = Date()
+    ) -> BitrateProbeResult? {
+        guard timeout > 0, elapsed >= timeout * 0.9 else { return nil }
+        return BitrateProbeResult(
+            bitsPerSecond: Int(Double(bytes) * 8 / max(elapsed, timeout)),
+            bytes: 0,
+            elapsed: elapsed,
+            transport: transport,
+            measuredAt: now
+        )
     }
 
     static func quality(
@@ -116,6 +143,23 @@ enum AdaptiveBitratePolicy {
         guard let result else { return false }
         guard result.transport == path.transport else { return false }
         return now.timeIntervalSince(result.measuredAt) < cacheTTL
+    }
+}
+
+/// When a Direct Play read that has stopped receiving bytes counts as rebuffering.
+/// AetherEngine keeps its audio clock running while the demuxer waits on the network, so the
+/// engine never reports buffering for this; the reader is the only place that sees it.
+enum ReaderStallPolicy {
+    /// No bytes for this long while a read waits: the link has stalled, not just slowed.
+    static let silence: TimeInterval = 3
+    /// With this much video still buffered, a short silence is ridden out.
+    static let comfortableBuffer: TimeInterval = 4
+    /// A silence this long counts even if the engine still reports buffer ahead.
+    static let hardSilence: TimeInterval = 8
+
+    static func isStalled(secondsWithoutProgress: TimeInterval, bufferedAhead: TimeInterval) -> Bool {
+        guard secondsWithoutProgress >= silence else { return false }
+        return bufferedAhead < comfortableBuffer || secondsWithoutProgress >= hardSilence
     }
 }
 
@@ -240,5 +284,48 @@ extension PlaybackQuality {
         }
         guard candidate.bitsPerSecond > current.bitsPerSecond else { return nil }
         return candidate
+    }
+}
+
+/// Sums how long response bodies took to arrive, first byte to last, from `URLSessionTaskMetrics`.
+///
+/// A bitrate sample timed with a wall clock also counts DNS, TLS, the request round trip and the
+/// server's time to first byte. On a 750 KB sample that latency is most of the elapsed time, so a fast
+/// remote link measured as a slow one and Auto chose a server transcode over Direct Play.
+final class TransferTimer: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var total: TimeInterval = 0
+
+    var seconds: TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        return total
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard let transfer = Self.transferSeconds(metrics.transactionMetrics.last) else { return }
+        lock.lock()
+        total += transfer
+        lock.unlock()
+    }
+
+    /// Metrics can land just after the data call returns; wait a moment for them before falling back.
+    func settledSeconds() async -> TimeInterval {
+        for _ in 0..<10 where seconds == 0 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return seconds
+    }
+
+    static func transferSeconds(_ transaction: URLSessionTaskTransactionMetrics?) -> TimeInterval? {
+        guard let start = transaction?.responseStartDate, let end = transaction?.responseEndDate else { return nil }
+        let seconds = end.timeIntervalSince(start)
+        return seconds > 0 ? seconds : nil
+    }
+
+    /// Bits per second for `bytes`, timed by body transfer when metrics arrived, else by `wallClock`.
+    static func bitsPerSecond(bytes: Int, transferSeconds: TimeInterval, wallClock: TimeInterval) -> Int {
+        let elapsed = transferSeconds > 0 ? transferSeconds : wallClock
+        return max(0, Int(Double(bytes) * 8 / max(elapsed, 0.02)))
     }
 }

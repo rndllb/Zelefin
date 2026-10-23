@@ -444,7 +444,9 @@ class SiloClient(
         val client = GatewayHttp.client.newBuilder()
             .callTimeout(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
             .build()
-        fun fetch(path: String, query: Map<String, String>): Int? {
+        // Body bytes and the nanoseconds they took, timed from the headers so each request's round
+        // trip and time to first byte do not count against the link.
+        fun fetch(path: String, query: Map<String, String>): Pair<Int, Long>? {
             val builder = Request.Builder().url(buildUrl(path, query))
             identity().forEach { (name, value) -> builder.header(name, value) }
             if (accessToken.isNotBlank()) builder.header("Authorization", "Bearer $accessToken")
@@ -452,17 +454,18 @@ class SiloClient(
             profileToken?.let { builder.header("X-Profile-Token", it) }
             return runCatching {
                 client.newCall(builder.build()).execute().use { response ->
-                    if (response.isSuccessful) response.body?.bytes()?.size else null
+                    val started = System.nanoTime()
+                    val size = if (response.isSuccessful) response.body?.bytes()?.size else null
+                    size?.let { it to System.nanoTime() - started }
                 }
             }.getOrNull()
         }
-        val started = System.nanoTime()
         val direct = fetch("/api/v1/playback/bitrate-test", mapOf("size" to bounded.toString()))
-        if (direct != null && direct >= 16_000) {
-            return@withContext app.zelefin.client.BitrateProbeResult.from(direct, System.nanoTime() - started, transport)
+        if (direct != null && direct.first >= 16_000) {
+            return@withContext app.zelefin.client.BitrateProbeResult.from(direct.first, direct.second, transport)
         }
-        val fallbackStart = System.nanoTime()
         var collected = 0
+        var transferNanos = 0L
         var round = 0
         while (collected < bounded && round < 24 && System.nanoTime() < deadline) {
             round += 1
@@ -470,10 +473,11 @@ class SiloClient(
                 "/api/v2/home/sections",
                 mapOf("image_size" to "large", "_probe" to "${System.currentTimeMillis() / 1000}-$round"),
             ) ?: break
-            collected += chunk
+            collected += chunk.first
+            transferNanos += chunk.second
         }
         if (collected < 16_000) return@withContext null
-        app.zelefin.client.BitrateProbeResult.from(collected, System.nanoTime() - fallbackStart, transport)
+        app.zelefin.client.BitrateProbeResult.from(collected, transferNanos, transport)
     }
 
     suspend fun report(sessionId: String, position: Double, paused: Boolean) = withContext(Dispatchers.IO) {

@@ -963,15 +963,27 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     private func downloadBitrateTest(size: Int, transport: NetworkTransport) async throws -> BitrateProbeResult {
+        guard let base = ServerURL.resolve(base: client.configuration.url, path: "/Playback/BitrateTest") else {
+            throw ZelefinError.bitrateTestFailed
+        }
+        var request = URLRequest(url: ServerURL.appending([("size", String(size))], to: base))
+        if let token = client.accessToken {
+            request.setValue("MediaBrowser Token=\"\(token)\"", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
+        }
+        let timer = TransferTimer()
         let start = Date()
-        let data = try await client.send(Paths.getBitrateTestBytes(size: size)).value
+        let (data, response) = try await JellyfinNetworking.apiData(for: request, delegate: timer)
         try Task.checkCancellation()
-        let elapsed = max(Date().timeIntervalSince(start), 0.05)
-        let bitsPerSecond = Int((Double(data.count) * 8.0) / elapsed)
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode), !data.isEmpty else {
+            throw ZelefinError.bitrateTestFailed
+        }
+        let wallClock = max(Date().timeIntervalSince(start), 0.05)
+        let transfer = await timer.settledSeconds()
         return BitrateProbeResult(
-            bitsPerSecond: max(0, bitsPerSecond),
+            bitsPerSecond: TransferTimer.bitsPerSecond(bytes: data.count, transferSeconds: transfer, wallClock: wallClock),
             bytes: data.count,
-            elapsed: elapsed,
+            elapsed: transfer > 0 ? transfer : wallClock,
             transport: transport,
             measuredAt: Date()
         )
@@ -1128,7 +1140,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
             versions: ItemMapper.versions(from: sources),
             isLive: isLive,
             liveStreamID: source.liveStreamID,
-            clientOwnsPlayhead: true
+            clientOwnsPlayhead: true,
+            sourceVideo: ItemMapper.sourceVideoFacts(from: streams)
         )
     }
 
@@ -1723,8 +1736,54 @@ class JellyfinLibraryClient: @unchecked Sendable {
         ).value
         return (result?.themeVideosResult?.items ?? []).compactMap { dto in
             guard let item = ItemMapper.mediaItem(from: dto) else { return nil }
-            return TitleExtra(item: item, caption: "Theme")
+            return TitleExtra(item: item, caption: ItemMapper.themeVideoCaption)
         }
+    }
+
+    /// The first theme song and theme video, inherited from the series for seasons and episodes.
+    func themeMedia(for itemID: String) async -> ThemeMedia {
+        let result = try? await client.send(
+            Paths.getThemeMedia(itemID: itemID, parameters: .init(userID: userID, isInheritFromParent: true))
+        ).value
+        let song = result?.themeSongsResult?.items?.first?.id
+        let videoURL = await themeVideoURL(result?.themeVideosResult?.items?.first)
+        return ThemeMedia(songURL: song.flatMap(themeSongURL), videoURL: videoURL)
+    }
+
+    /// Universal audio, so AVPlayer gets a format it can open and the server transcodes the rest.
+    private func themeSongURL(id: String) -> URL? {
+        let query = [
+            "UserId=\(userID)",
+            "DeviceId=\(DeviceIdentity.deviceID())",
+            "MaxStreamingBitrate=320000",
+            "Container=mp3,aac,m4a,m4b,flac,alac,wav",
+            "TranscodingContainer=mp3",
+            "TranscodingProtocol=http",
+            "AudioCodec=mp3"
+        ].joined(separator: "&")
+        return ServerURL.resolve(base: client.configuration.url, path: "/Audio/\(id)/universal?\(query)", token: client.accessToken)
+    }
+
+    /// MP4 and MOV stream as they are. Anything else (MKV, WebM: common for downloaded theme
+    /// videos) goes through PlaybackInfo without Direct Play, the same server remux or transcode the
+    /// native player uses, since AVPlayer cannot open those files.
+    private func themeVideoURL(_ dto: BaseItemDto?) async -> URL? {
+        guard let dto, let id = dto.id else { return nil }
+        let containers = (dto.container ?? "").lowercased().split(separator: ",").map(String.init)
+        if containers.contains(where: { ["mp4", "m4v", "mov"].contains($0) }) {
+            return ServerURL.resolve(
+                base: client.configuration.url,
+                path: "/Videos/\(id)/stream?static=true&MediaSourceId=\(id)",
+                token: client.accessToken
+            )
+        }
+        guard let item = ItemMapper.mediaItem(from: dto) else { return nil }
+        return try? await playbackPlan(
+            for: item,
+            allowDirectPlay: false,
+            maxBitrate: 8_000_000,
+            startTime: 0
+        ).streamURL
     }
 
     func cinemaIntros(for itemID: String) async -> [MediaItem] {

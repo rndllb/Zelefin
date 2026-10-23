@@ -658,7 +658,7 @@ private struct SearchPage: View {
 
     private var genreGrid: some View {
         LazyVGrid(columns: genreColumns, spacing: SearchGenreGrid.spacing) {
-            ForEach(genres) { genre in
+            ForEach(GenreOrder.shuffled(genres, name: \.name)) { genre in
                 NavigationLink {
                     CatalogGridView(title: genre.name, query: .genre(genre.id))
                 } label: {

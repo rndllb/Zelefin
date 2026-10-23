@@ -20,6 +20,37 @@ final class AdaptiveBitrateTests: XCTestCase {
         XCTAssertEqual(constrained.estimatedBitsPerSecond, PlaybackQuality.kbps720.rawValue)
     }
 
+    func testMeteredLinksClaimHalfTheMeasurement() {
+        let cellular = NetworkPathSnapshot(transport: .cellular, isExpensive: false, isConstrained: false, isSatisfied: true)
+        let hotspot = NetworkPathSnapshot(transport: .wifi, isExpensive: true, isConstrained: false, isSatisfied: true)
+        XCTAssertEqual(AdaptiveBitratePolicy.budgetBitsPerSecond(measured: 10_000_000, path: cellular), 5_000_000)
+        XCTAssertEqual(AdaptiveBitratePolicy.budgetBitsPerSecond(measured: 10_000_000, path: hotspot), 5_000_000)
+    }
+
+    func testReaderSilenceWithLowBufferIsAStall() {
+        XCTAssertFalse(ReaderStallPolicy.isStalled(secondsWithoutProgress: 0, bufferedAhead: 0))
+        XCTAssertFalse(ReaderStallPolicy.isStalled(secondsWithoutProgress: 2.5, bufferedAhead: 0))
+        XCTAssertTrue(ReaderStallPolicy.isStalled(secondsWithoutProgress: 3, bufferedAhead: 1))
+    }
+
+    func testReaderSilenceRidesOutOnABigBufferUntilItIsLong() {
+        XCTAssertFalse(ReaderStallPolicy.isStalled(secondsWithoutProgress: 5, bufferedAhead: 20))
+        XCTAssertTrue(ReaderStallPolicy.isStalled(secondsWithoutProgress: 8, bufferedAhead: 20))
+    }
+
+    func testTimedOutProbeRecordsTheCeilingItProves() {
+        let probe = AdaptiveBitratePolicy.timedOutProbe(bytes: 750_000, timeout: 4, elapsed: 4.1, transport: .wifi)
+        XCTAssertNotNil(probe)
+        XCTAssertLessThanOrEqual(probe?.bitsPerSecond ?? .max, 1_500_000)
+        XCTAssertNil(AdaptiveBitratePolicy.timedOutProbe(bytes: 750_000, timeout: 4, elapsed: 0.3, transport: .wifi))
+    }
+
+    func testProbeSpeedUsesBodyTransferNotLatency() {
+        // 750 KB in 0.1s of transfer is 60 Mbps; the 0.6s wall clock (latency included) read 10.
+        XCTAssertEqual(TransferTimer.bitsPerSecond(bytes: 750_000, transferSeconds: 0.1, wallClock: 0.6), 60_000_000)
+        XCTAssertEqual(TransferTimer.bitsPerSecond(bytes: 750_000, transferSeconds: 0, wallClock: 0.6), 10_000_000)
+    }
+
     func testBudgetUsesSeventyPercentOfTheMeasurement() {
         let wifi = NetworkPathSnapshot(
             transport: .wifi,

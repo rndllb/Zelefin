@@ -137,6 +137,8 @@ fun DetailPage(
     val pluginState = plugins?.state?.collectAsState()?.value
     val scope = rememberCoroutineScope()
     val pageItem = detail?.item
+    // Owned by the page, not the hero row, so the song keeps playing when the hero scrolls away.
+    val theme = rememberThemeMedia(pageItem?.id)
     var extrasRevision by remember(pageItem?.id) { mutableIntStateOf(0) }
     var extras by remember(pageItem?.id) { mutableStateOf<EnhancedExtras?>(null) }
     var reviewBusy by remember { mutableStateOf(false) }
@@ -261,10 +263,28 @@ fun DetailPage(
                         onPlay = onPlay,
                         onMore = { sheet = DetailSheet.MoreInfo },
                         moreInfo = detail.moreInfo,
+                        theme = theme,
+                        collectionItems = detail.collectionItems,
                     )
                 }
                 item(key = "download-status") {
                     DetailDownloadStatus(item, Modifier.padding(bottom = 20.dp))
+                }
+                if (item.kind == MediaKind.Collection) {
+                    collectionGroups(detail.collectionItems).forEach { (title, members) ->
+                        item(key = "collection-$title") {
+                            SectionTitle(title) { actions.onBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name))) }
+                            LazyRow(
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                items(members, key = { it.id }) { member ->
+                                    PortraitHomeCard(member, session) { onOpen(member) }
+                                }
+                            }
+                            Spacer(Modifier.height(20.dp))
+                        }
+                    }
                 }
                 if (detail.seasons.isNotEmpty()) {
                     item(key = "episodes") {
@@ -355,9 +375,7 @@ fun DetailPage(
                 }
                 items(detail.collections, key = { it.collection.id }) { membership ->
                     val title = if (detail.collections.size > 1) membership.collection.name else "Collection"
-                    SectionTitle(title) {
-                        actions.onBrowse(BrowsePage.Library(LibraryRoute.Collection(membership.collection.id, membership.collection.name)))
-                    }
+                    SectionTitle(title) { onOpen(membership.collection) }
                     LazyRow(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -551,7 +569,7 @@ fun DetailPage(
         usesSilo = session?.usesSilo == true,
         skipCinemaIntros = skipCinema,
         onCollections = detail?.item?.let { pageItem ->
-            if (session?.usesSilo == true) null else {
+            if (session?.usesSilo == true || pageItem.kind == MediaKind.Collection) null else {
                 { sheet = DetailSheet.Collections(pageItem) }
             }
         },
@@ -574,7 +592,9 @@ fun DetailPage(
         onSyncPlay = actions.syncPlayGroups?.let { { target -> sheet = DetailSheet.SyncPlay(target) } },
         onRefreshMetadata = actions.refreshMetadata?.let { refresh -> { target -> refresh(pageItem ?: target) } },
         onEditImages = actions.remoteArtwork?.let { { target -> sheet = DetailSheet.Images(pageItem ?: target) } },
-        onDeleteFromLibrary = actions.deleteFromLibrary?.let { delete -> { target -> delete(pageItem ?: target) } },
+        onDeleteFromLibrary = actions.deleteFromLibrary
+            ?.takeIf { pageItem?.kind != MediaKind.Collection }
+            ?.let { delete -> { target -> delete(pageItem ?: target) } },
     )
     val downloadVideos = sheet as? DetailSheet.DownloadVideos
     YouTubeDownloadMenu(
@@ -613,10 +633,13 @@ private fun DetailHero(
     onPlay: (MediaItem) -> Unit,
     onMore: () -> Unit,
     moreInfo: app.zelefin.core.TitleMoreInfo,
+    theme: ThemeMediaPlayers? = null,
+    collectionItems: List<MediaItem> = emptyList(),
 ) {
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     val heroHeight = (screenHeight * 0.82f).coerceAtLeast(560.dp).coerceAtMost(screenHeight)
-    val playback = MediaItem.heroPlaybackItem(item, episodes)
+    val isCollection = item.kind == MediaKind.Collection
+    val playback = if (isCollection) collectionPlaybackItem(item, collectionItems) else MediaItem.heroPlaybackItem(item, episodes)
     Box(Modifier.fillMaxWidth().height(heroHeight)) {
         CachedArtwork(
             urls = heroArtworkCandidates(item, session),
@@ -624,6 +647,7 @@ private fun DetailHero(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
+        theme?.let { ThemeVideoBackdrop(it, Modifier.fillMaxSize()) }
         Box(
             Modifier
                 .fillMaxWidth()
@@ -652,7 +676,7 @@ private fun DetailHero(
         ) {
             HeroLogo(item, session, maxHeight = 72.dp, maxWidth = 320.dp, titleSize = 34.sp)
             Text(
-                item.heroMetadataLine,
+                if (isCollection) collectionMetadataLine(item, collectionItems) else item.heroMetadataLine,
                 color = Color.White.copy(alpha = 0.92f),
                 fontFamily = ZelefinFont,
                 fontWeight = FontWeight.SemiBold,
@@ -661,7 +685,9 @@ private fun DetailHero(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )
-            DetailPlayButton(playback) { onPlay(playback) }
+            if (playback.kind != MediaKind.Collection) {
+                DetailPlayButton(playback) { onPlay(playback) }
+            }
             val overview = item.overview?.takeIf { it.isNotBlank() }
             val showMore = (overview?.length ?: 0) > 90 || moreInfo.hasDetails
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -688,6 +714,45 @@ private fun DetailHero(
             }
         }
     }
+}
+
+/** A collection's titles split into rows by kind, like iOS `CollectionMemberGroup`. */
+private fun collectionGroups(members: List<MediaItem>): List<Pair<String, List<MediaItem>>> {
+    val grouped = setOf(MediaKind.Movie, MediaKind.Series, MediaKind.Season, MediaKind.Episode)
+    val other = members.filter { it.kind !in grouped }
+    return listOf(
+        "Movies" to members.filter { it.kind == MediaKind.Movie },
+        "Shows" to members.filter { it.kind == MediaKind.Series || it.kind == MediaKind.Season },
+        "Episodes" to members.filter { it.kind == MediaKind.Episode },
+        (if (other.size == members.size) "Titles" else "More") to other,
+    ).filter { it.second.isNotEmpty() }
+}
+
+/** Play on a collection starts its next unwatched title. */
+private fun collectionPlaybackItem(collection: MediaItem, members: List<MediaItem>): MediaItem =
+    MediaItem.preferredEpisode(members.filter { it.kind == MediaKind.Movie || it.kind == MediaKind.Episode || it.kind == MediaKind.Unknown })
+        ?: collection
+
+/** "Collection · 3 Movies · 1985–1990" */
+private fun collectionMetadataLine(collection: MediaItem, members: List<MediaItem>): String {
+    val parts = mutableListOf(collection.kindLabel)
+    if (members.isNotEmpty()) {
+        val noun = if (members.all { it.kind == MediaKind.Movie }) {
+            if (members.size == 1) "Movie" else "Movies"
+        } else {
+            if (members.size == 1) "Title" else "Titles"
+        }
+        parts += "${members.size} $noun"
+    }
+    val years = members.mapNotNull { it.year }
+    val first = years.minOrNull()
+    val last = years.maxOrNull()
+    if (first != null && last != null) {
+        parts += if (first == last) "$first" else "$first–$last"
+    } else {
+        parts += collection.genres.take(2)
+    }
+    return parts.joinToString("  ·  ")
 }
 
 @Composable
@@ -1265,7 +1330,7 @@ private fun EpisodeCard(
             .width(252.dp)
             .clip(shape)
             .background(Color.White.copy(alpha = 0.08f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.10f), shape)
+            .border(PosterOutlineWidth, Color.White.copy(alpha = 0.10f), shape)
             .clickable { onPlay(item) },
     ) {
         Box(Modifier.fillMaxWidth().height(142.dp)) {

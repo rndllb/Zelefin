@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -36,6 +38,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -84,15 +87,23 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -105,6 +116,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.graphics.ColorUtils
 import app.zelefin.client.R
 import app.zelefin.client.CatalogBrowseQuery
 import app.zelefin.client.LibraryCounts
@@ -120,8 +132,14 @@ import app.zelefin.client.libraryTabRooms
 import app.zelefin.core.ArtworkUrls
 import app.zelefin.core.MediaItem
 import app.zelefin.core.SavedSession
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.random.Random
 
 private val HeaderRowHeight = 59.dp
 private val RoomStride = 84.dp
@@ -157,7 +175,7 @@ fun LibraryTabPage(
     ZelefinPush(motion) { path ->
         when (val route = path.lastOrNull()) {
             null -> LibraryHome(
-                state, bottomInset, refreshing, onOverviewRefresh, onRoute, onLayout, onResetLayout, onCoversDock, onProfile, onSessions, onSettings, onSignOut, onRandom,
+                state, bottomInset, refreshing, onOverviewRefresh, onRoute, onOpen, onLayout, onResetLayout, onCoversDock, onProfile, onSessions, onSettings, onSignOut, onRandom,
             )
             LibraryRoute.Genres -> GenresPage(state.libraryOverview.genres, state.libraryOverview.genresLoading, bottomInset, onBack) {
                 onRoute(LibraryRoute.Genre(it))
@@ -203,6 +221,7 @@ private fun LibraryHome(
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onRoute: (LibraryRoute) -> Unit,
+    onOpen: (MediaItem) -> Unit,
     onLayout: (LibraryLayout) -> Unit,
     onResetLayout: () -> Unit,
     onCoversDock: (Boolean) -> Unit,
@@ -354,7 +373,7 @@ private fun LibraryHome(
                             }
                             item(key = "collections") {
                                 CollectionGrid(collections, state.session) { item ->
-                                    onRoute(LibraryRoute.Collection(item.id, item.name))
+                                    if (state.session?.usesSilo == true) onRoute(LibraryRoute.Collection(item.id, item.name)) else onOpen(item)
                                 }
                             }
                         }
@@ -763,7 +782,7 @@ private fun GenresPage(
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(genres, key = { it.id }) { genre ->
+                    items(GenreOrder.shuffled(genres) { it.name }, key = { it.id }) { genre ->
                         GenreCard(genre.name) { onGenre(genre) }
                     }
                 }
@@ -772,32 +791,56 @@ private fun GenresPage(
     }
 }
 
+/**
+ * Genre cards lead with a big initial, so an alphabetical list repeats one letter several cards in a
+ * row. This shuffles them with a seed picked at launch, so the order holds until the app relaunches.
+ * Matches iOS `GenreOrder`.
+ */
+internal object GenreOrder {
+    private val seed = Random.nextLong()
+
+    fun <T> shuffled(items: List<T>, name: (T) -> String): List<T> = items.sortedBy { rank(name(it)) }
+
+    /** FNV-1a over the name, started from the launch seed. */
+    private fun rank(name: String): ULong =
+        name.encodeToByteArray().fold(seed.toULong() xor 0xcbf29ce484222325uL) { hash, byte ->
+            (hash xor byte.toUByte().toULong()) * 0x100000001b3uL
+        }
+}
+
 @Composable
 internal fun GenreCard(title: String, aspect: Float = 2f / 3f, corner: Dp = 12.dp, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().aspectRatio(aspect),
         shape = RoundedCornerShape(corner),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            GenreIcon(
-                title,
-                side = maxWidth * 0.42f,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.align(Alignment.Center).padding(bottom = maxHeight * 0.12f),
-            )
+            val accent = ZelefinCyan
+            val colors = remember(accent) { genreCardColors(accent) }
+            GenreCardBackdrop(Modifier.matchParentSize())
+            GenreMonogram(title, colors.glow, cardWidth = maxWidth, cardHeight = maxHeight)
             val cardWidth = maxWidth
-            Box(Modifier.align(Alignment.BottomStart).padding(cardWidth * 0.08f)) {
+            Column(
+                Modifier.align(Alignment.BottomStart).padding(cardWidth * 0.08f),
+                verticalArrangement = Arrangement.spacedBy(cardWidth * 0.05f),
+            ) {
+                Box(
+                    Modifier
+                        .size(width = cardWidth * 0.16f, height = maxOf(2.dp, cardWidth * 0.02f))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), CircleShape),
+                )
                 FitText(
                     title,
                     style = TextStyle(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontFamily = ZelefinFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = (cardWidth.value * 0.16f).sp,
-                        lineHeight = (cardWidth.value * 0.19f).sp,
+                        fontWeight = FontWeight.Black,
+                        fontSize = (cardWidth.value * 0.17f).sp,
+                        lineHeight = (cardWidth.value * 0.2f).sp,
+                        shadow = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 4f), blurRadius = 12f),
                     ),
                     maxLines = 3,
                     minScale = 0.5f,
@@ -805,6 +848,94 @@ internal fun GenreCard(title: String, aspect: Float = 2f / 3f, corner: Dp = 12.d
                 )
             }
         }
+    }
+}
+
+/** The genre's initial, oversized and bleeding off the top corner, fading out before the title. Matches iOS. */
+@Composable
+private fun BoxScope.GenreMonogram(title: String, glow: Color, cardWidth: Dp, cardHeight: Dp) {
+    val initial = title.firstOrNull() ?: return
+    Text(
+        initial.uppercase(),
+        style = TextStyle(
+            brush = Brush.verticalGradient(listOf(glow.copy(alpha = 0.75f), glow.copy(alpha = 0.05f))),
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.Black,
+            fontSize = (cardHeight.value * 0.72f).sp,
+        ),
+        softWrap = false,
+        maxLines = 1,
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .wrapContentSize(Alignment.TopEnd, unbounded = true)
+            .offset(x = cardWidth * 0.12f, y = -cardHeight * 0.22f)
+            .clearAndSetSemantics {},
+    )
+}
+
+/** Genre art in the accent hue: a deep slate ground and a lighter glow, like iOS `ZelefinSurfaces`. */
+internal data class GenreCardColors(val base: Color, val glow: Color)
+
+internal fun genreCardColors(accent: Color): GenreCardColors {
+    val lab = DoubleArray(3).also { ColorUtils.colorToLAB(accent.toArgb(), it) }
+    val angle = atan2(lab[2], lab[1])
+    val accentChroma = hypot(lab[1], lab[2])
+    fun tone(lightness: Double, chroma: Double) =
+        Color(ColorUtils.LABToColor(lightness, chroma * cos(angle), chroma * sin(angle)))
+    // A near-grey accent keeps the art grey instead of inventing a hue.
+    return GenreCardColors(base = tone(8.0, min(22.0, accentChroma)), glow = tone(59.0, min(68.0, accentChroma)))
+}
+
+/**
+ * Dot grid under an off-centre elliptical glow, in the accent hue. Same layers as the CSS
+ * `radial-gradient(#ffffff33 1px, transparent 1px)` at 16px, then
+ * `radial-gradient(150% 80% at 25% 75%, glow/0.5 35%, base 100%)` over a `base` fill.
+ */
+@Composable
+internal fun Modifier.accentBackdrop(): Modifier {
+    val accent = ZelefinCyan
+    val colors = remember(accent) { genreCardColors(accent) }
+    return drawBehind { drawAccentBackdrop(colors) }
+}
+
+@Composable
+internal fun GenreCardBackdrop(modifier: Modifier = Modifier) {
+    Box(modifier.accentBackdrop())
+}
+
+/** A touch above the CSS 0.5 so the accent reads through on small cards; matches iOS. */
+private const val GLOW_OPACITY = 0.6f
+
+private fun DrawScope.drawAccentBackdrop(colors: GenreCardColors) {
+    drawRect(colors.base)
+    val spacing = 16.dp.toPx()
+    val dot = Color.White.copy(alpha = 0.2f)
+    val radius = 1.dp.toPx()
+    var y = spacing / 2
+    while (y < size.height) {
+        var x = spacing / 2
+        while (x < size.width) {
+            drawCircle(dot, radius, Offset(x, y))
+            x += spacing
+        }
+        y += spacing
+    }
+    val radiusX = size.width * 1.5f
+    val radiusY = size.height * 0.8f
+    if (radiusX <= 0f || radiusY <= 0f) return
+    // A radial brush is circular, so squash the canvas to make the 150% x 80% ellipse.
+    val squash = radiusY / radiusX
+    scale(scaleX = 1f, scaleY = squash, pivot = Offset.Zero) {
+        drawRect(
+            brush = Brush.radialGradient(
+                0f to colors.glow.copy(alpha = GLOW_OPACITY),
+                0.35f to colors.glow.copy(alpha = GLOW_OPACITY),
+                1f to colors.base,
+                center = Offset(size.width * 0.25f, size.height * 0.75f / squash),
+                radius = radiusX,
+            ),
+            size = Size(size.width, size.height / squash),
+        )
     }
 }
 

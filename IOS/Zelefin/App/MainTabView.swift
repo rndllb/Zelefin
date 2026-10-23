@@ -363,11 +363,9 @@ private enum TabBarTitleChrome {
         }
         guard let base = assetBase(for: tab) else { return }
         let selected = isSelected(base: base, identifier: tab.identifier, title: tab.title, selectedIdentifier: selectedIdentifier, selection: selection)
-        if base == "IconsaxSearch", !selected {
-            tab.image = TabBarIconMetrics.originalImage(named: base, color: .white)
-        } else {
-            tab.image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
-        }
+        // Every tab (Search included) uses the template image so the bar tints it with the accent,
+        // selected or not — Search no longer renders as a flat white icon when unselected.
+        tab.image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
     }
 
     /// The search tab keeps showing `selectedImage` after another tab is open. Both images follow the real selection.
@@ -436,12 +434,7 @@ private enum TabBarTitleChrome {
                     selectedIdentifier: nil,
                     selection: selection
                 ) || (selection == nil && item == bar.selectedItem)
-                let image: UIImage?
-                if base == "IconsaxSearch", !selected {
-                    image = TabBarIconMetrics.originalImage(named: base, color: .white)
-                } else {
-                    image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
-                }
+                let image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
                 item.image = image
                 item.selectedImage = image
             }
@@ -724,8 +717,12 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
 
         func attachMenu(to button: UIButton) {
             button.menu = UIMenu(children: [
+                // Rebuilt on every open so the rows reflect the latest accounts/profiles — but the
+                // completion is called synchronously (the provider already runs on the main thread).
+                // Hopping through DispatchQueue.main.async deferred it a frame, so UIKit flashed the
+                // menu's loading placeholder first, which read as a slow, janky open on iPad.
                 UIDeferredMenuElement.uncached { [weak self] completion in
-                    DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
                         completion(self?.menuChildren() ?? [])
                     }
                 }

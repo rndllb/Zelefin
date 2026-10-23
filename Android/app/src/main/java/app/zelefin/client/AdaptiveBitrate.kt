@@ -78,6 +78,8 @@ data class NetworkPathSnapshot(
     val isExpensive: Boolean,
     val isConstrained: Boolean,
     val isSatisfied: Boolean,
+    /** `Network.networkHandle`: a hotspot and home Wi-Fi share a transport but not a network. */
+    val networkId: Long = 0,
 ) {
     /** Conservative budget when this connection has not been measured yet. */
     val estimatedBitsPerSecond: Int
@@ -104,6 +106,7 @@ data class NetworkPathSnapshot(
                 else -> NetworkTransport.Other
             }
             return NetworkPathSnapshot(
+                networkId = manager.activeNetwork?.networkHandle ?: 0,
                 transport = transport,
                 isExpensive = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
                 // Data Saver only limits background transfers. Playback is in the foreground, so
@@ -138,6 +141,12 @@ data class BitrateProbeResult(
 
 object AdaptiveBitratePolicy {
     const val UTILIZATION = 0.7
+
+    /**
+     * Cellular and metered links swing more than Wi-Fi at home, so playback claims less of what was
+     * measured and lets the live monitor step up once the buffer proves the link holds.
+     */
+    const val METERED_UTILIZATION = 0.5
     const val CACHE_TTL_MILLIS = 90_000L
     const val PLAYBACK_SAMPLE_BYTES = 750_000
     const val SETTINGS_SAMPLE_BYTES = 2_500_000
@@ -149,7 +158,22 @@ object AdaptiveBitratePolicy {
 
     fun budgetBitsPerSecond(measured: Int?, path: NetworkPathSnapshot): Int {
         val raw = measured ?: path.estimatedBitsPerSecond
-        return maxOf(PlaybackQuality.Kbps420.bits, (raw * UTILIZATION).toInt())
+        val share = if (path.transport == NetworkTransport.Cellular || path.isExpensive || path.isConstrained) {
+            METERED_UTILIZATION
+        } else {
+            UTILIZATION
+        }
+        return maxOf(PlaybackQuality.Kbps420.bits, (raw * share).toInt())
+    }
+
+    /**
+     * A sample that runs out its whole timeout is itself a measurement: the link moved at most
+     * [bytes] in [timeoutMillis]. Without it a link too slow to finish the sample had no reading at
+     * all and Auto Direct Played the original over it. Quick failures carry no speed and stay null.
+     */
+    fun timedOutProbe(bytes: Int, timeoutMillis: Long, elapsedMillis: Long, transport: NetworkTransport): BitrateProbeResult? {
+        if (timeoutMillis <= 0 || elapsedMillis < timeoutMillis * 0.9) return null
+        return BitrateProbeResult.from(bytes, maxOf(elapsedMillis, timeoutMillis) * 1_000_000, transport).copy(bytes = 0)
     }
 
     fun quality(
@@ -186,29 +210,44 @@ object AdaptiveBitrateStore {
     var lastProbe: BitrateProbeResult? = null
         private set
 
-    fun record(result: BitrateProbeResult) {
+    /** The network [lastProbe] was taken on; a sample only describes that one. */
+    @Volatile
+    private var probeNetworkId: Long = 0
+
+    fun record(result: BitrateProbeResult, path: NetworkPathSnapshot) {
         lastProbe = result
+        probeNetworkId = path.networkId
     }
 
-    fun cachedBudgetBitsPerSecond(path: NetworkPathSnapshot): Int {
-        val measured = lastProbe?.takeIf { AdaptiveBitratePolicy.isCacheValid(it, path) }?.bitsPerSecond
-        return AdaptiveBitratePolicy.budgetBitsPerSecond(measured, path)
-    }
+    private fun validProbe(path: NetworkPathSnapshot): BitrateProbeResult? =
+        lastProbe?.takeIf { probeNetworkId == path.networkId && AdaptiveBitratePolicy.isCacheValid(it, path) }
 
-    /** Runs the short pre-playback probe unless a fresh one exists for this transport. */
+    fun cachedBudgetBitsPerSecond(path: NetworkPathSnapshot): Int =
+        AdaptiveBitratePolicy.budgetBitsPerSecond(validProbe(path)?.bitsPerSecond, path)
+
+    /** Runs the short pre-playback probe unless a fresh one exists for this network. */
     suspend fun refreshIfNeeded(context: Context, measure: suspend (Int, Long, NetworkTransport) -> BitrateProbeResult?) {
         if (!PlaybackPreferences.adaptiveBitrate(context)) return
         val path = NetworkPathSnapshot.current(context)
-        if (AdaptiveBitratePolicy.isCacheValid(lastProbe, path)) return
-        measure(AdaptiveBitratePolicy.PLAYBACK_SAMPLE_BYTES, AdaptiveBitratePolicy.PLAYBACK_PROBE_TIMEOUT_MILLIS, path.transport)
-            ?.let(::record)
+        if (validProbe(path) != null) return
+        val bytes = AdaptiveBitratePolicy.PLAYBACK_SAMPLE_BYTES
+        val timeout = AdaptiveBitratePolicy.PLAYBACK_PROBE_TIMEOUT_MILLIS
+        val started = SystemClock.elapsedRealtime()
+        val measured = runCatching { measure(bytes, timeout, path.transport) }.getOrNull()
+        val result = measured ?: AdaptiveBitratePolicy.timedOutProbe(
+            bytes,
+            timeout,
+            SystemClock.elapsedRealtime() - started,
+            path.transport,
+        )
+        result?.let { record(it, path) }
     }
 
     fun resolvedBitsPerSecond(context: Context, sourceBitrate: Int?): Int {
         val selected = PlaybackPreferences.selectedQuality(context)
         if (!PlaybackPreferences.adaptiveBitrate(context)) return selected.bitsPerSecond
         val path = NetworkPathSnapshot.current(context)
-        val measured = lastProbe?.takeIf { AdaptiveBitratePolicy.isCacheValid(it, path) }?.bitsPerSecond
+        val measured = validProbe(path)?.bitsPerSecond
             ?: return selected.bitsPerSecond
         return AdaptiveBitratePolicy.quality(
             enabled = true,

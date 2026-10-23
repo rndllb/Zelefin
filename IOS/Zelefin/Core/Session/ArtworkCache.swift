@@ -343,22 +343,44 @@ final class ArtworkCache: @unchecked Sendable {
         timeout: TimeInterval?,
         ignoreCache: Bool
     ) async -> RemoteArtwork {
-        guard !Task.isCancelled else { return .failed }
-        guard let (data, response) = try? await JellyfinNetworking.data(
-            from: url,
-            ignoreCache: ignoreCache,
-            serviceType: serviceType,
-            timeout: timeout
-        ),
-              let http = response as? HTTPURLResponse
-        else { return .failed }
-        if (200 ..< 300).contains(http.statusCode) {
-            return data.isEmpty ? .absent : .bytes(data)
+        var attempt = 0
+        while true {
+            guard !Task.isCancelled else { return .failed }
+            do {
+                let (data, response) = try await JellyfinNetworking.data(
+                    from: url,
+                    ignoreCache: ignoreCache,
+                    serviceType: serviceType,
+                    timeout: timeout
+                )
+                guard let http = response as? HTTPURLResponse else { return .failed }
+                if (200 ..< 300).contains(http.statusCode) {
+                    return data.isEmpty ? .absent : .bytes(data)
+                }
+                if http.statusCode == 404 || http.statusCode == 204 || http.statusCode == 400 {
+                    return .absent
+                }
+                return .failed
+            } catch {
+                // URLSession reuses a kept-alive HTTP/2 connection; after the server drops it while
+                // idle, the first request fails with "connection lost" (-1005). One retry opens a fresh
+                // connection instead of leaving the poster permanently blank.
+                guard attempt == 0, !Task.isCancelled, Self.isTransientConnectionError(error) else {
+                    return .failed
+                }
+                attempt += 1
+            }
         }
-        if http.statusCode == 404 || http.statusCode == 204 || http.statusCode == 400 {
-            return .absent
+    }
+
+    private static func isTransientConnectionError(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .timedOut:
+            return true
+        default:
+            return false
         }
-        return .failed
     }
 }
 

@@ -218,14 +218,14 @@ fun HomeFeedPage(
                         onSeeAll = { onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.AllCollections)) },
                         card = { item ->
                             LabeledPortrait(item.name, artworkCandidates(item, session, landscape = false), Modifier.width(124.dp), item, session) {
-                                onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.Collection(item.id, item.name)))
+                                onOpen(item)
                             }
                         },
                     )
                 }
                 HomeRowKind.Genres -> item(key = row.raw) {
                     HomeRow(
-                        "Browse by Genre", feed.genres, session, landscape = false, onOpen,
+                        "Browse by Genre", GenreOrder.shuffled(feed.genres) { it.name }, session, landscape = false, onOpen,
                         onSeeAll = { onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.Genres)) },
                         card = { item ->
                             val genre = app.zelefin.client.LibraryGenre(item.id, item.name)

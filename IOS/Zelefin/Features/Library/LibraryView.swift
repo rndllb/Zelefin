@@ -243,7 +243,7 @@ struct LibraryView: View {
             LazyVGrid(columns: PosterGridLayout.columns(for: sidebarLayout), spacing: 20) {
                 ForEach(collectionCovers.prefix(12)) { item in
                     NavigationLink {
-                        CatalogGridView(title: item.name, query: .parent(item.id))
+                        LibraryItemRoute(item: item)
                     } label: {
                         FillingPosterCell { size in
                             LabeledPortraitCard(
@@ -485,6 +485,7 @@ private struct LibraryRoomBand: View {
         .frame(height: height)
         .frame(maxWidth: .infinity)
         .posterCard(cornerRadius: 18)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(caption.map { "\(library.name), \($0)" } ?? library.name)
     }
@@ -858,7 +859,7 @@ struct LibraryGenresView: View {
                         .padding(.top, 40)
                     } else {
                         LazyVGrid(columns: columns, spacing: 20) {
-                            ForEach(genres) { genre in
+                            ForEach(GenreOrder.shuffled(genres, name: \.name)) { genre in
                                 NavigationLink {
                                     CatalogGridView(title: genre.name, query: .genre(genre.id))
                                 } label: {
@@ -892,9 +893,7 @@ struct LibraryGenresView: View {
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
-        .navigationTitle("Genres")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .catalogPushedChrome(title: "Genres") { EmptyView() }
         .task { await load() }
     }
 
@@ -982,10 +981,8 @@ struct LibraryItemsView: View {
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
-        .navigationTitle(library.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .catalogFilterSortToolbar(
+        .catalogPushedChrome(
+            title: library.name,
             filterCount: query.activeFilterCount,
             sortTitle: query.sort.title,
             showFilters: $showFilters,

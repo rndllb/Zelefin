@@ -270,6 +270,25 @@ final class PlaybackSettingsPolicyTests: XCTestCase {
         )
     }
 
+    func testChromeStaysVisibleWhileBuffering() {
+        XCTAssertFalse(
+            PlaybackChromeIdlePolicy.shouldHide(
+                controlsVisible: true,
+                isPaused: false,
+                isScrubbing: false,
+                settingsOpen: false,
+                isBuffering: true
+            )
+        )
+    }
+
+    func testStartingAudioKeepsTheEngineTrackInTheSameLanguage() {
+        XCTAssertFalse(StartingAudioPolicy.shouldSwitch(engineLanguage: "eng", serverLanguage: "en"))
+        XCTAssertFalse(StartingAudioPolicy.shouldSwitch(engineLanguage: nil, serverLanguage: "jpn"))
+        XCTAssertFalse(StartingAudioPolicy.shouldSwitch(engineLanguage: "und", serverLanguage: "eng"))
+        XCTAssertTrue(StartingAudioPolicy.shouldSwitch(engineLanguage: "eng", serverLanguage: "jpn"))
+    }
+
     func testLaunchOptionsDisableSubtitlesWithMinusOne() {
         var options = PlaybackLaunchOptions(subtitlesDisabled: true)
         XCTAssertEqual(options.subtitleStreamIndex, -1)

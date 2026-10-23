@@ -105,10 +105,19 @@ struct AVKitPlaybackChrome: View {
                 revealControls()
             }
         }
+        .onChange(of: isWaiting) { _, waiting in
+            if waiting {
+                revealControls()
+            }
+        }
+    }
+
+    private var isWaiting: Bool {
+        model.isBuffering || !model.hasFirstFrame
     }
 
     private var hideTaskID: String {
-        "\(hideGeneration)-\(controlsVisible)-\(model.isPaused)-\(isScrubbing)-\(settingsOpen)"
+        "\(hideGeneration)-\(controlsVisible)-\(model.isPaused)-\(isScrubbing)-\(settingsOpen)-\(isWaiting)"
     }
 
     private var horizontalPadding: CGFloat {
@@ -282,6 +291,7 @@ struct AVKitPlaybackChrome: View {
             return
         }
         if controlsVisible {
+            guard !isWaiting else { return }
             controlsVisible = false
         } else {
             revealControls()
@@ -318,7 +328,8 @@ struct AVKitPlaybackChrome: View {
             controlsVisible: controlsVisible,
             isPaused: model.isPaused,
             isScrubbing: isScrubbing,
-            settingsOpen: settingsOpen
+            settingsOpen: settingsOpen,
+            isBuffering: isWaiting
         ) else { return }
         do {
             try await Task.sleep(for: .seconds(5))
@@ -330,7 +341,8 @@ struct AVKitPlaybackChrome: View {
             controlsVisible: controlsVisible,
             isPaused: model.isPaused,
             isScrubbing: isScrubbing,
-            settingsOpen: settingsOpen
+            settingsOpen: settingsOpen,
+            isBuffering: isWaiting
         ) else { return }
         controlsVisible = false
     }

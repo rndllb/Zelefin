@@ -648,7 +648,7 @@ private fun GenreGrid(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(genres, key = { it.id }) { genre ->
+            items(GenreOrder.shuffled(genres) { it.name }, key = { it.id }) { genre ->
                 GenreCard(genre.name, aspect = 1f / 1.52f, corner = if (columns == 3) 8.dp else 10.dp) { onGenre(genre) }
             }
         }

@@ -827,15 +827,16 @@ final class SiloLibraryClient: LibraryServing, @unchecked Sendable {
         transport: NetworkTransport,
         fallbackURL: URL?
     ) async throws -> BitrateProbeResult {
+        let timer = TransferTimer()
         let start = Date()
-        let data = try await api.bitrateTestBytes(size: size, fallbackURL: fallbackURL)
+        let data = try await api.bitrateTestBytes(size: size, fallbackURL: fallbackURL, timer: timer)
         try Task.checkCancellation()
-        let elapsed = max(Date().timeIntervalSince(start), 0.05)
-        let bitsPerSecond = Int((Double(data.count) * 8.0) / elapsed)
+        let wallClock = max(Date().timeIntervalSince(start), 0.05)
+        let transfer = await timer.settledSeconds()
         return BitrateProbeResult(
-            bitsPerSecond: max(0, bitsPerSecond),
+            bitsPerSecond: TransferTimer.bitsPerSecond(bytes: data.count, transferSeconds: transfer, wallClock: wallClock),
             bytes: data.count,
-            elapsed: elapsed,
+            elapsed: transfer > 0 ? transfer : wallClock,
             transport: transport,
             measuredAt: Date()
         )

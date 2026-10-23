@@ -25,6 +25,9 @@ object PlaybackPreferences {
     const val PREFER_SDH = "prefer-sdh"
     const val PLAYER_ENGINE = "player-engine"
     const val DOWNLOAD_WIFI_ONLY = "download-wifi-only"
+    const val THEME_SONGS = "theme-songs"
+    const val THEME_VIDEOS = "theme-videos"
+    const val THEME_VIDEO_SOUND = "theme-video-sound"
     const val ENGINE_EXOPLAYER = "exoplayer"
     const val ENGINE_MPV = "mpv"
 
@@ -84,6 +87,22 @@ object PlaybackPreferences {
     fun downloadWifiOnly(context: Context): Boolean = prefs(context).getBoolean(DOWNLOAD_WIFI_ONLY, false)
 
     fun setDownloadWifiOnly(context: Context, value: Boolean) = prefs(context).edit().putBoolean(DOWNLOAD_WIFI_ONLY, value).apply()
+
+    /** Jellyfin theme songs behind title pages. Jellyfin keeps this per client; off until chosen. */
+    fun themeSongs(context: Context): Boolean = prefs(context).getBoolean(THEME_SONGS, false)
+
+    fun setThemeSongs(context: Context, value: Boolean) = prefs(context).edit().putBoolean(THEME_SONGS, value).apply()
+
+    /** Jellyfin theme videos in place of the title page backdrop. Off until chosen. */
+    fun themeVideos(context: Context): Boolean = prefs(context).getBoolean(THEME_VIDEOS, false)
+
+    fun setThemeVideos(context: Context, value: Boolean) = prefs(context).edit().putBoolean(THEME_VIDEOS, value).apply()
+
+    /** The theme video's own audio. Off keeps it muted. */
+    fun themeVideoSound(context: Context): Boolean = prefs(context).getBoolean(THEME_VIDEO_SOUND, false)
+
+    fun setThemeVideoSound(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(THEME_VIDEO_SOUND, value).apply()
 
     fun speedTitle(rate: Float): String {
         if (abs(rate - 1f) < 0.01f) return "1x"

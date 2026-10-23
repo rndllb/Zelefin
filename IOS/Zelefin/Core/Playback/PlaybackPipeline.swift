@@ -16,6 +16,9 @@ enum PlaybackPreferences {
     static let subtitleLanguageKey = "zelefin.playback.subtitle-language"
     static let preferSDHKey = "zelefin.playback.prefer-sdh"
     static let downloadWifiOnlyKey = "zelefin.playback.download-wifi-only"
+    static let themeSongsKey = "zelefin.playback.theme-songs"
+    static let themeVideosKey = "zelefin.playback.theme-videos"
+    static let themeVideoSoundKey = "zelefin.playback.theme-video-sound"
 
     static var useNativeVideoPlayer: Bool {
         bool(for: useNativeVideoPlayerKey, default: false)
@@ -27,6 +30,21 @@ enum PlaybackPreferences {
 
     static var autoPlayNextEpisode: Bool {
         bool(for: autoPlayNextEpisodeKey, default: true)
+    }
+
+    /// Jellyfin theme songs behind title pages. Jellyfin keeps this per client; off until chosen.
+    static var themeSongsEnabled: Bool {
+        bool(for: themeSongsKey, default: false)
+    }
+
+    /// Jellyfin theme videos in place of the title page backdrop. Off until chosen.
+    static var themeVideosEnabled: Bool {
+        bool(for: themeVideosKey, default: false)
+    }
+
+    /// The theme video's own audio. Off keeps it muted.
+    static var themeVideoSoundEnabled: Bool {
+        bool(for: themeVideoSoundKey, default: false)
     }
 
     static var autoSkipIntro: Bool {
@@ -201,13 +219,33 @@ struct PlaybackLaunchOptions: Hashable, Sendable {
 }
 
 enum PlaybackChromeIdlePolicy {
+    /// Controls stay up while loading or rebuffering, so a stall never looks like a frozen picture.
     static func shouldHide(
         controlsVisible: Bool,
         isPaused: Bool,
         isScrubbing: Bool,
-        settingsOpen: Bool
+        settingsOpen: Bool,
+        isBuffering: Bool = false
     ) -> Bool {
-        controlsVisible && !isPaused && !isScrubbing && !settingsOpen
+        controlsVisible && !isPaused && !isScrubbing && !settingsOpen && !isBuffering
+    }
+}
+
+/// Whether playback should leave the audio track the engine opened for the one Jellyfin chose.
+/// Jellyfin picks by its device profile, so on a phone it can choose a lossy compatibility track
+/// (E-AC3) over TrueHD that Direct Play decodes fine. Switching costs a full in-place reload of the
+/// source, which on a 4K file mid-startup failed outright on iPhone, so only a different language,
+/// which is what the user actually notices, is worth it.
+enum StartingAudioPolicy {
+    static func shouldSwitch(engineLanguage: String?, serverLanguage: String?) -> Bool {
+        guard let engine = normalized(engineLanguage), let server = normalized(serverLanguage) else { return false }
+        return engine != server
+    }
+
+    private static func normalized(_ language: String?) -> String? {
+        let code = (language ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        guard !code.isEmpty, code != "und" else { return nil }
+        return String(code.prefix(2))
     }
 }
 

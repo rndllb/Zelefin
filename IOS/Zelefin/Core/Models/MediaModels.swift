@@ -1007,6 +1007,23 @@ struct MediaLibrary: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+/// Genre cards lead with a big initial, so an alphabetical list repeats one letter several cards in a
+/// row. This shuffles them with a seed picked at launch, so the order holds until the app relaunches.
+enum GenreOrder {
+    private static let seed = UInt64.random(in: .min ... .max)
+
+    static func shuffled<Item>(_ items: [Item], name: (Item) -> String) -> [Item] {
+        items.map { (rank(name($0)), $0) }
+            .sorted { $0.0 < $1.0 }
+            .map(\.1)
+    }
+
+    /// FNV-1a over the name, started from the launch seed.
+    private static func rank(_ name: String) -> UInt64 {
+        name.utf8.reduce(seed ^ 0xcbf2_9ce4_8422_2325) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01b3 }
+    }
+}
+
 struct HomeSection: Identifiable, Hashable, Sendable, Codable {
     enum Style: String, Hashable, Sendable, Codable {
         case landscape
@@ -1027,6 +1044,11 @@ struct HomeSection: Identifiable, Hashable, Sendable, Codable {
 
     var isCatalogBrowse: Bool {
         id == "genres" || id == "collections"
+    }
+
+    /// Items in the order cards show them: genres shuffled, everything else as the server sent it.
+    var displayItems: [MediaItem] {
+        id == "genres" ? GenreOrder.shuffled(items, name: \.name) : items
     }
 
     var isRecentlyWatched: Bool {
@@ -1074,6 +1096,14 @@ struct CreditPerson: Identifiable, Hashable, Sendable, Codable {
     var overview: String? = nil
     var birthYear: Int? = nil
     var imageURL: URL? = nil
+}
+
+/// A title's Jellyfin theme song and theme video, as playable stream URLs.
+struct ThemeMedia: Equatable, Sendable {
+    var songURL: URL?
+    var videoURL: URL?
+
+    var isEmpty: Bool { songURL == nil && videoURL == nil }
 }
 
 struct TitleExtra: Identifiable, Hashable, Sendable, Codable {
@@ -1238,6 +1268,17 @@ struct PlaybackPlan: Hashable, Sendable {
     var liveStreamID: String? = nil
     /// Full-file remux (Silo `original_http`) keeps the playhead on the client.
     var clientOwnsPlayhead: Bool = false
+    var sourceVideo: SourceVideoFacts? = nil
+}
+
+/// The file's video stream as the server describes it. Playback stats fall back to it when the
+/// player cannot read the source itself: a server transcode or remux arrives as HLS through AVPlayer.
+struct SourceVideoFacts: Hashable, Sendable {
+    var width: Int
+    var height: Int
+    var bitrate: Int?
+    var frameRate: Double?
+    var codec: String?
 }
 
 struct ExternalSubtitleSidecar: Hashable, Sendable {

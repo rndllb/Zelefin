@@ -896,6 +896,7 @@ class JellyfinLibrary(
         val dto = api.userLibraryApi.getItem(itemId, userId).content
         val item = ItemMapper.mediaItem(dto.toSnapshot()) ?: throw ZelefinException.server("This title could not be read.")
         if (item.isYouTube) return@withContext youTubeDetail(userId, dto, item)
+        if (item.kind == MediaKind.Collection) return@withContext collectionDetail(userId, itemId, dto, item)
         val episodeDtos = if (item.kind == MediaKind.Series) {
             api.tvShowsApi.getEpisodes(
                 GetEpisodesRequest(
@@ -940,6 +941,24 @@ class JellyfinLibrary(
             moreInfo = facts,
             additionalParts = parts,
         )
+    }
+
+    /** A BoxSet page: the collection's own artwork and overview for the hero, then its titles in release order. */
+    private suspend fun collectionDetail(userId: UUID, itemId: UUID, dto: BaseItemDto, item: MediaItem): TitleDetail {
+        val members = runCatching {
+            api.itemsApi.getItems(
+                GetItemsRequest(
+                    userId = userId,
+                    parentId = itemId,
+                    sortBy = listOf(ItemSortBy.PREMIERE_DATE, ItemSortBy.SORT_NAME),
+                    sortOrder = listOf(SortOrder.ASCENDING),
+                    fields = listFields,
+                    enableUserData = true,
+                    enableImageTypes = imageTypes,
+                ),
+            ).content.items.mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        }.getOrDefault(emptyList())
+        return TitleDetail(item = item, moreInfo = TitleFacts.from(dto, item), collectionItems = members)
     }
 
     /** A TubeArchivist channel or video page: the channel plus every video, newest first. */
@@ -1269,6 +1288,53 @@ class JellyfinLibrary(
         )
     }
 
+    /** The first theme song and theme video, inherited from the series for seasons and episodes. */
+    suspend fun themeMedia(itemId: String, userId: UUID): app.zelefin.client.ThemeMedia = withContext(Dispatchers.IO) {
+        val result = runCatching {
+            api.libraryApi.getThemeMedia(UUID.fromString(itemId), userId, inheritFromParent = true).content
+        }.getOrNull()
+        val song = result?.themeSongsResult?.items?.firstOrNull()
+        val video = result?.themeVideosResult?.items?.firstOrNull()
+        app.zelefin.client.ThemeMedia(
+            songUrl = song?.let { themeSongUrl(it.id.toString(), userId) },
+            videoUrl = video?.let { themeVideoUrl(it.id.toString(), it.container) },
+        )
+    }
+
+    /** Universal audio, so the player gets a format it can open and the server transcodes the rest. */
+    private fun themeSongUrl(id: String, userId: UUID): String? {
+        val base = api.baseUrl ?: return null
+        val query = listOf(
+            "UserId=$userId",
+            "DeviceId=${api.deviceInfo.id}",
+            "MaxStreamingBitrate=320000",
+            "Container=mp3,aac,m4a,m4b,flac,alac,wav,ogg,opus",
+            "TranscodingContainer=mp3",
+            "TranscodingProtocol=http",
+            "AudioCodec=mp3",
+        ).joinToString("&")
+        return ServerUrl.resolve(base, "/Audio/$id/universal?$query", api.accessToken)
+    }
+
+    /** Containers ExoPlayer opens stream as they are; anything else comes back as H.264 HLS. */
+    private fun themeVideoUrl(id: String, container: String?): String? {
+        val base = api.baseUrl ?: return null
+        val containers = container.orEmpty().lowercase().split(",")
+        if (containers.any { it in setOf("mp4", "m4v", "mov", "mkv", "webm") }) {
+            return ServerUrl.resolve(base, "/Videos/$id/stream?static=true&MediaSourceId=$id", api.accessToken)
+        }
+        val query = listOf(
+            "MediaSourceId=$id",
+            "DeviceId=${api.deviceInfo.id}",
+            "VideoCodec=h264",
+            "AudioCodec=aac",
+            "MaxStreamingBitrate=8000000",
+            "SegmentContainer=ts",
+            "TranscodingMaxAudioChannels=2",
+        ).joinToString("&")
+        return ServerUrl.resolve(base, "/Videos/$id/master.m3u8?$query", api.accessToken)
+    }
+
     /** Times a `/Playback/BitrateTest` download, like iOS `measureStreamingBitrate`. */
     suspend fun measureBitrate(
         size: Int,
@@ -1288,8 +1354,10 @@ class JellyfinLibrary(
             .header("Authorization", "MediaBrowser Token=\"$token\"")
             .header("X-Emby-Token", token)
             .build()
-        val started = System.nanoTime()
         val response = runCatching { client.newCall(request).execute() }.getOrNull() ?: return@withContext null
+        // Timed from the headers, so DNS, TLS and the server's time to first byte do not count
+        // against the link: on a small sample they made a fast remote connection read as slow.
+        val started = System.nanoTime()
         response.use {
             if (!it.isSuccessful) {
                 throw ZelefinException.server("Jellyfin did not send the test file (HTTP ${it.code}). Check the connection and try again.")

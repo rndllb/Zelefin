@@ -720,6 +720,9 @@ private fun PlaybackTopic(state: ZelefinUiState) {
     var preferSdh by remember { mutableStateOf(PlaybackPreferences.preferSdh(context)) }
     var playerEngine by remember { mutableStateOf(PlaybackPreferences.playerEngine(context)) }
     var wifiOnly by remember { mutableStateOf(PlaybackPreferences.downloadWifiOnly(context)) }
+    var themeSongs by remember { mutableStateOf(PlaybackPreferences.themeSongs(context)) }
+    var themeVideos by remember { mutableStateOf(PlaybackPreferences.themeVideos(context)) }
+    var themeVideoSound by remember { mutableStateOf(PlaybackPreferences.themeVideoSound(context)) }
     val languages = remember(context) { PlaybackLanguage.choices(context) }
 
     if (silo) {
@@ -840,6 +843,29 @@ private fun PlaybackTopic(state: ZelefinUiState) {
         })
     }
     SettingsFooter("Speed, skip distance, and whether the next episode starts when this one ends. MPV uses libass for advanced subtitles.")
+
+    if (!silo) {
+        SettingsHeader("Theme Media")
+        SettingsCard {
+            SettingsToggleRow("Theme Songs", themeSongs, {
+                themeSongs = it
+                PlaybackPreferences.setThemeSongs(context, it)
+            })
+            SettingsCardDivider()
+            SettingsToggleRow("Theme Videos", themeVideos, {
+                themeVideos = it
+                PlaybackPreferences.setThemeVideos(context, it)
+            })
+            if (themeVideos) {
+                SettingsCardDivider()
+                SettingsToggleRow("Theme Video Sound", themeVideoSound, {
+                    themeVideoSound = it
+                    PlaybackPreferences.setThemeVideoSound(context, it)
+                })
+            }
+        }
+        SettingsFooter("Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on.")
+    }
 }
 
 @Composable

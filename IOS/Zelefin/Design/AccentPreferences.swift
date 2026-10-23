@@ -104,15 +104,24 @@ struct ZelefinSurfaces: Equatable, Sendable {
     let raised: Color
     /// Text and marks on [raised] surfaces, like genre cards (Material `onSurface`, tone 90).
     let content: Color
+    /// Genre card ground: a deep slate in the accent hue (`#0f172a` for a periwinkle accent).
+    let genreBase: Color
+    /// Genre card glow, drawn at 60% opacity (`#8485f1` for a periwinkle accent).
+    let genreGlow: Color
 
     init(accentHex: String) {
         let lab = ZelefinSurfaces.lab(hex: accentHex)
         let angle = atan2(lab.b, lab.a)
-        let a = 8 * cos(angle)
-        let b = 8 * sin(angle)
-        canvas = ZelefinSurfaces.color(l: 6, a: a, b: b)
-        raised = ZelefinSurfaces.color(l: 17, a: a, b: b)
-        content = ZelefinSurfaces.color(l: 90, a: a, b: b)
+        let accentChroma = hypot(lab.a, lab.b)
+        func tone(_ l: Double, chroma: Double) -> Color {
+            ZelefinSurfaces.color(l: l, a: chroma * cos(angle), b: chroma * sin(angle))
+        }
+        canvas = tone(6, chroma: 8)
+        raised = tone(17, chroma: 8)
+        content = tone(90, chroma: 8)
+        // A near-grey accent keeps the genre art grey instead of inventing a hue.
+        genreBase = tone(8, chroma: min(22, accentChroma))
+        genreGlow = tone(59, chroma: min(68, accentChroma))
     }
 
     static let `default` = ZelefinSurfaces(accentHex: AccentPreferences.cyan.hex)

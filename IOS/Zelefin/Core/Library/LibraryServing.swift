@@ -119,6 +119,7 @@ protocol LibraryServing: AnyObject, Sendable {
     func credits(for item: MediaItem) async -> [CreditPerson]
     func specialFeatures(for itemID: String) async -> [TitleExtra]
     func themeVideos(for itemID: String) async -> [TitleExtra]
+    func themeMedia(for itemID: String) async -> ThemeMedia
     func cinemaIntros(for itemID: String) async -> [MediaItem]
     func seasons(seriesID: String) async throws -> [MediaItem]
     func episodes(seriesID: String, seasonID: String?) async throws -> [MediaItem]
@@ -366,6 +367,9 @@ extension LibraryServing {
             serverDownloadID: nil
         )
     }
+
+    /// Theme songs and videos are a Jellyfin feature.
+    func themeMedia(for itemID: String) async -> ThemeMedia { ThemeMedia() }
 
     func finalizeServerDownload(id: String) async {}
     func deleteServerDownload(id: String) async {}

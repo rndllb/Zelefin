@@ -63,13 +63,7 @@ fun DockRoutePage(
         refreshing = grid.refreshing,
         loading = grid.loading,
         bottomInset = bottomInset,
-        onOpen = { item ->
-            if (item.kind == MediaKind.Collection) {
-                onBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name)))
-            } else {
-                onOpen(item)
-            }
-        },
+        onOpen = onOpen,
         onRefresh = { onRefresh(route) },
         onQuery = { onQuery(route, it) },
         onLoadFilters = { onFilters(route) },

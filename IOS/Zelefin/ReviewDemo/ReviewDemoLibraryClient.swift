@@ -285,6 +285,8 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
         []
     }
 
+    override func themeMedia(for itemID: String) async -> ThemeMedia { ThemeMedia() }
+
     override func themeVideos(for itemID: String) async -> [TitleExtra] {
         []
     }

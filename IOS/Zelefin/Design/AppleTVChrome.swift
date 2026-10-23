@@ -107,7 +107,7 @@ struct HeroHeightLock: Equatable {
 
 enum PosterChrome {
     /// Hairline around cover art — same overlay as Vellum’s `AlbumArtworkView`.
-    static let outlineWidth: CGFloat = 0.75
+    static let outlineWidth: CGFloat = 1
 
     static func outline(for colorScheme: ColorScheme) -> Color {
         Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.07)
@@ -786,25 +786,101 @@ struct GenrePosterCard: View {
         let fittedHeight = height ?? PosterMetrics.portraitSize.height * sidebarLayout.scale
         let size = CGSize(width: fittedWidth, height: fittedHeight)
         ZStack(alignment: .bottomLeading) {
-            surfaces.raised
-            GenreIcon(title: title, side: size.width * 0.42, tint: surfaces.content)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.bottom, size.height * 0.12)
-            Text(title)
-                .font(.custom("Outfit", size: size.width * 0.16).weight(.bold))
-                .foregroundStyle(surfaces.content)
-                .lineLimit(3)
-                .minimumScaleFactor(0.5)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(size.width * 0.08)
+            GenreCardBackdrop(base: surfaces.genreBase, glow: surfaces.genreGlow)
+                .overlay(alignment: .topTrailing) { monogram(in: size) }
+                .clipped()
+            VStack(alignment: .leading, spacing: size.width * 0.05) {
+                Capsule(style: .continuous)
+                    .fill(surfaces.content.opacity(0.85))
+                    .frame(width: size.width * 0.16, height: max(2, size.width * 0.02))
+                Text(title)
+                    .font(.custom("Outfit", size: size.width * 0.17).weight(.black))
+                    .foregroundStyle(surfaces.content)
+                    .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.5)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .padding(size.width * 0.08)
         }
         .frame(width: fittedWidth, height: fittedHeight)
         .posterCard(cornerRadius: cornerRadius)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityLabel(title)
     }
+
+    /// The genre's initial, oversized and bleeding off the top corner, fading out before the title.
+    @ViewBuilder
+    private func monogram(in size: CGSize) -> some View {
+        if let initial = title.first {
+            Text(String(initial).uppercased())
+                .font(.custom("Outfit", size: size.height * 0.72).weight(.black))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [surfaces.genreGlow.opacity(0.75), surfaces.genreGlow.opacity(0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .fixedSize()
+                .offset(x: size.width * 0.12, y: -size.height * 0.22)
+                .accessibilityHidden(true)
+        }
+    }
 }
+/// Dot grid under an off-centre elliptical glow, both in the accent hue. Same layers as the CSS
+/// `radial-gradient(#ffffff33 1px, transparent 1px)` at 16px, then
+/// `radial-gradient(150% 80% at 25% 75%, glow/0.5 35%, base 100%)` over a `base` fill.
+struct GenreCardBackdrop: View {
+    let base: Color
+    let glow: Color
+    /// A touch above the CSS 0.5 so the accent reads through on small cards.
+    static let glowOpacity = 0.6
+
+    var body: some View {
+        Canvas { context, size in
+            let bounds = CGRect(origin: .zero, size: size)
+            context.fill(Path(bounds), with: .color(base))
+
+            let spacing: CGFloat = 16
+            var dots = Path()
+            var y = spacing / 2
+            while y < size.height {
+                var x = spacing / 2
+                while x < size.width {
+                    dots.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+                    x += spacing
+                }
+                y += spacing
+            }
+            context.fill(dots, with: .color(.white.opacity(0.2)))
+
+            // A radial gradient is circular, so squash the context to make the 150% x 80% ellipse.
+            let radiusX = size.width * 1.5
+            let radiusY = size.height * 0.8
+            guard radiusX > 0, radiusY > 0 else { return }
+            let squash = radiusY / radiusX
+            var glowContext = context
+            glowContext.scaleBy(x: 1, y: squash)
+            glowContext.fill(
+                Path(CGRect(x: 0, y: 0, width: size.width, height: size.height / squash)),
+                with: .radialGradient(
+                    Gradient(stops: [
+                        .init(color: glow.opacity(GenreCardBackdrop.glowOpacity), location: 0),
+                        .init(color: glow.opacity(GenreCardBackdrop.glowOpacity), location: 0.35),
+                        .init(color: base, location: 1)
+                    ]),
+                    center: CGPoint(x: size.width * 0.25, y: size.height * 0.75 / squash),
+                    startRadius: 0,
+                    endRadius: radiusX
+                )
+            )
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 struct PosterWatchedMark: View {
     var size: CGFloat = 22
 
@@ -1527,6 +1603,8 @@ enum RootPageChrome {
     static let headerRowHeight: CGFloat = 59
     /// Space the iPad floating top tab bar occupies below the status bar.
     static let padTopTabBarClearance: CGFloat = 62
+    /// Where the floating tab bar's centre line sits below the status bar, when it can't be measured.
+    static let padTabBarCenterBelowStatusBar: CGFloat = 30
 
     static func showsTitle(idiom: UIUserInterfaceIdiom) -> Bool {
         idiom == .phone
@@ -1733,6 +1811,17 @@ private struct PageHeaderProfileButton: View {
 }
 
 enum ScreenInsets {
+    /// Live status bar height from the scene; 24 (iPad) before a scene is attached.
+    @MainActor
+    static var statusBar: CGFloat {
+        for scene in UIApplication.shared.connectedScenes {
+            if let height = (scene as? UIWindowScene)?.statusBarManager?.statusBarFrame.height, height > 0 {
+                return height
+            }
+        }
+        return 24
+    }
+
     @MainActor
     static var top: CGFloat {
         for scene in UIApplication.shared.connectedScenes {
@@ -1939,6 +2028,10 @@ struct FillingPosterCell<Content: View>: View {
                         .frame(width: geo.size.width, height: geo.size.height)
                 }
             }
+            // The `Color.clear` base has no hit area, so without this only the opaque pixels of the
+            // card are tappable (the label row, padding, and rounded-corner gaps are dead). Make the
+            // whole cell tappable so a NavigationLink/Button wrapping it opens from anywhere on the card.
+            .contentShape(Rectangle())
     }
 }
 
@@ -1980,10 +2073,17 @@ struct FloatingPageHeader<Accessory: View, Center: View>: View {
     }
 
     private var padTabBarLift: CGFloat {
-        RootPageChrome.padTabBarLift(
+        if centersOnPadTabBar { return 0 }
+        return RootPageChrome.padTabBarLift(
             usesPadTopChrome: liftsIntoPadTabBar && UIDevice.current.userInterfaceIdiom == .pad,
             isSidebarVisible: tabBarPlacement == .sidebar
         )
+    }
+
+    /// iPad sits the profile and page buttons on the floating tab bar itself rather than a fixed
+    /// lift from the safe area, which landed the avatar too high when navigation shifted that inset.
+    private var centersOnPadTabBar: Bool {
+        RootPageChrome.usesOverlayPushedBar && tabBarPlacement != .sidebar
     }
 
     var body: some View {
@@ -2008,12 +2108,13 @@ struct FloatingPageHeader<Accessory: View, Center: View>: View {
                 center
             }
             .padding(.horizontal, 16)
-            .padding(.top, 4)
+            .padding(.top, centersOnPadTabBar ? 0 : 4)
             .padding(.bottom, 10)
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? padTabBarLift : padTabBarLift - 18)
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
+            .modifier(PadTabBarRowAlignment(isActive: centersOnPadTabBar))
             .transition(.opacity.combined(with: .scale(scale: 0.86)))
             .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
         }
@@ -2065,11 +2166,31 @@ struct ZelefinPadBackButton: View {
 struct ZelefinPadPushedChrome<Trailing: View>: View {
     var contentIgnoresTopSafeArea: Bool
     var isVisible: Bool = true
+    /// Changes whenever the page's layout does, so the row re-measures the tab bar.
+    var layoutKey: CGSize = .zero
     @ViewBuilder var trailing: Trailing
     @Environment(\.tabBarPlacement) private var tabBarPlacement
 
+    /// iPad sits the row on the floating tab bar's centre line. A pushed page's safe area does not
+    /// carry the tab bar the way a root tab's does, and the window inset was read once and guessed
+    /// before the window was key, so the row landed above or below the bar.
+    private var centersOnPadTabBar: Bool {
+        RootPageChrome.usesOverlayPushedBar && tabBarPlacement != .sidebar
+    }
+
+    private var topPadding: CGFloat {
+        guard centersOnPadTabBar else {
+            return RootPageChrome.pushedOverlayTopPadding(
+                contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
+                statusBarHeight: ScreenInsets.top
+            )
+        }
+        return 0
+    }
+
     private var lift: CGFloat {
-        RootPageChrome.pushedOverlayLift(
+        if centersOnPadTabBar { return 0 }
+        return RootPageChrome.pushedOverlayLift(
             contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
             usesPadTopChrome: RootPageChrome.usesOverlayPushedBar,
             isSidebarVisible: tabBarPlacement == .sidebar
@@ -2084,10 +2205,7 @@ struct ZelefinPadPushedChrome<Trailing: View>: View {
             trailing
         }
         .padding(.horizontal, 16)
-        .padding(.top, RootPageChrome.pushedOverlayTopPadding(
-            contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
-            statusBarHeight: ScreenInsets.top
-        ))
+        .padding(.top, topPadding)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
@@ -2095,6 +2213,112 @@ struct ZelefinPadPushedChrome<Trailing: View>: View {
         .offset(y: isVisible ? lift : lift - 18)
         .allowsHitTesting(isVisible)
         .accessibilityHidden(!isVisible)
+        .modifier(PadTabBarRowAlignment(isActive: centersOnPadTabBar, layoutKey: layoutKey))
+    }
+}
+
+/// Moves a row of 45pt glass controls onto the floating iPad tab bar's centre line: the tab bar
+/// is measured on screen, and so is where the row would sit, so no safe-area constant is assumed.
+/// Pushed pages, root headers and full-bleed pages all line up the same way.
+private struct PadTabBarRowAlignment: ViewModifier {
+    var isActive: Bool
+    /// Changes whenever the page's layout does, so the tab bar is measured again.
+    var layoutKey: CGSize = .zero
+    @Environment(\.tabBarPlacement) private var tabBarPlacement
+    /// Nil until the marker reports, so the first frame does not jump.
+    @State private var originY: CGFloat?
+    @State private var tabBarMidY: CGFloat?
+
+    private struct MeasureKey: Equatable {
+        var isActive: Bool
+        var layoutKey: CGSize
+        var placement: String
+    }
+
+    private var offset: CGFloat {
+        guard let originY else { return 0 }
+        let statusBar = ScreenInsets.statusBar
+        let midY = tabBarMidY ?? statusBar + RootPageChrome.padTabBarCenterBelowStatusBar
+        // Never above the status bar, whatever a reading taken mid-transition said.
+        let top = max(midY - ZelefinPillMetrics.height / 2, statusBar + 2)
+        return top - originY
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: isActive ? offset : 0)
+            // Measured off a marker the offset does not move. Reading the offset row itself fed each
+            // new offset back into the next measurement and SwiftUI cycled until the app was killed.
+            .background(alignment: .top) {
+                Color.clear
+                    .frame(height: 1)
+                    .allowsHitTesting(false)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { origin in
+                        // Recorded with the sidebar open too, so the row does not come back on a
+                        // position left over from before the sidebar animation.
+                        guard abs(origin - (originY ?? -1_000)) > 0.5 else { return }
+                        originY = origin
+                        measureTabBar()
+                    }
+            }
+            .task(id: MeasureKey(isActive: isActive, layoutKey: layoutKey, placement: String(describing: tabBarPlacement))) {
+                guard isActive else { return }
+                // The floating bar slides in after a push, a tab switch or the sidebar closing. A
+                // single early reading caught it mid-slide and parked the row above it, so follow it
+                // until it holds still.
+                var steady = 0
+                for _ in 0..<20 where steady < 3 {
+                    steady = measureTabBar() ? 0 : steady + 1
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+    }
+
+    /// True when the reading moved the row.
+    @discardableResult
+    private func measureTabBar() -> Bool {
+        guard isActive, let frame = PadTabBarLocator.frame() else { return false }
+        guard abs(frame.midY - (tabBarMidY ?? -1)) > 0.5 else { return false }
+        tabBarMidY = frame.midY
+        return true
+    }
+}
+
+/// The floating iPad tab bar's frame in window coordinates. Found by its public accessibility
+/// trait, or by class name on releases that do not set it; nil when no top tab bar is showing.
+enum PadTabBarLocator {
+    @MainActor
+    static func frame() -> CGRect? {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            guard let window = windowScene.windows.first(where: \.isKeyWindow) ?? windowScene.windows.first else { continue }
+            var candidates: [CGRect] = []
+            collect(in: window, window: window, statusBar: ScreenInsets.statusBar, into: &candidates)
+            // The floating bar is centred; a sidebar's leftover tab-bar views sit off to the side.
+            return candidates.min { abs($0.midX - window.bounds.midX) < abs($1.midX - window.bounds.midX) }
+        }
+        return nil
+    }
+
+    @MainActor
+    private static func collect(in view: UIView, window: UIWindow, statusBar: CGFloat, into candidates: inout [CGRect]) {
+        for subview in view.subviews where !subview.isHidden && subview.alpha > 0.01 {
+            let isTabBar = subview.accessibilityTraits.contains(.tabBar)
+                || String(describing: type(of: subview)).contains("FloatingTabBar")
+            if isTabBar {
+                let frame = subview.convert(subview.bounds, to: window)
+                // On screen, pill sized and below the status bar: a bar still sliding in from above,
+                // or one parked off screen with the sidebar open, is not where the row should go.
+                if frame.height > 20, frame.height < 120, frame.maxY < 200,
+                   frame.minY >= statusBar - 2,
+                   frame.minX >= 0, frame.maxX <= window.bounds.width,
+                   frame.width < window.bounds.width * 0.95 {
+                    candidates.append(frame)
+                    continue
+                }
+            }
+            collect(in: subview, window: window, statusBar: statusBar, into: &candidates)
+        }
     }
 }
 
@@ -2135,21 +2359,25 @@ private struct ZelefinPushedChromeModifier<Trailing: View>: ViewModifier {
 
     @ViewBuilder
     private func padChrome(_ content: Content) -> some View {
-        let chrome = ZelefinPadPushedChrome(
-            contentIgnoresTopSafeArea: contentIgnoresTopSafeArea,
-            isVisible: chromeVisible
-        ) {
-            trailing
-        }
         if contentIgnoresTopSafeArea {
-            ZStack(alignment: .top) {
-                content
-                chrome
+            GeometryReader { geo in
+                ZStack(alignment: .top) {
+                    content
+                    ZelefinPadPushedChrome(
+                        contentIgnoresTopSafeArea: true,
+                        isVisible: chromeVisible,
+                        layoutKey: geo.size
+                    ) {
+                        trailing
+                    }
+                }
+                .ignoresSafeArea(edges: .top)
             }
-            .ignoresSafeArea(edges: .top)
         } else {
             content.overlay(alignment: .top) {
-                chrome
+                ZelefinPadPushedChrome(contentIgnoresTopSafeArea: false, isVisible: chromeVisible) {
+                    trailing
+                }
             }
         }
     }

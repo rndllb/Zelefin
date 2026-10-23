@@ -10,6 +10,9 @@ struct PlaybackSettingsView: View {
     @AppStorage(PlaybackPreferences.maxBitrateKey) private var maxBitrate = 0
     @AppStorage(PlaybackPreferences.adaptiveBitrateKey) private var adaptiveBitrate = true
     @AppStorage(PlaybackPreferences.autoPlayNextEpisodeKey) private var autoPlayNextEpisode = true
+    @AppStorage(PlaybackPreferences.themeSongsKey) private var themeSongs = false
+    @AppStorage(PlaybackPreferences.themeVideosKey) private var themeVideos = false
+    @AppStorage(PlaybackPreferences.themeVideoSoundKey) private var themeVideoSound = false
     @AppStorage(PlaybackPreferences.defaultRateKey) private var defaultRate = 1.0
     @AppStorage(PlaybackPreferences.audioLanguageKey) private var audioLanguage = PlaybackLanguage.automaticCode
     @AppStorage(PlaybackPreferences.subtitleLanguageKey) private var subtitleLanguage = PlaybackLanguage.automaticCode
@@ -34,6 +37,9 @@ struct PlaybackSettingsView: View {
             }
             qualitySection
             watchingSection
+            if !session.usesSilo {
+                themeMediaSection
+            }
         }
         .zelefinSettingsChrome(title: "Playback")
         .task {
@@ -219,6 +225,21 @@ struct PlaybackSettingsView: View {
             Text("Quality")
         } footer: {
             Text(qualityFooter)
+        }
+        .zelefinRowBackground()
+    }
+
+    private var themeMediaSection: some View {
+        Section {
+            Toggle("Theme Songs", isOn: $themeSongs)
+            Toggle("Theme Videos", isOn: $themeVideos)
+            if themeVideos {
+                Toggle("Theme Video Sound", isOn: $themeVideoSound)
+            }
+        } header: {
+            Text("Theme Media")
+        } footer: {
+            Text("Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on.")
         }
         .zelefinRowBackground()
     }

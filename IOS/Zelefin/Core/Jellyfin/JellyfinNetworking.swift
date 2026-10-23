@@ -72,11 +72,14 @@ enum JellyfinNetworking {
         return try await imageSession.data(for: request)
     }
 
-    static func apiData(for request: URLRequest) async throws -> (Data, URLResponse) {
+    static func apiData(
+        for request: URLRequest,
+        delegate: (any URLSessionTaskDelegate)? = nil
+    ) async throws -> (Data, URLResponse) {
         var request = request
         AccessGateway.apply(&request)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        return try await apiSession.data(for: request)
+        return try await apiSession.data(for: request, delegate: delegate)
     }
 
     private static let apiSession: URLSession = {

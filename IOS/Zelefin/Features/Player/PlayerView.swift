@@ -207,6 +207,7 @@ struct PlayerView: View {
         }
         do {
             let launch = session.launchOptions(for: target.id)
+            await measureConnectionIfUnknown(for: launch)
             let maxBitrate = streamingBitrate(for: launch)
             appliedBitrate = maxBitrate
             let featureStart = resumeOverride ?? target.playbackPosition
@@ -395,6 +396,16 @@ struct PlayerView: View {
         if let created = model, created.skipSegments.isEmpty {
             created.skipSegments = skip
         }
+    }
+
+    /// Off the home network with no recent sample, measure before choosing Direct Play: the path
+    /// estimate trusts any Wi-Fi, and a phone hotspot reads as Wi-Fi. Measuring alongside the start
+    /// could only correct the next play. Costs at most the 4s probe timeout, once per network every 90s.
+    private func measureConnectionIfUnknown(for launch: PlaybackLaunchOptions) async {
+        guard PlaybackPreferences.adaptiveBitrateEnabled, liveBitrateOverride == nil else { return }
+        guard launch.resolvedQuality == .auto else { return }
+        if let host = session.activeServerURL?.host, ServerURL.isInternalHost(host) { return }
+        await session.adaptiveBitrate.refreshIfNeeded(library: session.library)
     }
 
     private func retuneAdaptiveBitrate() async {

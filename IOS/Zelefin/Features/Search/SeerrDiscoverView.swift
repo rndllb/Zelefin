@@ -64,7 +64,7 @@ struct SeerrDiscoverHomeView: View {
                 SectionHeader(title: title, showsChevron: false)
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: PosterMetrics.rowSpacing) {
-                        ForEach(genres) { genre in
+                        ForEach(GenreOrder.shuffled(genres, name: \.name)) { genre in
                             NavigationLink {
                                 SeerrDiscoverGridView(query: genre.discoverQuery) { title in
                                     home.markRequested(title)

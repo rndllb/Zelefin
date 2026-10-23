@@ -37,10 +37,19 @@ final class AdaptiveBitrateStore {
         guard PlaybackPreferences.adaptiveBitrateEnabled else { return }
         guard let library else { return }
         if AdaptiveBitratePolicy.isCacheValid(result: lastProbe, path: path) { return }
-        lastProbe = await library.measureStreamingBitrate(
+        let timeout: TimeInterval = 4
+        let transport = path.transport
+        let started = Date()
+        let measured = await library.measureStreamingBitrate(
             size: AdaptiveBitratePolicy.playbackSampleBytes,
-            timeout: 4,
-            transport: path.transport
+            timeout: timeout,
+            transport: transport
+        )
+        lastProbe = measured ?? AdaptiveBitratePolicy.timedOutProbe(
+            bytes: AdaptiveBitratePolicy.playbackSampleBytes,
+            timeout: timeout,
+            elapsed: Date().timeIntervalSince(started),
+            transport: transport
         )
     }
 
@@ -79,8 +88,10 @@ final class AdaptiveBitrateStore {
         )
     }
 
+    /// Any path change can mean a different network: a hotspot and home Wi-Fi are both `.wifi`,
+    /// so a sample from one must not carry over to the other.
     private func apply(_ snapshot: NetworkPathSnapshot) {
-        if path.transport != snapshot.transport {
+        if path != snapshot {
             lastProbe = nil
         }
         path = snapshot

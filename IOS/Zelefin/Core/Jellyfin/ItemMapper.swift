@@ -336,6 +336,21 @@ enum ItemMapper {
         streams?.first(where: { $0.type == .video })?.codec
     }
 
+    static func sourceVideoFacts(from streams: [MediaStream]?) -> SourceVideoFacts? {
+        guard let video = streams?.first(where: { $0.type == .video }),
+              let width = video.width, let height = video.height, width > 0, height > 0 else {
+            return nil
+        }
+        let rate = video.realFrameRate ?? video.averageFrameRate
+        return SourceVideoFacts(
+            width: width,
+            height: height,
+            bitrate: video.bitRate.flatMap { $0 > 0 ? $0 : nil },
+            frameRate: rate.flatMap { $0 > 0 ? Double($0) : nil },
+            codec: video.codec
+        )
+    }
+
     private static func overview(from dto: BaseItemDto) -> String? {
         let text = dto.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !text.isEmpty { return dto.overview }
@@ -395,6 +410,8 @@ enum ItemMapper {
         return tags[name] ?? tags[name.lowercased()]
     }
 
+    static let themeVideoCaption = "Theme"
+
     static func extraCaption(from dto: BaseItemDto) -> String {
         switch dto.extraType {
         case .behindTheScenes: "Behind the Scenes"
@@ -405,7 +422,7 @@ enum ItemMapper {
         case .clip: "Clip"
         case .short: "Short"
         case .sample: "Sample"
-        case .themeVideo: "Theme"
+        case .themeVideo: themeVideoCaption
         case .trailer: "Trailer"
         default: "Extra"
         }

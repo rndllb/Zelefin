@@ -190,7 +190,12 @@ private fun DiscoverShelf(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (section.isBrandRow) {
-                items(section.brands, key = { it.id }) { brand ->
+                val brands = if (section.brands.all { it.kind == DiscoverBrandKind.Genre }) {
+                    GenreOrder.shuffled(section.brands) { it.name }
+                } else {
+                    section.brands
+                }
+                items(brands, key = { it.id }) { brand ->
                     DiscoverBrandCard(brand) { onOpenQuery(brand.query) }
                 }
             } else {

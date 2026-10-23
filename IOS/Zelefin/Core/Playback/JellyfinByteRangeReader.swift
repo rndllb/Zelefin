@@ -163,6 +163,11 @@ final class JellyfinByteRangeReader: DirectPlayByteSource, @unchecked Sendable {
         session.cancelInFlight()
     }
 
+    /// How long a waiting request has gone without receiving a byte; 0 when nothing is waiting.
+    var secondsWithoutProgress: TimeInterval {
+        session.secondsWithoutProgress(now: Date())
+    }
+
     func makeIndependentReader() -> DirectPlayByteSource? {
         JellyfinByteRangeReader(url: url, headers: headers, totalSize: totalSize, timeout: timeout)
     }
@@ -260,6 +265,8 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
     private var session: URLSession!
     private let lock = NSLock()
     private var inflight: [Int: RangeExchange] = [:]
+    private var waitingRequests = 0
+    private var lastProgress = Date.distantPast
     /// `URLSession.dataTask` raises an uncaught ObjC exception after `invalidateAndCancel`.
     /// Pause can overlap a demuxer read with session teardown, so that call must not happen.
     private var closed = false
@@ -325,6 +332,13 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
         return response.body
     }
 
+    func secondsWithoutProgress(now: Date) -> TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        guard waitingRequests > 0 else { return 0 }
+        return max(0, now.timeIntervalSince(lastProgress))
+    }
+
     func cancelInFlight() {
         // Cancel the requests we started. `getAllTasks` is async and can fire after
         // the next range GET has begun, which aborts the seek fill and surfaces as
@@ -381,6 +395,10 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
             }
             let task = session.dataTask(with: request)
             inflight[task.taskIdentifier] = exchange
+            if waitingRequests == 0 {
+                lastProgress = Date()
+            }
+            waitingRequests += 1
             lock.unlock()
             exchange.task = task
             task.resume()
@@ -390,6 +408,7 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
             }
             lock.lock()
             inflight[task.taskIdentifier] = nil
+            waitingRequests -= 1
             lock.unlock()
             return exchange.snapshot
         }
@@ -425,6 +444,7 @@ private final class ByteRangeSession: NSObject, URLSessionDataDelegate, @uncheck
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.lock()
         let exchange = inflight[dataTask.taskIdentifier]
+        lastProgress = Date()
         lock.unlock()
         exchange?.append(data)
     }

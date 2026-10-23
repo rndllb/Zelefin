@@ -121,7 +121,7 @@ struct MediaRow: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: PosterMetrics.rowSpacing) {
-                    ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(section.displayItems.enumerated()), id: \.element.id) { index, item in
                         queueCard(item, rank: index + 1)
                             .frame(width: cardWidth(for: section.style), alignment: .leading)
                     }
@@ -440,10 +440,12 @@ struct CatalogCardGridView: View {
     var body: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 20) {
-                ForEach(section.items) { item in
+                ForEach(section.displayItems) { item in
                     NavigationLink {
                         if item.kind == .genre {
                             CatalogGridView(title: item.name, query: .genre(item.id))
+                        } else if item.kind == .collection {
+                            LibraryItemRoute(item: item)
                         } else {
                             CatalogGridView(title: item.name, query: .parent(item.id))
                         }
@@ -474,9 +476,7 @@ struct CatalogCardGridView: View {
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
-        .navigationTitle(section.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .catalogPushedChrome(title: section.title) { EmptyView() }
     }
 }
 
@@ -557,10 +557,8 @@ struct CatalogGridView: View {
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .catalogFilterSortToolbar(
+        .catalogPushedChrome(
+            title: title,
             filterCount: browseQuery.activeFilterCount,
             sortTitle: browseQuery.sort.title,
             showFilters: $showFilters,

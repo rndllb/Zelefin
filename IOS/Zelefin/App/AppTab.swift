@@ -191,25 +191,6 @@ enum TabBarIconMetrics {
         cache[name] = image
         return image
     }
-
-    /// Search's tab role tints template images with the accent even after you leave the tab.
-    @MainActor
-    static func originalImage(named name: String, color: UIColor) -> UIImage? {
-        let key = "\(name)|\(color.description)"
-        if let cached = cache[key] { return cached }
-        guard let source = UIImage(named: name) else { return nil }
-        let canvas = CGSize(width: side, height: side)
-        let rendered = UIGraphicsImageRenderer(size: canvas).image { _ in
-            source.withTintColor(color, renderingMode: .alwaysOriginal)
-                .draw(in: CGRect(origin: .zero, size: canvas))
-        }
-        let overflow = (side - 24) / 2
-        let image = rendered
-            .withAlignmentRectInsets(UIEdgeInsets(top: overflow, left: overflow, bottom: overflow, right: overflow))
-            .withRenderingMode(.alwaysOriginal)
-        cache[key] = image
-        return image
-    }
 }
 
 struct TabBarIcon: View {
@@ -220,17 +201,12 @@ struct TabBarIcon: View {
     var body: some View {
         Group {
             if let assetName {
-                if assetName == "IconsaxSearch", !isSelected,
-                   let image = TabBarIconMetrics.originalImage(named: assetName, color: .white) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(isSelected ? "\(assetName)Filled" : assetName)
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                }
+                // Template so the tab's tint (accent) applies to every icon, Search included,
+                // whether selected or not — not a flat white Search icon when unselected.
+                Image(isSelected ? "\(assetName)Filled" : assetName)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
             } else {
                 Image(systemName: systemImage)
             }

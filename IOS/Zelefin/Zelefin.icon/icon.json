@@ -1,27 +1,35 @@
 {
-  "fill" : "system-light",
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.60790,0.40377,0.76187,1.00000",
+      "display-p3:0.33769,0.58434,0.79236,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.5,
+        "y" : 0
+      },
+      "stop" : {
+        "x" : 0.5,
+        "y" : 0.7
+      }
+    }
+  },
   "groups" : [
     {
+      "blur-material" : null,
       "layers" : [
         {
-          "blend-mode" : "normal",
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "Zeleum.png",
-          "name" : "Zeleum",
-          "position" : {
-            "scale" : 1,
-            "translation-in-points" : [
-              43,
-              0
-            ]
-          }
+          "image-name" : "zelefin white 2.png",
+          "name" : "zelefin white 2"
         }
       ],
+      "lighting" : "individual",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
       },
+      "specular" : true,
       "translucency" : {
         "enabled" : true,
         "value" : 0.5

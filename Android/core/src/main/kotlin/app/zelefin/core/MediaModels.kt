@@ -335,6 +335,8 @@ data class TitleDetail(
     /** For a YouTube channel or video: the channel and its videos, newest first. */
     val channel: MediaItem? = null,
     val channelVideos: List<MediaItem> = emptyList(),
+    /** For a Jellyfin collection: its titles in release order. */
+    val collectionItems: List<MediaItem> = emptyList(),
 )
 
 @Serializable

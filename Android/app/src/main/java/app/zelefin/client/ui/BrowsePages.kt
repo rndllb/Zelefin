@@ -116,13 +116,7 @@ fun BrowseScreen(
                     refreshing = grid.refreshing,
                     loading = grid.loading,
                     bottomInset = dockContentReserve(),
-                    onOpen = { item ->
-                        if (route == LibraryRoute.AllCollections && item.kind == app.zelefin.core.MediaKind.Collection) {
-                            onBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name)))
-                        } else {
-                            onOpen(item)
-                        }
-                    },
+                    onOpen = onOpen,
                     onRefresh = { onGridRefresh(route) },
                     onQuery = { onGridQuery(route, it) },
                     onLoadFilters = { onGridFilters(route) },

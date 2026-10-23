@@ -1,3 +1,5 @@
+import AVFoundation
+import Combine
 import SwiftUI
 import SafariServices
 
@@ -7,6 +9,7 @@ struct ItemDetailView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @Environment(\.scenePhase) private var scenePhase
     let itemID: String
     let focusEpisodeID: String?
 
@@ -24,6 +27,7 @@ struct ItemDetailView: View {
     @State private var related: [MediaItem] = []
     @State private var credits: [CreditPerson] = []
     @State private var collections: [ItemCollectionMembership] = []
+    @State private var collectionMembers: [MediaItem] = []
     @State private var selectedSeasonID: String?
     @State private var scrolledEpisodeID: EpisodeCarouselCard.ID?
     @State private var isJumpingSeason = false
@@ -34,6 +38,9 @@ struct ItemDetailView: View {
     @State private var moreInfo = TitleMoreInfo()
     @State private var playingItem: MediaItem?
     @State private var playingWebTrailer: TitleTrailer?
+    @State private var theme = ThemeMediaController()
+    @State private var loadedTheme: ThemeMedia?
+    @State private var isOnScreen = false
     @State private var showsCollectionEditor = false
     @State private var showsPlayOnDevice = false
     @State private var showsSyncPlay = false
@@ -69,10 +76,32 @@ struct ItemDetailView: View {
         }
     }
 
+    /// The theme waits while something else plays or the app is in the background.
+    private var themeIsPaused: Bool {
+        session.pendingPlayerItem != nil || playingWebTrailer != nil || scenePhase != .active
+    }
+
     var body: some View {
         page
             .presentsPlayerFromRoot($playingItem) {
                 Task { await refreshPlaybackProgress() }
+            }
+            .onAppear {
+                isOnScreen = true
+                if let loadedTheme, !themeIsPaused {
+                    theme.start(loadedTheme)
+                }
+            }
+            .onDisappear {
+                isOnScreen = false
+                theme.stop()
+            }
+            .onChange(of: themeIsPaused) { _, paused in
+                if paused {
+                    theme.suspend()
+                } else {
+                    theme.resume()
+                }
             }
             .fullScreenCover(item: $playingWebTrailer) { trailer in
                 if let url = trailer.externalWatchURL {
@@ -207,6 +236,10 @@ struct ItemDetailView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             hero(for: item, width: geo.size.width, height: heroLock.height(for: geo.size))
 
+                            if item.kind == .collection {
+                                collectionMemberSections(for: item)
+                            }
+
                             if item.kind == .series, !seasons.isEmpty {
                                 seasonsSection
                                     .padding(.top, 4)
@@ -320,7 +353,7 @@ struct ItemDetailView: View {
                     TitleUserActions(
                         item: item,
                         onChange: { self.item = $0 },
-                        onCollections: session.usesSilo ? nil : { showsCollectionEditor = true },
+                        onCollections: session.usesSilo || item.kind == .collection ? nil : { showsCollectionEditor = true },
                         onPlayElsewhere: session.usesSilo ? nil : { showsPlayOnDevice = true },
                         onSyncPlay: session.usesSilo || !item.kind.usesVideoPlayer
                             ? nil
@@ -331,7 +364,7 @@ struct ItemDetailView: View {
                         onRemoteImage: session.isAdministrator && !session.usesSilo
                             ? { showsRemoteImages = true }
                             : nil,
-                        onDelete: session.isAdministrator && !session.usesSilo
+                        onDelete: session.isAdministrator && !session.usesSilo && item.kind != .collection
                             ? { showsDeleteConfirm = true }
                             : nil,
                         onIdentify: session.isAdministrator && !session.usesSilo
@@ -384,7 +417,7 @@ struct ItemDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
-            playProgressRow(for: MediaItem.heroPlaybackItem(title: item, episodes: episodes))
+            playProgressRow(for: heroPlaybackItem(for: item))
 
             if let overview = item.overview, !overview.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -412,6 +445,16 @@ struct ItemDetailView: View {
                     size: CGSize(width: width, height: height)
                 )
 
+                if let player = theme.videoPlayer {
+                    ThemeVideoView(player: player) { theme.videoIsReady = true }
+                        .frame(width: width, height: height)
+                        .clipped()
+                        .opacity(theme.videoIsReady ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.6), value: theme.videoIsReady)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+
                 LinearGradient(
                     colors: [.black.opacity(0.5), .clear],
                     startPoint: .top,
@@ -433,7 +476,19 @@ struct ItemDetailView: View {
         }
     }
 
+    /// What Play starts: the next episode for a show, the next unwatched title for a collection.
+    private func heroPlaybackItem(for item: MediaItem) -> MediaItem {
+        guard item.kind == .collection else {
+            return MediaItem.heroPlaybackItem(title: item, episodes: episodes)
+        }
+        let playable = collectionMembers.filter { [.movie, .episode, .unknown].contains($0.kind) }
+        return MediaItem.preferredEpisode(in: playable) ?? item
+    }
+
     private func detailMetadataLine(for item: MediaItem) -> String {
+        if item.kind == .collection {
+            return CollectionMemberGroup.metadataLine(for: item, members: collectionMembers)
+        }
         var parts = [item.kindLabel]
         parts.append(contentsOf: Array(item.genres.prefix(2)))
         return parts.joined(separator: " · ")
@@ -442,7 +497,7 @@ struct ItemDetailView: View {
     private func playProgressRow(for playbackItem: MediaItem) -> some View {
         let title = item ?? playbackItem
         return VStack(spacing: 10) {
-            if title.kind == .book {
+            if title.kind == .book || playbackItem.kind == .collection {
                 EmptyView()
             } else if title.kind == .photo {
                 Button {
@@ -777,10 +832,29 @@ struct ItemDetailView: View {
         }
     }
 
+    /// A collection's titles in release order, one row per kind. Each header opens the full grid
+    /// with sorting and filters.
+    private func collectionMemberSections(for collection: MediaItem) -> some View {
+        ForEach(CollectionMemberGroup.groups(from: collectionMembers)) { group in
+            VStack(alignment: .leading, spacing: 12) {
+                NavigationLink {
+                    CatalogGridView(title: collection.browsingCardTitle, query: .parent(collection.id))
+                } label: {
+                    SectionHeader(title: group.title)
+                }
+                .buttonStyle(.plain)
+
+                posterScroller(group.items)
+            }
+            .padding(.top, 4)
+            .padding(.bottom, 20)
+        }
+    }
+
     private func collectionSection(_ membership: ItemCollectionMembership) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             NavigationLink {
-                CatalogGridView(title: membership.collection.browsingCardTitle, query: .parent(membership.collection.id))
+                LibraryItemRoute(item: membership.collection)
             } label: {
                 SectionHeader(title: collections.count > 1 ? membership.collection.browsingCardTitle : "Collection")
             }
@@ -795,11 +869,7 @@ struct ItemDetailView: View {
             LazyHStack(spacing: PosterMetrics.rowSpacing) {
                 ForEach(items) { item in
                     NavigationLink {
-                        if item.kind == .collection {
-                            CatalogGridView(title: item.name, query: .parent(item.id))
-                        } else {
-                            ItemDetailView(item: item)
-                        }
+                        LibraryItemRoute(item: item)
                     } label: {
                         PortraitPoster(
                             item: item,
@@ -947,6 +1017,16 @@ struct ItemDetailView: View {
         )
     }
 
+    /// Theme song and video, when the user turned them on in Settings → Playback and Jellyfin has them.
+    private func loadTheme(library: any LibraryServing, for loaded: MediaItem) async {
+        guard PlaybackPreferences.themeSongsEnabled || PlaybackPreferences.themeVideosEnabled else { return }
+        let media = await library.themeMedia(for: loaded.id)
+        guard !media.isEmpty, media != loadedTheme else { return }
+        loadedTheme = media
+        guard isOnScreen, !themeIsPaused else { return }
+        theme.start(media)
+    }
+
     private func refreshFromServer() async {
         guard let library = session.library else { return }
         do {
@@ -954,6 +1034,13 @@ struct ItemDetailView: View {
             item = loaded
             moreInfo = await library.titleMoreInfo(for: loaded)
             isLoading = false
+
+            if loaded.kind == .collection {
+                Task { await loadTheme(library: library, for: loaded) }
+                await loadCollection(library: library, collection: loaded)
+                return
+            }
+
             await loadStreamTracks(for: loaded)
 
             if loaded.isYouTube {
@@ -962,6 +1049,7 @@ struct ItemDetailView: View {
                 return
             }
 
+            Task { await loadTheme(library: library, for: loaded) }
             async let fetchedTrailers = library.trailers(for: loaded)
             async let fetchedExtras = library.specialFeatures(for: loaded.id)
             async let fetchedThemes = library.themeVideos(for: loaded.id)
@@ -1001,7 +1089,11 @@ struct ItemDetailView: View {
             persistSnapshot()
 
             var extrasList = await fetchedExtras
-            let themes = await fetchedThemes
+            // With Theme Videos on they play as the backdrop, so they are not listed again here.
+            let themes = PlaybackPreferences.themeVideosEnabled ? [] : await fetchedThemes
+            if PlaybackPreferences.themeVideosEnabled {
+                extrasList.removeAll { $0.caption == ItemMapper.themeVideoCaption }
+            }
             let extraIDs = Set(extrasList.map(\.id))
             extrasList.append(contentsOf: themes.filter { !extraIDs.contains($0.id) })
             extras = extrasList
@@ -1032,13 +1124,28 @@ struct ItemDetailView: View {
         guard let library = session.library else { return }
         guard let loaded = try? await library.item(id: itemID) else { return }
         item = loaded
-        if loaded.isYouTube {
+        if loaded.kind == .collection {
+            collectionMembers = await Self.members(of: loaded, library: library) ?? collectionMembers
+        } else if loaded.isYouTube {
             await loadYouTubeVideos(library: library, loaded: loaded)
         } else if loaded.kind == .series {
             let fetched = (try? await library.episodes(seriesID: loaded.id)) ?? []
             episodes = MediaItem.orderedShowEpisodes(fetched, seasons: seasons)
         }
         persistSnapshot()
+    }
+
+    /// Jellyfin's BoxSet item gives the hero; its children, in release order, fill the rows.
+    private func loadCollection(library: any LibraryServing, collection: MediaItem) async {
+        collectionMembers = await Self.members(of: collection, library: library) ?? collectionMembers
+        credits = Self.keepingCastPhotos(await library.credits(for: collection), from: credits)
+        persistSnapshot()
+    }
+
+    private static func members(of collection: MediaItem, library: any LibraryServing) async -> [MediaItem]? {
+        var query = CatalogBrowseQuery.default
+        query.sort = .releaseDate
+        return try? await library.items(parentID: collection.id, query: query, onPage: nil)
     }
 
     private func loadYouTubeDetail(library: any LibraryServing, loaded: MediaItem) async {
@@ -1326,4 +1433,202 @@ private struct TrailerSafariView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+}
+
+/// A collection's titles split into rows by kind, with the hero's summary line.
+private struct CollectionMemberGroup: Identifiable {
+    let title: String
+    let items: [MediaItem]
+    var id: String { title }
+
+    static func groups(from members: [MediaItem]) -> [CollectionMemberGroup] {
+        let movies = members.filter { $0.kind == .movie }
+        let shows = members.filter { $0.kind == .series || $0.kind == .season }
+        let episodes = members.filter { $0.kind == .episode }
+        let other = members.filter { ![.movie, .series, .season, .episode].contains($0.kind) }
+        return [
+            CollectionMemberGroup(title: "Movies", items: movies),
+            CollectionMemberGroup(title: "Shows", items: shows),
+            CollectionMemberGroup(title: "Episodes", items: episodes),
+            CollectionMemberGroup(title: other.count == members.count ? "Titles" : "More", items: other)
+        ].filter { !$0.items.isEmpty }
+    }
+
+    /// "Collection · 3 Movies · 1985–1990"
+    static func metadataLine(for collection: MediaItem, members: [MediaItem]) -> String {
+        var parts = [collection.kindLabel]
+        if !members.isEmpty {
+            let allMovies = members.allSatisfy { $0.kind == .movie }
+            let noun = allMovies ? (members.count == 1 ? "Movie" : "Movies") : (members.count == 1 ? "Title" : "Titles")
+            parts.append("\(members.count) \(noun)")
+        }
+        let years = members.compactMap(\.year)
+        if let first = years.min(), let last = years.max() {
+            parts.append(first == last ? "\(first)" : "\(first)–\(last)")
+        } else {
+            parts.append(contentsOf: collection.genres.prefix(2))
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Plays a title's Jellyfin theme video, looping and muted unless Theme Video Sound is on, or else its
+/// theme song. As in Jellyfin, a theme video is preferred and the song does not play alongside it.
+@MainActor
+@Observable
+final class ThemeMediaController {
+    private(set) var videoPlayer: AVPlayer?
+    var videoIsReady = false
+    /// Whichever player is heard: the theme song, or the video when its sound is on.
+    private var soundPlayer: AVPlayer?
+    private var media: ThemeMedia?
+    private var isSuspended = false
+    private var fadeTask: Task<Void, Never>?
+    private var loopObserver: NSObjectProtocol?
+
+    func start(_ next: ThemeMedia) {
+        stop()
+        media = next
+        isSuspended = false
+        let videoURL = PlaybackPreferences.themeVideosEnabled ? next.videoURL : nil
+        if videoURL == nil, PlaybackPreferences.themeSongsEnabled, let url = next.songURL {
+            let player = AVPlayer(playerItem: Self.item(for: url))
+            player.volume = 0
+            soundPlayer = player
+            player.play()
+            fade(player, to: 1, over: 1.2)
+        }
+        if let url = videoURL {
+            let item = Self.item(for: url)
+            let player = AVPlayer(playerItem: item)
+            player.actionAtItemEnd = .none
+            loopObserver = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.didPlayToEndTimeNotification,
+                object: item,
+                queue: .main
+            ) { [weak player] _ in
+                MainActor.assumeIsolated {
+                    player?.seek(to: .zero)
+                    player?.play()
+                }
+            }
+            videoPlayer = player
+            if PlaybackPreferences.themeVideoSoundEnabled {
+                player.volume = 0
+                soundPlayer = player
+                player.play()
+                fade(player, to: 1, over: 1.2)
+            } else {
+                player.isMuted = true
+                player.play()
+            }
+        }
+    }
+
+    func suspend() {
+        guard media != nil, !isSuspended else { return }
+        isSuspended = true
+        fadeTask?.cancel()
+        soundPlayer?.pause()
+        videoPlayer?.pause()
+    }
+
+    func resume() {
+        guard media != nil, isSuspended else { return }
+        isSuspended = false
+        videoPlayer?.play()
+        if let soundPlayer {
+            soundPlayer.play()
+            fade(soundPlayer, to: 1, over: 0.6)
+        }
+    }
+
+    /// Fades the sound out rather than cutting it when the page goes away.
+    func stop() {
+        fadeTask?.cancel()
+        if let soundPlayer {
+            let fading = soundPlayer
+            Task { @MainActor in
+                let steps = 8
+                let start = fading.volume
+                for step in 1...steps {
+                    try? await Task.sleep(for: .milliseconds(40))
+                    fading.volume = start * Float(steps - step) / Float(steps)
+                }
+                fading.pause()
+            }
+        }
+        if videoPlayer !== soundPlayer {
+            videoPlayer?.pause()
+        }
+        if let loopObserver {
+            NotificationCenter.default.removeObserver(loopObserver)
+        }
+        loopObserver = nil
+        soundPlayer = nil
+        videoPlayer = nil
+        videoIsReady = false
+        media = nil
+    }
+
+    private func fade(_ player: AVPlayer, to target: Float, over seconds: Double) {
+        fadeTask?.cancel()
+        fadeTask = Task { @MainActor in
+            let steps = 20
+            let start = player.volume
+            for step in 1...steps {
+                try? await Task.sleep(for: .milliseconds(Int(seconds * 1_000) / steps))
+                if Task.isCancelled { return }
+                player.volume = start + (target - start) * Float(step) / Float(steps)
+            }
+        }
+    }
+
+    private static func item(for url: URL) -> AVPlayerItem {
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": PlaybackHTTPHeaders.fields(for: url)])
+        return AVPlayerItem(asset: asset)
+    }
+}
+
+/// The theme video filling the hero. Reports once its first frame can show, so the backdrop
+/// stays until then instead of flashing black.
+private struct ThemeVideoView: UIViewRepresentable {
+    let player: AVPlayer
+    var onReady: () -> Void
+
+    func makeUIView(context: Context) -> PlayerLayerView {
+        let view = PlayerLayerView()
+        view.isUserInteractionEnabled = false
+        view.playerLayer.videoGravity = .resizeAspectFill
+        view.playerLayer.player = player
+        view.onReady = onReady
+        return view
+    }
+
+    func updateUIView(_ view: PlayerLayerView, context: Context) {
+        if view.playerLayer.player !== player {
+            view.playerLayer.player = player
+        }
+        view.onReady = onReady
+    }
+
+    final class PlayerLayerView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+        var onReady: (() -> Void)?
+        private var readiness: AnyCancellable?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            readiness = playerLayer.publisher(for: \.isReadyForDisplay)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] ready in
+                    if ready { self?.onReady?() }
+                }
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
 }

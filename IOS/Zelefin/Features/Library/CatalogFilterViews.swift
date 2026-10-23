@@ -243,6 +243,55 @@ extension View {
     }
 }
 
+extension View {
+    /// Pushed grid pages. iPhone keeps the system bar and its inline title. iPad overlays back and
+    /// trailing controls on the floating tab bar's row instead: a system bar there wraps the title and
+    /// items onto a second row under the tabs whenever they do not fit beside them.
+    @MainActor
+    @ViewBuilder
+    func catalogPushedChrome<Trailing: View>(
+        title: String,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        if RootPageChrome.usesOverlayPushedBar {
+            zelefinPushedChrome(title: title, trailing: trailing)
+        } else {
+            navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    if Trailing.self != EmptyView.self {
+                        ToolbarItem(placement: .primaryAction) {
+                            trailing()
+                                .fixedSize()
+                                .imageScale(.medium)
+                                .controlSize(.regular)
+                        }
+                        .catalogToolbarHidesSystemBackground()
+                    }
+                }
+        }
+    }
+
+    @MainActor
+    func catalogPushedChrome(
+        title: String,
+        filterCount: Int,
+        sortTitle: String,
+        showFilters: Binding<Bool>,
+        showSort: Binding<Bool>
+    ) -> some View {
+        catalogPushedChrome(title: title) {
+            CatalogFilterSortButtons(
+                filterCount: filterCount,
+                sortTitle: sortTitle,
+                onSort: { showSort.wrappedValue = true },
+                onFilter: { showFilters.wrappedValue = true }
+            )
+        }
+    }
+}
+
 extension ToolbarContent {
     @ToolbarContentBuilder
     func catalogToolbarHidesSystemBackground() -> some ToolbarContent {
