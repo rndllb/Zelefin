@@ -33,27 +33,27 @@ Your server. Direct play. No Plus, no subscription, no in-app purchase.
 
 **🪼 Jellyfin** · ready
 
-Sign in with URL, username, and password. Extra accounts live in the profile sheet. Full admin, SyncPlay, plugin alerts, Live TV (iOS).
+Sign in with URL, username, and password, or Quick Connect. Extra accounts live in the profile sheet. Full admin, SyncPlay, Live TV (iOS), and lock-screen alerts through the Zelefin plugin.
 
 </td>
 <td width="33%" valign="top">
 
 **🗄️ Silo** · ready
 
-Through Silo’s Jellyfin-compatible API: turn it on in Silo, then sign in as `username#profile` or with Quick Connect. Jellyfin-only tools Silo doesn’t serve stay hidden (admin dashboard, SyncPlay, playlists, remote play, Live TV).
+Sign in with your Silo account to pick a household profile (PINs and Silo’s avatars included), or as `username#profile` / Quick Connect. Libraries and playback run on Silo’s Jellyfin-compatible API, so its public address must be reachable wherever you watch; sign-in warns when it only works at home. Lock-screen alerts come from a personal webhook on the profile. Jellyfin-only tools Silo doesn’t serve stay hidden.
 
 </td>
 <td width="33%" valign="top">
 
-**⏳ Emby & Plex** · next
+**🟢 Emby** · ready
 
-Not in this build. The UI is already native on both phones; those sign-ins ship later.
+Its own API, not a Jellyfin fallback. Intro and credit skip from chapter markers, BIF scrubbing previews, collections, playlists, remote control, metadata and image editing, admin tools, Live TV, and the Open Subtitles plugin. Lock-screen alerts come from Emby’s Webhooks (Emby Premiere).
 
 </td>
 </tr>
 </table>
 
-The optional [Zelefin plugin](https://github.com/rndllb/Zelefin-Plugin) is Jellyfin-only. It pushes lock-screen alerts and dashboard messages while the app is closed.
+Lock-screen alerts arrive while the app is closed on all three. Jellyfin uses the optional [Zelefin plugin](https://github.com/rndllb/Zelefin-Plugin), which also carries dashboard messages and Seerr requests. Emby and Silo can’t run it, so Settings → Notifications adds a webhook to your account that posts to Zelefin’s push service; Silo’s are signed and checked.
 
 ---
 
@@ -65,7 +65,7 @@ The optional [Zelefin plugin](https://github.com/rndllb/Zelefin-Plugin) is Jelly
 
 ### 🏠 Home
 
-Continue watching, next up, recently added, and latest from each library. Reorder or hide rows. Featured hero from Interface settings.
+Continue watching, next up, and recently added movies and shows across every library, where new episodes bring a show back to the front. Reorder or hide rows. Featured hero from Interface settings.
 
 </td>
 <td width="33%" valign="top">
@@ -141,14 +141,14 @@ See other devices, send play / playstate, send a Display Message. In-app popup w
 
 ### 🔔 Notifications
 
-Library adds, streams starting, users online, tasks, Seerr requests. Per-kind toggles. Lock screen needs the Jellyfin plugin.
+Jellyfin: library adds, streams, users online, tasks, Seerr requests. Emby: new media, playback, recordings, sign-ins, tasks, server updates. Silo: new episodes of followed shows and request updates. Per-kind toggles and a test alert.
 
 </td>
 <td width="33%" valign="top">
 
 ### 🛠️ Admin
 
-Jellyfin administrators: users, libraries, plugins, scheduled tasks, activity, backups, branding, scan, dashboard.
+Jellyfin and Emby administrators: users, libraries, plugins, scheduled tasks, activity, scan, dashboard, metadata and image editing, identify. Backups and branding on Jellyfin.
 
 </td>
 </tr>
@@ -164,7 +164,7 @@ Appearance, home rows, playback languages, downloads, notifications, which tabs 
 
 ### 🔌 Plugins
 
-Intro Skipper, Open Subtitles, Jellyfin Enhanced, Seerr / Jellyseerr. First-run setup can install the Zelefin companion.
+Intro Skipper, Open Subtitles (Jellyfin and Emby), Jellyfin Enhanced, Seerr / Jellyseerr. First-run setup can install the Zelefin companion.
 
 </td>
 <td width="33%" valign="top">
@@ -183,12 +183,14 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 
 | | iPhone / iPad | Android |
 | :--- | :---: | :---: |
+| Jellyfin · Silo · Emby | ✅ | ✅ |
 | Home, library, search, Discover | ✅ | ✅ |
 | Downloads & resume | ✅ | ✅ |
 | Direct play · HDR · Atmos | ✅ | ✅ |
 | Subtitle looks | ✅ | ✅ |
 | SyncPlay + official web | ✅ | ✅ |
 | Sessions & messages | ✅ | ✅ |
+| Lock-screen alerts (plugin or webhooks) | ✅ | ✅ |
 | Jellyfin admin | ✅ | ✅ |
 | Seerr requests | ✅ | ✅ |
 | Live TV guide | ✅ | — |
@@ -236,7 +238,7 @@ Needs Android 8 (API 26)+.
 </tr>
 </table>
 
-**Needs:** iOS 26, or Android 8+, and a Jellyfin server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
+**Needs:** iOS 26, or Android 8+, and a Jellyfin or Emby server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
 
 ```bash
 cd IOS
@@ -260,14 +262,14 @@ Not yet.
 
 🛒 **Stores**
 
-No public App Store / Play listing yet. Coming, still free.
+iPhone and iPad beta on [TestFlight](https://testflight.apple.com/join/hHBVNKTj). Android coming soon. Free.
 
 </td>
 <td width="33%" valign="top">
 
-🟣 **Emby / Plex**
+🟠 **Plex**
 
-Sign-in ships later.
+Not yet.
 
 </td>
 </tr>

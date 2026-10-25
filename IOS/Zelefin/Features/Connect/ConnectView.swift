@@ -41,6 +41,7 @@ struct ConnectView: View {
                     footerTitle: "Use a different account",
                     isBusy: isPickingProfile,
                     errorMessage: signInError,
+                    notice: pending.addressWarning,
                     onSelect: { profile, pin in
                         await selectProfile(profile, pin: pin)
                     },

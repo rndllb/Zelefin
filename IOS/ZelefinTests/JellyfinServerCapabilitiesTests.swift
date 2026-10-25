@@ -1152,4 +1152,32 @@ final class SiloAccountTests: XCTestCase {
         """.utf8))
         XCTAssertNil(plain.siloLink)
     }
+
+    func testSiloWarnsWhenAnOutsideAddressHandsOutAHomeJellyfinAddress() throws {
+        let warning = SiloAddressCheck.remoteWarning(
+            nativeURL: try XCTUnwrap(URL(string: "https://silo.example.com")),
+            compatURL: try XCTUnwrap(URL(string: "http://192.168.1.144:8096"))
+        )
+        XCTAssertTrue(warning?.contains("192.168.1.144") == true)
+    }
+
+    func testSiloAddressCheckIsQuietWhenBothAddressesMatch() throws {
+        XCTAssertNil(SiloAddressCheck.remoteWarning(
+            nativeURL: try XCTUnwrap(URL(string: "https://silo.example.com")),
+            compatURL: try XCTUnwrap(URL(string: "https://jf.example.com"))
+        ))
+        XCTAssertNil(SiloAddressCheck.remoteWarning(
+            nativeURL: try XCTUnwrap(URL(string: "http://192.168.1.144:8080")),
+            compatURL: try XCTUnwrap(URL(string: "http://192.168.1.144:8096"))
+        ))
+    }
+
+    func testSiloHomeNetworkHosts() {
+        for host in ["10.1.2.3", "172.20.0.1", "192.168.0.9", "127.0.0.1", "169.254.1.1", "localhost", "nas.local", "media", "fd12::1", "[::1]"] {
+            XCTAssertTrue(SiloAddressCheck.isHomeNetworkHost(host), host)
+        }
+        for host in ["172.32.0.1", "8.8.8.8", "silo.example.com", "100.100.1.1"] {
+            XCTAssertFalse(SiloAddressCheck.isHomeNetworkHost(host), host)
+        }
+    }
 }

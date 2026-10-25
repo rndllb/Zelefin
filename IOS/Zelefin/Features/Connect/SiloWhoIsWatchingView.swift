@@ -8,6 +8,8 @@ struct SiloWhoIsWatchingView: View {
     var footerTitle: String? = nil
     var isBusy: Bool = false
     var errorMessage: String? = nil
+    /// A heads-up that does not stop sign-in, such as an address that only works at home.
+    var notice: String? = nil
     var onSelect: (SiloProfile, String?) async -> Void
     var onFooter: (() -> Void)? = nil
 
@@ -33,6 +35,15 @@ struct SiloWhoIsWatchingView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
                     .accessibilityAddTraits(.isHeader)
+
+                if let notice, !notice.isEmpty {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(Color(red: 1, green: 0.8, blue: 0.45))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 14)
+                        .padding(.horizontal, 28)
+                }
 
                 if profiles.isEmpty {
                     Text("This account has no household profiles yet.")

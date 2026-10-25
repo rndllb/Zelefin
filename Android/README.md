@@ -7,6 +7,7 @@ Phone and tablet. Full product list lives in the [repository README](../README.m
 <img src="https://img.shields.io/badge/Android-8+-3DDC84?style=for-the-badge&logo=android&logoColor=111" alt="Android 8+" />
 <img src="https://img.shields.io/badge/Jellyfin-ready-00A4DC?style=for-the-badge" alt="Jellyfin" />
 <img src="https://img.shields.io/badge/Silo-ready-2ad4fc?style=for-the-badge&labelColor=111111" alt="Silo" />
+<img src="https://img.shields.io/badge/Emby-ready-52B54B?style=for-the-badge&labelColor=111111" alt="Emby" />
 
 Open the `Android/` folder in Android Studio. Sign in with your own server. No Plus, no subscription.
 
@@ -47,7 +48,7 @@ Live TV, Picture in Picture, and AirPlay stay iOS-only in this build.
 </tr>
 </table>
 
-Home, library, search, Discover, downloads, SyncPlay, sessions, notifications, and Jellyfin admin match iOS.
+Jellyfin, Silo, and Emby, with home, library, search, Discover, downloads, SyncPlay, sessions, lock-screen alerts, and admin tools, match iOS.
 
 ---
 

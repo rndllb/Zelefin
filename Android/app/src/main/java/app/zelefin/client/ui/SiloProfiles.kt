@@ -68,6 +68,7 @@ import app.zelefin.core.SiloProfile
 
 private val PickerCaption = Color.White.copy(alpha = 0.55f)
 private val PickerFailure = Color(1f, 0.38f, 0.38f)
+private val PickerWarning = Color(1f, 0.8f, 0.45f)
 private const val PinMaxLength = 8
 
 /** Kids, Primary, and PIN, in the order the picker badges show them. */
@@ -131,6 +132,16 @@ fun SiloProfilePickerScreen(picker: SiloProfilePicker, onChoose: (SiloProfile) -
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            picker.warning?.let { warning ->
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    warning,
+                    color = PickerWarning,
+                    fontFamily = ZelefinFont,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(32.dp))
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(128.dp),

@@ -426,3 +426,34 @@ actor SiloAccountClient {
         id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
     }
 }
+
+/// Silo hands Zelefin its Jellyfin-compatible address as configured. Signing in at an outside address
+/// while that one points at the home network works at home and nowhere else, so the picker says so.
+enum SiloAddressCheck {
+    static func remoteWarning(nativeURL: URL, compatURL: URL) -> String? {
+        guard let native = nativeURL.host(), let compat = compatURL.host(),
+              !isHomeNetworkHost(native), isHomeNetworkHost(compat)
+        else { return nil }
+        return "You signed in to Silo at \(native), but Silo gives Zelefin \(compat) for its Jellyfin-compatible API, "
+            + "which only works on your home network. To use Zelefin away from home, proxy or tunnel that address too "
+            + "(or give it a public IP), then set it as the Jellyfin-compatible public URL in Silo's admin settings."
+    }
+
+    /// Private, loopback, and link-local addresses, plus names that only resolve at home.
+    static func isHomeNetworkHost(_ host: String) -> Bool {
+        let name = host.trimmingCharacters(in: CharacterSet(charactersIn: "[] ")).lowercased()
+        if name == "localhost" || [".local", ".lan", ".home.arpa", ".internal"].contains(where: name.hasSuffix) {
+            return true
+        }
+        if !name.contains("."), !name.contains(":") { return true }
+        let octets = name.split(separator: ".").map { Int($0) }
+        if octets.count == 4, octets.allSatisfy({ ($0 ?? -1) >= 0 && ($0 ?? 256) <= 255 }) {
+            let a = octets[0]!, b = octets[1]!
+            return a == 10 || a == 127 || (a == 172 && (16 ... 31).contains(b)) || (a == 192 && b == 168) || (a == 169 && b == 254)
+        }
+        if name.contains(":") {
+            return name == "::1" || name.hasPrefix("fc") || name.hasPrefix("fd") || name.hasPrefix("fe80")
+        }
+        return false
+    }
+}

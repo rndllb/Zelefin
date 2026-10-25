@@ -247,3 +247,39 @@ object SiloProblem {
             else -> "Silo answered $status."
         }
 }
+
+/**
+ * Silo hands Zelefin its Jellyfin-compatible address as configured. Signing in at an outside address
+ * while that one points at the home network works at home and nowhere else, so the picker says so.
+ */
+object SiloAddressCheck {
+    fun remoteWarning(nativeUrl: String, jellyfinUrl: String): String? {
+        val native = host(nativeUrl) ?: return null
+        val jellyfin = host(jellyfinUrl) ?: return null
+        if (isHomeNetworkHost(native) || !isHomeNetworkHost(jellyfin)) return null
+        return "You signed in to Silo at $native, but Silo gives Zelefin $jellyfin for its Jellyfin-compatible API, " +
+            "which only works on your home network. To use Zelefin away from home, proxy or tunnel that address too " +
+            "(or give it a public IP), then set it as the Jellyfin-compatible public URL in Silo's admin settings."
+    }
+
+    /** Private, loopback, and link-local addresses, plus names that only resolve at home. */
+    fun isHomeNetworkHost(host: String): Boolean {
+        val name = host.trim().trim('[', ']').lowercase()
+        if (name == "localhost" || name.endsWith(".local") || name.endsWith(".lan") || name.endsWith(".home.arpa") || name.endsWith(".internal")) {
+            return true
+        }
+        if (!name.contains('.') && !name.contains(':')) return true
+        val octets = name.split('.').map { it.toIntOrNull() }
+        if (octets.size == 4 && octets.all { it != null && it in 0..255 }) {
+            val (a, b) = octets[0]!! to octets[1]!!
+            return a == 10 || a == 127 || (a == 172 && b in 16..31) || (a == 192 && b == 168) || (a == 169 && b == 254)
+        }
+        if (name.contains(':')) {
+            return name == "::1" || name.startsWith("fc") || name.startsWith("fd") || name.startsWith("fe80")
+        }
+        return false
+    }
+
+    private fun host(url: String): String? =
+        runCatching { java.net.URI(url.trim()).host }.getOrNull()?.takeIf { it.isNotBlank() }
+}

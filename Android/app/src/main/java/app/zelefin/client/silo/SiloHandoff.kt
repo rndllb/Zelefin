@@ -15,6 +15,8 @@ data class SiloProfilePicker(
     val profiles: List<SiloProfile>,
     val busyProfileId: String? = null,
     val message: String? = null,
+    /** Shown above the profiles when Silo's Jellyfin-compatible address only works at home. */
+    val warning: String? = null,
 )
 
 /** Household profiles of the signed-in Silo account, for switching and the Profile page. */

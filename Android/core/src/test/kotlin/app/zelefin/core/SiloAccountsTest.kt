@@ -2,6 +2,7 @@ package app.zelefin.core
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -157,5 +158,29 @@ class SiloAccountsTest {
         assertEquals("approved", SiloJson.handoffStatus("""{"status":"Approved"}"""))
         assertEquals("denied", SiloJson.handoffStatus("""{"status":"denied"}"""))
         assertNull(SiloJson.handoffStatus("nope"))
+    }
+}
+
+class SiloAddressCheckTest {
+    @Test
+    fun warnsWhenAnOutsideAddressHandsOutAHomeJellyfinAddress() {
+        val warning = SiloAddressCheck.remoteWarning("https://silo.example.com", "http://192.168.1.144:8096")
+        assertNotNull(warning)
+        assertTrue(warning!!.contains("192.168.1.144"))
+    }
+
+    @Test
+    fun quietWhenBothAddressesAreOutsideOrBothAtHome() {
+        assertNull(SiloAddressCheck.remoteWarning("https://silo.example.com", "https://jf.example.com"))
+        assertNull(SiloAddressCheck.remoteWarning("http://192.168.1.144:8080", "http://192.168.1.144:8096"))
+        assertNull(SiloAddressCheck.remoteWarning("http://silo.local:8080", "http://10.0.0.5:8096"))
+    }
+
+    @Test
+    fun recognisesHomeNetworkHosts() {
+        listOf("10.1.2.3", "172.20.0.1", "192.168.0.9", "127.0.0.1", "169.254.1.1", "localhost", "nas.local", "media", "fd12::1", "[::1]")
+            .forEach { assertTrue(it, SiloAddressCheck.isHomeNetworkHost(it)) }
+        listOf("172.32.0.1", "8.8.8.8", "silo.example.com", "100.100.1.1")
+            .forEach { assertFalse(it, SiloAddressCheck.isHomeNetworkHost(it)) }
     }
 }

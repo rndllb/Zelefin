@@ -7,6 +7,7 @@ iPhone and iPad. Full product list lives in the [repository README](../README.md
 <img src="https://img.shields.io/badge/iOS-26+-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 26+" />
 <img src="https://img.shields.io/badge/Jellyfin-ready-00A4DC?style=for-the-badge" alt="Jellyfin" />
 <img src="https://img.shields.io/badge/Silo-ready-2ad4fc?style=for-the-badge&labelColor=111111" alt="Silo" />
+<img src="https://img.shields.io/badge/Emby-ready-52B54B?style=for-the-badge&labelColor=111111" alt="Emby" />
 
 Open `Zelefin.xcodeproj`. Sign in with your own server. No Plus, no subscription.
 
@@ -47,7 +48,7 @@ A–Z rail. Subtitle size, color, and position.
 </tr>
 </table>
 
-Home, library, search, Discover, downloads, SyncPlay, sessions, notifications, and Jellyfin admin match Android.
+Jellyfin, Silo, and Emby, with home, library, search, Discover, downloads, SyncPlay, sessions, lock-screen alerts, and admin tools, match Android.
 
 ---
 

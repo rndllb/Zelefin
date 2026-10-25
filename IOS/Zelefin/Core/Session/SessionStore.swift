@@ -400,7 +400,8 @@ final class SessionStore {
             nativeURL: url,
             compatURL: compatURL,
             profiles: profiles.items,
-            avatarUploadEnabled: profiles.avatarUploadEnabled
+            avatarUploadEnabled: profiles.avatarUploadEnabled,
+            addressWarning: SiloAddressCheck.remoteWarning(nativeURL: url, compatURL: compatURL)
         )
     }
 
@@ -2023,4 +2024,6 @@ struct SiloPendingSignIn: Sendable {
     let compatURL: URL
     let profiles: [SiloProfile]
     let avatarUploadEnabled: Bool
+    /// Shown above the profiles when Silo's Jellyfin-compatible address only works at home.
+    var addressWarning: String? = nil
 }

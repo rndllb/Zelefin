@@ -130,6 +130,7 @@ import app.zelefin.core.ServerKind
 import app.zelefin.core.SiloAccount
 import app.zelefin.core.SiloAvatarPreset
 import app.zelefin.core.SiloProfile
+import app.zelefin.core.SiloAddressCheck
 import app.zelefin.core.SiloTokens
 import app.zelefin.core.HomeFeed
 import app.zelefin.core.MediaItem
@@ -498,7 +499,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             siloPending = PendingSiloSignIn(client, signIn.account, jellyfinUrl, info.serverName)
             _state.update {
                 it.copy(
-                    siloPicker = SiloProfilePicker(info.serverName ?: "Silo", signIn.account.username, profiles),
+                    siloPicker = SiloProfilePicker(
+                        info.serverName ?: "Silo",
+                        signIn.account.username,
+                        profiles,
+                        warning = SiloAddressCheck.remoteWarning(url, jellyfinUrl),
+                    ),
                     siloPin = null,
                 )
             }
