@@ -19,7 +19,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -129,6 +135,101 @@ class SiloAccountClient(
         if (tokens == null) return
         authorized("/api/v2/auth/logout") { it.post(ByteArray(0).toRequestBody(null)) }
     }
+
+    /** Whether the administrator lets profiles add their own webhooks. */
+    suspend fun personalWebhooksAvailable(profileId: String, profileToken: String?): Boolean = runCatching {
+        val reply = authorized("/api/v2/notifications/capabilities") { it.get().profile(profileId, profileToken) }
+        reply.ok && (jsonObject(reply.body)?.get("webhooks") as? JsonObject)?.flag("available") == true
+    }.getOrDefault(false)
+
+    /** Creates a generic webhook for the profile and returns its id and the one-time signing secret. */
+    suspend fun createWebhook(
+        profileId: String,
+        profileToken: String?,
+        name: String,
+        url: String,
+        flags: Map<String, Boolean>,
+    ): Pair<String, String> {
+        val body = JsonObject(
+            mapOf("name" to JsonPrimitive(name), "url" to JsonPrimitive(url), "type" to JsonPrimitive("generic")) +
+                flags.mapValues { JsonPrimitive(it.value) },
+        ).toString()
+        val reply = expect(
+            authorized("/api/v2/notifications/webhooks") { it.post(body.toRequestBody(JsonType)).profile(profileId, profileToken) },
+            "Silo could not add the webhook.",
+        )
+        val created = jsonObject(reply.body)
+        val id = created?.text("id")
+        val secret = created?.text("signing_secret")
+        if (id == null || secret == null) throw ZelefinException.server("Silo created the webhook but did not return its signing secret.")
+        return id to secret
+    }
+
+    suspend fun updateWebhook(id: String, profileId: String, profileToken: String?, flags: Map<String, Boolean>) {
+        val etag = webhookEtag(id, profileId, profileToken) ?: throw ZelefinException.server("Silo no longer has this webhook.")
+        val body = JsonObject(mapOf("enabled" to JsonPrimitive(true)) + flags.mapValues { JsonPrimitive(it.value) }).toString()
+        expect(
+            authorized("/api/v2/notifications/webhooks/${segment(id)}") {
+                it.put(body.toRequestBody(JsonType)).profile(profileId, profileToken).header("If-Match", etag)
+            },
+            "Silo could not change the webhook.",
+        )
+    }
+
+    suspend fun deleteWebhook(id: String, profileId: String, profileToken: String?) {
+        val etag = runCatching { webhookEtag(id, profileId, profileToken) }.getOrNull() ?: return
+        runCatching {
+            authorized("/api/v2/notifications/webhooks/${segment(id)}") {
+                it.delete().profile(profileId, profileToken).header("If-Match", etag)
+            }
+        }
+    }
+
+    /** Silo sends a sample through the webhook; null when it arrived, else what went wrong. */
+    suspend fun testWebhook(id: String, profileId: String, profileToken: String?): String? {
+        val reply = expect(
+            authorized("/api/v2/notifications/webhooks/${segment(id)}/test") {
+                it.post(ByteArray(0).toRequestBody(null)).profile(profileId, profileToken)
+            },
+            "Silo could not send the test.",
+        )
+        val result = jsonObject(reply.body)
+        return if (result?.flag("ok") == true) null else result?.text("message") ?: "Silo could not reach Zelefin's push service."
+    }
+
+    /**
+     * A webhook only sends what the profile's own notification choices allow, so the asked-for
+     * reasons are switched on there too. Nothing is switched off: other channels share these choices.
+     */
+    suspend fun allowNotificationReasons(flags: Map<String, Boolean>, profileId: String, profileToken: String?) {
+        val wanted = flags.filter { it.value && it.key != "notify_requests" }.keys
+        if (wanted.isEmpty()) return
+        val current = runCatching {
+            authorized("/api/v2/notifications/preferences") { it.get().profile(profileId, profileToken) }
+                .takeIf { it.ok }?.let { jsonObject(it.body) }
+        }.getOrNull() ?: JsonObject(emptyMap())
+        if (current.flag("enabled") == true && wanted.all { current.flag(it) == true }) return
+        val next = JsonObject(current - "profile_id" + ("enabled" to JsonPrimitive(true)) + wanted.associateWith { JsonPrimitive(true) })
+        expect(
+            authorized("/api/v2/notifications/preferences") {
+                it.put(next.toString().toRequestBody(JsonType)).profile(profileId, profileToken)
+            },
+            "Silo could not turn on this profile's notifications.",
+        )
+    }
+
+    private suspend fun webhookEtag(id: String, profileId: String, profileToken: String?): String? {
+        val reply = authorized("/api/v2/notifications/webhooks") { it.get().profile(profileId, profileToken) }
+        if (!reply.ok) return null
+        val items = jsonObject(reply.body)?.get("items") as? JsonArray ?: return null
+        return items.mapNotNull { it as? JsonObject }.firstOrNull { it.text("id") == id }?.text("etag")
+    }
+
+    private fun jsonObject(text: String): JsonObject? = runCatching { Json.parseToJsonElement(text) as? JsonObject }.getOrNull()
+
+    private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+
+    private fun JsonObject.flag(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 
     /** Sends with the bearer token, refreshing it once on 401 and retrying. */
     private suspend fun authorized(path: String, build: (Request.Builder) -> Request.Builder): Reply {

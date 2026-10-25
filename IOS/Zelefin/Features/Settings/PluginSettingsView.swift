@@ -19,6 +19,7 @@ struct PluginSettingsView: View {
                 siloSkipSection
             } else if session.isEmbyServer {
                 embySkipSection
+                openSubtitlesSection
             } else {
                 jellyfinPluginSections
                 openSubtitlesSection
@@ -78,7 +79,11 @@ struct PluginSettingsView: View {
         } header: {
             Text("Open Subtitles")
         } footer: {
-            Text("When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server.")
+            if session.isEmbyServer {
+                Text("When this Emby plugin is installed and signed in to an Open Subtitles account, use More on a movie or episode to search for subtitles and save a file to the server.")
+            } else {
+                Text("When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server.")
+            }
         }
         .zelefinRowBackground()
     }

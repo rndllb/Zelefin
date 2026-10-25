@@ -139,6 +139,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 
 private val Caption = IOSColors.secondaryLabel
 private val Secondary = IOSColors.secondaryLabel
@@ -1138,6 +1141,107 @@ private fun measuredBitrateLabel(bitsPerSecond: Int): String {
 /** `0.1.0 (10)`, read from the build so it tracks `versionName`/`versionCode` in build.gradle.kts. */
 internal val AppVersionLabel = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
+/**
+ * Lock-screen alerts for servers that post webhooks instead of running the Zelefin plugin. Emby's Webhooks
+ * notifier, or a personal webhook on the active Silo profile, posts to an address Zelefin's push service
+ * gives this phone.
+ */
+@Composable
+private fun WebhookNotificationsTopic(state: ZelefinUiState, pluginState: PluginsUiState, plugins: PluginsController) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val silo = state.isSiloServer
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) plugins.setWebhookAlerts(true)
+    }
+    fun turnOn() {
+        if (ZelefinPush.permissionGranted(context) || !ZelefinPush.needsRuntimePermission()) {
+            plugins.setWebhookAlerts(true)
+        } else {
+            ZelefinPush.markAskedPermission(context)
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    if (!pluginState.webhooksAvailable) {
+        SettingsCard { PluginStatusRow(if (silo) "Silo Webhooks" else "Emby Webhooks", false) }
+        SettingsFooter(
+            when {
+                pluginState.detecting -> "Checking this server for webhooks…"
+                silo && state.session?.siloLink == null ->
+                    "Notifications on Silo need your Silo account. Sign out and sign in with your Silo account to turn them on."
+                silo -> "This Silo server has personal webhooks turned off. An administrator can turn them on in Silo's notification settings."
+                else -> "Lock-screen alerts on Emby use its Webhooks notifier, which comes with Emby Premiere. When this server has it, turn on Notifications here and Zelefin sets it up."
+            },
+        )
+        return
+    }
+
+    val on = pluginState.alertsOn
+    val waitingForAdmin = pluginState.alertsAdminAddress != null
+    SettingsCard {
+        SettingsToggle("Notifications", on) { next -> if (next) turnOn() else plugins.setWebhookAlerts(false) }
+        if (on && !waitingForAdmin) {
+            SettingsCardDivider()
+            SettingsButton(
+                "Send Test Alert",
+                primary = false,
+                destructive = false,
+                enabled = !pluginState.alertsBusy,
+                busy = pluginState.alertsBusy,
+                onClick = plugins::sendWebhookTestAlert,
+            )
+        }
+        pluginState.alertsMessage?.let { message ->
+            Text(
+                message,
+                color = if (pluginState.alertsMessageIsError) IOSColors.red else Secondary,
+                fontFamily = ZelefinFont,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+    }
+    SettingsFooter(
+        if (silo) {
+            "Silo alerts this phone when a show this profile follows gets a new episode, or a request changes. They arrive through Zelefin's push service, also while Zelefin is closed."
+        } else {
+            "Emby sends these through Zelefin's push service to this phone, also while Zelefin is closed. It only sends events this account is allowed to see."
+        },
+    )
+
+    pluginState.alertsAdminAddress?.let { address ->
+        SettingsHeader("Ask an Administrator")
+        SettingsCard {
+            Text(address, color = Secondary, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+            SettingsCardDivider()
+            SettingsButton(
+                "Copy Address",
+                primary = false,
+                destructive = false,
+                enabled = true,
+                busy = false,
+                onClick = { clipboard.setText(AnnotatedString(address)) },
+            )
+        }
+        SettingsFooter(
+            "This server only lets administrators add notifications. In Emby, an admin opens your user's Settings → Notifications, adds Webhooks, pastes this address, and picks the events.",
+        )
+    }
+
+    if (on && !waitingForAdmin && pluginState.alertOptions.isNotEmpty()) {
+        SettingsHeader("Alert Me About")
+        SettingsCard {
+            pluginState.alertOptions.forEachIndexed { index, (id, title) ->
+                if (index > 0) CardDivider()
+                SettingsToggle(title, id in pluginState.alertCategories) { next ->
+                    if (!pluginState.alertsBusy) plugins.setWebhookAlertCategory(id, next)
+                }
+            }
+        }
+    }
+}
+
 /** Mirrors iOS `NotificationSettingsView`. */
 @Composable
 private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController) {
@@ -1169,6 +1273,11 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
+    }
+
+    if (state.isEmbyServer || state.isSiloServer) {
+        WebhookNotificationsTopic(state, pluginState, plugins)
+        return
     }
 
     if (!pluginState.companionAvailable) {
@@ -1304,6 +1413,13 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
         },
     )
     if (!silo && !emby) JellyfinServerPlugins(state, jellyfin)
+    if (emby) {
+        SettingsHeader("Open Subtitles")
+        SettingsCard { PluginStatusRow("Open Subtitles", jellyfin.openSubtitles) }
+        SettingsFooter(
+            "When this Emby plugin is installed and signed in to an Open Subtitles account, use More on a movie or episode to search for subtitles and save a file to the server.",
+        )
+    }
 
     SettingsHeader("Seerr")
     SeerrSignInCard(state, pluginState, plugins)

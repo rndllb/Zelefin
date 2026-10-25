@@ -238,6 +238,93 @@ actor SiloAccountClient {
         _ = try? await data("POST", "/api/v2/auth/logout", body: nil, headers: [:], authorized: true)
     }
 
+    // MARK: Notifications
+
+    /// Whether the administrator lets profiles add their own webhooks.
+    func personalWebhooksAvailable(profileID: String, profileToken: String?) async -> Bool {
+        guard let json = try? await object("GET", "/api/v2/notifications/capabilities", profileID, profileToken) else { return false }
+        return ((json["webhooks"] as? [String: Any])?["available"] as? Bool) == true
+    }
+
+    /// Creates a generic webhook for the profile and returns its id and the one-time signing secret.
+    func createWebhook(
+        profileID: String,
+        profileToken: String?,
+        name: String,
+        url: String,
+        flags: [String: Bool]
+    ) async throws -> (id: String, signingSecret: String) {
+        var body: [String: Any] = ["name": name, "url": url, "type": "generic"]
+        flags.forEach { body[$0.key] = $0.value }
+        let json = try await object("POST", "/api/v2/notifications/webhooks", profileID, profileToken, body: body)
+        guard let id = json["id"] as? String, let secret = json["signing_secret"] as? String, !secret.isEmpty else {
+            throw ZelefinError.server("Silo created the webhook but did not return its signing secret.")
+        }
+        return (id, secret)
+    }
+
+    func updateWebhook(id: String, profileID: String, profileToken: String?, flags: [String: Bool]) async throws {
+        guard let etag = try await webhookETag(id: id, profileID: profileID, profileToken: profileToken) else {
+            throw ZelefinError.server("Silo no longer has this webhook.")
+        }
+        var body: [String: Any] = ["enabled": true]
+        flags.forEach { body[$0.key] = $0.value }
+        _ = try await object("PUT", "/api/v2/notifications/webhooks/\(Self.path(id))", profileID, profileToken, body: body, ifMatch: etag)
+    }
+
+    func deleteWebhook(id: String, profileID: String, profileToken: String?) async {
+        guard let etag = try? await webhookETag(id: id, profileID: profileID, profileToken: profileToken) else { return }
+        var headers = Self.profileHeaders(profileID, profileToken)
+        headers["If-Match"] = etag
+        _ = try? await data("DELETE", "/api/v2/notifications/webhooks/\(Self.path(id))", body: nil, headers: headers, authorized: true)
+    }
+
+    /// Silo sends a sample through the webhook and reports what the push service answered.
+    func testWebhook(id: String, profileID: String, profileToken: String?) async throws -> (ok: Bool, message: String?) {
+        let json = try await object("POST", "/api/v2/notifications/webhooks/\(Self.path(id))/test", profileID, profileToken)
+        return ((json["ok"] as? Bool) == true, json["message"] as? String)
+    }
+
+    /// A webhook only sends what the profile's own notification choices allow, so the asked-for
+    /// reasons are switched on there too. Nothing is switched off: other channels share these choices.
+    func allowNotificationReasons(_ flags: [String: Bool], profileID: String, profileToken: String?) async throws {
+        let wanted = flags.filter { $0.value && $0.key != "notify_requests" }
+        guard !wanted.isEmpty else { return }
+        var preferences = (try? await object("GET", "/api/v2/notifications/preferences", profileID, profileToken)) ?? [:]
+        let alreadyOn = (preferences["enabled"] as? Bool) == true && wanted.keys.allSatisfy { (preferences[$0] as? Bool) == true }
+        guard !alreadyOn else { return }
+        preferences["enabled"] = true
+        wanted.keys.forEach { preferences[$0] = true }
+        preferences.removeValue(forKey: "profile_id")
+        _ = try await object("PUT", "/api/v2/notifications/preferences", profileID, profileToken, body: preferences)
+    }
+
+    private func webhookETag(id: String, profileID: String, profileToken: String?) async throws -> String? {
+        let json = try await object("GET", "/api/v2/notifications/webhooks", profileID, profileToken)
+        let items = json["items"] as? [[String: Any]] ?? []
+        return items.first { $0["id"] as? String == id }?["etag"] as? String
+    }
+
+    private func object(
+        _ method: String,
+        _ path: String,
+        _ profileID: String,
+        _ profileToken: String?,
+        body: [String: Any]? = nil,
+        ifMatch: String? = nil
+    ) async throws -> [String: Any] {
+        var headers = Self.profileHeaders(profileID, profileToken)
+        var payload: Data?
+        if let body {
+            payload = try JSONSerialization.data(withJSONObject: body)
+            headers["Content-Type"] = "application/json"
+        }
+        if let ifMatch { headers["If-Match"] = ifMatch }
+        let data = try await data(method, path, body: payload, headers: headers, authorized: true)
+        guard !data.isEmpty else { return [:] }
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
     // MARK: Transport
 
     private func send<T: Decodable>(

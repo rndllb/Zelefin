@@ -183,6 +183,16 @@ extension EmbyLibraryClient {
         try await api.send("POST", "/Library/Refresh")
     }
 
+    /// Installed plugin names from `GET /Plugins`, which Emby answers for administrators only.
+    func pluginNames() async -> [String] {
+        struct Plugin: Decodable {
+            let name: String?
+            enum CodingKeys: String, CodingKey { case name = "Name" }
+        }
+        let plugins = (try? await api.decode([Plugin].self, "/Plugins")) ?? []
+        return plugins.compactMap(\.name)
+    }
+
     func remoteArtwork(for itemID: String, kind: RemoteArtworkKind) async throws -> [RemoteImageChoice] {
         let result = try await api.decode(
             RemoteImageResult.self,

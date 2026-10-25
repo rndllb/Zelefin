@@ -290,6 +290,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         allSessions = { vault.accounts() },
         tmdbCatalog = { pick({ it.tmdbCatalog() }, { it.tmdbCatalog(userUuid()) }) },
         emby = { embyClient() },
+        silo = { _state.value.session?.takeIf { it.siloLink != null }?.let { runCatching { siloClientFor(it) }.getOrNull() } },
     )
     val state: StateFlow<ZelefinUiState> = _state.asStateFlow()
 

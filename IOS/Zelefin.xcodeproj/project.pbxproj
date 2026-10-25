@@ -80,6 +80,7 @@
 		65C09316AD058E76072CFA6D /* ServerReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA94D8320FAEB7BA7DB72AC0 /* ServerReachability.swift */; };
 		66754E8B244BA62D33F5B47F /* PlaybackReporting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3902BD7A1D804EF4A1AA4A1D /* PlaybackReporting.swift */; };
 		674F8B89B1E38845443E95F3 /* SiloAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 282E708AA97174988DDA13B3 /* SiloAccountClient.swift */; };
+		F9186688F77EFC4DF4AA2AED /* SiloAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD403FA57D75FBB5B792032 /* SiloAlerts.swift */; };
 		67CB59D76818020158739BE0 /* RemoteControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6359B9FE2041843E6943C81 /* RemoteControlTests.swift */; };
 		6AC9E6B35730A2A513BBCC80 /* LibraryAdminModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 070265A629701811298D8F42 /* LibraryAdminModels.swift */; };
 		6E83D4DC725A900832A633D5 /* JellyfinServerCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44DDFC92F1C681332F066FCD /* JellyfinServerCapabilities.swift */; };
@@ -166,6 +167,7 @@
 		CBFC3B2356F3B4A13FD61D9D /* BIFTrickplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FCCF43D73AF9D0FF0910B0 /* BIFTrickplay.swift */; };
 		CCAA3CF9A1B135A2B5A870B0 /* HomeSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E3620DFE3228BDC6BBAC59 /* HomeSnapshotStore.swift */; };
 		CECF50389D4AB561DE2B7C91 /* EmbyAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8818B03401204284A31DC036 /* EmbyAccount.swift */; };
+		E169D4D9B19CD281C8B11C14 /* EmbyAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E51B47770962C37F9D1389E /* EmbyAlerts.swift */; };
 		D024A4466316494A01DF1001 /* AVKitPlaybackChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73413AFEA74159ABE3AB3815 /* AVKitPlaybackChrome.swift */; };
 		D4B8DE13D6D16B7698FA8DD0 /* DownloadedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA44AD1DF2E3D8CBCFA598B /* DownloadedItemsView.swift */; };
 		D4C8A1E07B2F49A6C3E51D08 /* Outfit.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E7B19F4A2C6D80E35A47B1C9 /* Outfit.ttf */; };
@@ -232,6 +234,7 @@
 		2532A7E400B9EC5A2653B6B5 /* DeepLinkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkStore.swift; sourceTree = "<group>"; };
 		26B3C526F91B213FA4BDF40F /* PlaybackPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackPipeline.swift; sourceTree = "<group>"; };
 		282E708AA97174988DDA13B3 /* SiloAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAccountClient.swift; sourceTree = "<group>"; };
+		9CD403FA57D75FBB5B792032 /* SiloAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAlerts.swift; sourceTree = "<group>"; };
 		28D1FE8B38197504B3EBED4E /* PlayerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerModel.swift; sourceTree = "<group>"; };
 		2AFAB17F8439301AE64CF160 /* LiveTVTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVTests.swift; sourceTree = "<group>"; };
 		2C95AA55AA39DDAC21F8C150 /* PlaybackReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackReporter.swift; sourceTree = "<group>"; };
@@ -310,6 +313,7 @@
 		82E2AE060FC5F2C11DFE9D1F /* LibraryAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlert.swift; sourceTree = "<group>"; };
 		8716D6D7DB0E6EE84349C3C8 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
 		8818B03401204284A31DC036 /* EmbyAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyAccount.swift; sourceTree = "<group>"; };
+		9E51B47770962C37F9D1389E /* EmbyAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyAlerts.swift; sourceTree = "<group>"; };
 		88D3AD7E1BB3E4C6887F0775 /* RemoteControlHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlHub.swift; sourceTree = "<group>"; };
 		895DB472FEB9A4088EA96244 /* LibraryAlertTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlertTests.swift; sourceTree = "<group>"; };
 		89C6E3892B316933B1AB10AA /* EmbyPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyPlayback.swift; sourceTree = "<group>"; };
@@ -449,6 +453,7 @@
 			children = (
 				4BF4C16E92607E2DE897E568 /* EmbyAPI.swift */,
 				8818B03401204284A31DC036 /* EmbyAccount.swift */,
+				9E51B47770962C37F9D1389E /* EmbyAlerts.swift */,
 				63D35A654940D5123C83B50F /* EmbyLibraryClient.swift */,
 				8F9A6476EC211D5A63B1FF9D /* EmbyLibraryClient+Manage.swift */,
 				89C6E3892B316933B1AB10AA /* EmbyPlayback.swift */,
@@ -809,6 +814,7 @@
 			isa = PBXGroup;
 			children = (
 				282E708AA97174988DDA13B3 /* SiloAccountClient.swift */,
+				9CD403FA57D75FBB5B792032 /* SiloAlerts.swift */,
 				A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */,
 			);
 			path = Silo;
@@ -962,6 +968,7 @@
 				76C1C02412837F4D637A43EE /* ConnectView.swift in Sources */,
 				449A41989B7352DB77F72C8D /* SiloWhoIsWatchingView.swift in Sources */,
 				674F8B89B1E38845443E95F3 /* SiloAccountClient.swift in Sources */,
+				F9186688F77EFC4DF4AA2AED /* SiloAlerts.swift in Sources */,
 				0122D784BA433B8A98EF6255 /* DeepLinkStore.swift in Sources */,
 				24A542EDE832BBC84AF91CF9 /* DeviceIdentity.swift in Sources */,
 				CBBF41E4A5A1BA5A12DB8439 /* DirectPlayEngine.swift in Sources */,
@@ -975,6 +982,7 @@
 				D4B8DE13D6D16B7698FA8DD0 /* DownloadedItemsView.swift in Sources */,
 				634623992F230A94E999E508 /* EmbyAPI.swift in Sources */,
 				CECF50389D4AB561DE2B7C91 /* EmbyAccount.swift in Sources */,
+				E169D4D9B19CD281C8B11C14 /* EmbyAlerts.swift in Sources */,
 				7CC8824F8E189C31C46233ED /* EmbyLibraryClient.swift in Sources */,
 				49FEA4C4B4EF490D0EC90608 /* EmbyLibraryClient+Manage.swift in Sources */,
 				8FB2753FD53BD441F03F4685 /* EmbyPlayback.swift in Sources */,

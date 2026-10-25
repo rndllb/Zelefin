@@ -3,6 +3,19 @@ package app.zelefin.client
 import android.app.Application
 import app.zelefin.client.emby.EmbyLibrary
 import app.zelefin.client.emby.accountRights
+import app.zelefin.client.push.PushHookRelay
+import app.zelefin.core.ZelefinException
+import app.zelefin.client.silo.SiloAccountClient
+import app.zelefin.client.silo.SiloAlertCategory
+import app.zelefin.client.silo.SiloAlertRegistration
+import app.zelefin.client.emby.EmbyAlertCategory
+import app.zelefin.client.emby.EmbyAlertRegistration
+import app.zelefin.client.emby.EmbyAlertsNotAllowed
+import app.zelefin.client.emby.availableAlertEvents
+import app.zelefin.client.emby.deleteAlertWebhook
+import app.zelefin.client.emby.offersWebhooks
+import app.zelefin.client.emby.saveAlertWebhook
+import app.zelefin.client.emby.testAlertWebhook
 import app.zelefin.client.emby.downloadSubtitle
 import app.zelefin.client.emby.searchSubtitles
 import app.zelefin.client.plugins.DiscoverPage
@@ -15,6 +28,7 @@ import app.zelefin.client.plugins.JellyfinEnhancedReview
 import app.zelefin.client.plugins.JellyfinEnhancedReviewKey
 import app.zelefin.client.plugins.JellyfinPluginState
 import app.zelefin.client.plugins.JellyfinPlugins
+import app.zelefin.client.plugins.OpenSubtitlesPlugin
 import app.zelefin.client.plugins.JellyfinTmdbCatalog
 import app.zelefin.client.plugins.IntroSkipperClient
 import app.zelefin.client.plugins.OpenSubtitlesClient
@@ -70,6 +84,19 @@ data class PluginsUiState(
     /** Installed in this session but not yet loaded; Jellyfin needs a restart. */
     val pluginNeedsRestart: Boolean = false,
     val pluginInstallMessage: String? = null,
+    /** Emby's Webhooks notifier or Silo's personal webhooks, which carry this phone's alerts on those servers. */
+    val webhooksAvailable: Boolean = false,
+    /** The switches under "Alert Me About", as (id, title). */
+    val alertOptions: List<Pair<String, String>> = emptyList(),
+    val alertsOn: Boolean = false,
+    val alertCategories: Set<String> = emptySet(),
+    /** Events Emby lets this account subscribe to; empty until loaded. */
+    val embyAlertEvents: Set<String> = emptySet(),
+    /** Set when only an administrator can add this phone's webhook address in Emby. */
+    val alertsAdminAddress: String? = null,
+    val alertsBusy: Boolean = false,
+    val alertsMessage: String? = null,
+    val alertsMessageIsError: Boolean = false,
 ) {
     /** Silo and Emby run no Jellyfin server plugins. */
     val runsJellyfinPlugins: Boolean get() = !isSiloServer && !isEmbyServer
@@ -80,12 +107,12 @@ data class PluginsUiState(
 
     val canManageRequests: Boolean get() = seerrUser?.canManageRequests == true
 
-    /** Emby searches its own subtitle providers, so only the user's subtitle rights matter there. */
+    /** Jellyfin and Emby both search through their Open Subtitles plugin. */
     fun showsAddSubtitles(kind: app.zelefin.core.MediaKind): Boolean =
         (runsJellyfinPlugins || isEmbyServer) &&
             RemoteSubtitleOffer.shouldShowAddSubtitles(
                 canManageSubtitles,
-                isEmbyServer || jellyfin.openSubtitles,
+                jellyfin.openSubtitles,
                 RemoteSubtitleOffer.supportsRemoteSubtitles(kind),
             )
 
@@ -131,6 +158,7 @@ class PluginsController(
     private val allSessions: () -> List<SavedSession> = { listOfNotNull(session()) },
     private val tmdbCatalog: suspend () -> JellyfinTmdbCatalog,
     private val emby: () -> EmbyLibrary? = { null },
+    private val silo: () -> SiloAccountClient? = { null },
 ) {
     private val settings = PluginSettings(application)
     private val _state = MutableStateFlow(
@@ -205,12 +233,264 @@ class PluginsController(
      */
     fun registerPush() {
         val current = session() ?: return
+        if (current.isEmbyServer) {
+            scope.launch { refreshEmbyAlertToken(current) }
+            return
+        }
+        if (current.isSiloServer) {
+            scope.launch { refreshSiloAlertToken(current) }
+            return
+        }
         if (!_state.value.companionAvailable || !ZelefinPush.isEnabled(application)) return
         scope.launch {
             val token = ZelefinPush.fetchToken(application) ?: return@launch
             val stored = ZelefinCompanionClient(current.serverUrl, current.accessToken)
                 .registerDevice(token, ZelefinPush.deviceId(application), ZelefinPush.PLATFORM)
             if (session()?.accountId == current.accountId) _state.update { it.copy(pushRegistered = stored) }
+        }
+    }
+
+    private suspend fun loadEmbyAlerts(current: SavedSession) {
+        val library = emby() ?: return
+        val webhooks = library.offersWebhooks()
+        val events = if (webhooks) library.availableAlertEvents() else emptySet()
+        val saved = EmbyAlertRegistration.saved(application, current.accountId)
+        val options = EmbyAlertCategory.all
+            .filter { category -> events.isEmpty() || category.events.any(events::contains) }
+            .map { it.id to it.title }
+        _state.update {
+            it.copy(
+                webhooksAvailable = webhooks,
+                alertOptions = options,
+                embyAlertEvents = events,
+                alertsOn = saved != null,
+                alertCategories = saved?.categoryIds?.toSet() ?: EmbyAlertCategory.defaultIds,
+                alertsAdminAddress = saved?.takeIf { registration -> registration.entryId == null }?.url,
+            )
+        }
+    }
+
+    /** Turns this phone's webhook alerts on or off for the signed-in Emby or Silo account. */
+    fun setWebhookAlerts(on: Boolean) {
+        val current = session() ?: return
+        _state.update { it.copy(alertsBusy = true, alertsMessage = null) }
+        scope.launch {
+            if (current.isSiloServer) {
+                if (on) saveSiloAlerts(current, _state.value.alertCategories) else disableSiloAlerts(current)
+            } else if (on) {
+                saveEmbyAlerts(current, _state.value.alertCategories)
+            } else {
+                EmbyAlertRegistration.saved(application, current.accountId)?.let { registration ->
+                    registration.entryId?.let { emby()?.deleteAlertWebhook(it) }
+                    PushHookRelay.remove(PushHookRelay.Service.Emby, registration.hookId)
+                }
+                EmbyAlertRegistration.save(application, current.accountId, null)
+                _state.update { it.copy(alertsOn = false, alertsAdminAddress = null) }
+            }
+            _state.update { it.copy(alertsBusy = false) }
+        }
+    }
+
+    fun setWebhookAlertCategory(id: String, on: Boolean) {
+        val current = session() ?: return
+        val next = _state.value.alertCategories.let { if (on) it + id else it - id }
+        _state.update { it.copy(alertCategories = next, alertsBusy = true, alertsMessage = null) }
+        scope.launch {
+            if (current.isSiloServer) saveSiloAlerts(current, next) else saveEmbyAlerts(current, next)
+            _state.update { it.copy(alertsBusy = false) }
+        }
+    }
+
+    fun sendWebhookTestAlert() {
+        val current = session() ?: return
+        _state.update { it.copy(alertsBusy = true, alertsMessage = null) }
+        scope.launch {
+            val failure: String? = try {
+                if (current.isSiloServer) {
+                    val link = current.siloLink
+                    val webhookId = SiloAlertRegistration.saved(application, current.accountId)?.webhookId
+                    if (link == null || webhookId == null) "Turn on Notifications first."
+                    else silo()?.testWebhook(webhookId, link.profileId, link.profileToken)
+                } else {
+                    val registration = EmbyAlertRegistration.saved(application, current.accountId)
+                    if (registration == null) "Turn on Notifications first."
+                    else { emby()?.testAlertWebhook(registration.url, registration.events); null }
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                error.message ?: "Couldn’t send the test."
+            }
+            _state.update {
+                it.copy(
+                    alertsBusy = false,
+                    alertsMessage = failure ?: "Sent. It should arrive in a few seconds.",
+                    alertsMessageIsError = failure != null,
+                )
+            }
+        }
+    }
+
+    private suspend fun loadSiloAlerts(current: SavedSession) {
+        val link = current.siloLink
+        val available = link != null && silo()?.personalWebhooksAvailable(link.profileId, link.profileToken) == true
+        val saved = SiloAlertRegistration.saved(application, current.accountId)
+        _state.update {
+            it.copy(
+                webhooksAvailable = available,
+                alertOptions = SiloAlertCategory.all.map { category -> category.id to category.title },
+                alertsOn = saved != null,
+                alertCategories = saved?.categoryIds?.toSet() ?: SiloAlertCategory.defaultIds,
+                alertsAdminAddress = null,
+            )
+        }
+    }
+
+    /**
+     * Registers this phone with the push service, adds a webhook to the active Silo profile, and hands
+     * the push service that webhook's signing secret so it can check each delivery.
+     */
+    private suspend fun saveSiloAlerts(current: SavedSession, categories: Set<String>) {
+        val link = current.siloLink
+        val client = silo()
+        if (link == null || client == null) {
+            failAlerts(current, "Sign in with your Silo account to get notifications from this server.")
+            return
+        }
+        val token = ZelefinPush.fetchToken(application)
+        if (token == null) {
+            failAlerts(current, "This phone couldn’t get a push token. Check that Google Play services is up to date.")
+            return
+        }
+        val flags = SiloAlertCategory.flags(categories)
+        val chosen = SiloAlertCategory.all.map { it.id }.filter { it in categories }
+        try {
+            val saved = SiloAlertRegistration.saved(application, current.accountId)
+            if (saved?.webhookId != null) {
+                client.updateWebhook(saved.webhookId, link.profileId, link.profileToken, flags)
+                client.allowNotificationReasons(flags, link.profileId, link.profileToken)
+                val refreshed = saved.token == token || PushHookRelay.update(PushHookRelay.Service.Silo, saved.hookId, token)
+                SiloAlertRegistration.save(
+                    application,
+                    current.accountId,
+                    saved.copy(token = if (refreshed) token else saved.token, categoryIds = chosen),
+                )
+                _state.update { it.copy(alertsOn = true) }
+                return
+            }
+            val hook = PushHookRelay.register(PushHookRelay.Service.Silo, token, current.serverName ?: "Silo")
+            try {
+                val (webhookId, secret) = client.createWebhook(
+                    link.profileId,
+                    link.profileToken,
+                    "Zelefin · ${android.os.Build.MODEL}",
+                    hook.url,
+                    flags,
+                )
+                SiloAlertRegistration.save(application, current.accountId, SiloAlertRegistration(hook.hookId, token, webhookId, chosen))
+                if (!PushHookRelay.update(PushHookRelay.Service.Silo, hook.hookId, token, signingSecret = secret)) {
+                    throw ZelefinException.server("Zelefin's push service could not save this phone. Try again in a moment.")
+                }
+                client.allowNotificationReasons(flags, link.profileId, link.profileToken)
+                _state.update { it.copy(alertsOn = true) }
+            } catch (error: Exception) {
+                disableSiloAlerts(current)
+                PushHookRelay.remove(PushHookRelay.Service.Silo, hook.hookId)
+                throw error
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            failAlerts(current, error.message ?: "Couldn’t turn on notifications. Try again.")
+        }
+    }
+
+    private suspend fun disableSiloAlerts(current: SavedSession) {
+        val registration = SiloAlertRegistration.saved(application, current.accountId)
+        if (registration != null) {
+            val link = current.siloLink
+            if (registration.webhookId != null && link != null) {
+                silo()?.deleteWebhook(registration.webhookId, link.profileId, link.profileToken)
+            }
+            PushHookRelay.remove(PushHookRelay.Service.Silo, registration.hookId)
+            SiloAlertRegistration.save(application, current.accountId, null)
+        }
+        _state.update { it.copy(alertsOn = false) }
+    }
+
+    /** A new Firebase token goes to the push service under the same hook, so Silo's webhook stays valid. */
+    private suspend fun refreshSiloAlertToken(current: SavedSession) {
+        val registration = SiloAlertRegistration.saved(application, current.accountId) ?: return
+        val token = ZelefinPush.fetchToken(application) ?: return
+        if (registration.token == token) return
+        if (PushHookRelay.update(PushHookRelay.Service.Silo, registration.hookId, token)) {
+            SiloAlertRegistration.save(application, current.accountId, registration.copy(token = token))
+        }
+    }
+
+    private fun failAlerts(current: SavedSession, message: String) {
+        val stillOn = if (current.isSiloServer) SiloAlertRegistration.saved(application, current.accountId) != null
+        else EmbyAlertRegistration.saved(application, current.accountId) != null
+        _state.update { it.copy(alertsOn = stillOn, alertsMessage = message, alertsMessageIsError = true) }
+    }
+
+    /** When Emby refuses, the registration is kept so an admin can add the address by hand. */
+    private suspend fun saveEmbyAlerts(current: SavedSession, categories: Set<String>) {
+        val library = emby() ?: return
+        val token = ZelefinPush.fetchToken(application)
+        if (token == null) {
+            _state.update {
+                it.copy(
+                    alertsOn = EmbyAlertRegistration.saved(application, current.accountId) != null,
+                    alertsMessage = "This phone couldn’t get a push token. Check that Google Play services is up to date.",
+                    alertsMessageIsError = true,
+                )
+            }
+            return
+        }
+        try {
+            var registration = EmbyAlertRegistration.saved(application, current.accountId)
+            if (registration == null || registration.token != token) {
+                registration?.let { PushHookRelay.remove(PushHookRelay.Service.Emby, it.hookId) }
+                val hook = PushHookRelay.register(PushHookRelay.Service.Emby, token)
+                registration = EmbyAlertRegistration(hook.hookId, hook.url, token, entryId = registration?.entryId)
+            }
+            registration = registration.copy(categoryIds = EmbyAlertCategory.all.map { it.id }.filter { it in categories })
+            EmbyAlertRegistration.save(application, current.accountId, registration)
+            try {
+                val entryId = library.saveAlertWebhook(
+                    registration.entryId,
+                    registration.url,
+                    registration.events,
+                    "Zelefin · ${android.os.Build.MODEL}",
+                )
+                EmbyAlertRegistration.save(application, current.accountId, registration.copy(entryId = entryId))
+                _state.update { it.copy(alertsOn = true, alertsAdminAddress = null) }
+            } catch (refused: EmbyAlertsNotAllowed) {
+                _state.update { it.copy(alertsOn = true, alertsAdminAddress = refused.url) }
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            _state.update {
+                it.copy(
+                    alertsOn = EmbyAlertRegistration.saved(application, current.accountId) != null,
+                    alertsMessage = error.message ?: "Couldn’t turn on notifications. Try again.",
+                    alertsMessageIsError = true,
+                )
+            }
+        }
+    }
+
+    /** A new Firebase token goes to the push service under the same hook, so Emby's address stays valid. */
+    private suspend fun refreshEmbyAlertToken(current: SavedSession) {
+        val registration = EmbyAlertRegistration.saved(application, current.accountId) ?: return
+        val token = ZelefinPush.fetchToken(application) ?: return
+        if (registration.token == token) return
+        if (PushHookRelay.update(PushHookRelay.Service.Emby, registration.hookId, token)) {
+            EmbyAlertRegistration.save(application, current.accountId, registration.copy(token = token))
+        } else {
+            saveEmbyAlerts(current, registration.categoryIds.toSet())
         }
     }
 
@@ -327,12 +607,28 @@ class PluginsController(
     private suspend fun detectJellyfin(current: SavedSession) {
         if (current.isEmbyServer) {
             val (admin, subtitles) = runCatching { emby()?.accountRights() }.getOrNull() ?: (false to false)
-            _state.update { it.copy(jellyfin = JellyfinPluginState(), isAdmin = admin, canManageSubtitles = subtitles) }
+            // Emby lists its plugins to administrators only, so other users fall back to their subtitle rights.
+            val names = if (admin) JellyfinPlugins.activeNames(current.serverUrl, current.accessToken) else emptyList()
+            val openSubtitles = RemoteSubtitleOffer.pluginAvailable(
+                listed = OpenSubtitlesPlugin.isInstalled(names),
+                catalogNames = names,
+                canManageSubtitles = subtitles,
+                canListPlugins = admin,
+            )
+            _state.update {
+                it.copy(
+                    jellyfin = JellyfinPluginState(openSubtitles = openSubtitles, names = names),
+                    isAdmin = admin,
+                    canManageSubtitles = subtitles,
+                )
+            }
+            loadEmbyAlerts(current)
             refreshSeerrUser()
             return
         }
         if (!current.hasJellyfinExtras) {
             _state.update { it.copy(jellyfin = JellyfinPluginState(), isAdmin = false, canManageSubtitles = false) }
+            if (current.isSiloServer) loadSiloAlerts(current)
             refreshSeerrUser()
             return
         }

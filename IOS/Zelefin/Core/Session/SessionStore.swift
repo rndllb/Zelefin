@@ -230,6 +230,8 @@ final class SessionStore {
     var hidesLiveTV: Bool { isSiloServer || (isEmbyServer && !embyLiveTVEnabled) }
 
     private(set) var embyLiveTVEnabled = false
+    /// Emby's Webhooks notifier, which carries this iPhone's lock-screen alerts on Emby.
+    private(set) var embyWebhooksAvailable = false
 
     var jellyfinLibrary: JellyfinLibraryClient? { library as? JellyfinLibraryClient }
 
@@ -961,6 +963,7 @@ final class SessionStore {
         companionAvailable = false
         isAdministrator = false
         embyLiveTVEnabled = false
+        embyWebhooksAvailable = false
         enableSubtitleManagement = false
         syncPlayGroupID = nil
         syncPlayGroupName = nil
@@ -1064,6 +1067,7 @@ final class SessionStore {
         companionAvailable = false
         isAdministrator = false
         embyLiveTVEnabled = false
+        embyWebhooksAvailable = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
         libraryPage = LibraryPageCache()
@@ -1165,6 +1169,7 @@ final class SessionStore {
         companionAvailable = false
         isAdministrator = false
         embyLiveTVEnabled = false
+        embyWebhooksAvailable = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
         libraryPage = LibraryPageCache()
@@ -1372,8 +1377,18 @@ final class SessionStore {
     func detectPlugins() async {
         guard let client else {
             introSkipperAvailable = false
-            // Emby searches subtitles with its own providers; there is no plugin to look for.
-            openSubtitlesAvailable = isEmbyServer && canManageSubtitles
+            if let embyLibrary {
+                // Emby lists its plugins to administrators only, so other users fall back to their subtitle rights.
+                let names = isAdministrator ? await embyLibrary.pluginNames() : []
+                openSubtitlesAvailable = RemoteSubtitleOffer.pluginAvailable(
+                    listed: OpenSubtitlesPlugin.isInstalled(names: names),
+                    catalogNames: names,
+                    canManageSubtitles: canManageSubtitles,
+                    canListPlugins: isAdministrator
+                )
+            } else {
+                openSubtitlesAvailable = false
+            }
             jellyfinEnhancedAvailable = false
             jellyfinEnhancedRemoveContinueWatching = false
             companionAvailable = false
@@ -1411,8 +1426,171 @@ final class SessionStore {
     }
 
     func registerPushToken(_ token: String) async {
+        if isEmbyServer {
+            await refreshEmbyAlertToken(token)
+            return
+        }
+        if isSiloServer {
+            await refreshSiloAlertToken(token)
+            return
+        }
         guard companionAvailable, LibraryAlertSettings.isEnabled, let client else { return }
         await ZelefinCompanionClient(client: client).registerDevice(token: token)
+    }
+
+    // MARK: Silo alerts
+
+    var siloAlertRegistration: SiloAlertRegistration? {
+        session.flatMap { SiloAlertRegistration.saved(for: $0.accountID) }
+    }
+
+    /// Webhooks live on the profile in Silo's own API, which needs the Silo account sign-in.
+    func siloPersonalWebhooksAvailable() async -> Bool {
+        guard let link = session?.siloLink, let siloClient else { return false }
+        return await siloClient.personalWebhooksAvailable(profileID: link.profileID, profileToken: link.profileToken)
+    }
+
+    /// Registers this iPhone with the push service, adds a webhook to the active Silo profile, and
+    /// hands the push service that webhook's signing secret so it can check each delivery.
+    func enableSiloAlerts(categoryIDs: Set<String>) async throws {
+        guard let current = session, let link = current.siloLink, let siloClient else {
+            throw ZelefinError.server("Sign in with your Silo account to get notifications from this server.")
+        }
+        guard let token = PushNotificationCenter.storedToken else { throw EmbyAlertError.noPushToken }
+        let accountID = current.accountID
+        let flags = SiloAlertCategory.flags(for: categoryIDs)
+        let chosen = SiloAlertCategory.all.map(\.id).filter(categoryIDs.contains)
+        if var registration = SiloAlertRegistration.saved(for: accountID), let webhookID = registration.webhookID {
+            try await siloClient.updateWebhook(id: webhookID, profileID: link.profileID, profileToken: link.profileToken, flags: flags)
+            try await siloClient.allowNotificationReasons(flags, profileID: link.profileID, profileToken: link.profileToken)
+            if registration.token != token, await PushHookRelay.update(.silo, hookID: registration.hookID, token: token) {
+                registration.token = token
+            }
+            registration.categoryIDs = chosen
+            SiloAlertRegistration.save(registration, for: accountID)
+            return
+        }
+        let hook = try await PushHookRelay.register(.silo, token: token, label: current.serverName ?? "Silo")
+        do {
+            let webhook = try await siloClient.createWebhook(
+                profileID: link.profileID,
+                profileToken: link.profileToken,
+                name: "Zelefin · \(DeviceIdentity.deviceName)",
+                url: hook.url,
+                flags: flags
+            )
+            SiloAlertRegistration.save(
+                SiloAlertRegistration(hookID: hook.hookId, token: token, webhookID: webhook.id, categoryIDs: chosen),
+                for: accountID
+            )
+            guard await PushHookRelay.update(.silo, hookID: hook.hookId, token: token, signingSecret: webhook.signingSecret) else {
+                throw EmbyAlertError.relay("Zelefin's push service could not save this iPhone. Try again in a moment.")
+            }
+            try await siloClient.allowNotificationReasons(flags, profileID: link.profileID, profileToken: link.profileToken)
+        } catch {
+            await disableSiloAlerts()
+            await PushHookRelay.remove(.silo, hookID: hook.hookId)
+            throw error
+        }
+    }
+
+    func disableSiloAlerts() async {
+        guard let current = session, let registration = SiloAlertRegistration.saved(for: current.accountID) else { return }
+        if let webhookID = registration.webhookID, let link = current.siloLink, let siloClient {
+            await siloClient.deleteWebhook(id: webhookID, profileID: link.profileID, profileToken: link.profileToken)
+        }
+        await PushHookRelay.remove(.silo, hookID: registration.hookID)
+        SiloAlertRegistration.save(nil, for: current.accountID)
+    }
+
+    func sendSiloTestAlert() async -> String? {
+        guard let link = session?.siloLink, let siloClient, let webhookID = siloAlertRegistration?.webhookID else {
+            return "Turn on Notifications first."
+        }
+        do {
+            let result = try await siloClient.testWebhook(id: webhookID, profileID: link.profileID, profileToken: link.profileToken)
+            return result.ok ? nil : (result.message ?? "Silo could not reach Zelefin's push service.")
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// A new APNs token goes to the push service under the same hook, so Silo's webhook stays valid.
+    private func refreshSiloAlertToken(_ token: String) async {
+        guard let accountID = session?.accountID, var registration = SiloAlertRegistration.saved(for: accountID),
+              registration.token != token
+        else { return }
+        if await PushHookRelay.update(.silo, hookID: registration.hookID, token: token) {
+            registration.token = token
+            SiloAlertRegistration.save(registration, for: accountID)
+        }
+    }
+
+    // MARK: Emby alerts
+
+    var embyAlertRegistration: EmbyAlertRegistration? {
+        session.flatMap { EmbyAlertRegistration.saved(for: $0.accountID) }
+    }
+
+    /// Registers this iPhone with the push service and adds its address to the user's notifications in Emby.
+    /// When Emby refuses, the registration is kept so an admin can add the address by hand.
+    func enableEmbyAlerts(categoryIDs: Set<String>) async throws {
+        guard let embyLibrary, let accountID = session?.accountID else { return }
+        guard let token = PushNotificationCenter.storedToken else { throw EmbyAlertError.noPushToken }
+        var registration = EmbyAlertRegistration.saved(for: accountID)
+        if registration == nil || registration?.token != token {
+            if let old = registration { await PushHookRelay.remove(.emby, hookID: old.hookID) }
+            let hook = try await PushHookRelay.register(.emby, token: token)
+            registration = EmbyAlertRegistration(
+                hookID: hook.hookId,
+                url: hook.url,
+                token: token,
+                entryID: registration?.entryID,
+                categoryIDs: []
+            )
+        }
+        guard var registration else { return }
+        registration.categoryIDs = EmbyAlertCategory.all.map(\.id).filter(categoryIDs.contains)
+        EmbyAlertRegistration.save(registration, for: accountID)
+        registration.entryID = try await embyLibrary.saveAlertWebhook(
+            entryID: registration.entryID,
+            url: registration.url,
+            events: registration.events,
+            name: "Zelefin · \(DeviceIdentity.deviceName)"
+        )
+        EmbyAlertRegistration.save(registration, for: accountID)
+    }
+
+    func disableEmbyAlerts() async {
+        guard let accountID = session?.accountID, let registration = EmbyAlertRegistration.saved(for: accountID) else { return }
+        if let entryID = registration.entryID {
+            await embyLibrary?.deleteAlertWebhook(entryID: entryID)
+        }
+        await PushHookRelay.remove(.emby, hookID: registration.hookID)
+        EmbyAlertRegistration.save(nil, for: accountID)
+    }
+
+    func sendEmbyTestAlert() async -> String? {
+        guard let embyLibrary, let registration = embyAlertRegistration else { return "Turn on Notifications first." }
+        do {
+            try await embyLibrary.testAlertWebhook(url: registration.url, events: registration.events)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// A new APNs token goes to the push service under the same hook, so Emby's address stays valid.
+    private func refreshEmbyAlertToken(_ token: String) async {
+        guard let accountID = session?.accountID, var registration = EmbyAlertRegistration.saved(for: accountID),
+              registration.token != token
+        else { return }
+        if await PushHookRelay.update(.emby, hookID: registration.hookID, token: token) {
+            registration.token = token
+            EmbyAlertRegistration.save(registration, for: accountID)
+        } else {
+            try? await enableEmbyAlerts(categoryIDs: Set(registration.categoryIDs))
+        }
     }
 
     /// Registers this iPhone again, then asks the plugin to push a test alert to it.
@@ -1456,6 +1634,7 @@ final class SessionStore {
         downloadsAvailable = await (library?.downloadsAvailable() ?? true)
         if let embyLibrary {
             embyLiveTVEnabled = (try? await embyLibrary.liveTVInfoEnabled()) ?? false
+            embyWebhooksAvailable = await embyLibrary.offersWebhooks()
         }
     }
 
