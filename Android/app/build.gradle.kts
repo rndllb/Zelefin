@@ -44,18 +44,42 @@ android {
         applicationId = "app.zelefin.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.1.0"
+        versionCode = 13
+        versionName = "1.0.0"
 
         val firebase = firebaseValues(applicationId!!)
         firebase?.forEach { (name, value) -> resValue("string", name, value) }
         buildConfigField("boolean", "PUSH_CONFIGURED", (firebase != null).toString())
     }
 
+    // Release APKs are signed with the key `scripts/release-android.sh` hands over in these variables;
+    // without them (Android Studio, CI) release builds fall back to the debug key.
+    val releaseKey = System.getenv("ZELEFIN_RELEASE_STORE_FILE")?.let(::file)?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = releaseKey
+                storePassword = System.getenv("ZELEFIN_RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("ZELEFIN_RELEASE_KEY_ALIAS") ?: "zelefin"
+                keyPassword = System.getenv("ZELEFIN_RELEASE_KEY_PASSWORD") ?: System.getenv("ZELEFIN_RELEASE_STORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
+    }
+
+    // One APK per processor type plus a universal one, for the downloads on zelefin.app/android.
+    splits {
+        abi {
+            isEnable = project.hasProperty("zelefinSplitAbis")
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
         }
     }
 

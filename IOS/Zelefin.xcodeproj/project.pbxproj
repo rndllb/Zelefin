@@ -80,7 +80,6 @@
 		65C09316AD058E76072CFA6D /* ServerReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA94D8320FAEB7BA7DB72AC0 /* ServerReachability.swift */; };
 		66754E8B244BA62D33F5B47F /* PlaybackReporting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3902BD7A1D804EF4A1AA4A1D /* PlaybackReporting.swift */; };
 		674F8B89B1E38845443E95F3 /* SiloAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 282E708AA97174988DDA13B3 /* SiloAccountClient.swift */; };
-		F9186688F77EFC4DF4AA2AED /* SiloAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD403FA57D75FBB5B792032 /* SiloAlerts.swift */; };
 		67CB59D76818020158739BE0 /* RemoteControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6359B9FE2041843E6943C81 /* RemoteControlTests.swift */; };
 		6AC9E6B35730A2A513BBCC80 /* LibraryAdminModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 070265A629701811298D8F42 /* LibraryAdminModels.swift */; };
 		6E83D4DC725A900832A633D5 /* JellyfinServerCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44DDFC92F1C681332F066FCD /* JellyfinServerCapabilities.swift */; };
@@ -167,7 +166,6 @@
 		CBFC3B2356F3B4A13FD61D9D /* BIFTrickplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FCCF43D73AF9D0FF0910B0 /* BIFTrickplay.swift */; };
 		CCAA3CF9A1B135A2B5A870B0 /* HomeSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E3620DFE3228BDC6BBAC59 /* HomeSnapshotStore.swift */; };
 		CECF50389D4AB561DE2B7C91 /* EmbyAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8818B03401204284A31DC036 /* EmbyAccount.swift */; };
-		E169D4D9B19CD281C8B11C14 /* EmbyAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E51B47770962C37F9D1389E /* EmbyAlerts.swift */; };
 		D024A4466316494A01DF1001 /* AVKitPlaybackChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73413AFEA74159ABE3AB3815 /* AVKitPlaybackChrome.swift */; };
 		D4B8DE13D6D16B7698FA8DD0 /* DownloadedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA44AD1DF2E3D8CBCFA598B /* DownloadedItemsView.swift */; };
 		D4C8A1E07B2F49A6C3E51D08 /* Outfit.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E7B19F4A2C6D80E35A47B1C9 /* Outfit.ttf */; };
@@ -178,6 +176,7 @@
 		DB541D3D8049970601FC31CE /* ArtworkURLBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6793B2714E2FA4DBFD1DA6D0 /* ArtworkURLBuilder.swift */; };
 		DD383B2EC20A0FD7E562E8A7 /* AdminToolsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CCF8B7BCF68D1C4E89B760B /* AdminToolsViews.swift */; };
 		DFD81B1A6726AF18A3E22C91 /* QuickConnectClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D969926D1B2C56A73A41E141 /* QuickConnectClient.swift */; };
+		E169D4D9B19CD281C8B11C14 /* EmbyAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E51B47770962C37F9D1389E /* EmbyAlerts.swift */; };
 		E3BD8FD1D84EE88C392E20D5 /* TitleAboutRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E27EF97B5903A36F10AF18 /* TitleAboutRow.swift */; };
 		E4BF757DA701C6AD91C49F7A /* SeerrRequestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8976E4C707E0FA34E637C1 /* SeerrRequestView.swift */; };
 		E6F868838381DB4F1661FADE /* SiloAvatarPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */; };
@@ -191,6 +190,7 @@
 		F252C8750A2613E8DBC7EC72 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AA86195C514EBA32BDFE805 /* ServerURL.swift */; };
 		F31A2B3C4D5E6F708192A3B4 /* SessionMessageCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21A2B3C4D5E6F708192A3B4 /* SessionMessageCenter.swift */; };
 		F6DFD4C279DCAC02BE9BD43A /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4E2B90C9DECA3639523A79 /* MainTabView.swift */; };
+		F9186688F77EFC4DF4AA2AED /* SiloAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD403FA57D75FBB5B792032 /* SiloAlerts.swift */; };
 		FAD18320B08238727282766E /* TitleSpecsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA88CDCEDB6FB1FA5F4A26C /* TitleSpecsRow.swift */; };
 		FAEA902B02CC3EE0FCB3A9FC /* AccessGateway.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7940008AB391DA5EF5BF3770 /* AccessGateway.swift */; };
 		FD6D5EE44F6769F9B9F618EA /* CatalogFilterViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74989C0C92FAD5BEF8817576 /* CatalogFilterViews.swift */; };
@@ -234,7 +234,6 @@
 		2532A7E400B9EC5A2653B6B5 /* DeepLinkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkStore.swift; sourceTree = "<group>"; };
 		26B3C526F91B213FA4BDF40F /* PlaybackPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackPipeline.swift; sourceTree = "<group>"; };
 		282E708AA97174988DDA13B3 /* SiloAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAccountClient.swift; sourceTree = "<group>"; };
-		9CD403FA57D75FBB5B792032 /* SiloAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAlerts.swift; sourceTree = "<group>"; };
 		28D1FE8B38197504B3EBED4E /* PlayerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerModel.swift; sourceTree = "<group>"; };
 		2AFAB17F8439301AE64CF160 /* LiveTVTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVTests.swift; sourceTree = "<group>"; };
 		2C95AA55AA39DDAC21F8C150 /* PlaybackReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackReporter.swift; sourceTree = "<group>"; };
@@ -313,7 +312,6 @@
 		82E2AE060FC5F2C11DFE9D1F /* LibraryAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlert.swift; sourceTree = "<group>"; };
 		8716D6D7DB0E6EE84349C3C8 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
 		8818B03401204284A31DC036 /* EmbyAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyAccount.swift; sourceTree = "<group>"; };
-		9E51B47770962C37F9D1389E /* EmbyAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyAlerts.swift; sourceTree = "<group>"; };
 		88D3AD7E1BB3E4C6887F0775 /* RemoteControlHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlHub.swift; sourceTree = "<group>"; };
 		895DB472FEB9A4088EA96244 /* LibraryAlertTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlertTests.swift; sourceTree = "<group>"; };
 		89C6E3892B316933B1AB10AA /* EmbyPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyPlayback.swift; sourceTree = "<group>"; };
@@ -336,7 +334,9 @@
 		9AA52DECBDDDA52EFFC4E171 /* TitleMoreInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleMoreInfo.swift; sourceTree = "<group>"; };
 		9AD77EB677C64A3A9B1FBD50 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9CCF8B7BCF68D1C4E89B760B /* AdminToolsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminToolsViews.swift; sourceTree = "<group>"; };
+		9CD403FA57D75FBB5B792032 /* SiloAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloAlerts.swift; sourceTree = "<group>"; };
 		9D3DA2B029145A9467370607 /* PlaybackStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackStats.swift; sourceTree = "<group>"; };
+		9E51B47770962C37F9D1389E /* EmbyAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyAlerts.swift; sourceTree = "<group>"; };
 		9FA52BE5DA482743457932DF /* PosterPrefetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosterPrefetcher.swift; sourceTree = "<group>"; };
 		9FEE7EEAB1A7D487B6A6570E /* ItemDetailSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailSnapshotStoreTests.swift; sourceTree = "<group>"; };
 		A0012DAA2FD6085ADCF3ADF6 /* DownloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadStore.swift; sourceTree = "<group>"; };
@@ -1156,7 +1156,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1294,7 +1294,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
