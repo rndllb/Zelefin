@@ -7,7 +7,7 @@
 **Native Jellyfin, Silo, and Emby for iPhone, iPad, and Android.**  
 Your server. Direct play. No Plus, no subscription, no in-app purchase.
 
-<img src="https://img.shields.io/badge/iOS-26+-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 26+" />
+<img src="https://img.shields.io/badge/iOS-18+-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 18+" />
 <img src="https://img.shields.io/badge/Android-8+-3DDC84?style=for-the-badge&logo=android&logoColor=111" alt="Android 8+" />
 <img src="https://img.shields.io/badge/Jellyfin-ready-00A4DC?style=for-the-badge&logoColor=white" alt="Jellyfin ready" />
 <img src="https://img.shields.io/badge/Silo-ready-2ad4fc?style=for-the-badge&labelColor=111111&color=2ad4fc" alt="Silo ready" />
@@ -238,7 +238,7 @@ Needs Android 8 (API 26)+.
 </tr>
 </table>
 
-**Needs:** iOS 26, or Android 8+, and a Jellyfin or Emby server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
+**Needs:** iOS 18 (Liquid Glass on iOS 26), or Android 8+, and a Jellyfin or Emby server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
 
 ```bash
 cd IOS
