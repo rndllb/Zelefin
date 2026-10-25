@@ -112,6 +112,7 @@ import org.jellyfin.sdk.model.api.SubtitleProfile
 import org.jellyfin.sdk.model.api.TranscodingProfile
 import org.jellyfin.sdk.model.api.request.GetEpisodesRequest
 import org.jellyfin.sdk.model.api.request.GetGenresRequest
+import org.jellyfin.sdk.model.api.request.GetLatestMediaRequest
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import org.jellyfin.sdk.model.api.request.GetNextUpRequest
 import org.jellyfin.sdk.model.api.request.GetResumeItemsRequest
@@ -1465,7 +1466,34 @@ class JellyfinLibrary(
         }
     }
 
-    private suspend fun latest(userId: UUID, kind: BaseItemKind): List<MediaItem> = runCatching {
+    /**
+     * `Items/Latest` across every library, so a show returns to the front when it gets new episodes,
+     * matching Emby. The server can mix other kinds into the answer, so results keep only [kind].
+     * Servers without that endpoint fall back to titles sorted by date added.
+     */
+    private suspend fun latest(userId: UUID, kind: BaseItemKind): List<MediaItem> {
+        val wanted = if (kind == BaseItemKind.MOVIE) MediaKind.Movie else MediaKind.Series
+        val newest = runCatching {
+            api.userLibraryApi.getLatestMedia(
+                GetLatestMediaRequest(
+                    userId = userId,
+                    includeItemTypes = listOf(kind),
+                    fields = listFields,
+                    enableImages = true,
+                    enableImageTypes = imageTypes,
+                    enableUserData = true,
+                    limit = 36,
+                    groupItems = true,
+                ),
+            ).content.withoutTubeArchivist()
+                .mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+                .filter { it.kind == wanted }
+                .take(24)
+        }.getOrDefault(emptyList())
+        return newest.ifEmpty { latestByDateAdded(userId, kind) }
+    }
+
+    private suspend fun latestByDateAdded(userId: UUID, kind: BaseItemKind): List<MediaItem> = runCatching {
         api.itemsApi.getItems(
             GetItemsRequest(
                 userId = userId,

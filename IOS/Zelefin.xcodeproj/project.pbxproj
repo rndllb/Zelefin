@@ -429,19 +429,6 @@
 			path = Zelefin;
 			sourceTree = "<group>";
 		};
-		23019324B6FE180F2B05585C /* Emby */ = {
-			isa = PBXGroup;
-			children = (
-				4BF4C16E92607E2DE897E568 /* EmbyAPI.swift */,
-				8818B03401204284A31DC036 /* EmbyAccount.swift */,
-				63D35A654940D5123C83B50F /* EmbyLibraryClient.swift */,
-				8F9A6476EC211D5A63B1FF9D /* EmbyLibraryClient+Manage.swift */,
-				89C6E3892B316933B1AB10AA /* EmbyPlayback.swift */,
-				48A1F75ED84D1E4C34B3D368 /* EmbyRemoteControl.swift */,
-			);
-			path = Emby;
-			sourceTree = "<group>";
-		};
 		20EC6BCC7C3CBCA131C4FEC3 /* Models */ = {
 			isa = PBXGroup;
 			children = (
@@ -455,6 +442,19 @@
 				4E5E802541E0099E218AA1D7 /* ZelefinError.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		23019324B6FE180F2B05585C /* Emby */ = {
+			isa = PBXGroup;
+			children = (
+				4BF4C16E92607E2DE897E568 /* EmbyAPI.swift */,
+				8818B03401204284A31DC036 /* EmbyAccount.swift */,
+				63D35A654940D5123C83B50F /* EmbyLibraryClient.swift */,
+				8F9A6476EC211D5A63B1FF9D /* EmbyLibraryClient+Manage.swift */,
+				89C6E3892B316933B1AB10AA /* EmbyPlayback.swift */,
+				48A1F75ED84D1E4C34B3D368 /* EmbyRemoteControl.swift */,
+			);
+			path = Emby;
 			sourceTree = "<group>";
 		};
 		252AA3628DD33AC671096AA7 /* Playback */ = {
@@ -1148,7 +1148,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1163,6 +1163,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.zelefin.client;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -1285,7 +1286,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1300,6 +1301,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.zelefin.client;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

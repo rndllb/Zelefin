@@ -170,8 +170,8 @@ class EmbyLibrary(
                     }
                 }
             }
-            val movies = async { latest("Movie") }
-            val shows = async { latest("Series") }
+            val movies = async { latest(MediaKind.Movie) }
+            val shows = async { latest(MediaKind.Series) }
             val recommendations = async { movieRecommendations() }
             val collections = async { collectionPreview(limit = 24) }
             val genres = async { homeGenres() }
@@ -198,17 +198,20 @@ class EmbyLibrary(
         }
     }
 
-    /** `Items/Latest` orders shows by their newest episode, so recently added seasons surface too. */
-    private suspend fun latest(type: String): List<MediaItem> = runCatching {
+    /**
+     * `Items/Latest` orders shows by their newest episode, so recently added seasons surface too.
+     * Emby still mixes movies into a `Series` request, so results are filtered to the asked-for kind.
+     */
+    private suspend fun latest(kind: MediaKind): List<MediaItem> = runCatching {
         api.get(
             "/Users/$user/Items/Latest",
             ListSerializer(EmbyItem.serializer()),
             embyQuery {
-                this["IncludeItemTypes"] = type
-                this["Limit"] = 24
+                this["IncludeItemTypes"] = kind.name
+                this["Limit"] = 36
                 listDefaults()
             },
-        ).media()
+        ).media().filter { it.kind == kind }.take(24)
     }.getOrDefault(emptyList())
 
     private suspend fun movieRecommendations(): List<HomeSection> = runCatching {
@@ -978,6 +981,7 @@ class EmbyLibrary(
             api.get("/Items/$itemId/ThemeMedia", EmbyThemeMedia.serializer(), embyQuery {
                 this["UserId"] = user
                 this["InheritFromParent"] = true
+                this["Fields"] = "MediaSources,Container"
             })
         }.getOrNull()
         val song = result?.themeSongs?.items?.firstOrNull()?.id

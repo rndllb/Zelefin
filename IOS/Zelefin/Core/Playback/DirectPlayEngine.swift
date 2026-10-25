@@ -31,6 +31,16 @@ enum PlaybackAudioSession {
         }.value
     }
 
+    /// Theme songs and theme video sound. The default session goes silent with the Ring/Silent
+    /// switch on silent, so this uses playback, mixed with other apps' audio rather than stopping it.
+    static func activateForThemeMedia() {
+        Task.detached(priority: .userInitiated) {
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try? session.setActive(true)
+        }
+    }
+
     /// For a player closed before anything played, so other apps' audio can resume.
     static func deactivate() {
         Task.detached(priority: .utility) {

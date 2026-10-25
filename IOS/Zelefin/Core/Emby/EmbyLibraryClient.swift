@@ -189,17 +189,26 @@ final class EmbyLibraryClient: @unchecked Sendable {
         await ignoringErrors {
             let catalog = try await self.libraries()
             let ordered = HomeLayoutPreferences.orderedHomeLibraries(catalog)
-            var sections = await self.latestSections(for: ordered)
-            if !sections.contains(where: { $0.title == "Recently Added Shows" }),
-               let shows = try? await self.recentlyAddedShows(parentID: nil) {
-                if let movieIndex = sections.firstIndex(where: { $0.title == "Recently Added Movies" }) {
-                    sections.insert(shows, at: movieIndex + 1)
-                } else {
-                    sections.insert(shows, at: 0)
-                }
-            }
-            return (catalog, sections)
+            async let movies = self.recentlyAdded(.movie)
+            async let shows = self.recentlyAdded(.series)
+            let others = await self.latestSections(for: ordered.filter { $0.libraryKind != .movies && $0.libraryKind != .shows })
+            return (catalog, [await movies, await shows].compactMap { $0 } + others)
         } ?? ([], [])
+    }
+
+    /// One row per kind across every library, newest first. `Items/Latest` brings a show back to the front
+    /// when it gets new episodes; Emby mixes movies into a `Series` answer, so each row keeps only its own kind.
+    private func recentlyAdded(_ kind: BaseItemKind) async -> HomeSection? {
+        let wanted: MediaKind = kind == .movie ? .movie : .series
+        let latest = (try? await latestMedia(include: [kind], parentID: nil, fields: EmbyFields.home, limit: 36)) ?? []
+        var items = Array(latest.filter { $0.kind == wanted }.prefix(24))
+        if items.isEmpty, kind == .series {
+            items = (try? await recentlyAddedShows(parentID: nil))?.items ?? []
+        }
+        guard !items.isEmpty else { return nil }
+        return kind == .movie
+            ? HomeSection(id: "library-movies", title: "Recently Added Movies", style: .portrait, items: items)
+            : HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
     }
 
     func collectionsSectionIgnoringErrors() async -> HomeSection? {
@@ -743,7 +752,7 @@ final class EmbyLibraryClient: @unchecked Sendable {
         try? await api.decode(
             AllThemeMediaResult.self,
             "/Items/\(itemID)/ThemeMedia",
-            query: [("UserId", userID), ("InheritFromParent", "true")]
+            query: [("UserId", userID), ("InheritFromParent", "true"), ("Fields", "MediaSources,Container")]
         )
     }
 

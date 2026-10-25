@@ -1255,17 +1255,25 @@ class JellyfinLibraryClient: @unchecked Sendable {
     private func libraryHome() async throws -> (libraries: [MediaLibrary], sections: [HomeSection]) {
         let catalog = try await libraries()
         let ordered = HomeLayoutPreferences.orderedHomeLibraries(catalog)
-        var sections = await latestSections(for: ordered)
-        if !sections.contains(where: { $0.title == "Recently Added Shows" }) {
-            if let shows = try? await recentlyAddedShows(parentID: nil) {
-                if let movieIndex = sections.firstIndex(where: { $0.title == "Recently Added Movies" }) {
-                    sections.insert(shows, at: movieIndex + 1)
-                } else {
-                    sections.insert(shows, at: 0)
-                }
-            }
+        async let movies = recentlyAdded(.movie)
+        async let shows = recentlyAdded(.series)
+        let others = await latestSections(for: ordered.filter { $0.libraryKind != .movies && $0.libraryKind != .shows })
+        return (catalog, [await movies, await shows].compactMap { $0 } + others)
+    }
+
+    /// One row per kind across every library, newest first. `Items/Latest` brings a show back to the front
+    /// when it gets new episodes; the server can mix other kinds into the answer, so each row keeps only its own.
+    private func recentlyAdded(_ kind: BaseItemKind) async -> HomeSection? {
+        let wanted: MediaKind = kind == .movie ? .movie : .series
+        let latest = (try? await latestMedia(include: [kind], parentID: nil, fields: ItemMapper.homeFields, limit: 36)) ?? []
+        var items = Array(latest.filter { $0.kind == wanted && !$0.isYouTube }.prefix(24))
+        if items.isEmpty, kind == .series {
+            items = (try? await recentlyAddedShows(parentID: nil))?.items ?? []
         }
-        return (catalog, sections)
+        guard !items.isEmpty else { return nil }
+        return kind == .movie
+            ? HomeSection(id: "library-movies", title: "Recently Added Movies", style: .portrait, items: items)
+            : HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
     }
 
     private func latestSections(for libraries: [MediaLibrary]) async -> [HomeSection] {

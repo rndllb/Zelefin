@@ -1491,7 +1491,11 @@ final class ThemeMediaController {
         media = next
         isSuspended = false
         let videoURL = PlaybackPreferences.themeVideosEnabled ? next.videoURL : nil
-        if videoURL == nil, PlaybackPreferences.themeSongsEnabled, let url = next.songURL {
+        let songURL = videoURL == nil && PlaybackPreferences.themeSongsEnabled ? next.songURL : nil
+        if songURL != nil || (videoURL != nil && PlaybackPreferences.themeVideoSoundEnabled) {
+            PlaybackAudioSession.activateForThemeMedia()
+        }
+        if let url = songURL {
             let player = AVPlayer(playerItem: Self.item(for: url))
             player.volume = 0
             soundPlayer = player
@@ -1538,6 +1542,7 @@ final class ThemeMediaController {
         isSuspended = false
         videoPlayer?.play()
         if let soundPlayer {
+            PlaybackAudioSession.activateForThemeMedia()
             soundPlayer.play()
             fade(soundPlayer, to: 1, over: 0.6)
         }
