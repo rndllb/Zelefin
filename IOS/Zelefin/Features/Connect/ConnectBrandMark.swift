@@ -38,13 +38,38 @@ struct ZelefinLoadingView: View {
 }
 
 /// Which kind of server the sign-in form is for. Silo uses its own sign-in and household
-/// profiles; everything after that runs on its Jellyfin-compatible API.
+/// profiles; everything after that runs on its Jellyfin-compatible API. Emby runs on Emby's own API.
 enum SignInServerType: String, CaseIterable, Sendable {
     case jellyfin
     case silo
+    case emby
+
+    var title: String {
+        switch self {
+        case .jellyfin: "Jellyfin"
+        case .silo: "Silo"
+        case .emby: "Emby"
+        }
+    }
+
+    fileprivate var logoName: String {
+        switch self {
+        case .jellyfin: "JellyfinLogo"
+        case .silo: "SiloLogo"
+        case .emby: "EmbyLogo"
+        }
+    }
+
+    fileprivate func logoPadding(tileSize: CGFloat) -> CGFloat {
+        switch self {
+        case .jellyfin: tileSize * 0.22
+        case .silo: tileSize * 0.18
+        case .emby: tileSize * 0.24
+        }
+    }
 }
 
-/// Rounded-square Jellyfin / Silo marks under the Zelefin logo.
+/// Rounded-square Jellyfin / Silo / Emby marks under the Zelefin logo.
 struct ConnectBackendPicker: View {
     @Binding var selection: SignInServerType
     var tileSize: CGFloat = 86
@@ -53,6 +78,7 @@ struct ConnectBackendPicker: View {
         HStack(spacing: 18) {
             tile(.jellyfin)
             tile(.silo)
+            tile(.emby)
         }
         .frame(maxWidth: .infinity)
     }
@@ -68,23 +94,23 @@ struct ConnectBackendPicker: View {
                         .fill(Color.white.opacity(selected ? 0.16 : 0.08))
                     RoundedRectangle(cornerRadius: tileSize * 0.24, style: .continuous)
                         .strokeBorder(Color.white.opacity(selected ? 0.9 : 0.22), lineWidth: selected ? 1.5 : 1)
-                    Image(backend == .silo ? "SiloLogo" : "JellyfinLogo")
+                    Image(backend.logoName)
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .padding(backend == .silo ? tileSize * 0.18 : tileSize * 0.22)
-                        .foregroundStyle(Color.white.opacity(backend == .jellyfin ? 0.72 : 1))
+                        .padding(backend.logoPadding(tileSize: tileSize))
+                        .foregroundStyle(Color.white.opacity(backend == .silo ? 1 : 0.72))
                 }
                 .frame(width: tileSize, height: tileSize)
 
-                Text(backend == .silo ? "SILO" : "JELLYFIN")
+                Text(backend.title.uppercased())
                     .font(.caption2.weight(.bold))
                     .tracking(1.0)
                     .foregroundStyle(selected ? LoginPalette.primaryText : LoginPalette.captionText)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(backend == .silo ? "Silo" : "Jellyfin")
+        .accessibilityLabel(backend.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityHint("Use this server type to sign in")
     }

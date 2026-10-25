@@ -34,7 +34,8 @@ data class RemoteIdentifyHit(
     val overview: String?,
     val providerIds: Map<String, String>,
     val imageUrl: String?,
-    val raw: RemoteSearchResult,
+    /** The server's own search result, sent back unchanged to apply it: an SDK result on Jellyfin, JSON on Emby. */
+    val raw: Any,
 )
 
 data class ItemMetadataDraft(
@@ -189,9 +190,16 @@ suspend fun JellyfinLibrary.searchIdentify(item: MediaItem): List<RemoteIdentify
 suspend fun JellyfinLibrary.applyIdentify(itemId: String, hit: RemoteIdentifyHit) = withContext(Dispatchers.IO) {
     sdk.itemLookupApi.applySearchCriteria(
         itemId = UUID.fromString(itemId),
-        data = hit.raw,
+        data = hit.raw as? RemoteSearchResult ?: throw app.zelefin.core.ZelefinException.server("That match came from another server."),
         replaceAllImages = true,
     )
+}
+
+/** True likes, false dislikes, null clears the rating. */
+suspend fun JellyfinLibrary.setLikes(userId: UUID, itemId: String, likes: Boolean?) = withContext(Dispatchers.IO) {
+    val id = UUID.fromString(itemId)
+    if (likes == null) sdk.userLibraryApi.deleteUserItemRating(id, userId) else sdk.userLibraryApi.updateUserItemRating(id, userId, likes)
+    Unit
 }
 
 suspend fun JellyfinLibrary.updateItemMetadata(userId: UUID, itemId: String, draft: ItemMetadataDraft) = withContext(Dispatchers.IO) {

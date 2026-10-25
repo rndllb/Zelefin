@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ConnectedTv
@@ -44,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.StopCircle
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,6 +93,7 @@ internal fun TitleMoreOverlay(
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
     onToggleWatchlist: ((MediaItem) -> Unit)? = null,
+    onToggleLike: ((MediaItem) -> Unit)? = null,
     onIdentify: ((MediaItem) -> Unit)? = null,
     onEditMetadata: ((MediaItem) -> Unit)? = null,
     onDownloadSeason: ((MediaItem) -> Unit)? = null,
@@ -135,7 +138,7 @@ internal fun TitleMoreOverlay(
             ZelefinGlassConfirm(
                 hazeState = hazeState,
                 title = "Delete this title from the library?",
-                message = "Jellyfin will remove this item and its files from the server. This cannot be undone.",
+                message = "The server will remove this item and its files. This cannot be undone.",
                 confirmLabel = if (working) "Deleting…" else "Delete Files",
                 destructive = true,
                 enabled = !working,
@@ -238,6 +241,12 @@ internal fun TitleMoreOverlay(
                         toggle(current.item)
                     }
                 },
+                onToggleLike = onToggleLike?.let { toggle ->
+                    {
+                        onDismiss()
+                        toggle(current.item)
+                    }
+                },
                 onToggleSkipCinema = onToggleSkipCinema,
                 onCollections = onCollections,
                 onAddSubtitles = onAddSubtitles?.let { add ->
@@ -273,10 +282,10 @@ internal fun TitleMoreOverlay(
                             working = true
                             scope.launch {
                                 actionNote = runCatching { refresh(current.item) }.fold(
-                                    onSuccess = { MenuNotice("Refreshing Metadata", "Jellyfin is refreshing this title. New details appear in a moment.") },
+                                    onSuccess = { MenuNotice("Refreshing Metadata", "The server is refreshing this title. New details appear in a moment.") },
                                     onFailure = { error ->
                                         if (error is kotlinx.coroutines.CancellationException) throw error
-                                        MenuNotice("Couldn’t Refresh", error.message ?: "Jellyfin didn’t accept the refresh. Try again in a moment.")
+                                        MenuNotice("Couldn’t Refresh", error.message ?: "The server didn’t accept the refresh. Try again in a moment.")
                                     },
                                 )
                                 working = false
@@ -322,6 +331,7 @@ private fun TitleMorePanel(
     onDownloadSeason: (() -> Unit)? = null,
     onToggleFavorite: () -> Unit,
     onToggleWatchlist: (() -> Unit)? = null,
+    onToggleLike: (() -> Unit)? = null,
     onToggleSkipCinema: () -> Unit,
     onCollections: (() -> Unit)?,
     onAddSubtitles: (() -> Unit)?,
@@ -339,7 +349,7 @@ private fun TitleMorePanel(
     val showGoTo = request.context != TitleMenuContext.Episode
     val library = request.context == TitleMenuContext.Detail
     val showRemote = library && !isSiloServer
-    val showSync = showRemote && item.kind.usesVideoPlayer
+    val showSync = showRemote && item.kind.usesVideoPlayer && onSyncPlay != null
     val showRefresh = isAdmin && onRefreshMetadata != null
     val showAdminRemote = isAdmin && showRemote
     val showAdmin = showRefresh || showAdminRemote
@@ -422,6 +432,13 @@ private fun TitleMorePanel(
                     onToggleWatchlist,
                 )
             }
+            if (library && onToggleLike != null && !isSiloServer) {
+                MoreRow(
+                    if (item.likes == true) "Remove Like" else "Like",
+                    if (item.likes == true) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                    onToggleLike,
+                )
+            }
             if (onHideFromHome != null) {
                 val surface = if (request.context == TitleMenuContext.NextUp) {
                     JellyfinEnhancedHomeSurface.NextUp
@@ -435,8 +452,8 @@ private fun TitleMorePanel(
             }
             if (library && onCollections != null) {
                 MoreRow("Add to Collection…", Icons.Outlined.Folder, onClick = onCollections)
-                if (showRemote) {
-                    MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = { onPlayElsewhere?.invoke() })
+                if (showRemote && onPlayElsewhere != null) {
+                    MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = onPlayElsewhere)
                 }
                 if (showSync) {
                     MoreRow("Play in SyncPlay…", Icons.Outlined.Groups, onClick = { onSyncPlay?.invoke() })

@@ -1,7 +1,9 @@
 import Foundation
+import JellyfinAPI
 
 /// Catalog, artwork, and playback that Home, Library, Detail, Search, and Player share.
-/// Live TV, SyncPlay, remote sessions, and admin stay on `JellyfinLibraryClient`.
+/// Live TV, remote sessions, and server administration have their own protocols below;
+/// SyncPlay and backups stay on `JellyfinLibraryClient`.
 struct ServerCatalogCounts: Equatable, Sendable {
     var movies: Int
     var shows: Int
@@ -330,6 +332,83 @@ extension LibraryServing {
 
     func syncPlaySetQueue(itemIDs: [String]) async throws {
         try await syncPlaySetQueue(itemIDs: itemIDs, startPosition: 0)
+    }
+}
+
+protocol LiveTVServing: LibraryServing {
+    func liveTVInfoEnabled() async throws -> Bool
+    func liveTVChannels() async throws -> [LiveChannel]
+    func liveTVRecordings(isInProgress: Bool?, limit: Int) async throws -> [LiveTVRecording]
+    func deleteLiveTVRecording(id: String) async throws
+    func liveTVPrograms(
+        channelIDs: [String]?,
+        isAiring: Bool?,
+        hasAired: Bool?,
+        minStartDate: Date?,
+        maxStartDate: Date?,
+        filter: LiveTVProgramFilter?,
+        limit: Int
+    ) async throws -> [LiveProgram]
+    func liveTVRecommendedPrograms(filter: LiveTVProgramFilter?, isAiring: Bool, limit: Int) async throws -> [LiveProgram]
+    func liveTVProgram(id: String) async throws -> LiveProgram
+    func liveTVGuide(channelIDs: [String], from start: Date, to end: Date) async throws -> [LiveProgram]
+}
+
+extension LiveTVServing {
+    func liveTVRecordings() async throws -> [LiveTVRecording] {
+        try await liveTVRecordings(isInProgress: nil, limit: 80)
+    }
+
+    func liveTVRecordings(isInProgress: Bool) async throws -> [LiveTVRecording] {
+        try await liveTVRecordings(isInProgress: isInProgress, limit: 80)
+    }
+
+    func liveTVPrograms(isAiring: Bool, limit: Int) async throws -> [LiveProgram] {
+        try await liveTVPrograms(
+            channelIDs: nil,
+            isAiring: isAiring,
+            hasAired: nil,
+            minStartDate: nil,
+            maxStartDate: nil,
+            filter: nil,
+            limit: limit
+        )
+    }
+}
+
+protocol RemoteSessionServing: AnyObject, Sendable {
+    func playbackSessions(activeWithinSeconds: Int) async throws -> [PlaybackSession]
+    func sendPlaystate(sessionID: String, command: PlaystateCommand, seekPosition: TimeInterval?) async throws
+    func sendSessionCommand(sessionID: String, command: GeneralCommandType) async throws
+    func sendSessionMessage(sessionID: String, text: String) async throws
+}
+
+extension RemoteSessionServing {
+    func playbackSessions() async throws -> [PlaybackSession] {
+        try await playbackSessions(activeWithinSeconds: 960)
+    }
+
+    func sendPlaystate(sessionID: String, command: PlaystateCommand) async throws {
+        try await sendPlaystate(sessionID: sessionID, command: command, seekPosition: nil)
+    }
+}
+
+protocol ServerAdministering: AnyObject, Sendable {
+    /// Emby has no branding write route, so the Branding screen is read-only there.
+    var canEditBranding: Bool { get }
+    func activityLog(limit: Int) async throws -> [ActivityLogItem]
+    func scheduledTasks() async throws -> [ScheduledTask]
+    func startScheduledTask(id: String) async throws
+    func stopScheduledTask(id: String) async throws
+    func serverBranding() async throws -> ServerBranding
+    func updateServerBranding(_ branding: ServerBranding) async throws
+    func uploadSplashscreen(_ imageData: Data) async throws
+    func deleteSplashscreen() async throws
+}
+
+extension ServerAdministering {
+    func activityLog() async throws -> [ActivityLogItem] {
+        try await activityLog(limit: 80)
     }
 }
 

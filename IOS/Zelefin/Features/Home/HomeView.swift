@@ -4,7 +4,7 @@ struct HomeView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
-    @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = ""
+    @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = HomeRowKind.defaultHiddenRaw
     @State private var headerVisible = true
     @State private var heroLock = HeroHeightLock()
 

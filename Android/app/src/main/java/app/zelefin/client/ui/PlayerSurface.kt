@@ -233,6 +233,7 @@ fun PlayerSurface(
     val clientStart = remember(plan.streamUrl) {
         PlaybackResumePolicy.clientStartPosition(plan.method, plan.startTimeSeconds, plan.clientOwnsPlayhead)
     }
+    val bif = rememberBifPreviews(plan)
     // A server-owned transcode starts its stream at the resume point, so stream time 0 is media time startTimeSeconds.
     val streamOffset = if (clientStart == null) plan.startTimeSeconds else 0.0
     val player = remember(plan.streamUrl) {
@@ -711,9 +712,9 @@ fun PlayerSurface(
                     currentOnUserTransport(PlayerDirective.Seek(target))
                     reveal()
                 },
-                trickplay = plan.trickplay,
+                trickplay = plan.trickplay ?: bif?.info,
                 trickplayUrl = { time ->
-                    val info = plan.trickplay ?: return@PlayerChrome null
+                    val info = plan.trickplay ?: return@PlayerChrome bif?.frame(time)
                     val signed = session ?: return@PlayerChrome null
                     app.zelefin.core.ArtworkUrls.trickplayTile(signed.serverUrl, plan.item.id, info, time, signed.accessToken)
                 },
@@ -905,7 +906,7 @@ internal fun PlayerChrome(
     onScrub: (Double) -> Unit,
     onSeek: (Double) -> Unit,
     trickplay: app.zelefin.core.TrickplayInfo? = null,
-    trickplayUrl: ((Double) -> String?)? = null,
+    trickplayUrl: ((Double) -> Any?)? = null,
     onCast: (() -> Unit)? = null,
 ) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
@@ -1021,7 +1022,7 @@ private fun Timeline(
     onScrub: (Double) -> Unit,
     onSeek: (Double) -> Unit,
     trickplay: app.zelefin.core.TrickplayInfo? = null,
-    trickplayUrl: (Double) -> String? = { null },
+    trickplayUrl: (Double) -> Any? = { null },
 ) {
     var previewing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
@@ -1063,8 +1064,9 @@ private fun Timeline(
     }
 }
 
+/** [image] is a tile sheet URL, or the JPEG bytes of one BIF frame. */
 @Composable
-private fun TrickplayPreview(url: String, info: app.zelefin.core.TrickplayInfo, time: Double) {
+private fun TrickplayPreview(image: Any, info: app.zelefin.core.TrickplayInfo, time: Double) {
     val cell = info.cell(time)
     val previewW = 160.dp
     val thumbW = info.thumbnailWidth.coerceAtLeast(1)
@@ -1077,7 +1079,7 @@ private fun TrickplayPreview(url: String, info: app.zelefin.core.TrickplayInfo, 
             .background(Color.Black),
     ) {
         coil.compose.AsyncImage(
-            model = url,
+            model = image,
             contentDescription = null,
             contentScale = ContentScale.FillBounds,
             modifier = Modifier

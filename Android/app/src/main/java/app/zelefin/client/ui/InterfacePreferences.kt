@@ -115,6 +115,9 @@ enum class HomeRowKind(val raw: String, val title: String) {
     companion object {
         val defaultOrderRaw: String = entries.joinToString(",") { it.raw }
 
+        /** Rows a fresh install keeps off Home until the user turns them on. Matches iOS. */
+        val defaultHiddenRaw: String = Recommendations.raw
+
         fun ordered(raw: String): List<HomeRowKind> {
             val seen = LinkedHashSet<HomeRowKind>()
             raw.split(',').forEach { token -> entries.firstOrNull { it.raw == token.trim() }?.let(seen::add) }
@@ -164,7 +167,7 @@ object HomeLayoutPreferences {
         val prefs = prefs(context)
         migrateLegacy(prefs)
         order = HomeRowKind.ordered(prefs.getString(ORDER, null) ?: HomeRowKind.defaultOrderRaw)
-        hidden = HomeRowKind.hidden(prefs.getString(HIDDEN, "").orEmpty())
+        hidden = HomeRowKind.hidden(prefs.getString(HIDDEN, null) ?: HomeRowKind.defaultHiddenRaw)
         mergeContinueAndNextUp = prefs.getBoolean(MERGE, false)
         heroContent = FeaturedHeroContent.from(prefs.getString(HERO, null))
     }
@@ -189,7 +192,7 @@ object HomeLayoutPreferences {
         prefs(context).edit().putString(HERO, content.raw).apply()
     }
 
-    /** iOS "Reset Home Rows": default order, nothing hidden, Recently Added hero. */
+    /** iOS "Reset Home Rows": default order, default hidden rows, Recently Added hero. */
     fun reset(context: Context) {
         prefs(context).edit().remove(ORDER).remove(HIDDEN).remove(HERO).apply()
         load(context)

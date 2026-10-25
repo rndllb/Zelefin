@@ -1263,6 +1263,11 @@ struct PlaybackPlan: Hashable, Sendable {
     var externalSubtitles: [ExternalSubtitleSidecar] = []
     var chapters: [MediaChapter] = []
     var trickplay: TrickplayInfo? = nil
+    /// Emby's Roku-style scrub thumbnails (`index.bif`), used when there is no Jellyfin trickplay.
+    var bifPreviewURL: URL? = nil
+    /// Intro and credits ranges the server already knows (Emby chapter markers). Empty means the
+    /// player asks the Jellyfin skip sources instead.
+    var skipSegments: [SkipSegment] = []
     var versions: [MediaVersion] = []
     var isLive: Bool = false
     var liveStreamID: String? = nil

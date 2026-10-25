@@ -68,7 +68,7 @@ internal fun ImagePickerSheet(
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (failure: Throwable) {
-            error = failure.message ?: "Jellyfin didn’t return ${kind.title.lowercase()} options."
+            error = failure.message ?: "The server didn’t return ${kind.title.lowercase()} options."
         }
         loading = false
     }
@@ -84,7 +84,7 @@ internal fun ImagePickerSheet(
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (failure: Throwable) {
-                error = failure.message ?: "Jellyfin didn’t save that image."
+                error = failure.message ?: "The server didn’t save that image."
             }
             applying = null
         }
@@ -131,7 +131,7 @@ internal fun ImagePickerSheet(
                 Text("Loading ${kind.title.lowercase()}s", color = PickerCaption, fontFamily = ZelefinFont, fontSize = 14.sp)
             }
             choices.isEmpty() -> Text(
-                "Jellyfin did not return any ${kind.title.lowercase()} options.",
+                "The server did not return any ${kind.title.lowercase()} options.",
                 color = PickerCaption,
                 fontFamily = ZelefinFont,
                 fontSize = 16.sp,
@@ -147,7 +147,7 @@ internal fun ImagePickerSheet(
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
-                        "Tap an image to download it to Jellyfin and use it for this title.",
+                        "Tap an image to download it to the server and use it for this title.",
                         color = PickerCaption,
                         fontFamily = ZelefinFont,
                         fontSize = 13.sp,
@@ -196,7 +196,7 @@ internal fun ImagePickerSheet(
             ZelefinGlassAlert(
                 hazeState = hazeState,
                 title = "${applied?.title ?: "Image"} updated",
-                message = "Jellyfin saved the new image. This title shows it now.",
+                message = "The server saved the new image. This title shows it now.",
                 onDismiss = {
                     applied = null
                     onClose()

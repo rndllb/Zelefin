@@ -6,7 +6,7 @@ struct TabCustomizationView: View {
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(HomeLayoutPreferences.mergeContinueAndNextUpKey) private var mergeContinueAndNextUp = false
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
-    @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = ""
+    @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = HomeRowKind.defaultHiddenRaw
     @AppStorage(FeaturedHeroContent.storageKey) private var featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
     @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = true
     @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
@@ -80,7 +80,7 @@ struct TabCustomizationView: View {
 
             Section {
                 ForEach(AppTab.ordered(from: tabOrderRaw).filter { tab in
-                    !(session.isSiloServer && tab == .liveTV)
+                    !(session.hidesLiveTV && tab == .liveTV)
                 }) { tab in
                     if isEditing {
                         Label(tab.title, systemImage: tab.systemImage)
@@ -117,7 +117,7 @@ struct TabCustomizationView: View {
             Section {
                 Button("Reset Home Rows") {
                     homeRowOrder = HomeRowKind.defaultOrderRaw
-                    homeRowHidden = ""
+                    homeRowHidden = HomeRowKind.defaultHiddenRaw
                     featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
                 }
                 Button("Reset Tabs") {
@@ -226,7 +226,7 @@ struct TabCustomizationView: View {
 
     private var enabledDockTabCount: Int {
         AppTab.ordered(from: tabOrderRaw).filter { tab in
-            if session.isSiloServer && tab == .liveTV { return false }
+            if session.hidesLiveTV && tab == .liveTV { return false }
             return !tab.canHide || tabCustomization[sidebarVisibility: tab.customizationID] != .hidden
         }.count
     }

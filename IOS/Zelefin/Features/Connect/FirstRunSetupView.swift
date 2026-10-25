@@ -19,7 +19,7 @@ struct FirstRunSetupView: View {
 
     private var steps: [Step] {
         var list: [Step] = [.welcome, .languages, .seerr]
-        if !session.isSiloServer {
+        if !session.lacksJellyfinOnlyFeatures {
             list.append(.plugin)
         }
         return list
@@ -252,8 +252,8 @@ struct FirstRunSetupView: View {
     }
 
     private var welcomeCopy: String {
-        session.isSiloServer
-            ? "A few optional choices for this Silo server: languages and Seerr requests."
+        session.lacksJellyfinOnlyFeatures
+            ? "A few optional choices for this \(session.isEmbyServer ? "Emby" : "Silo") server: languages and Seerr requests."
             : "A few optional choices for this server: languages, Seerr requests, and the Zelefin plugin for lock-screen alerts."
     }
 

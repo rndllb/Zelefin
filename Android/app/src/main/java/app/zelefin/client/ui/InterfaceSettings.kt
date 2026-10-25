@@ -103,7 +103,7 @@ fun AppearanceSettings() {
 fun InterfaceSettings(state: ZelefinUiState) {
     val model: ZelefinModel = viewModel()
     val context = LocalContext.current
-    val silo = state.isSiloServer
+    val noLiveTv = state.isSiloServer
     LaunchedEffect(Unit) { model.pullDisplayPreferences() }
 
     val merged = HomeLayoutPreferences.mergeContinueAndNextUp
@@ -176,7 +176,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
     }
     val pinnable = TabPreferences.pinnable(state.libraries)
     val canEnableAnother = PhoneDockLimit.canEnableAnother(
-        TabPreferences.enabledTabCount(silo),
+        TabPreferences.enabledTabCount(noLiveTv),
         TabPreferences.enabledLibraryCount(state.libraries),
     )
 

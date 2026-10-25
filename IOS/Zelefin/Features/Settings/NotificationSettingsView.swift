@@ -68,7 +68,7 @@ struct NotificationSettingsView: View {
                     }
                     .disabled(isRestarting)
                 }
-            } else if !session.isSiloServer, !session.isAdministrator, !session.isReviewDemo {
+            } else if !session.lacksJellyfinOnlyFeatures, !session.isAdministrator, !session.isReviewDemo {
                 Text("Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -111,6 +111,9 @@ struct NotificationSettingsView: View {
         if session.isSiloServer {
             return "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. This Silo server cannot install that plugin, so notifications are not available here."
         }
+        if session.isEmbyServer {
+            return "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Emby cannot run that plugin, so notifications are not available here."
+        }
         if session.isReviewDemo {
             return "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Review Demo does not install plugins."
         }
@@ -118,7 +121,7 @@ struct NotificationSettingsView: View {
     }
 
     private var pluginRequiredFooter: String {
-        if session.isSiloServer {
+        if session.lacksJellyfinOnlyFeatures {
             return "Connect a Jellyfin server with the Zelefin plugin to receive notifications."
         }
         if session.isReviewDemo {

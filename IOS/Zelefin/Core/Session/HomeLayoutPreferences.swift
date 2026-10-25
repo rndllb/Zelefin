@@ -15,6 +15,8 @@ enum HomeRowKind: String, CaseIterable, Identifiable, Hashable, Sendable {
     static let orderStorageKey = "zelefin.home-row-order"
     static let hiddenStorageKey = "zelefin.home-row-hidden"
     static let defaultOrderRaw = allCases.map(\.rawValue).joined(separator: ",")
+    /// Rows a fresh install keeps off Home until the user turns them on.
+    static let defaultHiddenRaw = HomeRowKind.recommendations.rawValue
 
     var id: String { rawValue }
 

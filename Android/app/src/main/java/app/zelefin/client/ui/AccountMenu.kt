@@ -73,8 +73,8 @@ fun AccountAvatarMenu(
     var open by remember { mutableStateOf(false) }
     val anchor = remember { mutableStateOf(Rect.Zero) }
     val haze = LocalZelefinHaze.current
-    val showSessions = session?.isSiloServer != true
-    val showSyncPlay = session?.isSiloServer != true
+    val showSessions = session?.hasServerTools == true
+    val showSyncPlay = session?.hasJellyfinExtras == true
     val others = appState.accounts.filter { it.accountId != session?.accountId }
     val currentProfileId = session?.siloLink?.profileId
     val profiles = if (currentProfileId == null) emptyList() else appState.household.profiles.filter { it.id != currentProfileId }

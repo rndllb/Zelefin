@@ -179,7 +179,7 @@ enum DisplayPreferencesSync {
             tabOrderKey: UserDefaults.standard.string(forKey: AppTab.orderStorageKey) ?? AppTab.defaultOrderRaw,
             mergeContinueKey: HomeLayoutPreferences.mergeContinueAndNextUp ? "true" : "false",
             homeRowOrderKey: UserDefaults.standard.string(forKey: HomeRowKind.orderStorageKey) ?? HomeRowKind.defaultOrderRaw,
-            homeRowHiddenKey: UserDefaults.standard.string(forKey: HomeRowKind.hiddenStorageKey) ?? "",
+            homeRowHiddenKey: UserDefaults.standard.string(forKey: HomeRowKind.hiddenStorageKey) ?? HomeRowKind.defaultHiddenRaw,
             featuredHeroContentKey: FeaturedHeroContent.current.rawValue,
             libraryOrderKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.orderKey) ?? "",
             libraryHiddenKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.hiddenKey) ?? "",

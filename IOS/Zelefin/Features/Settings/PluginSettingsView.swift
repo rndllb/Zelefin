@@ -17,6 +17,8 @@ struct PluginSettingsView: View {
         Form {
             if session.isSiloServer {
                 siloSkipSection
+            } else if session.isEmbyServer {
+                embySkipSection
             } else {
                 jellyfinPluginSections
                 openSubtitlesSection
@@ -112,6 +114,18 @@ struct PluginSettingsView: View {
             Text("Skip Intro / Outro")
         } footer: {
             Text("Skip buttons appear during playback when Silo has found an intro or credits for the episode.")
+        }
+        .zelefinRowBackground()
+    }
+
+    private var embySkipSection: some View {
+        Section {
+            Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
+            Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
+        } header: {
+            Text("Skip Intro / Outro")
+        } footer: {
+            Text("Skip buttons appear during playback when Emby has marked an intro or credits, or the file has chapters named Intro or Credits. Jellyfin plugins are not available on Emby.")
         }
         .zelefinRowBackground()
     }

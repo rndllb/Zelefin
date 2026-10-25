@@ -54,11 +54,14 @@ object AccountPhoto {
         context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
     }
 
-    /** Uploads to `/UserImage` (Jellyfin 10.9+), falling back to the older `/Users/{id}/Images/Primary`. */
+    /**
+     * Uploads to `/UserImage` (Jellyfin 10.9+), falling back to the older `/Users/{id}/Images/Primary`,
+     * which is Emby's only route. Both take the JPEG as base64 text.
+     */
     suspend fun upload(session: SavedSession, jpeg: ByteArray, userId: String = session.userId) = withContext(Dispatchers.IO) {
         val body = Base64.encodeToString(jpeg, Base64.NO_WRAP)
-        val paths = listOf(
-            "/UserImage?userId=$userId",
+        val paths = listOfNotNull(
+            "/UserImage?userId=$userId".takeUnless { session.isEmbyServer },
             "/Users/$userId/Images/Primary",
         )
         var lastStatus = 0

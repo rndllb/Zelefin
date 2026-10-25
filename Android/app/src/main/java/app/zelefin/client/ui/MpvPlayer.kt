@@ -414,6 +414,7 @@ fun MpvPlayerSurface(
     val resumeAt = remember(plan.streamUrl) {
         PlaybackResumePolicy.clientStartPosition(plan.method, plan.startTimeSeconds, plan.clientOwnsPlayhead)
     }
+    val bif = rememberBifPreviews(plan)
     val currentOnProgress by rememberUpdatedState(onProgress)
     val currentOnStopped by rememberUpdatedState(onStopped)
     val currentOnClose by rememberUpdatedState(onClose)
@@ -737,9 +738,9 @@ fun MpvPlayerSurface(
                     currentOnUserTransport(PlayerDirective.Seek(time))
                     reveal()
                 },
-                trickplay = plan.trickplay,
+                trickplay = plan.trickplay ?: bif?.info,
                 trickplayUrl = { time ->
-                    val info = plan.trickplay ?: return@PlayerChrome null
+                    val info = plan.trickplay ?: return@PlayerChrome bif?.frame(time)
                     val signed = session ?: return@PlayerChrome null
                     app.zelefin.core.ArtworkUrls.trickplayTile(signed.serverUrl, plan.item.id, info, time, signed.accessToken)
                 },

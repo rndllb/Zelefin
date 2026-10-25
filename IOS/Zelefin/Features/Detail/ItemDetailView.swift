@@ -342,7 +342,7 @@ struct ItemDetailView: View {
                         onPlay: { playYouTube(item) },
                         onChange: { self.item = $0 },
                         onPlayElsewhere: session.isSiloServer ? nil : { showsPlayOnDevice = true },
-                        onSyncPlay: session.isSiloServer || !item.kind.usesVideoPlayer
+                        onSyncPlay: session.lacksJellyfinOnlyFeatures || !item.kind.usesVideoPlayer
                             ? nil
                             : { showsSyncPlay = true },
                         onRefreshMetadata: session.isAdministrator
@@ -355,7 +355,7 @@ struct ItemDetailView: View {
                         onChange: { self.item = $0 },
                         onCollections: session.isSiloServer || item.kind == .collection ? nil : { showsCollectionEditor = true },
                         onPlayElsewhere: session.isSiloServer ? nil : { showsPlayOnDevice = true },
-                        onSyncPlay: session.isSiloServer || !item.kind.usesVideoPlayer
+                        onSyncPlay: session.lacksJellyfinOnlyFeatures || !item.kind.usesVideoPlayer
                             ? nil
                             : { showsSyncPlay = true },
                         onRefreshMetadata: session.isAdministrator

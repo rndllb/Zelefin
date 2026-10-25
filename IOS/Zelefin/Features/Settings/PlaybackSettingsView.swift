@@ -44,6 +44,10 @@ struct PlaybackSettingsView: View {
 
     // MARK: Jellyfin user settings
 
+    private var serverProduct: String {
+        session.isEmbyServer ? "Emby" : "Jellyfin"
+    }
+
     private var serverAudioSection: some View {
         Section {
             Picker("Preferred Language", selection: serverBinding(\.audioLanguage)) {
@@ -65,8 +69,8 @@ struct PlaybackSettingsView: View {
         } footer: {
             Text(
                 serverPreferences?.playDefaultAudioTrack == true
-                    ? "The file’s default audio track plays even when a track in your preferred language exists. Saved to your Jellyfin account."
-                    : "Titles start on the audio track in your preferred language when the file has one. Saved to your Jellyfin account."
+                    ? "The file’s default audio track plays even when a track in your preferred language exists. Saved to your \(serverProduct) account."
+                    : "Titles start on the audio track in your preferred language when the file has one. Saved to your \(serverProduct) account."
             )
         }
         .zelefinRowBackground()
@@ -131,7 +135,7 @@ struct PlaybackSettingsView: View {
             serverPreferences = try await session.jellyfinPlaybackPreferences()
             serverPreferencesError = nil
         } catch {
-            serverPreferencesError = "Zelefin could not load your Jellyfin playback settings. \(error.localizedDescription)"
+            serverPreferencesError = "Zelefin could not load your \(serverProduct) playback settings. \(error.localizedDescription)"
         }
     }
 
@@ -140,7 +144,7 @@ struct PlaybackSettingsView: View {
             try await session.saveJellyfinPlaybackPreferences(preferences)
             serverPreferencesError = nil
         } catch {
-            serverPreferencesError = "Jellyfin did not save that change. \(error.localizedDescription)"
+            serverPreferencesError = "\(serverProduct) did not save that change. \(error.localizedDescription)"
             await loadServerPreferences()
         }
     }
@@ -188,7 +192,7 @@ struct PlaybackSettingsView: View {
         } footer: {
             Text(session.isSiloServer
                  ? "Plays a title's theme song on its page."
-                 : "Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on.")
+                 : "Plays a title's \(serverProduct) theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on.")
         }
         .zelefinRowBackground()
     }

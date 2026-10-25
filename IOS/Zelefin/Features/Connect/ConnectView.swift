@@ -53,7 +53,7 @@ struct ConnectView: View {
                 signInScroll
             }
         }
-        .zelefinAccentTint()
+        .tint(LoginPalette.periwinkle)
         .onAppear {
             if address.isEmpty { address = storedAddress }
             if username.isEmpty { username = storedUsername }
@@ -167,7 +167,7 @@ struct ConnectView: View {
                 TextField(
                     "",
                     text: $address,
-                    prompt: Text("https://media.example.com")
+                    prompt: Text(verbatim: "https://media.example.com")
                         .foregroundStyle(Color.white.opacity(0.55))
                 )
                 .font(.body.weight(.semibold))
@@ -276,7 +276,7 @@ struct ConnectView: View {
                     Text("FORGOT")
                         .font(.caption.weight(.bold))
                         .tracking(0.8)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(LoginPalette.periwinkle)
                 }
                 .buttonStyle(.plain)
             }
@@ -377,7 +377,7 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(!canSubmit || isBusy)
         .opacity((!canSubmit || isBusy) ? 0.42 : 1)
-        .accessibilityLabel(serverType == .silo ? "Sign in with Silo" : "Sign in with Jellyfin")
+        .accessibilityLabel("Sign in with \(serverType.title)")
     }
 
     private var testConnectionButton: some View {
@@ -480,7 +480,7 @@ struct ConnectView: View {
                 cancelQuickConnect()
             }
             .font(.caption.weight(.bold))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(LoginPalette.periwinkle)
             .buttonStyle(.plain)
         }
         .padding(18)
@@ -553,6 +553,11 @@ struct ConnectView: View {
             let url = try ServerURL.normalize(address)
             if await SiloAccountClient.isSiloAddress(url) {
                 testMessage = "Silo is reachable. Sign in with your Silo account."
+                testDidSucceed = true
+                return
+            }
+            if let info = try? await EmbyAPI.publicInfo(at: url), info.isEmby {
+                testMessage = "Emby is reachable."
                 testDidSucceed = true
                 return
             }

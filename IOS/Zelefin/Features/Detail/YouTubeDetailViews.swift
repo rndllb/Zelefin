@@ -602,7 +602,7 @@ struct YouTubeUserActions: View {
         if !isChannel, let onPlayElsewhere, !session.isSiloServer {
             Button("Play on Another Device…", systemImage: "tv.badge.wifi", action: onPlayElsewhere)
         }
-        if !isChannel, let onSyncPlay, !session.isSiloServer {
+        if !isChannel, let onSyncPlay, !session.lacksJellyfinOnlyFeatures {
             Button("Watch Together…", systemImage: "person.2.wave.2", action: onSyncPlay)
         }
         if let onRefreshMetadata {

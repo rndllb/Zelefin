@@ -30,6 +30,7 @@ data class JellyfinItemSnapshot(
     val unplayedItemCount: Int? = null,
     val played: Boolean = false,
     val favorite: Boolean = false,
+    val likes: Boolean? = null,
     val watchlisted: Boolean = false,
     val primaryImageTag: String? = null,
     val imageTags: Map<String, String> = emptyMap(),
@@ -109,6 +110,7 @@ object ItemMapper {
             hasClosedCaptions = snapshot.streams.any { it.type.equals("Subtitle", true) },
             hasAudioDescription = hasAudioDescription(snapshot.streams),
             isFavorite = snapshot.favorite,
+            likes = snapshot.likes,
             isWatchlisted = snapshot.watchlisted,
             mediaSourceId = snapshot.mediaSourceId,
             people = snapshot.people,
@@ -182,6 +184,29 @@ object ItemMapper {
             edge > 0 -> VideoResolution.Sd
             else -> VideoResolution.Unknown
         }
+    }
+}
+
+/** Credit wording and order shared by every server's person list. */
+object CreditRoles {
+    fun label(type: String): String = when (type.lowercase()) {
+        "director" -> "Director"
+        "writer" -> "Writer"
+        "producer" -> "Producer"
+        "creator" -> "Creator"
+        "composer" -> "Composer"
+        "gueststar" -> "Guest Star"
+        else -> "Cast"
+    }
+
+    fun rank(type: String): Int = when (type.lowercase()) {
+        "actor", "gueststar" -> 0
+        "director" -> 1
+        "creator" -> 2
+        "writer" -> 3
+        "producer" -> 4
+        "composer" -> 5
+        else -> 8
     }
 }
 

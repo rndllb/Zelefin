@@ -157,21 +157,23 @@ fun SettingsScreen(
     val model: ZelefinModel = viewModel()
     val pluginState by model.plugins.state.collectAsState()
     val scope = rememberCoroutineScope()
-    val jellyfin = !state.isSiloServer
-    val showServer = session != null && jellyfin && pluginState.isAdmin
+    val jellyfin = state.hasJellyfinExtras
+    val tools = session?.hasServerTools == true
+    val serverType = session?.serverTypeName ?: "Jellyfin"
+    val showServer = tools && pluginState.isAdmin
     var confirmScan by remember { mutableStateOf(false) }
     var scanMessage by remember(session?.accountId) { mutableStateOf<String?>(null) }
     if (confirmScan) {
         SettingsAlertDialog(
             title = "Scan all libraries?",
-            message = "Jellyfin will look for new files and refresh metadata. This can take a while on a large server.",
+            message = "$serverType will look for new files and refresh metadata. This can take a while on a large server.",
             confirmLabel = "Scan",
             onConfirm = {
                 confirmScan = false
                 scope.launch {
                     scanMessage = runCatching { model.scanLibraries() }
-                        .map { "Scan started. Jellyfin is looking for new files." }
-                        .getOrElse { it.message ?: "Jellyfin could not start the scan." }
+                        .map { "Scan started. $serverType is looking for new files." }
+                        .getOrElse { it.message ?: "$serverType could not start the scan." }
                 }
             },
             onDismiss = { confirmScan = false },
@@ -191,8 +193,10 @@ fun SettingsScreen(
         SettingsNavGroup(
             buildList {
                 add(SettingsHubItem("Notifications", "Alerts from your server", Icons.Outlined.Notifications) { onTopic("notifications") })
+                if (tools) {
+                    add(SettingsHubItem("Sessions", "Devices signed in to $serverType", Icons.Outlined.Devices) { onTopic("sessions") })
+                }
                 if (jellyfin) {
-                    add(SettingsHubItem("Sessions", "Devices signed in to Jellyfin", Icons.Outlined.Devices) { onTopic("sessions") })
                     add(SettingsHubItem("SyncPlay", "Watch together in a group", Icons.Outlined.Groups) { onTopic("syncplay") })
                 }
             },
@@ -209,16 +213,18 @@ fun SettingsScreen(
         if (showServer) {
             SettingsHeader("Server")
             SettingsNavGroup(
-                listOf(
-                    SettingsHubItem("Users", "Permissions, libraries, and parental controls", Icons.Outlined.People) { onTopic("users") },
-                    SettingsHubItem("Scheduled Tasks", "Start, cancel, and watch progress", Icons.Outlined.Schedule) { onTopic("scheduled-tasks") },
-                    SettingsHubItem("Activity Log", "Sign-ins, scans, and failures", Icons.AutoMirrored.Outlined.List) { onTopic("activity") },
-                    SettingsHubItem("Backups", "Archive and restore this server", Icons.Outlined.Inventory2) { onTopic("backups") },
-                    SettingsHubItem("Branding", "Login disclaimer and splashscreen", Icons.Outlined.Brush) { onTopic("branding") },
-                    SettingsHubItem("Scan Libraries", scanMessage ?: "Look for new files and refresh metadata", Icons.Outlined.Refresh) { confirmScan = true },
-                ),
+                buildList {
+                    add(SettingsHubItem("Users", "Permissions, libraries, and parental controls", Icons.Outlined.People) { onTopic("users") })
+                    add(SettingsHubItem("Scheduled Tasks", "Start, cancel, and watch progress", Icons.Outlined.Schedule) { onTopic("scheduled-tasks") })
+                    add(SettingsHubItem("Activity Log", "Sign-ins, scans, and failures", Icons.AutoMirrored.Outlined.List) { onTopic("activity") })
+                    if (jellyfin) {
+                        add(SettingsHubItem("Backups", "Archive and restore this server", Icons.Outlined.Inventory2) { onTopic("backups") })
+                        add(SettingsHubItem("Branding", "Login disclaimer and splashscreen", Icons.Outlined.Brush) { onTopic("branding") })
+                    }
+                    add(SettingsHubItem("Scan Libraries", scanMessage ?: "Look for new files and refresh metadata", Icons.Outlined.Refresh) { confirmScan = true })
+                },
             )
-            SettingsFooter("Administer this Jellyfin server.")
+            SettingsFooter("Administer this $serverType server.")
         }
         SettingsHeader("This Device")
         SettingsNavGroup(
@@ -255,9 +261,11 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
     val serverLabel = session?.displayServer?.takeIf { it.isNotBlank() } ?: "this server"
     val siloLink = session?.siloLink
     val household = state.household
-    val canChangePhoto = session != null && (siloLink != null || !silo)
-    val canRemovePhoto = siloLink == null && !silo && session?.userImageTag != null
-    val canChangePassword = !silo
+    val serverType = session?.serverTypeName ?: "Jellyfin"
+    val managesAccount = !silo
+    val canChangePhoto = session != null && (siloLink != null || managesAccount)
+    val canRemovePhoto = siloLink == null && managesAccount && session?.userImageTag != null
+    val canChangePassword = managesAccount
     val usersTitle = if (silo) "Accounts" else "Users"
     val addTitle = if (silo) "Add Account" else "Add User"
     var avatarSheet by remember { mutableStateOf(false) }
@@ -389,7 +397,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    "${if (silo) "Silo" else "Jellyfin"} · $serverLabel",
+                    "$serverType · $serverLabel",
                     color = IOSColors.secondaryLabel,
                     fontFamily = ZelefinFont,
                     fontSize = 15.sp,
@@ -509,7 +517,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                 }
             } else {
                 Text(
-                    "Change this password in Silo.",
+                    "Change this password in $serverType.",
                     style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
                     modifier = Modifier.padding(vertical = 14.dp),
                 )
@@ -517,7 +525,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
         }
         SettingsFooter(
             if (canChangePassword) "Updates the password for this login on $serverLabel."
-            else "Silo manages the password for this login.",
+            else "$serverType manages the password for this login.",
         )
         if (accessToken.isNotEmpty()) {
             SettingsHeader("Device Token")
@@ -617,8 +625,11 @@ private fun AddAccountTopic(state: ZelefinUiState) {
         )
     }
     SettingsFooter(
-        if (state.isSiloServer) "New accounts are added on the server you’re already using. Enter another address to add an account on a different server."
-        else "New users are added on the server you’re already using. Enter another address to add a user on a different Jellyfin server.",
+        when {
+            state.isSiloServer -> "New accounts are added on the server you’re already using. Enter another address to add an account on a different server."
+            state.isEmbyServer -> "New users are added on the server you’re already using. Enter another address to add a user on a different Emby or Jellyfin server."
+            else -> "New users are added on the server you’re already using. Enter another address to add a user on a different Jellyfin server."
+        },
     )
     SettingsHeader("Sign In")
     val canSubmit = url.isNotBlank() && username.isNotBlank() && password.isNotEmpty() && !add.busy
@@ -738,7 +749,7 @@ private fun PlaybackTopic(state: ZelefinUiState) {
     var themeVideoSound by remember { mutableStateOf(PlaybackPreferences.themeVideoSound(context)) }
     val languages = remember(context) { PlaybackLanguage.choices(context) }
 
-    JellyfinPlaybackPreferencesSections(model, languages)
+    JellyfinPlaybackPreferencesSections(model, languages, serverName = if (state.isEmbyServer) "Emby" else "Jellyfin")
 
     SettingsHeader("Quality")
     SettingsCard {
@@ -972,7 +983,7 @@ private fun SubtitleAppearanceTopic() {
  * server uses to pick the streams a title starts on.
  */
 @Composable
-private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: List<String>) {
+private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: List<String>, serverName: String) {
     val scope = rememberCoroutineScope()
     var preferences by remember { mutableStateOf<JellyfinPlaybackPreferences?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -985,7 +996,7 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
                 preferences = it
                 error = null
             }
-            .onFailure { error = "Zelefin could not load your Jellyfin playback settings. ${it.message.orEmpty()}".trim() }
+            .onFailure { error = "Zelefin could not load your $serverName playback settings. ${it.message.orEmpty()}".trim() }
         loading = false
     }
     LaunchedEffect(Unit) { load() }
@@ -999,7 +1010,7 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
             runCatching { model.saveJellyfinPlaybackPreferences(next) }
                 .onSuccess { error = null }
                 .onFailure {
-                    error = "Jellyfin did not save that change. ${it.message.orEmpty()}".trim()
+                    error = "$serverName did not save that change. ${it.message.orEmpty()}".trim()
                     load()
                 }
         }
@@ -1033,9 +1044,9 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
     }
     SettingsFooter(
         if (shown.playDefaultAudioTrack) {
-            "The file’s default audio track plays even when a track in your preferred language exists. Saved to your Jellyfin account."
+            "The file’s default audio track plays even when a track in your preferred language exists. Saved to your $serverName account."
         } else {
-            "Titles start on the audio track in your preferred language when the file has one. Saved to your Jellyfin account."
+            "Titles start on the audio track in your preferred language when the file has one. Saved to your $serverName account."
         },
     )
 
@@ -1162,7 +1173,8 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
 
     if (!pluginState.companionAvailable) {
         val silo = state.isSiloServer
-        val canInstall = !silo && pluginState.isAdmin
+        val emby = state.isEmbyServer
+        val canInstall = state.hasJellyfinExtras && pluginState.isAdmin
         SettingsCard {
             PluginStatusRow(
                 "Zelefin plugin",
@@ -1173,6 +1185,8 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
                 when {
                     silo ->
                         "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Silo does not run Jellyfin plugins, so notifications are not available here."
+                    emby ->
+                        "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Emby does not run Jellyfin plugins, so notifications are not available here."
                     pluginState.detecting -> "Checking this server for the Zelefin plugin…"
                     else ->
                         "Install the Zelefin plugin on this Jellyfin server to get lock-screen alerts. The plugin watches the library and can notify this phone when titles are added, a stream starts, someone comes online, a scheduled task begins, or a Seerr request comes in — including while Zelefin is closed."
@@ -1198,7 +1212,7 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
                         onClick = plugins::restartJellyfin,
                     )
                 }
-            } else if (!silo && !pluginState.detecting) {
+            } else if (!silo && !emby && !pluginState.detecting) {
                 Text(
                     "Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account.",
                     color = Caption,
@@ -1219,7 +1233,7 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
         }
         SettingsFooter(
             when {
-                silo -> "Connect a Jellyfin server with the Zelefin plugin to receive notifications."
+                silo || emby -> "Connect a Jellyfin server with the Zelefin plugin to receive notifications."
                 canInstall -> "After install, restart Jellyfin so the plugin can load. You do not set up Firebase or paste a key on the server."
                 else -> "In Jellyfin, open Dashboard → Plugins → Catalog, install Zelefin, then restart Jellyfin. You do not set up Firebase or paste a key on the server."
             },
@@ -1271,9 +1285,10 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
     LaunchedEffect(Unit) { plugins.refresh() }
     val jellyfin = pluginState.jellyfin
     val silo = state.isSiloServer
-    SettingsHeader(if (silo) "Skipping" else "Intro Skipper")
+    val emby = state.isEmbyServer
+    SettingsHeader(if (silo || emby) "Skipping" else "Intro Skipper")
     SettingsCard {
-        if (!silo) {
+        if (!silo && !emby) {
             PluginStatusRow("Skip Intro / Outro", jellyfin.introSkipper)
             CardDivider()
         }
@@ -1282,19 +1297,21 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
         SettingsToggle("Automatically Skip Credits", pluginState.autoSkipCredits, plugins::setAutoSkipCredits)
     }
     SettingsFooter(
-        if (silo) {
-            "Skip buttons appear during playback when Silo has intro and credit markers for the title. Silo does not run Jellyfin plugins."
-        } else {
-            "Skip buttons appear during playback when the plugin is installed on this Jellyfin server."
+        when {
+            silo -> "Skip buttons appear during playback when Silo has intro and credit markers for the title. Silo does not run Jellyfin plugins."
+            emby -> "Skip buttons appear during playback when Emby has detected the intro or credits of the title. Emby does not run Jellyfin plugins."
+            else -> "Skip buttons appear during playback when the plugin is installed on this Jellyfin server."
         },
     )
-    if (!silo) JellyfinServerPlugins(state, jellyfin)
+    if (!silo && !emby) JellyfinServerPlugins(state, jellyfin)
 
     SettingsHeader("Seerr")
     SeerrSignInCard(state, pluginState, plugins)
     SettingsFooter(
         if (silo) {
             "Jellyseerr or Seerr lets you request movies and shows that are missing from Silo. Use your Seerr sign-in. Search for a title, then tap Request."
+        } else if (emby) {
+            "Jellyseerr or Seerr lets you request movies and shows that are missing from Emby. Use your Emby username and password. Search for a title, then tap Request."
         } else {
             "Jellyseerr or Seerr lets you request movies and shows that are missing from Jellyfin. Use your Jellyfin username and password. Search for a title, then tap Request."
         },
@@ -1546,7 +1563,7 @@ private fun MetadataTopic() {
 @Composable
 private fun SessionsTopic(state: ZelefinUiState) {
     val session = state.session
-    if (session != null && !session.isSiloServer) {
+    if (session != null && session.hasServerTools) {
         SessionsPanel(session)
         return
     }
@@ -1576,7 +1593,14 @@ private fun AboutTopic(state: ZelefinUiState) {
     SettingsCard {
         InfoLine("Version", AppVersionLabel)
         InfoLine("Server", state.session?.displayServer ?: "—")
-        InfoLine("Server Type", if (state.isSiloServer) "Silo (Jellyfin API)" else "Jellyfin")
+        InfoLine(
+            "Server Type",
+            when {
+                state.isSiloServer -> "Silo (Jellyfin API)"
+                state.isEmbyServer -> "Emby"
+                else -> "Jellyfin"
+            },
+        )
     }
     SettingsFooter("A native Jellyfin client for Android.")
     Spacer(Modifier.height(14.dp))

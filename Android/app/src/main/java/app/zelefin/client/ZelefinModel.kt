@@ -12,6 +12,53 @@ import app.zelefin.client.network.ServerRoute
 import app.zelefin.client.session.AccountPhoto
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.zelefin.client.emby.EmbyApi
+import app.zelefin.client.emby.EmbyLibrary
+import app.zelefin.client.emby.EmbySocket
+import app.zelefin.client.emby.EmbySocketEvent
+import app.zelefin.client.emby.accountRights
+import app.zelefin.client.emby.changeOwnPassword as changeEmbyPassword
+import app.zelefin.client.emby.activityLog
+import app.zelefin.client.emby.adminMediaFolders
+import app.zelefin.client.emby.adminUser
+import app.zelefin.client.emby.adminUsers
+import app.zelefin.client.emby.addToCollection
+import app.zelefin.client.emby.applyIdentify
+import app.zelefin.client.emby.collectionEditor
+import app.zelefin.client.emby.createCollection
+import app.zelefin.client.emby.currentAccount
+import app.zelefin.client.emby.deleteLibraryItem
+import app.zelefin.client.emby.deleteUserImage
+import app.zelefin.client.emby.displayPreferenceCustomPrefs
+import app.zelefin.client.emby.downloadRemoteArtwork
+import app.zelefin.client.emby.parentalRatings
+import app.zelefin.client.emby.playOnSession
+import app.zelefin.client.emby.playbackSessions
+import app.zelefin.client.emby.refreshItemMetadata
+import app.zelefin.client.emby.remoteArtwork
+import app.zelefin.client.emby.removeFromCollection
+import app.zelefin.client.emby.renameUser
+import app.zelefin.client.emby.resetUserPassword
+import app.zelefin.client.emby.scanLibraries
+import app.zelefin.client.emby.scheduledTasks
+import app.zelefin.client.emby.searchIdentify
+import app.zelefin.client.emby.sendSessionControl
+import app.zelefin.client.emby.sendSessionMessage
+import app.zelefin.client.emby.setUserPassword
+import app.zelefin.client.emby.setWatchlisted
+import app.zelefin.client.emby.startScheduledTask
+import app.zelefin.client.emby.stopScheduledTask
+import app.zelefin.client.emby.updateDisplayPreferenceCustomPrefs
+import app.zelefin.client.emby.updateItemMetadata
+import app.zelefin.client.emby.updateUserPolicy
+import app.zelefin.client.emby.watchlistItems
+import app.zelefin.client.jellyfin.SessionControl
+import app.zelefin.client.jellyfin.UserPolicyDraft
+import app.zelefin.client.jellyfin.sendSessionControl
+import app.zelefin.client.jellyfin.sendSessionMessage
+import app.zelefin.client.jellyfin.setLikes
+import app.zelefin.client.session.SessionDisplayMessage
+import app.zelefin.client.session.SessionMessageCenter
 import app.zelefin.client.jellyfin.CollectionEditor
 import app.zelefin.client.jellyfin.JellyfinLibrary
 import app.zelefin.client.jellyfin.JellyfinScope
@@ -76,7 +123,10 @@ import app.zelefin.client.silo.SiloHousehold
 import app.zelefin.client.silo.SiloNotice
 import app.zelefin.client.silo.SiloPinPrompt
 import app.zelefin.client.silo.SiloProfilePicker
+import app.zelefin.core.EmbyAuthResult
+import app.zelefin.core.EmbyDetection
 import app.zelefin.core.GatewaySecrets
+import app.zelefin.core.ServerKind
 import app.zelefin.core.SiloAccount
 import app.zelefin.core.SiloAvatarPreset
 import app.zelefin.core.SiloProfile
@@ -127,6 +177,10 @@ private const val SyncHero = "featuredHeroContent"
 private const val SyncLibraryOrder = "libraryOrder"
 private const val SyncLibraryHidden = "libraryHidden"
 private const val SyncLibraryPageHidden = "libraryPageHidden"
+
+private const val EmbyUnsupported = "Zelefin doesn't support this on Emby yet."
+
+private typealias BitrateMeasure = suspend (Int, Long, NetworkTransport) -> BitrateProbeResult?
 
 data class LibraryRoom(
     val id: String,
@@ -192,6 +246,11 @@ data class ZelefinUiState(
 ) {
     /** Signed in through Silo's Jellyfin-compatible API, which leaves several Jellyfin features out. */
     val isSiloServer: Boolean get() = session?.isSiloServer == true
+
+    /** Signed in to Emby through its own API; Jellyfin-only features are hidden. */
+    val isEmbyServer: Boolean get() = session?.isEmbyServer == true
+
+    val hasJellyfinExtras: Boolean get() = session?.hasJellyfinExtras == true
 }
 
 sealed interface PlayerDirective {
@@ -229,11 +288,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         scope = viewModelScope,
         session = { _state.value.session },
         allSessions = { vault.accounts() },
-        tmdbCatalog = { jellyfinClient().tmdbCatalog(userUuid()) },
+        tmdbCatalog = { pick({ it.tmdbCatalog() }, { it.tmdbCatalog(userUuid()) }) },
+        emby = { embyClient() },
     )
     val state: StateFlow<ZelefinUiState> = _state.asStateFlow()
 
     private var jellyfin: JellyfinLibrary? = null
+    private var emby: EmbyLibrary? = null
     private var movieCatalogJob: Job? = null
     private var showCatalogJob: Job? = null
     private var overviewJob: Job? = null
@@ -253,6 +314,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private val homeNetworks = HomeNetworkStore(application)
     private var routeJob: Job? = null
     private val sessionSocket = SessionSocket(application, viewModelScope)
+    private val embySocket = EmbySocket(viewModelScope)
+    /** The open player's last reported state, for Emby's PlayPause toggle. */
+    private var playerPaused = false
     private val _playerDirectives = MutableSharedFlow<PlayerDirective>(replay = 1, extraBufferCapacity = 8)
     val playerDirectives: SharedFlow<PlayerDirective> = _playerDirectives.asSharedFlow()
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -357,6 +421,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 _state.update { it.copy(busy = false, message = "Silo is reachable.") }
                 return@launch
             }
+            if (isEmbyAddress(url, required = false)) {
+                _state.update { it.copy(busy = false, message = "Emby is reachable.") }
+                return@launch
+            }
             val library = JellyfinLibrary(getApplication(), url)
             val reachability = library.probe()
             val message = when {
@@ -371,16 +439,35 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun signIn(rawUrl: String, username: String, password: String, type: SignInServerType) {
         launch("Signing in…") {
             val url = ServerUrl.normalize(rawUrl)
-            val route = SignInRouting.route(type, SiloAccountClient.isSiloAddress(url)) { isSiloCompatAddress(url) }
+            val route = SignInRouting.route(
+                type,
+                SiloAccountClient.isSiloAddress(url),
+                isSiloCompatAddress = { isSiloCompatAddress(url) },
+                isEmbyAddress = { isEmbyAddress(url, required = type == SignInServerType.Emby) },
+            )
             when (route) {
                 SignInRoute.SiloNative -> {
                     openSiloPicker(url, username.trim(), password)
                     _state.update { it.copy(busy = false, message = null) }
                 }
                 SignInRoute.Jellyfin -> signInJellyfin(url, username, password)
+                SignInRoute.Emby -> signInEmby(url, username, password)
                 is SignInRoute.Refused -> throw ZelefinException.server(route.message)
             }
         }
+    }
+
+    /**
+     * Emby's public info has no `ProductName`. When [required], an address that does not answer
+     * reports why instead of reading as "not Emby".
+     */
+    private suspend fun isEmbyAddress(url: String, required: Boolean): Boolean {
+        val info = EmbyApi.publicInfo(url)
+        if (info == null && required) {
+            val reachability = EmbyLibrary(getApplication(), url).probe()
+            if (!reachability.isReachable) throw ZelefinException.server(reachability.message)
+        }
+        return info != null && EmbyDetection.isEmby(info)
     }
 
     /** Silo's Jellyfin-compatible API, by its branding; an unreachable server reports why instead. */
@@ -665,6 +752,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         quickConnectJob = viewModelScope.launch {
             runCatching {
                 val url = ServerUrl.normalize(rawUrl)
+                if (isEmbyAddress(url, required = false)) throw ZelefinException.server(SignInRouting.EmbyAddressMessage)
                 val library = JellyfinLibrary(getApplication(), url)
                 if (!library.quickConnectEnabled()) throw ZelefinException.quickConnectDisabled()
                 val handshake = library.startQuickConnect()
@@ -733,7 +821,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(search = it.search.copy(term = term, loading = true)) }
         searchJob = viewModelScope.launch {
             kotlinx.coroutines.delay(SearchDebounceMillis)
-            val result = runCatching { jellyfinClient().searchHints(userUuid(), trimmed) }
+            val result = runCatching { pick({ it.searchHints(trimmed) }, { it.searchHints(userUuid(), trimmed) }) }
             result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             val hits = result.getOrDefault(emptyList())
             _state.update { state ->
@@ -772,7 +860,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.search.genres.isNotEmpty()) return
         _state.update { it.copy(search = it.search.copy(genresLoading = true)) }
         viewModelScope.launch {
-            val genres = runCatching { jellyfinClient().genres(userUuid(), limit = 48) }
+            val genres = runCatching { pick({ it.genres(limit = 48) }, { it.genres(userUuid(), limit = 48) }) }
                 .getOrDefault(emptyList()).collapsedGenres().take(24)
             _state.update { it.copy(search = it.search.copy(genres = genres, genresLoading = false)) }
         }
@@ -827,13 +915,27 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     /** Other Jellyfin clients this user may control, leaving this phone out (iOS `PlayOnDeviceSheet.targets`). */
     suspend fun remotePlayTargets(): List<RemoteSession> {
-        val client = jellyfinClient()
-        val me = client.reportedDeviceId
-        return client.playbackSessions(userUuid()).filter { it.canControl && !it.isThisDevice(me) }
+        val me = thisDeviceId()
+        val sessions = pick({ it.playbackSessions(controllableOnly = true) }, { it.playbackSessions(userUuid()) })
+        return sessions.filter { it.canControl && !it.isThisDevice(me) }
     }
 
     suspend fun playOnRemote(session: RemoteSession, item: MediaItem) {
-        jellyfinClient().playOnSession(session.id, item)
+        pick({ it.playOnSession(session.id, item) }, { it.playOnSession(session.id, item) })
+    }
+
+    /** Everyone connected to this server, for Settings → Sessions. */
+    suspend fun remoteSessions(): List<RemoteSession> = pick({ it.playbackSessions() }, { it.playbackSessions() })
+
+    fun thisDeviceId(): String? = if (_state.value.isEmbyServer) emby?.api?.deviceId else runCatching { jellyfin?.reportedDeviceId }.getOrNull()
+
+    suspend fun sendSessionControl(session: RemoteSession, control: SessionControl) {
+        val userId = _state.value.session?.userId
+        pick({ it.sendSessionControl(session, control) }, { it.sendSessionControl(session, control, userId) })
+    }
+
+    suspend fun sendSessionMessage(sessionId: String, text: String) {
+        pick({ it.sendSessionMessage(sessionId, text) }, { it.sendSessionMessage(sessionId, text) })
     }
 
     suspend fun syncPlayGroups(): List<SyncPlayGroup> = jellyfinClient().syncPlayGroups()
@@ -871,7 +973,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun refreshMetadata(item: MediaItem) {
-        jellyfinClient().refreshItemMetadata(item.id)
+        pick({ it.refreshItemMetadata(item.id) }, { it.refreshItemMetadata(item.id) })
         viewModelScope.launch {
             kotlinx.coroutines.delay(4_000)
             refreshDetail()
@@ -879,16 +981,16 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun remoteArtwork(item: MediaItem, kind: RemoteArtworkKind): List<RemoteImageChoice> =
-        jellyfinClient().remoteArtwork(item.id, kind)
+        pick({ it.remoteArtwork(item.id, kind) }, { it.remoteArtwork(item.id, kind) })
 
     suspend fun applyRemoteArtwork(item: MediaItem, kind: RemoteArtworkKind, choice: RemoteImageChoice) {
-        jellyfinClient().downloadRemoteArtwork(item.id, kind, choice.url)
+        pick({ it.downloadRemoteArtwork(item.id, kind, choice.url) }, { it.downloadRemoteArtwork(item.id, kind, choice.url) })
         refreshDetail()
     }
 
     /** Deletes the title, leaves its page, and refreshes Home and any open grids. */
     suspend fun deleteFromLibrary(item: MediaItem) {
-        jellyfinClient().deleteLibraryItem(item.id)
+        pick({ it.deleteLibraryItem(item.id) }, { it.deleteLibraryItem(item.id) })
         val showing = _state.value.screen as? Screen.Detail
         if (showing != null && (showing.id == item.id || _state.value.detail?.item?.id == item.id)) back()
         _state.update { state ->
@@ -897,7 +999,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         refreshLibrary()
     }
 
-    fun sessionsClient(): JellyfinLibrary? = jellyfin.takeIf { _state.value.session?.isSiloServer == false }
+    fun sessionsClient(): JellyfinLibrary? = jellyfin.takeIf { _state.value.hasJellyfinExtras }
 
     /** Opens the title from a tapped alert (iOS `DeepLinkStore.openLibraryItem`). */
     fun openPushItem(rawId: String) {
@@ -986,6 +1088,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun loadPerson(id: String): app.zelefin.core.CreditPerson? {
         val session = _state.value.session ?: return null
+        embyClient()?.let { return runCatching { it.person(id) }.getOrNull() }
         val userId = runCatching { UUID.fromString(session.userId) }.getOrNull() ?: return null
         return runCatching { jellyfinClient().person(userId, id) }.getOrNull()
     }
@@ -1006,20 +1109,23 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private suspend fun fillCastPhotos(target: String, people: List<app.zelefin.core.CreditPerson>) {
         val session = _state.value.session ?: return
         if (people.isEmpty()) return
-        val userId = runCatching { UUID.fromString(session.userId) }.getOrNull() ?: return
-        runCatching {
-            jellyfinClient().peopleWithPhotos(userId, people) { updated ->
-                _state.update { state ->
-                    val current = state.detail
-                    if ((state.screen as? Screen.Detail)?.id == target && current?.item?.id == target) {
-                        state.copy(detail = current.copy(item = current.item.copy(people = updated)))
-                    } else {
-                        state
-                    }
+        val onBatch: suspend (List<app.zelefin.core.CreditPerson>) -> Unit = { updated ->
+            _state.update { state ->
+                val current = state.detail
+                if ((state.screen as? Screen.Detail)?.id == target && current?.item?.id == target) {
+                    state.copy(detail = current.copy(item = current.item.copy(people = updated)))
+                } else {
+                    state
                 }
-                _state.value.detail?.takeIf { it.item.id == target }?.let { snapshots.saveDetail(session, it) }
             }
+            _state.value.detail?.takeIf { it.item.id == target }?.let { snapshots.saveDetail(session, it) }
         }
+        embyClient()?.let { library ->
+            runCatching { library.peopleWithPhotos(people, onBatch) }
+            return
+        }
+        val userId = runCatching { UUID.fromString(session.userId) }.getOrNull() ?: return
+        runCatching { jellyfinClient().peopleWithPhotos(userId, people, onBatch) }
     }
 
     private fun showDetail(target: String, returnTo: Screen) {
@@ -1038,7 +1144,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     launch { fillCastPhotos(target, detail.item.people) }
                     if ((_state.value.screen as? Screen.Detail)?.id == target) {
                         val collections = runCatching {
-                            jellyfinClient().collectionsContaining(UUID.fromString(_state.value.session?.userId), target)
+                            pick(
+                                { it.collectionsContaining(target) },
+                                { it.collectionsContaining(UUID.fromString(_state.value.session?.userId), target) },
+                            )
                         }.getOrDefault(emptyList())
                         _state.update { state ->
                             val current = state.detail
@@ -1079,7 +1188,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val played = !item.isWatched
         viewModelScope.launch {
             runCatching {
-                if (played) jellyfinClient().markPlayed(item.id) else jellyfinClient().markUnplayed(item.id)
+                pick(
+                    { if (played) it.markPlayed(item.id) else it.markUnplayed(item.id) },
+                    { if (played) it.markPlayed(item.id) else it.markUnplayed(item.id) },
+                )
             }.onSuccess {
                 _state.update { state -> state.withItem(item.id) { copy(isPlayed = played) } }
                 refreshLibrary()
@@ -1090,10 +1202,21 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun toggleFavorite(item: MediaItem) {
         val favorite = !item.isFavorite
         viewModelScope.launch {
-            runCatching { jellyfinClient().setFavorite(item.id, favorite) }.onSuccess {
+            runCatching { pick({ it.setFavorite(item.id, favorite) }, { it.setFavorite(item.id, favorite) }) }.onSuccess {
                 _state.update { state -> state.withItem(item.id) { copy(isFavorite = favorite) } }
                 refreshLibrary()
             }.onFailure { error -> _state.update { it.copy(message = error.message) } }
+        }
+    }
+
+    /** Like, then clear: the same single toggle as iOS. Silo rejects ratings, and Emby 4.10 accepts them but stores nothing. */
+    fun toggleLike(item: MediaItem) {
+        if (!_state.value.hasJellyfinExtras) return
+        val likes = if (item.likes == true) null else true
+        viewModelScope.launch {
+            runCatching { jellyfinClient().setLikes(userUuid(), item.id, likes) }
+                .onSuccess { _state.update { state -> state.withItem(item.id) { copy(likes = likes) } } }
+                .onFailure { error -> _state.update { it.copy(message = error.message) } }
         }
     }
 
@@ -1101,7 +1224,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.isSiloServer) return
         val watchlisted = !item.isWatchlisted
         viewModelScope.launch {
-            runCatching { jellyfinClient().setWatchlisted(userUuid(), item.id, watchlisted) }
+            runCatching { pick({ it.setWatchlisted(item.id, watchlisted) }, { it.setWatchlisted(userUuid(), item.id, watchlisted) }) }
                 .onSuccess {
                     _state.update { state -> state.withItem(item.id) { copy(isWatchlisted = watchlisted) } }
                     if (_state.value.libraryPath.lastOrNull() == LibraryRoute.Watchlist ||
@@ -1117,7 +1240,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun pickRandomTitle() {
         viewModelScope.launch {
             runCatching {
-                jellyfinClient().randomTitle(userUuid()) ?: throw ZelefinException.server("Nothing to pick yet.")
+                pick({ it.randomTitle() }, { it.randomTitle(userUuid()) }) ?: throw ZelefinException.server("Nothing to pick yet.")
             }.onSuccess { openItem(it) }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
@@ -1126,15 +1249,15 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    suspend fun identifyHits(item: MediaItem) = jellyfinClient().searchIdentify(item)
+    suspend fun identifyHits(item: MediaItem) = pick({ it.searchIdentify(item) }, { it.searchIdentify(item) })
 
     suspend fun applyIdentify(item: MediaItem, hit: app.zelefin.client.jellyfin.RemoteIdentifyHit) {
-        jellyfinClient().applyIdentify(item.id, hit)
+        pick({ it.applyIdentify(item.id, hit) }, { it.applyIdentify(item.id, hit) })
         refreshDetail()
     }
 
     suspend fun saveItemMetadata(item: MediaItem, draft: app.zelefin.client.jellyfin.ItemMetadataDraft) {
-        jellyfinClient().updateItemMetadata(userUuid(), item.id, draft)
+        pick({ it.updateItemMetadata(item.id, draft) }, { it.updateItemMetadata(userUuid(), item.id, draft) })
         refreshDetail()
     }
 
@@ -1146,7 +1269,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     MediaKind.Series, MediaKind.Season -> {
                         val loaded = fromDetail?.takeIf {
                             it.item.id == item.id || it.item.id == item.seriesId || it.episodes.any { episode -> episode.id == item.id }
-                        } ?: jellyfinClient().detail(userUuid(), item.seriesId ?: item.id)
+                        } ?: loadDetail(item.seriesId ?: item.id)
                         val all = loaded?.episodes.orEmpty()
                         if (item.kind == MediaKind.Season) all.filter { it.seasonIndex == item.seasonIndex } else all
                     }
@@ -1163,23 +1286,28 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     suspend fun loadCollections(itemId: String): CollectionEditor {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
         if (session.isSiloServer) throw ZelefinException.server("Collections are edited in Silo.")
-        return jellyfinClient().collectionEditor(UUID.fromString(session.userId), itemId)
+        return pick({ it.collectionEditor(itemId) }, { it.collectionEditor(UUID.fromString(session.userId), itemId) })
     }
 
     suspend fun collectionPosterMembers(parentId: String): List<MediaItem> {
         val session = _state.value.session ?: return emptyList()
         return runCatching {
-            jellyfinClient().collectionPosterMembers(UUID.fromString(session.userId), parentId)
+            pick(
+                { it.collectionPosterMembers(parentId) },
+                { it.collectionPosterMembers(UUID.fromString(session.userId), parentId) },
+            )
         }.getOrDefault(emptyList())
     }
 
     suspend fun setCollectionMember(collectionId: String, itemId: String, member: Boolean) {
-        val client = jellyfinClient()
-        if (member) client.addToCollection(collectionId, itemId) else client.removeFromCollection(collectionId, itemId)
+        pick(
+            { if (member) it.addToCollection(collectionId, itemId) else it.removeFromCollection(collectionId, itemId) },
+            { if (member) it.addToCollection(collectionId, itemId) else it.removeFromCollection(collectionId, itemId) },
+        )
     }
 
     suspend fun createCollection(name: String, itemId: String) {
-        jellyfinClient().createCollection(name, itemId)
+        pick({ it.createCollection(name, itemId) }, { it.createCollection(name, itemId) })
     }
 
     /** [bitrateOverride] pins the stream cap (live adaptive steps); null lets Playback settings decide. */
@@ -1208,19 +1336,32 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 LocalPlayback.None -> Unit
             }
             val appContext = getApplication<Application>()
-            val userId = UUID.fromString(_state.value.session?.userId)
-            val client = jellyfinClient()
-            if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client)
             // The user's account settings (Settings → Playback) decide the starting streams.
-            val plan = client.playback(
-                userId,
-                target,
-                PlaybackPreferences.AUTOMATIC,
-                PlaybackPreferences.AUTOMATIC,
-                preferSdh = PlaybackPreferences.preferSdh(appContext),
-            ) { sourceBitrate ->
-                bitrateOverride ?: streamingCap(appContext, client, sourceBitrate)
-            }
+            val plan = pick(
+                { client ->
+                    if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client::measureBitrate)
+                    client.playback(
+                        target,
+                        PlaybackPreferences.AUTOMATIC,
+                        PlaybackPreferences.AUTOMATIC,
+                        preferSdh = PlaybackPreferences.preferSdh(appContext),
+                    ) { sourceBitrate ->
+                        bitrateOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
+                    }
+                },
+                { client ->
+                    if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client::measureBitrate)
+                    client.playback(
+                        UUID.fromString(_state.value.session?.userId),
+                        target,
+                        PlaybackPreferences.AUTOMATIC,
+                        PlaybackPreferences.AUTOMATIC,
+                        preferSdh = PlaybackPreferences.preferSdh(appContext),
+                    ) { sourceBitrate ->
+                        bitrateOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
+                    }
+                },
+            )
             val reported = PlaybackResumePolicy.reportStartPosition(0.0, plan.startTimeSeconds)
             activePlan = plan
             lastReported = reported
@@ -1240,13 +1381,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
      * That wait is the long pause before the player appears. A measured remote link can still
      * cap, and a quality the user picked still wins.
      */
-    private fun streamingCap(context: Context, client: JellyfinLibrary, sourceBitrate: Int?): Int {
+    private fun streamingCap(context: Context, measure: BitrateMeasure, sourceBitrate: Int?): Int {
         val selected = PlaybackPreferences.selectedQuality(context)
         if (selected == PlaybackQuality.Auto && ServerUrl.isInternalHost(playbackHost())) {
             return PlaybackQuality.MAX_BITRATE
         }
         viewModelScope.launch {
-            runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, client::measureBitrate) }
+            runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, measure) }
         }
         return AdaptiveBitrateStore.resolvedBitsPerSecond(context, sourceBitrate)
     }
@@ -1256,10 +1397,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
      * nothing measured Auto Direct Plays the original, which is what froze on a weak hotspot.
      * Costs at most the 4s probe timeout, once per network every 90s.
      */
-    private suspend fun measureConnectionIfUnknown(context: Context, client: JellyfinLibrary) {
+    private suspend fun measureConnectionIfUnknown(context: Context, measure: BitrateMeasure) {
         if (PlaybackPreferences.selectedQuality(context) != PlaybackQuality.Auto) return
         if (ServerUrl.isInternalHost(playbackHost())) return
-        runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, client::measureBitrate) }
+        runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, measure) }
     }
 
     private fun playbackHost(): String {
@@ -1316,8 +1457,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val context = getApplication<Application>()
         if (!PlaybackPreferences.themeSongs(context) && !PlaybackPreferences.themeVideos(context)) return null
         val session = _state.value.session ?: return null
-        val media = runCatching { jellyfinClient().themeMedia(itemId, UUID.fromString(session.userId)) }.getOrNull()
-            ?: return null
+        val media = runCatching {
+            pick({ it.themeMedia(itemId) }, { it.themeMedia(itemId, UUID.fromString(session.userId)) })
+        }.getOrNull() ?: return null
         val videoUrl = media.videoUrl?.takeIf { PlaybackPreferences.themeVideos(context) }?.let { ServerRoute.rewrite(it) }
         // As in Jellyfin, a theme video is preferred and the song does not play alongside it.
         val songUrl = media.songUrl?.takeIf { videoUrl == null && PlaybackPreferences.themeSongs(context) }
@@ -1335,7 +1477,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val transport = NetworkPathSnapshot.current(getApplication()).transport
         val size = AdaptiveBitratePolicy.SETTINGS_SAMPLE_BYTES
         val timeout = AdaptiveBitratePolicy.SETTINGS_PROBE_TIMEOUT_MILLIS
-        val result = jellyfinClient().measureBitrate(size, timeout, transport) ?: throw ZelefinException.server(
+        val result = pick({ it.measureBitrate(size, timeout, transport) }, { it.measureBitrate(size, timeout, transport) }) ?: throw ZelefinException.server(
             "Zelefin could not download the demo file from this server. Check the connection and try again.",
         )
         AdaptiveBitrateStore.record(result, NetworkPathSnapshot.current(getApplication()))
@@ -1350,19 +1492,22 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val session = _state.value.session ?: return
         viewModelScope.launch {
             runCatching {
-                jellyfinClient().applyPlaybackLanguages(UUID.fromString(session.userId), audioCode, subtitleCode)
+                pick(
+                    { it.applyPlaybackLanguages(audioCode, subtitleCode) },
+                    { it.applyPlaybackLanguages(UUID.fromString(session.userId), audioCode, subtitleCode) },
+                )
             }
         }
     }
 
-    /** Admin-only: starts a scan of every Jellyfin library. */
+    /** Admin-only: starts a scan of every library. */
     suspend fun scanLibraries() {
         val session = _state.value.session
-        if (session == null || session.isSiloServer) throw ZelefinException.server("Sign in to a Jellyfin server to scan its libraries.")
-        jellyfinClient().scanLibraries()
+        if (session == null || !session.hasServerTools) throw ZelefinException.server("Sign in to a Jellyfin or Emby server to scan its libraries.")
+        pick({ it.scanLibraries() }, { it.scanLibraries() })
     }
 
-    suspend fun activityLog() = jellyfinClient().activityLog()
+    suspend fun activityLog() = pick({ it.activityLog() }, { it.activityLog() })
     suspend fun serverBackups() = jellyfinClient().serverBackups()
     suspend fun createServerBackup() = jellyfinClient().createServerBackup()
     suspend fun restoreServerBackup(backup: app.zelefin.client.jellyfin.ServerBackup) = jellyfinClient().restoreServerBackup(backup)
@@ -1370,16 +1515,22 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     suspend fun updateServerBranding(branding: app.zelefin.client.jellyfin.ServerBranding) = jellyfinClient().updateServerBranding(branding)
     suspend fun uploadSplashscreen(jpeg: ByteArray) = jellyfinClient().uploadSplashscreen(jpeg)
     suspend fun deleteSplashscreen() = jellyfinClient().deleteSplashscreen()
-    suspend fun scheduledTasks() = jellyfinClient().scheduledTasks()
-    suspend fun startScheduledTask(id: String) = jellyfinClient().startScheduledTask(id)
-    suspend fun stopScheduledTask(id: String) = jellyfinClient().stopScheduledTask(id)
-    suspend fun adminUsers() = jellyfinClient().adminUsers()
-    suspend fun adminUser(id: String) = jellyfinClient().adminUser(id)
-    suspend fun adminMediaFolders() = jellyfinClient().adminMediaFolders()
-    suspend fun parentalRatings() = jellyfinClient().parentalRatings()
-    suspend fun updateUserPolicy(userId: String, policy: org.jellyfin.sdk.model.api.UserPolicy) = jellyfinClient().updateUserPolicy(userId, policy)
+    suspend fun scheduledTasks() = pick({ it.scheduledTasks() }, { it.scheduledTasks() })
+    suspend fun startScheduledTask(id: String) {
+        pick({ it.startScheduledTask(id) }, { it.startScheduledTask(id) })
+    }
+    suspend fun stopScheduledTask(id: String) {
+        pick({ it.stopScheduledTask(id) }, { it.stopScheduledTask(id) })
+    }
+    suspend fun adminUsers() = pick({ it.adminUsers() }, { it.adminUsers() })
+    suspend fun adminUser(id: String) = pick({ it.adminUser(id) }, { it.adminUser(id) })
+    suspend fun adminMediaFolders() = pick({ it.adminMediaFolders() }, { it.adminMediaFolders() })
+    suspend fun parentalRatings() = pick({ it.parentalRatings() }, { it.parentalRatings() })
+    suspend fun updateUserPolicy(userId: String, draft: UserPolicyDraft) {
+        pick({ it.updateUserPolicy(userId, draft) }, { it.updateUserPolicy(userId, draft) })
+    }
     suspend fun renameUser(account: app.zelefin.client.jellyfin.ServerUserAccount, name: String) {
-        jellyfinClient().renameUser(account, name)
+        pick({ it.renameUser(account, name) }, { it.renameUser(account, name) })
         val session = _state.value.session ?: return
         if (session.userId == account.id) {
             val updated = session.copy(userName = name.trim())
@@ -1387,17 +1538,21 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(session = updated, accounts = vault.accounts()) }
         }
     }
-    suspend fun resetUserPassword(userId: String) = jellyfinClient().resetUserPassword(userId)
-    suspend fun setUserPassword(userId: String, password: String) = jellyfinClient().setUserPassword(userId, password)
+    suspend fun resetUserPassword(userId: String) {
+        pick({ it.resetUserPassword(userId) }, { it.resetUserPassword(userId) })
+    }
+    suspend fun setUserPassword(userId: String, password: String) {
+        pick({ it.setUserPassword(userId, password) }, { it.setUserPassword(userId, password) })
+    }
     suspend fun deleteUserImage(userId: String) {
-        jellyfinClient().deleteUserImage(userId)
+        pick({ it.deleteUserImage(userId) }, { it.deleteUserImage(userId) })
         refreshEditedUserPhoto(userId, null)
     }
     suspend fun uploadUserPhoto(userId: String, uri: Uri) {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
         val jpeg = AccountPhoto.jpeg(getApplication(), uri)
         AccountPhoto.upload(session, jpeg, userId)
-        val tag = if (userId == session.userId) AccountPhoto.imageTag(session) else jellyfinClient().adminUser(userId).primaryImageTag
+        val tag = if (userId == session.userId) AccountPhoto.imageTag(session) else adminUser(userId).primaryImageTag
         refreshEditedUserPhoto(userId, tag)
     }
 
@@ -1411,7 +1566,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun jellyfinPlaybackPreferences(): JellyfinPlaybackPreferences {
         if (_state.value.session == null) throw ZelefinException.server("Sign in to change these settings.")
-        return jellyfinClient().playbackPreferences()
+        return pick({ it.playbackPreferences() }, { it.playbackPreferences() })
     }
 
     /**
@@ -1420,7 +1575,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun saveJellyfinPlaybackPreferences(preferences: JellyfinPlaybackPreferences) {
         val session = _state.value.session ?: throw ZelefinException.server("Sign in to change these settings.")
-        jellyfinClient().savePlaybackPreferences(UUID.fromString(session.userId), preferences)
+        pick(
+            { it.savePlaybackPreferences(preferences) },
+            { it.savePlaybackPreferences(UUID.fromString(session.userId), preferences) },
+        )
         val appContext = getApplication<Application>()
         PlaybackPreferences.setAudioLanguage(appContext, PlaybackPreferences.AUTOMATIC)
         PlaybackPreferences.setSubtitleLanguage(appContext, PlaybackPreferences.AUTOMATIC)
@@ -1448,6 +1606,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playbackProgress(positionSeconds: Double, paused: Boolean) {
+        playerPaused = paused
         val plan = activePlan ?: return
         if (!paused && kotlin.math.abs(positionSeconds - lastReported) < 10) return
         lastReported = positionSeconds
@@ -1467,7 +1626,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         activePlan = null
         viewModelScope.launch {
             runCatching {
-                jellyfinClient().reportStop(plan, positionSeconds)
+                pick({ it.reportStop(plan, positionSeconds) }, { it.reportStop(plan, positionSeconds) })
             }
         }
     }
@@ -1512,6 +1671,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun signOut() {
         val current = _state.value.session
         sessionSocket.disconnect()
+        embySocket.disconnect()
         plugins.unregisterPush(current)
         current?.let(::endSiloSession)
         val remaining = if (current != null) vault.remove(current.accountId) else null
@@ -1521,6 +1681,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             return
         }
         jellyfin = null
+        emby = null
         householdJob?.cancel()
         plugins.reset()
         routeJob?.cancel()
@@ -1575,6 +1736,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 if (isSiloSignIn(url, name)) {
                     openSiloPicker(url, name, password)
                     _state.update { it.copy(addAccount = AddAccountState()) }
+                    return@runCatching
+                }
+                if (isEmbyAddress(url, required = false)) {
+                    val library = EmbyLibrary(getApplication(), url)
+                    val session = embySession(url, library, library.login(name, password), name)
+                    vault.save(session)
+                    activate(session)
                     return@runCatching
                 }
                 val library = JellyfinLibrary(getApplication(), url)
@@ -1659,7 +1827,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val session = _state.value.session ?: throw ZelefinException.missingUser()
         if (current.isBlank() || new.isBlank()) throw ZelefinException.server("Enter your current password and a new password.")
         if (session.isSiloServer) throw ZelefinException.server("Change your password in Silo.")
-        jellyfinClient().changeOwnPassword(session.userId, current, new)
+        pick({ it.changeEmbyPassword(current, new) }, { it.changeOwnPassword(session.userId, current, new) })
     }
 
     /** Gives the current Silo profile one of Silo's premade avatars. */
@@ -1690,7 +1858,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (session.isSiloServer) throw ZelefinException.server("Change your profile picture in Silo.")
-        jellyfinClient().deleteUserImage(session.userId)
+        pick({ it.deleteUserImage(session.userId) }, { it.deleteUserImage(session.userId) })
         val latest = _state.value.session?.takeIf { it.accountId == session.accountId } ?: return
         val updated = latest.copy(userImageTag = null)
         vault.save(updated)
@@ -1739,14 +1907,21 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         sessionSocket.disconnect()
+        embySocket.disconnect()
         runCatching {
             getApplication<Application>().getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback)
         }
         super.onCleared()
     }
 
-    /** Silo's socket only keeps alive: it has no SyncPlay and no remote control. */
+    /** Silo's socket only keeps alive: it has no SyncPlay and no remote control. Emby has its own socket. */
     private fun bindSessionSocket(session: SavedSession) {
+        if (session.isEmbyServer) {
+            sessionSocket.disconnect()
+            emby?.let { embySocket.connect(it, ::handleEmbySocket) }
+            return
+        }
+        embySocket.disconnect()
         if (session.isSiloServer) {
             sessionSocket.disconnect()
             return
@@ -1790,6 +1965,32 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         })
+    }
+
+    /** Emby has no SyncPlay, so Play opens the title here and transport commands steer the open player. */
+    private fun handleEmbySocket(event: EmbySocketEvent) {
+        when (event) {
+            is EmbySocketEvent.Play -> {
+                val id = event.itemId ?: return
+                if (!event.command.equals("PlayNow", ignoreCase = true)) return
+                viewModelScope.launch {
+                    val item = runCatching { embyClient()?.mediaItem(id) }.getOrNull() ?: return@launch
+                    play(item.copy(playbackPosition = event.startSeconds.coerceAtLeast(0.0)))
+                }
+            }
+            is EmbySocketEvent.Playstate -> when (event.command.lowercase()) {
+                "pause" -> _playerDirectives.tryEmit(PlayerDirective.Pause)
+                "unpause" -> _playerDirectives.tryEmit(PlayerDirective.Play)
+                "playpause" -> _playerDirectives.tryEmit(if (playerPaused) PlayerDirective.Play else PlayerDirective.Pause)
+                "seek" -> event.seekSeconds?.let { _playerDirectives.tryEmit(PlayerDirective.Seek(it)) }
+                "stop" -> applyRemoteStop()
+            }
+            is EmbySocketEvent.Message -> SessionMessageCenter.present(
+                getApplication(),
+                SessionDisplayMessage(System.nanoTime().toString(), event.header, event.text, event.timeoutMs),
+            )
+            else -> Unit
+        }
     }
 
     private fun presentSyncPlayItem(itemId: String, playlistItemId: String?, startSeconds: Double) {
@@ -1862,8 +2063,32 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             (home.continueWatching + home.nextUp).filter { it.kind == MediaKind.Episode && it.seriesId == seriesId },
         )?.let { return it }
         val session = _state.value.session ?: return fromDetail
-        return jellyfinClient().playableItem(UUID.fromString(session.userId), fromDetail)
+        return pick({ it.playableItem(fromDetail) }, { it.playableItem(UUID.fromString(session.userId), fromDetail) })
     }
+
+    private suspend fun signInEmby(url: String, username: String, password: String) {
+        val library = EmbyLibrary(getApplication(), url)
+        val session = embySession(url, library, library.login(username.trim(), password), username.trim())
+        jellyfin = null
+        emby = library
+        vault.save(session)
+        _state.update { it.copy(session = session, accounts = vault.accounts(), busy = false, screen = Screen.Library) }
+        refreshRoute()
+        refreshLibrary()
+    }
+
+    /** Emby admins are treated as regular users until server tools come to Emby. Its user has no server name. */
+    private suspend fun embySession(url: String, library: EmbyLibrary, result: EmbyAuthResult, typedName: String): SavedSession =
+        SavedSession(
+            serverUrl = url,
+            accessToken = library.api.accessToken.orEmpty(),
+            userId = library.userId,
+            userName = result.user?.name?.takeIf { it.isNotBlank() } ?: typedName,
+            deviceId = library.api.deviceId,
+            userImageTag = result.user?.primaryImageTag,
+            serverName = EmbyApi.publicInfo(url)?.serverName?.trim()?.ifEmpty { null },
+            serverKind = ServerKind.Emby,
+        )
 
     private suspend fun signInJellyfin(url: String, username: String, password: String) {
         val library = JellyfinLibrary(getApplication(), url)
@@ -1912,9 +2137,27 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun restore(saved: SavedSession) {
+        if (saved.isEmbyServer) {
+            jellyfin = null
+            val library = EmbyLibrary(getApplication(), saved.serverUrl, saved.accessToken, saved.userId)
+            emby = library
+            viewModelScope.launch { refreshEmbyAccount(saved, library) }
+            return
+        }
+        emby = null
         val library = JellyfinLibrary(getApplication(), saved.serverUrl, saved.accessToken)
         jellyfin = library
         viewModelScope.launch { refreshSiloDetection(saved, library) }
+    }
+
+    /** Keeps the saved name and picture in step with the Emby user. */
+    private suspend fun refreshEmbyAccount(saved: SavedSession, library: EmbyLibrary) {
+        val (name, tag) = runCatching { library.currentAccount() }.getOrNull() ?: return
+        val latest = _state.value.session?.takeIf { it.accountId == saved.accountId } ?: return
+        val updated = latest.copy(userName = name ?: latest.userName, userImageTag = tag)
+        if (updated == latest) return
+        vault.save(updated)
+        _state.update { it.copy(session = updated, accounts = vault.accounts()) }
     }
 
     /** Keeps [SavedSession.isSiloServer] current, e.g. for accounts signed in before Silo was detected. */
@@ -1930,12 +2173,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun currentHome(): HomeFeed {
-        val hero = app.zelefin.client.ui.HomeLayoutPreferences.heroContent
+        val hero = JellyfinLibrary.HeroContent.entries.first { it.name == app.zelefin.client.ui.HomeLayoutPreferences.heroContent.name }
         return visibleHome(
-            jellyfinClient().home(
-                UUID.fromString(_state.value.session?.userId),
-                JellyfinLibrary.HeroContent.entries.first { it.name == hero.name },
-            ),
+            pick({ it.home(hero) }, { it.home(UUID.fromString(_state.value.session?.userId), hero) }),
         )
     }
 
@@ -1943,7 +2183,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun pullDisplayPreferences() {
         val session = _state.value.session ?: return
         viewModelScope.launch {
-            val prefs = runCatching { jellyfinClient().displayPreferenceCustomPrefs(userUuid()) }.getOrNull() ?: return@launch
+            val prefs = runCatching {
+                pick({ it.displayPreferenceCustomPrefs() }, { it.displayPreferenceCustomPrefs(userUuid()) })
+            }.getOrNull() ?: return@launch
             if (_state.value.session?.accountId != session.accountId) return@launch
             val context = getApplication<Application>()
             val layout = app.zelefin.client.ui.HomeLayoutPreferences
@@ -1997,7 +2239,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             },
         )
         viewModelScope.launch {
-            runCatching { jellyfinClient().updateDisplayPreferenceCustomPrefs(userUuid(), prefs) }
+            runCatching { pick({ it.updateDisplayPreferenceCustomPrefs(prefs) }, { it.updateDisplayPreferenceCustomPrefs(userUuid(), prefs) }) }
         }
     }
 
@@ -2076,8 +2318,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun loadLibraryFilters(route: LibraryRoute) {
         viewModelScope.launch {
             val items = _state.value.libraryGrids[route]?.items.orEmpty()
-            val options = runCatching { jellyfinClient().catalogFilters(userUuid(), jellyfinScope(route)) }
-                .getOrDefault(catalogOptionsFromItems(items))
+            val options = runCatching {
+                pick({ it.catalogFilters(jellyfinScope(route)) }, { it.catalogFilters(userUuid(), jellyfinScope(route)) })
+            }.getOrDefault(catalogOptionsFromItems(items))
             updateGrid(route) { copy(filters = options.forServer()) }
         }
     }
@@ -2105,14 +2348,25 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     private fun userUuid(): UUID = UUID.fromString(_state.value.session?.userId)
 
-    private fun CatalogBrowseQuery.forServer(): CatalogBrowseQuery = if (_state.value.isSiloServer) forSiloServer() else this
+    private fun CatalogBrowseQuery.forServer(): CatalogBrowseQuery = when {
+        _state.value.isSiloServer -> forSiloServer()
+        _state.value.isEmbyServer -> forEmbyServer()
+        else -> this
+    }
 
-    private fun CatalogFilterOptions.forServer(): CatalogFilterOptions = if (_state.value.isSiloServer) forSiloServer() else this
+    private fun CatalogFilterOptions.forServer(): CatalogFilterOptions = when {
+        _state.value.isSiloServer -> forSiloServer()
+        _state.value.isEmbyServer -> forEmbyServer()
+        else -> this
+    }
+
+    /** Silo leaves out Live TV rooms; Emby lists one only when Live TV is set up. */
+    private val ZelefinUiState.hidesLiveTv: Boolean get() = isSiloServer
 
     private fun jellyfinScope(route: LibraryRoute): JellyfinScope {
         val titles = listOf(org.jellyfin.sdk.model.api.BaseItemKind.MOVIE, org.jellyfin.sdk.model.api.BaseItemKind.SERIES)
         return when (route) {
-            is LibraryRoute.Room -> jellyfinClient().scope(route.room)
+            is LibraryRoute.Room -> JellyfinLibrary.scope(route.room)
             is LibraryRoute.Genre -> JellyfinScope(titles, genreIds = listOf(route.genre.id))
             is LibraryRoute.Collection -> JellyfinScope(emptyList(), parentId = route.id)
             is LibraryRoute.Person -> JellyfinScope(titles, personIds = listOf(route.id))
@@ -2138,11 +2392,15 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         gridJobs[route] = viewModelScope.launch {
             val gridJob = this
             runCatching {
+                val onPage: (List<MediaItem>) -> Unit = { page ->
+                    if (gridJob.isActive) updateGrid(route) { copy(items = page, loading = false) }
+                }
                 when (route) {
-                    LibraryRoute.Watchlist -> if (_state.value.isSiloServer) emptyList() else jellyfinClient().watchlistItems(userUuid())
-                    else -> jellyfinClient().browse(userUuid(), jellyfinScope(route), effective) { page ->
-                        if (gridJob.isActive) updateGrid(route) { copy(items = page, loading = false) }
-                    }
+                    LibraryRoute.Watchlist -> if (_state.value.isSiloServer) emptyList() else pick({ it.watchlistItems() }, { it.watchlistItems(userUuid()) })
+                    else -> pick(
+                        { it.browse(jellyfinScope(route), effective, onPage) },
+                        { it.browse(userUuid(), jellyfinScope(route), effective, onPage) },
+                    )
                 }
             }.onSuccess { items ->
                 updateGrid(route) { copy(items = items, loading = false, refreshing = false) }
@@ -2157,12 +2415,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.libraryOverview.genres.isNotEmpty()) return
         _state.update { it.copy(libraryOverview = it.libraryOverview.copy(genresLoading = true)) }
         viewModelScope.launch {
-            val genres = runCatching { jellyfinClient().genres(userUuid()) }.getOrDefault(emptyList())
+            val genres = runCatching { pick({ it.genres() }, { it.genres(userUuid()) }) }.getOrDefault(emptyList())
             _state.update { it.copy(libraryOverview = it.libraryOverview.copy(genres = genres, genresLoading = false)) }
         }
     }
 
     private suspend fun jellyfinServerCounts(rooms: List<LibraryRoom>): LibraryCounts {
+        embyClient()?.let { return it.serverCounts() }
         val client = jellyfinClient()
         val counts = client.serverCounts(userUuid())
         if (rooms.none { it.kind == LibraryKind.YouTube }) return counts
@@ -2188,10 +2447,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     if (counts != null) _state.update { it.copy(libraryOverview = it.libraryOverview.copy(counts = counts)) }
                 }
                 launch {
-                    val collections = jellyfinClient().collectionPreview(userUuid())
+                    val collections = runCatching { pick({ it.collectionPreview() }, { it.collectionPreview(userUuid()) }) }
+                        .onFailure { if (it is CancellationException) throw it }
+                        .getOrDefault(emptyList())
                     _state.update { it.copy(libraryOverview = it.libraryOverview.copy(collections = collections)) }
                 }
-                runCatching { jellyfinClient().libraries(userUuid()) }.onSuccess { rooms ->
+                runCatching { pick({ it.libraries() }, { it.libraries(userUuid()) }) }.onSuccess { rooms ->
                     roomsReady.complete(rooms)
                     val changed = rooms != _state.value.libraries
                     overviewLoadedFor = account
@@ -2212,18 +2473,18 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadRoomDetails(onlyMissing: Boolean = false) {
         val state = _state.value
-        val rooms = state.libraryLayout.displayed(state.libraries.libraryTabRooms(state.isSiloServer))
+        val rooms = state.libraryLayout.displayed(state.libraries.libraryTabRooms(state.hidesLiveTv))
         viewModelScope.launch {
             rooms.forEach { room ->
                 if (!onlyMissing || room.id !in state.libraryOverview.roomCounts) launch {
-                    val counts = runCatching { jellyfinClient().roomCounts(userUuid(), room) }.getOrNull() ?: return@launch
+                    val counts = runCatching { pick({ it.roomCounts(room) }, { it.roomCounts(userUuid(), room) }) }.getOrNull() ?: return@launch
                     _state.update {
                         it.copy(libraryOverview = it.libraryOverview.copy(roomCounts = it.libraryOverview.roomCounts + (room.id to counts)))
                     }
                 }
                 if (room.kind == LibraryKind.LiveTV || state.libraryOverview.covers[room.id]?.isNotEmpty() == true) return@forEach
                 launch {
-                    val covers = runCatching { jellyfinClient().previewItems(userUuid(), room) }.getOrDefault(emptyList())
+                    val covers = runCatching { pick({ it.previewItems(room) }, { it.previewItems(userUuid(), room) }) }.getOrDefault(emptyList())
                     if (covers.isEmpty()) return@launch
                     _state.update {
                         it.copy(libraryOverview = it.libraryOverview.copy(covers = it.libraryOverview.covers + (room.id to covers)))
@@ -2252,8 +2513,9 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             } else {
                 org.jellyfin.sdk.model.api.BaseItemKind.SERIES
             }
-            val options = runCatching { jellyfinClient().catalogFilters(userUuid(), kind) }
-                .getOrDefault(catalogOptionsFromItems(items))
+            val options = runCatching {
+                pick({ it.catalogFilters(JellyfinScope(listOf(kind))) }, { it.catalogFilters(userUuid(), kind) })
+            }.getOrDefault(catalogOptionsFromItems(items))
                 .forServer()
             _state.update { if (tab == AppTab.Movies) it.copy(movieFilters = options) else it.copy(showFilters = options) }
         }
@@ -2290,13 +2552,18 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     org.jellyfin.sdk.model.api.BaseItemKind.SERIES
                 }
-                jellyfinClient().catalog(UUID.fromString(_state.value.session?.userId), itemKind, query) { page ->
-                    if (!catalogJob.isActive) return@catalog
-                    _state.update { state ->
-                        if (tab == AppTab.Movies) state.copy(movies = page, moviesLoading = false)
-                        else state.copy(shows = page, showsLoading = false)
+                val onPage: (List<MediaItem>) -> Unit = { page ->
+                    if (catalogJob.isActive) {
+                        _state.update { state ->
+                            if (tab == AppTab.Movies) state.copy(movies = page, moviesLoading = false)
+                            else state.copy(shows = page, showsLoading = false)
+                        }
                     }
                 }
+                pick(
+                    { it.catalog(itemKind.serialName, query, onPage) },
+                    { it.catalog(UUID.fromString(_state.value.session?.userId), itemKind, query, onPage) },
+                )
             }.onSuccess { items ->
                 _state.update {
                     if (tab == AppTab.Movies) {
@@ -2320,14 +2587,27 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadDetail(id: String): TitleDetail =
-        jellyfinClient().detail(UUID.fromString(_state.value.session?.userId), id)
+        pick({ it.detail(id) }, { it.detail(UUID.fromString(_state.value.session?.userId), id) })
 
     private suspend fun report(plan: PlaybackPlan, position: Double, paused: Boolean, start: Boolean) {
-        val library = jellyfinClient()
-        if (start) library.reportStart(plan, position) else library.reportProgress(plan, position, paused)
+        pick(
+            { if (start) it.reportStart(plan, position) else it.reportProgress(plan, position, paused) },
+            { if (start) it.reportStart(plan, position) else it.reportProgress(plan, position, paused) },
+        )
     }
 
-    private fun jellyfinClient(): JellyfinLibrary = jellyfin ?: throw ZelefinException.missingUser()
+    /** Jellyfin's SDK reads item ids as UUIDs, so it must never be handed an Emby session. */
+    private fun jellyfinClient(): JellyfinLibrary {
+        if (_state.value.isEmbyServer) throw ZelefinException.server(EmbyUnsupported)
+        return jellyfin ?: throw ZelefinException.missingUser()
+    }
+
+    private fun embyClient(): EmbyLibrary? = emby.takeIf { _state.value.isEmbyServer }
+
+    private suspend fun <T> pick(onEmby: suspend (EmbyLibrary) -> T, onJellyfin: suspend (JellyfinLibrary) -> T): T {
+        if (_state.value.isEmbyServer) return onEmby(emby ?: throw ZelefinException.missingUser())
+        return onJellyfin(jellyfinClient())
+    }
 
     private fun ZelefinUiState.withItem(id: String, transform: MediaItem.() -> MediaItem): ZelefinUiState {
         fun List<MediaItem>.mapId() = map { if (it.id == id) it.transform() else it }

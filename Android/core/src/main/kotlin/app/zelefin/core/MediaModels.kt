@@ -53,6 +53,8 @@ data class MediaItem(
     val hasClosedCaptions: Boolean = false,
     val hasAudioDescription: Boolean = false,
     val isFavorite: Boolean = false,
+    /** True liked, false disliked, null neither. */
+    val likes: Boolean? = null,
     val isWatchlisted: Boolean = false,
     val posterUrl: String? = null,
     val backdropUrl: String? = null,
@@ -373,6 +375,8 @@ data class PlaybackPlan(
     /** True when the server resolved the user's subtitle settings to no subtitles at all. */
     val subtitlesOff: Boolean = false,
     val trickplay: TrickplayInfo? = null,
+    /** Roku BIF scrub previews, for servers that have no trickplay tiles. */
+    val bifUrl: String? = null,
 )
 
 data class TrickplayInfo(

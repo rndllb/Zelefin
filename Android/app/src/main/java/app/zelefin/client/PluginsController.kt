@@ -1,6 +1,10 @@
 package app.zelefin.client
 
 import android.app.Application
+import app.zelefin.client.emby.EmbyLibrary
+import app.zelefin.client.emby.accountRights
+import app.zelefin.client.emby.downloadSubtitle
+import app.zelefin.client.emby.searchSubtitles
 import app.zelefin.client.plugins.DiscoverPage
 import app.zelefin.client.plugins.DiscoverQuery
 import app.zelefin.client.plugins.DiscoverSection
@@ -56,6 +60,7 @@ data class PluginsUiState(
     val autoSkipIntro: Boolean = false,
     val autoSkipCredits: Boolean = false,
     val isSiloServer: Boolean = false,
+    val isEmbyServer: Boolean = false,
     val pushEnabled: Boolean = true,
     val pushRegistered: Boolean = false,
     val pushBusy: Boolean = false,
@@ -66,21 +71,25 @@ data class PluginsUiState(
     val pluginNeedsRestart: Boolean = false,
     val pluginInstallMessage: String? = null,
 ) {
-    val companionAvailable: Boolean get() = !isSiloServer && jellyfin.companion
+    /** Silo and Emby run no Jellyfin server plugins. */
+    val runsJellyfinPlugins: Boolean get() = !isSiloServer && !isEmbyServer
+
+    val companionAvailable: Boolean get() = runsJellyfinPlugins && jellyfin.companion
 
     val discoverAvailable: Boolean get() = seerrName != null
 
     val canManageRequests: Boolean get() = seerrUser?.canManageRequests == true
 
+    /** Emby searches its own subtitle providers, so only the user's subtitle rights matter there. */
     fun showsAddSubtitles(kind: app.zelefin.core.MediaKind): Boolean =
-        !isSiloServer &&
+        (runsJellyfinPlugins || isEmbyServer) &&
             RemoteSubtitleOffer.shouldShowAddSubtitles(
                 canManageSubtitles,
-                jellyfin.openSubtitles,
+                isEmbyServer || jellyfin.openSubtitles,
                 RemoteSubtitleOffer.supportsRemoteSubtitles(kind),
             )
 
-    val hidesFromHome: Boolean get() = !isSiloServer && jellyfin.enhanced
+    val hidesFromHome: Boolean get() = runsJellyfinPlugins && jellyfin.enhanced
 }
 
 data class DiscoverGridState(
@@ -121,6 +130,7 @@ class PluginsController(
     private val session: () -> SavedSession?,
     private val allSessions: () -> List<SavedSession> = { listOfNotNull(session()) },
     private val tmdbCatalog: suspend () -> JellyfinTmdbCatalog,
+    private val emby: () -> EmbyLibrary? = { null },
 ) {
     private val settings = PluginSettings(application)
     private val _state = MutableStateFlow(
@@ -162,7 +172,7 @@ class PluginsController(
             settings.seerrOwnerAccountId = current.accountId
         }
         lastUser = current.accountId
-        _state.update { it.copy(isSiloServer = current.isSiloServer, detecting = true) }
+        _state.update { it.copy(isSiloServer = current.isSiloServer, isEmbyServer = current.isEmbyServer, detecting = true) }
         detectJob?.cancel()
         detectJob = scope.launch {
             detectJellyfin(current)
@@ -207,7 +217,7 @@ class PluginsController(
     /** Removes this install from the plugin. Call before the session is cleared. */
     fun unregisterPush(current: SavedSession? = session()) {
         current ?: return
-        if (current.isSiloServer) return
+        if (!current.hasJellyfinExtras) return
         val deviceId = ZelefinPush.deviceId(application)
         scope.launch {
             withContext(NonCancellable) {
@@ -226,7 +236,7 @@ class PluginsController(
         }
         // Every signed-in account may have registered this phone; the plugin must forget all of them.
         val servers = (allSessions() + listOfNotNull(session()))
-            .filterNot { it.isSiloServer }
+            .filter { it.hasJellyfinExtras }
             .distinctBy { it.serverUrl to it.accessToken }
         if (servers.isEmpty()) {
             _state.update { it.copy(pushRegistered = false) }
@@ -261,7 +271,7 @@ class PluginsController(
     /** Mirrors iOS `SessionStore.installZelefinPlugin()` and the Notifications settings install button. */
     fun installZelefinPlugin() {
         val current = session() ?: return
-        if (current.isSiloServer || !_state.value.isAdmin) {
+        if (!current.hasJellyfinExtras || !_state.value.isAdmin) {
             _state.update { it.copy(pluginInstallMessage = "Sign in as a Jellyfin administrator to install the Zelefin plugin.") }
             return
         }
@@ -296,7 +306,7 @@ class PluginsController(
 
     fun restartJellyfin() {
         val current = session() ?: return
-        if (current.isSiloServer || !_state.value.isAdmin) return
+        if (!current.hasJellyfinExtras || !_state.value.isAdmin) return
         _state.update { it.copy(pluginRestarting = true) }
         scope.launch {
             val result = runCatching { ZelefinPluginInstaller(current.serverUrl, current.accessToken).restartServer() }
@@ -315,7 +325,13 @@ class PluginsController(
     }
 
     private suspend fun detectJellyfin(current: SavedSession) {
-        if (current.isSiloServer) {
+        if (current.isEmbyServer) {
+            val (admin, subtitles) = runCatching { emby()?.accountRights() }.getOrNull() ?: (false to false)
+            _state.update { it.copy(jellyfin = JellyfinPluginState(), isAdmin = admin, canManageSubtitles = subtitles) }
+            refreshSeerrUser()
+            return
+        }
+        if (!current.hasJellyfinExtras) {
             _state.update { it.copy(jellyfin = JellyfinPluginState(), isAdmin = false, canManageSubtitles = false) }
             refreshSeerrUser()
             return
@@ -505,28 +521,40 @@ class PluginsController(
         _discover.update { it.copy(notice = null) }
     }
 
+    /** Emby marks intros and credits in its chapter list; Jellyfin uses media segments or Intro Skipper. */
     suspend fun skipSegments(itemId: String): List<SkipSegment> {
         val current = session() ?: return emptyList()
-        return runCatching { IntroSkipperClient(current.serverUrl, current.accessToken).segments(itemId) }
-            .getOrElse { if (it is CancellationException) throw it else emptyList() }
+        return runCatching {
+            if (current.isEmbyServer) {
+                emby()?.skipSegments(itemId).orEmpty()
+            } else {
+                IntroSkipperClient(current.serverUrl, current.accessToken).segments(itemId)
+            }
+        }.getOrElse { if (it is CancellationException) throw it else emptyList() }
     }
 
     fun subtitles(): OpenSubtitlesClient? {
         val current = session() ?: return null
-        if (current.isSiloServer || !_state.value.jellyfin.openSubtitles) return null
+        if (!current.hasJellyfinExtras || !_state.value.jellyfin.openSubtitles) return null
         return OpenSubtitlesClient(current.serverUrl, current.accessToken, current.userId)
     }
 
-    suspend fun searchSubtitles(itemId: String, language: String, perfectMatch: Boolean?): List<RemoteSubtitle> =
-        subtitles()?.search(itemId, language, perfectMatch).orEmpty()
+    suspend fun searchSubtitles(itemId: String, language: String, perfectMatch: Boolean?): List<RemoteSubtitle> {
+        embySubtitles()?.let { return it.searchSubtitles(itemId, language, perfectMatch) }
+        return subtitles()?.search(itemId, language, perfectMatch).orEmpty()
+    }
 
     suspend fun downloadSubtitle(itemId: String, subtitleId: String) {
+        embySubtitles()?.let { return it.downloadSubtitle(itemId, subtitleId) }
         subtitles()?.download(itemId, subtitleId)
     }
 
+    private fun embySubtitles(): EmbyLibrary? =
+        emby()?.takeIf { session()?.isEmbyServer == true && _state.value.canManageSubtitles }
+
     private fun enhanced(): JellyfinEnhancedClient? {
         val current = session() ?: return null
-        if (current.isSiloServer || !_state.value.jellyfin.enhanced) return null
+        if (!current.hasJellyfinExtras || !_state.value.jellyfin.enhanced) return null
         return JellyfinEnhancedClient(current.serverUrl, current.accessToken, current.userId)
     }
 

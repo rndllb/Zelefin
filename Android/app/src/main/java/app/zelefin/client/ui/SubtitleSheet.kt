@@ -54,6 +54,7 @@ internal fun OpenSubtitlesSheet(
     var error by remember(item.id) { mutableStateOf<String?>(null) }
     var saved by remember(item.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val emby = plugins.state.value.isEmbyServer
 
     LaunchedEffect(item.id, language.code, perfectMatch) {
         searching = true
@@ -63,7 +64,7 @@ internal fun OpenSubtitlesSheet(
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (failure: Throwable) {
-            error = failure.message ?: "Open Subtitles didn’t respond."
+            error = failure.message ?: if (emby) "The subtitle search didn’t respond." else "Open Subtitles didn’t respond."
         }
         searching = false
     }
@@ -86,7 +87,7 @@ internal fun OpenSubtitlesSheet(
     }
 
     Column(Modifier.fillMaxSize()) {
-        SheetBar(title = "Add Subtitles", leading = "Close", onLeading = onClose)
+        SheetBar(title = if (emby) "Find Subtitles" else "Add Subtitles", leading = "Close", onLeading = onClose)
         Column(
             Modifier
                 .fillMaxSize()
@@ -111,7 +112,11 @@ internal fun OpenSubtitlesSheet(
                 SheetToggleRow("Perfect match only", perfectMatch, enabled = true) { perfectMatch = it }
             }
             Text(
-                "Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash.",
+                if (emby) {
+                    "Searches this Emby server’s subtitle providers and saves the file onto the server. Perfect match uses the file hash."
+                } else {
+                    "Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash."
+                },
                 color = SubtitleCaption,
                 fontFamily = ZelefinFont,
                 fontSize = 13.sp,

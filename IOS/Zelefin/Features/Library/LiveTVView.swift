@@ -152,7 +152,7 @@ struct LiveTVView: View {
                             LiveTVChannelCard(
                                 channel: channel,
                                 now: context.date,
-                                artwork: session.jellyfinLibrary,
+                                artwork: session.liveTVLibrary,
                                 onPlay: { playingItem = channel.playItem }
                             )
                         }
@@ -184,7 +184,7 @@ struct LiveTVView: View {
                         LiveTVNowRow(
                             channel: channel,
                             now: context.date,
-                            artwork: session.jellyfinLibrary
+                            artwork: session.liveTVLibrary
                         )
                         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                         .listRowSeparator(.hidden)
@@ -240,7 +240,7 @@ struct LiveTVView: View {
                     rows: filteredGuide,
                     rangeStart: guideRangeStart,
                     rangeEnd: guideRangeEnd,
-                    artwork: session.jellyfinLibrary,
+                    artwork: session.liveTVLibrary,
                     onPlay: { playingItem = $0 }
                 )
             }
@@ -277,8 +277,8 @@ struct LiveTVView: View {
     }
 
     private func recordingCard(_ recording: LiveTVRecording) -> some View {
-        let imageURL = session.jellyfinLibrary?.artworkURL(for: recording.item, style: .landscape)
-            ?? session.jellyfinLibrary?.primaryURL(for: recording.item)
+        let imageURL = session.liveTVLibrary?.artworkURL(for: recording.item, style: .landscape)
+            ?? session.liveTVLibrary?.primaryURL(for: recording.item)
         return ZStack(alignment: .bottomTrailing) {
             Button {
                 playingItem = recording.item
@@ -309,7 +309,7 @@ struct LiveTVView: View {
     }
 
     private func load() async {
-        guard let library = session.jellyfinLibrary else {
+        guard let library = session.liveTVLibrary else {
             isLoading = false
             errorMessage = "Sign in to watch Live TV."
             return
@@ -343,7 +343,7 @@ struct LiveTVView: View {
     }
 
     private func loadGuide() async {
-        guard let library = session.jellyfinLibrary, !channels.isEmpty else { return }
+        guard let library = session.liveTVLibrary, !channels.isEmpty else { return }
         isLoadingGuide = true
         defer { isLoadingGuide = false }
         let start = LiveTVGuideTimeline.slotStart(containing: Date())
@@ -376,12 +376,12 @@ struct LiveTVView: View {
     }
 
     private func reloadRecordings() async {
-        guard let library = session.jellyfinLibrary else { return }
+        guard let library = session.liveTVLibrary else { return }
         recordings = (try? await library.liveTVRecordings()) ?? recordings
     }
 
     private func deleteRecording(_ recording: LiveTVRecording) async {
-        guard let library = session.jellyfinLibrary else { return }
+        guard let library = session.liveTVLibrary else { return }
         do {
             try await library.deleteLiveTVRecording(id: recording.id)
             recordings.removeAll { $0.id == recording.id }
@@ -524,7 +524,7 @@ private struct LiveTVFilterSheet: View {
 private struct LiveTVNowRow: View {
     let channel: LiveChannel
     let now: Date
-    let artwork: JellyfinLibraryClient?
+    let artwork: (any LibraryServing)?
 
     var body: some View {
         NavigationLink {
@@ -611,7 +611,7 @@ private struct LiveTVOnNowBadge: View {
 private struct LiveTVChannelCard: View {
     let channel: LiveChannel
     let now: Date
-    let artwork: JellyfinLibraryClient?
+    let artwork: (any LibraryServing)?
     var onPlay: () -> Void
 
     var body: some View {
@@ -694,7 +694,7 @@ private struct LiveTVGuideGrid: View {
     let rows: [LiveGuideChannel]
     let rangeStart: Date
     let rangeEnd: Date
-    let artwork: JellyfinLibraryClient?
+    let artwork: (any LibraryServing)?
     var onPlay: (MediaItem) -> Void
 
     @Environment(SessionStore.self) private var session
@@ -936,7 +936,7 @@ private struct LiveTVGuideCanvasRow: View {
     let channelWidth: CGFloat
     let rowHeight: CGFloat
     let timelineWidth: CGFloat
-    let artwork: JellyfinLibraryClient?
+    let artwork: (any LibraryServing)?
     let accent: Color
     let focusedProgramID: String?
     let favoriteIDs: Set<String>
@@ -1364,9 +1364,9 @@ struct LiveTVProgramDetailView: View {
         .background {
             ZStack {
                 HeroArtwork(
-                    url: session.jellyfinLibrary?.programStillURL(for: program.item, channel: playItem)
-                        ?? session.jellyfinLibrary?.backdropURL(for: program.item),
-                    placeholderURL: session.jellyfinLibrary?.primaryURL(for: playItem),
+                    url: session.liveTVLibrary?.programStillURL(for: program.item, channel: playItem)
+                        ?? session.liveTVLibrary?.backdropURL(for: program.item),
+                    placeholderURL: session.liveTVLibrary?.primaryURL(for: playItem),
                     size: CGSize(width: width, height: height)
                 )
 
@@ -1487,7 +1487,7 @@ struct LiveTVProgramDetailView: View {
             SectionHeader(title: "Up Next on \(program.channel.name)", showsChevron: false)
 
             ForEach(Array(upcoming.prefix(8))) { item in
-                LiveTVUpcomingRow(program: item, now: now, artwork: session.jellyfinLibrary)
+                LiveTVUpcomingRow(program: item, now: now, artwork: session.liveTVLibrary)
                     .padding(.horizontal, 16)
             }
         }
@@ -1506,7 +1506,7 @@ struct LiveTVProgramDetailView: View {
     }
 
     private func loadDetail() async {
-        guard let library = session.jellyfinLibrary else { return }
+        guard let library = session.liveTVLibrary else { return }
         let start = program.startDate ?? .now
         let end = start.addingTimeInterval(24 * 3600)
         upcoming = ((try? await library.liveTVGuide(channelIDs: [program.channel.id], from: start, to: end)) ?? [])
@@ -1533,7 +1533,7 @@ struct LiveTVProgramDetailView: View {
 private struct LiveTVUpcomingRow: View {
     let program: LiveProgram
     let now: Date
-    let artwork: JellyfinLibraryClient?
+    let artwork: (any LibraryServing)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {

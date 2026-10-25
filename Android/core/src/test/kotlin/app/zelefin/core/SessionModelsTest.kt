@@ -68,6 +68,58 @@ class SessionModelsTest {
         assertTrue(SavedAccountsCodec.decode(encoded).box?.current?.isSiloServer == true)
     }
 
+    @Test
+    fun serverKindDefaultsToJellyfinAndStaysOutOfTheJson() {
+        val loaded = SavedAccountsCodec.decode("""{"accounts":[$jellyfin],"currentId":"jf.example.com|u1"}""")
+        val session = loaded.box?.current!!
+        assertEquals(ServerKind.Jellyfin, session.serverKind)
+        assertFalse(session.isEmbyServer)
+        assertTrue(session.hasJellyfinExtras)
+        assertFalse(SavedAccountsCodec.encode(loaded.box!!).contains("serverKind"))
+    }
+
+    @Test
+    fun embyServerKindRoundTripsWithoutTheBackendKey() {
+        val session = SavedSession("http://emby.example.test:8096", "t", "68b2", "ana", "d", serverKind = ServerKind.Emby)
+        val encoded = SavedAccountsCodec.encode(SavedAccountBox(listOf(session), session.accountId))
+        assertTrue(encoded.contains("\"serverKind\":\"Emby\""))
+        assertFalse(encoded.contains("backend"))
+        val decoded = SavedAccountsCodec.decode(encoded)
+        assertEquals(0, decoded.droppedSilo)
+        assertEquals(session, decoded.box?.current)
+        assertTrue(decoded.box?.current?.isEmbyServer == true)
+        assertFalse(decoded.box?.current?.hasJellyfinExtras ?: true)
+        assertTrue(decoded.box?.current?.hasServerTools == true)
+        assertEquals("Emby", decoded.box?.current?.serverTypeName)
+    }
+
+    @Test
+    fun legacySiloStillDropsBesideAnEmbyAccount() {
+        val emby = SavedSession("http://emby.lan:8096", "t", "e1", "ana", "d", serverKind = ServerKind.Emby)
+        val embyJson = SavedAccountsCodec.encode(SavedAccountBox(listOf(emby), emby.accountId)).substringAfter("[").substringBeforeLast("]")
+        val loaded = SavedAccountsCodec.decode("""{"accounts":[$embyJson,$legacySilo,$jellyfin],"currentId":"silo.example.com|7"}""")
+        assertEquals(1, loaded.droppedSilo)
+        assertTrue(loaded.droppedCurrent)
+        assertEquals(listOf("e1", "u1"), loaded.box?.accounts?.map { it.userId })
+        assertEquals(ServerKind.Emby, loaded.box?.accounts?.first()?.serverKind)
+    }
+
+    @Test
+    fun unknownServerKindKeepsTheAccount() {
+        val future = jellyfin.replace("\"deviceId\":\"d\"", "\"deviceId\":\"d\",\"serverKind\":\"Plex\"")
+        val loaded = SavedAccountsCodec.decode("""{"accounts":[$future],"currentId":""}""")
+        assertEquals(ServerKind.Jellyfin, loaded.box?.accounts?.single()?.serverKind)
+    }
+
+    @Test
+    fun siloIsNotAFullJellyfin() {
+        val silo = SavedSession("https://s.example.com", "t", "u", "n", "d", isSiloServer = true)
+        assertFalse(silo.hasJellyfinExtras)
+        assertFalse(silo.hasServerTools)
+        assertFalse(silo.isEmbyServer)
+        assertEquals("Silo", silo.serverTypeName)
+    }
+
     private val link = SiloLink(
         nativeUrl = "https://silo.example.com",
         refreshToken = "r1",

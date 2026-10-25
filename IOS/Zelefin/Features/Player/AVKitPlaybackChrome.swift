@@ -842,6 +842,9 @@ private struct AVKitTimelineChrome: View {
                ) {
                 TrickplayTilePreview(url: url, info: info, time: displayedTime)
                     .frame(maxWidth: .infinity, alignment: .center)
+            } else if isScrubbing, model.plan.trickplay == nil, let url = model.plan.bifPreviewURL {
+                BIFFramePreview(url: url, time: displayedTime)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
             HStack(spacing: 12) {
                 Text(PlaybackTimeFormatting.elapsed(displayedTime))
@@ -905,6 +908,36 @@ private struct TrickplayTilePreview: View {
         .overlay {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(.white.opacity(0.28), lineWidth: 0.8)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// One frame cut from an Emby BIF. Nothing shows when the server has not generated thumbnails.
+private struct BIFFramePreview: View {
+    let url: URL
+    let time: TimeInterval
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.low)
+                    .scaledToFit()
+                    .frame(width: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(.white.opacity(0.28), lineWidth: 0.8)
+                    }
+            }
+        }
+        .task(id: Int(time)) {
+            if let frame = await BIFPreviewStore.shared.image(url: url, at: time) {
+                image = frame
+            }
         }
         .accessibilityHidden(true)
     }

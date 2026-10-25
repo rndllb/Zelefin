@@ -3,6 +3,7 @@ package app.zelefin.client.jellyfin
 import android.content.Context
 import app.zelefin.client.network.GatewayHttp
 import app.zelefin.core.CreditPerson
+import app.zelefin.core.CreditRoles
 import app.zelefin.core.HomeFeed
 import app.zelefin.core.HomeRowStyle
 import app.zelefin.core.HomeSection
@@ -125,18 +126,7 @@ data class JellyfinScope(
     val studioIds: List<String> = emptyList(),
 )
 
-private fun libraryKind(type: CollectionType?, name: String): LibraryKind = when (type) {
-    CollectionType.MOVIES -> LibraryKind.Movies
-    CollectionType.TVSHOWS -> LibraryKind.Shows
-    CollectionType.MUSIC, CollectionType.MUSICVIDEOS -> LibraryKind.Music
-    CollectionType.BOOKS -> LibraryKind.Books
-    CollectionType.PHOTOS -> LibraryKind.Photos
-    CollectionType.LIVETV -> LibraryKind.LiveTV
-    CollectionType.PLAYLISTS -> LibraryKind.Playlists
-    CollectionType.HOMEVIDEOS -> LibraryKind.HomeVideos
-    CollectionType.BOXSETS -> LibraryKind.Collections
-    else -> LibraryKind.inferred(name) ?: LibraryKind.Other
-}
+private fun libraryKind(type: CollectionType?, name: String): LibraryKind = JellyfinLibrary.libraryKind(type?.serialName, name)
 
 /** Channels and videos from the TubeArchivist Metadata plugin; needs `ItemFields.PROVIDER_IDS` on the request. */
 private fun BaseItemDto.isTubeArchivist(): Boolean =
@@ -306,19 +296,6 @@ class JellyfinLibrary(
     /** Hero sources, mirroring iOS `FeaturedHeroContent`. */
     enum class HeroContent { RecentlyAdded, Random, ContinueWatching, NextUp, Recommendations, RecentlyWatched, Favorites }
 
-    private fun heroItems(feed: HomeFeed, hero: HeroContent, pool: List<MediaItem>): List<MediaItem> {
-        val recent = app.zelefin.client.ui.HomeHero.recentlyAdded(feed.recentMovies, feed.recentShows)
-        val picked = when (hero) {
-            HeroContent.RecentlyAdded -> recent
-            HeroContent.Random, HeroContent.Favorites -> app.zelefin.client.ui.HomeHero.fromPool(pool)
-            HeroContent.ContinueWatching -> app.zelefin.client.ui.HomeHero.fromPool(feed.continueWatching)
-            HeroContent.NextUp -> app.zelefin.client.ui.HomeHero.fromPool(feed.nextUp)
-            HeroContent.Recommendations -> app.zelefin.client.ui.HomeHero.fromPool(feed.recommendations.flatMap { it.items })
-            HeroContent.RecentlyWatched -> app.zelefin.client.ui.HomeHero.fromPool(feed.recentlyWatched)
-        }
-        return picked.ifEmpty { recent }
-    }
-
     private suspend fun upcomingEpisodes(userId: UUID): List<MediaItem> = items(userId, PlaybackQueueKind.NextUp) {
         api.tvShowsApi.getUpcomingEpisodes(
             userId = userId,
@@ -347,18 +324,6 @@ class JellyfinLibrary(
             )
         }
     }.getOrDefault(emptyList())
-
-    private fun recommendationTitle(type: RecommendationType, baseline: String?): String {
-        val name = baseline?.trim().orEmpty()
-        return when (type) {
-            RecommendationType.SIMILAR_TO_RECENTLY_PLAYED -> if (name.isEmpty()) "Because You Watched" else "Because You Watched $name"
-            RecommendationType.SIMILAR_TO_LIKED_ITEM -> if (name.isEmpty()) "Because You Liked" else "Because You Liked $name"
-            RecommendationType.HAS_DIRECTOR_FROM_RECENTLY_PLAYED, RecommendationType.HAS_LIKED_DIRECTOR ->
-                if (name.isEmpty()) "More From This Director" else "Directed Like $name"
-            RecommendationType.HAS_ACTOR_FROM_RECENTLY_PLAYED, RecommendationType.HAS_LIKED_ACTOR ->
-                if (name.isEmpty()) "More From This Cast" else "Starring Like $name"
-        }
-    }
 
     private suspend fun homeGenres(userId: UUID): List<MediaItem> = runCatching {
         genres(userId, limit = 48)
@@ -477,21 +442,6 @@ class JellyfinLibrary(
                 }
         }
     }
-
-    fun scope(room: LibraryRoom): JellyfinScope = JellyfinScope(
-        kinds = when (room.kind) {
-            LibraryKind.Movies -> listOf(BaseItemKind.MOVIE, BaseItemKind.BOX_SET)
-            LibraryKind.Shows, LibraryKind.YouTube -> listOf(BaseItemKind.SERIES)
-            LibraryKind.Collections -> listOf(BaseItemKind.BOX_SET)
-            LibraryKind.Books -> listOf(BaseItemKind.BOOK)
-            LibraryKind.Photos -> listOf(BaseItemKind.PHOTO, BaseItemKind.PHOTO_ALBUM)
-            LibraryKind.LiveTV -> listOf(BaseItemKind.TV_CHANNEL)
-            LibraryKind.Playlists -> listOf(BaseItemKind.PLAYLIST)
-            LibraryKind.HomeVideos -> listOf(BaseItemKind.VIDEO, BaseItemKind.MOVIE)
-            else -> listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES)
-        },
-        parentId = room.id,
-    )
 
     suspend fun serverCounts(userId: UUID): LibraryCounts = withContext(Dispatchers.IO) {
         runCatching {
@@ -1410,9 +1360,6 @@ class JellyfinLibrary(
     ): app.zelefin.client.BitrateProbeResult? = withContext(Dispatchers.IO) {
         val base = api.baseUrl ?: return@withContext null
         val url = ServerUrl.resolve(base, "/Playback/BitrateTest?size=$size", null) ?: return@withContext null
-        val client = app.zelefin.client.network.GatewayHttp.client.newBuilder()
-            .callTimeout(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
-            .build()
         val token = api.accessToken.orEmpty()
         // Jellyfin 10.11 turns off the legacy X-Emby-Token header by default, so send the
         // MediaBrowser Authorization header as well.
@@ -1421,18 +1368,7 @@ class JellyfinLibrary(
             .header("Authorization", "MediaBrowser Token=\"$token\"")
             .header("X-Emby-Token", token)
             .build()
-        val response = runCatching { client.newCall(request).execute() }.getOrNull() ?: return@withContext null
-        // Timed from the headers, so DNS, TLS and the server's time to first byte do not count
-        // against the link: on a small sample they made a fast remote connection read as slow.
-        val started = System.nanoTime()
-        response.use {
-            if (!it.isSuccessful) {
-                throw ZelefinException.server("Jellyfin did not send the test file (HTTP ${it.code}). Check the connection and try again.")
-            }
-            val bytes = runCatching { it.body?.bytes()?.size ?: 0 }.getOrDefault(0)
-            if (bytes < 16_000) return@withContext null
-            app.zelefin.client.BitrateProbeResult.from(bytes, System.nanoTime() - started, transport)
-        }
+        app.zelefin.client.timedBitrateDownload(request, timeoutMillis, transport, "Jellyfin")
     }
 
     /** Mirrors iOS `SessionStore.applyPlaybackLanguages` for the signed-in Jellyfin user. */
@@ -1574,6 +1510,59 @@ class JellyfinLibrary(
         private const val CatalogPageSize = 200
         private const val CatalogMaxItems = 20_000
 
+        fun scope(room: LibraryRoom): JellyfinScope = JellyfinScope(
+            kinds = when (room.kind) {
+                LibraryKind.Movies -> listOf(BaseItemKind.MOVIE, BaseItemKind.BOX_SET)
+                LibraryKind.Shows, LibraryKind.YouTube -> listOf(BaseItemKind.SERIES)
+                LibraryKind.Collections -> listOf(BaseItemKind.BOX_SET)
+                LibraryKind.Books -> listOf(BaseItemKind.BOOK)
+                LibraryKind.Photos -> listOf(BaseItemKind.PHOTO, BaseItemKind.PHOTO_ALBUM)
+                LibraryKind.LiveTV -> listOf(BaseItemKind.TV_CHANNEL)
+                LibraryKind.Playlists -> listOf(BaseItemKind.PLAYLIST)
+                LibraryKind.HomeVideos -> listOf(BaseItemKind.VIDEO, BaseItemKind.MOVIE)
+                else -> listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES)
+            },
+            parentId = room.id,
+        )
+
+        internal fun heroItems(feed: HomeFeed, hero: HeroContent, pool: List<MediaItem>): List<MediaItem> {
+            val recent = app.zelefin.client.ui.HomeHero.recentlyAdded(feed.recentMovies, feed.recentShows)
+            val picked = when (hero) {
+                HeroContent.RecentlyAdded -> recent
+                HeroContent.Random, HeroContent.Favorites -> app.zelefin.client.ui.HomeHero.fromPool(pool)
+                HeroContent.ContinueWatching -> app.zelefin.client.ui.HomeHero.fromPool(feed.continueWatching)
+                HeroContent.NextUp -> app.zelefin.client.ui.HomeHero.fromPool(feed.nextUp)
+                HeroContent.Recommendations -> app.zelefin.client.ui.HomeHero.fromPool(feed.recommendations.flatMap { it.items })
+                HeroContent.RecentlyWatched -> app.zelefin.client.ui.HomeHero.fromPool(feed.recentlyWatched)
+            }
+            return picked.ifEmpty { recent }
+        }
+
+        internal fun recommendationTitle(type: RecommendationType, baseline: String?): String {
+            val name = baseline?.trim().orEmpty()
+            return when (type) {
+                RecommendationType.SIMILAR_TO_RECENTLY_PLAYED -> if (name.isEmpty()) "Because You Watched" else "Because You Watched $name"
+                RecommendationType.SIMILAR_TO_LIKED_ITEM -> if (name.isEmpty()) "Because You Liked" else "Because You Liked $name"
+                RecommendationType.HAS_DIRECTOR_FROM_RECENTLY_PLAYED, RecommendationType.HAS_LIKED_DIRECTOR ->
+                    if (name.isEmpty()) "More From This Director" else "Directed Like $name"
+                RecommendationType.HAS_ACTOR_FROM_RECENTLY_PLAYED, RecommendationType.HAS_LIKED_ACTOR ->
+                    if (name.isEmpty()) "More From This Cast" else "Starring Like $name"
+            }
+        }
+
+        internal fun libraryKind(collectionType: String?, name: String): LibraryKind = when (collectionType?.lowercase()) {
+            "movies" -> LibraryKind.Movies
+            "tvshows" -> LibraryKind.Shows
+            "music", "musicvideos" -> LibraryKind.Music
+            "books" -> LibraryKind.Books
+            "photos" -> LibraryKind.Photos
+            "livetv" -> LibraryKind.LiveTV
+            "playlists" -> LibraryKind.Playlists
+            "homevideos" -> LibraryKind.HomeVideos
+            "boxsets" -> LibraryKind.Collections
+            else -> LibraryKind.inferred(name) ?: LibraryKind.Other
+        }
+
         fun jellyfin(context: Context) = createJellyfin {
             this.context = context.applicationContext
             clientInfo = ClientInfo(name = "Zelefin", version = app.zelefin.client.BuildConfig.VERSION_NAME)
@@ -1582,7 +1571,7 @@ class JellyfinLibrary(
             socketConnectionFactory = factory
         }
 
-        private fun reportedDeviceName(context: Context): String {
+        internal fun reportedDeviceName(context: Context): String {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
                 val name = android.provider.Settings.Global.getString(
                     context.contentResolver,
@@ -1838,6 +1827,7 @@ internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
         unplayedItemCount = userData?.unplayedItemCount,
         played = userData?.played == true,
         favorite = userData?.isFavorite == true,
+        likes = userData?.likes,
         primaryImageTag = tags["Primary"],
         imageTags = tags,
         backdropImageTags = backdropImageTags.orEmpty(),
@@ -1855,14 +1845,14 @@ internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
         providerIds = providerIds.orEmpty().mapNotNull { (key, value) -> value?.let { key to it } }.toMap(),
         premiereDate = premiereDate?.toString(),
         people = people.orEmpty()
-            .sortedBy { creditRankType(it.type.serialName) }
+            .sortedBy { CreditRoles.rank(it.type.serialName) }
             .mapNotNull { person ->
                 val personName = person.name?.trim().orEmpty()
                 if (personName.isEmpty()) return@mapNotNull null
                 CreditPerson(
                     id = person.id.toString(),
                     name = personName,
-                    roleLabel = person.role?.trim()?.ifEmpty { null } ?: creditRole(person.type.serialName),
+                    roleLabel = person.role?.trim()?.ifEmpty { null } ?: CreditRoles.label(person.type.serialName),
                     imageTag = person.primaryImageTag,
                 )
             }
@@ -1888,23 +1878,3 @@ internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
 }
 
 fun ServerUrl.normalizeOrThrow(raw: String): String = normalize(raw)
-
-private fun creditRole(type: String): String = when (type.lowercase()) {
-    "director" -> "Director"
-    "writer" -> "Writer"
-    "producer" -> "Producer"
-    "creator" -> "Creator"
-    "composer" -> "Composer"
-    "gueststar" -> "Guest Star"
-    else -> "Cast"
-}
-
-private fun creditRankType(type: String): Int = when (type.lowercase()) {
-    "actor", "gueststar" -> 0
-    "director" -> 1
-    "creator" -> 2
-    "writer" -> 3
-    "producer" -> 4
-    "composer" -> 5
-    else -> 8
-}

@@ -433,22 +433,23 @@ private fun ZelefinScreen(
 }
 
 private fun detailActions(model: ZelefinModel, state: ZelefinUiState): DetailTitleActions {
-    val jellyfin = state.session != null && !state.isSiloServer
+    val tools = state.session?.hasServerTools == true
     return DetailTitleActions(
         onBrowse = model::openBrowse,
         onRefreshDetail = model::refreshDetail,
-        remoteTargets = if (jellyfin) model::remotePlayTargets else null,
+        remoteTargets = if (tools) model::remotePlayTargets else null,
         playOnRemote = model::playOnRemote,
-        syncPlayGroups = if (jellyfin) model::syncPlayGroups else null,
+        syncPlayGroups = if (state.hasJellyfinExtras) model::syncPlayGroups else null,
         playInSyncPlay = model::playInSyncPlay,
-        refreshMetadata = if (jellyfin) model::refreshMetadata else null,
-        remoteArtwork = if (jellyfin) model::remoteArtwork else null,
+        refreshMetadata = if (tools) model::refreshMetadata else null,
+        remoteArtwork = if (tools) model::remoteArtwork else null,
         applyArtwork = model::applyRemoteArtwork,
-        deleteFromLibrary = if (jellyfin) model::deleteFromLibrary else null,
-        onToggleWatchlist = if (jellyfin) model::toggleWatchlist else null,
-        identifyHits = if (jellyfin) model::identifyHits else null,
-        applyIdentify = if (jellyfin) model::applyIdentify else null,
-        saveMetadata = if (jellyfin) model::saveItemMetadata else null,
+        deleteFromLibrary = if (tools) model::deleteFromLibrary else null,
+        onToggleWatchlist = if (tools) model::toggleWatchlist else null,
+        onToggleLike = if (state.hasJellyfinExtras) model::toggleLike else null,
+        identifyHits = if (tools) model::identifyHits else null,
+        applyIdentify = if (tools) model::applyIdentify else null,
+        saveMetadata = if (tools) model::saveItemMetadata else null,
         downloadRelated = model::downloadRelated,
     )
 }

@@ -7,6 +7,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
+/** Which API an account talks to. Silo's Jellyfin-compatible API counts as [Jellyfin]. */
+@Serializable
+enum class ServerKind { Jellyfin, Emby }
+
 @Serializable
 data class SavedSession(
     val serverUrl: String,
@@ -21,7 +25,23 @@ data class SavedSession(
     val isSiloServer: Boolean = false,
     /** Present when signed in through Silo's own sign-in and household profiles. */
     val siloLink: SiloLink? = null,
+    val serverKind: ServerKind = ServerKind.Jellyfin,
 ) {
+    val isEmbyServer: Boolean get() = serverKind == ServerKind.Emby
+
+    /** A Jellyfin server proper: SyncPlay, server plugins, backups, and branding. */
+    val hasJellyfinExtras: Boolean get() = serverKind == ServerKind.Jellyfin && !isSiloServer
+
+    /** Admin tools, item editing, playlists, collections, likes, and remote control: Jellyfin and Emby, not Silo. */
+    val hasServerTools: Boolean get() = !isSiloServer
+
+    val serverTypeName: String
+        get() = when {
+            isEmbyServer -> "Emby"
+            isSiloServer -> "Silo"
+            else -> "Jellyfin"
+        }
+
     val accountId: String
         get() {
             val host = serverUrl.substringAfter("://").substringBefore("/").substringBefore(":").lowercase()
@@ -89,7 +109,10 @@ data class LoadedAccounts(
 object SavedAccountsCodec {
     const val SiloSignInAgainMessage = "Silo now signs in through its Jellyfin-compatible API. Sign in again."
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
 
     fun decode(raw: String): LoadedAccounts {
         val root = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return LoadedAccounts(null)

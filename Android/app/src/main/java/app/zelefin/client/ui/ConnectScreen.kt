@@ -75,7 +75,14 @@ private val Caption = Color.White.copy(alpha = 0.55f)
 private val Secondary = Color.White.copy(alpha = 0.72f)
 private val Divider = Color.White.copy(alpha = 0.12f)
 private val Failure = Color(1f, 0.38f, 0.38f)
-private val Cobalt = Color(0f, 0.22f, 0.98f)
+/** Sign-in colours, taken from the Zelefin icon: its navy ground and the iridescent faces of the mark. Matches iOS `LoginPalette`. */
+internal object LoginPalette {
+    val Canvas = Color(0.034f, 0.036f, 0.181f)
+    val Lavender = Color(0.70f, 0.55f, 0.78f)
+    val Sky = Color(0.57f, 0.70f, 0.91f)
+    val Periwinkle = Color(0.60f, 0.59f, 0.82f)
+    val Action = Brush.horizontalGradient(listOf(Lavender, Sky))
+}
 private val CardShape = RoundedCornerShape(18.dp)
 
 @Composable
@@ -95,6 +102,7 @@ fun ConnectScreen(
         mutableStateOf(SignInServerType.entries.firstOrNull { it.name == prefs.getString("last-server-type", null) } ?: SignInServerType.Jellyfin)
     }
     val silo = serverType == SignInServerType.Silo
+    val quickConnect = serverType == SignInServerType.Jellyfin
     var password by rememberSaveable { mutableStateOf("") }
     var advanced by rememberSaveable { mutableStateOf(state.gatewayId.isNotBlank() || state.gatewaySecret.isNotBlank()) }
     var gatewayId by rememberSaveable { mutableStateOf(state.gatewayId) }
@@ -106,11 +114,11 @@ fun ConnectScreen(
     val focusManager = LocalFocusManager.current
     val wide = context.resources.configuration.smallestScreenWidthDp >= 600
     val markSize = if (wide) 196.dp else 168.dp
-    val tileSize = if (wide) 96.dp else 86.dp
+    val tileSize = if (wide) 96.dp else 80.dp
     val chooseType = { type: SignInServerType ->
         if (type != serverType) {
             password = ""
-            if (type == SignInServerType.Silo && state.quickConnect != null) onCancelQuickConnect()
+            if (type != SignInServerType.Jellyfin && state.quickConnect != null) onCancelQuickConnect()
             serverType = type
         }
     }
@@ -123,7 +131,7 @@ fun ConnectScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(LoginPalette.Canvas)
             .drawBehind {
                 val radius = if (wide) {
                     kotlin.math.hypot((size.width / 2f).toDouble(), size.height.toDouble()).toFloat()
@@ -132,7 +140,7 @@ fun ConnectScreen(
                 }
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(ZelefinCyan.copy(alpha = 0.28f), Cobalt.copy(alpha = 0.16f), Color.Black),
+                        colors = listOf(LoginPalette.Lavender.copy(alpha = 0.30f), LoginPalette.Sky.copy(alpha = 0.14f), LoginPalette.Canvas),
                         center = Offset(size.width / 2f, 0f),
                         radius = radius,
                     ),
@@ -163,9 +171,10 @@ fun ConnectScreen(
                 )
                 Spacer(Modifier.height(22.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    ServerTypeTile(SignInServerType.Jellyfin, !silo, tileSize) { chooseType(SignInServerType.Jellyfin) }
-                    Spacer(Modifier.width(18.dp))
-                    ServerTypeTile(SignInServerType.Silo, silo, tileSize) { chooseType(SignInServerType.Silo) }
+                    SignInServerType.entries.forEachIndexed { index, type ->
+                        if (index > 0) Spacer(Modifier.width(18.dp))
+                        ServerTypeTile(type, serverType == type, tileSize) { chooseType(type) }
+                    }
                 }
                 Spacer(Modifier.height(22.dp))
                 Column(
@@ -280,7 +289,7 @@ fun ConnectScreen(
                 }
                 Spacer(Modifier.height(18.dp))
                 val handshake = state.quickConnect
-                if (handshake != null && !silo) {
+                if (handshake != null && quickConnect) {
                     Column(
                         Modifier
                             .fillMaxWidth()
@@ -292,7 +301,7 @@ fun ConnectScreen(
                     ) {
                         Text(
                             handshake.groupedCode,
-                            color = ZelefinCyan,
+                            color = LoginPalette.Sky,
                             fontFamily = ZelefinFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 40.sp,
@@ -326,7 +335,7 @@ fun ConnectScreen(
                         enabled = url.isNotBlank() && !state.busy,
                         onClick = { onTest(url) },
                     )
-                    if (!silo) {
+                    if (quickConnect) {
                         Spacer(Modifier.height(10.dp))
                         LoginButton(
                             title = "JELLYFIN QUICK CONNECT",
@@ -365,7 +374,16 @@ fun ConnectScreen(
 
 @Composable
 private fun ServerTypeTile(type: SignInServerType, selected: Boolean, size: Dp, onClick: () -> Unit) {
-    val silo = type == SignInServerType.Silo
+    val logo = when (type) {
+        SignInServerType.Jellyfin -> R.drawable.jellyfin_logo
+        SignInServerType.Silo -> R.drawable.silo_logo
+        SignInServerType.Emby -> R.drawable.emby_logo
+    }
+    val inset = when (type) {
+        SignInServerType.Jellyfin -> 0.22f
+        SignInServerType.Silo -> 0.18f
+        SignInServerType.Emby -> 0.24f
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
         Box(
             Modifier
@@ -380,18 +398,18 @@ private fun ServerTypeTile(type: SignInServerType, selected: Boolean, size: Dp, 
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painter = painterResource(if (silo) R.drawable.silo_logo else R.drawable.jellyfin_logo),
-                contentDescription = if (silo) "Silo" else "Jellyfin",
-                colorFilter = ColorFilter.tint(Color.White.copy(alpha = if (silo) 1f else 0.72f)),
+                painter = painterResource(logo),
+                contentDescription = type.name,
+                colorFilter = ColorFilter.tint(Color.White.copy(alpha = if (type == SignInServerType.Silo) 1f else 0.72f)),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(size * if (silo) 0.18f else 0.22f),
+                    .padding(size * inset),
                 contentScale = ContentScale.Fit,
             )
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            if (silo) "SILO" else "JELLYFIN",
+            type.name.uppercase(),
             color = if (selected) Color.White else Caption,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
@@ -436,7 +454,7 @@ internal fun LoginField(
                 Spacer(Modifier.weight(1f))
                 Text(
                     "FORGOT",
-                    color = ZelefinCyan,
+                    color = LoginPalette.Periwinkle,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
@@ -456,7 +474,7 @@ internal fun LoginField(
                 onValueChange = onChange,
                 singleLine = true,
                 textStyle = fieldStyle,
-                cursorBrush = SolidColor(ZelefinCyan),
+                cursorBrush = SolidColor(LoginPalette.Periwinkle),
                 visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
@@ -511,18 +529,18 @@ private fun LoginButton(
             .fillMaxWidth()
             .alpha(if (active) 1f else 0.42f)
             .clip(shape)
-            .background(if (filled) ZelefinCyan else Color.Transparent)
+            .then(if (filled) Modifier.background(LoginPalette.Action) else Modifier)
             .border(if (filled) 0.dp else 1.5.dp, Color.White.copy(alpha = 0.55f), shape)
             .clickable(enabled = active, onClick = onClick)
             .padding(vertical = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (busy && filled) {
-            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(color = LoginPalette.Canvas, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
         } else {
             Text(
                 title,
-                color = if (filled) Color.Black else Color.White,
+                color = if (filled) LoginPalette.Canvas else Color.White,
                 fontFamily = ZelefinFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,

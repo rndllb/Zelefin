@@ -9,10 +9,13 @@ import app.zelefin.core.ZelefinException
 
 /** Jellyfin serves the original file directly. */
 class SessionDownloadBackend : DownloadBackend {
-    /** Silo names each version by its own source id and accepts it in the item position; Jellyfin's equals the item id. */
+    /**
+     * Silo names each version by its own source id and accepts it in the item position; Jellyfin's equals
+     * the item id. Emby's source ids (`mediasource_<n>`) are not item ids, so Emby downloads by item.
+     */
     override suspend fun prepare(item: MediaItem, session: SavedSession): DownloadAsset {
         val token = session.accessToken
-        val fileId = item.mediaSourceId?.takeIf { it.isNotBlank() } ?: item.id
+        val fileId = item.mediaSourceId?.takeIf { it.isNotBlank() && !session.isEmbyServer } ?: item.id
         val url = ServerUrl.resolve(session.serverUrl, "/Items/$fileId/Download", token)
             ?: throw ZelefinException.missingStreamUrl()
         val headers = buildMap {

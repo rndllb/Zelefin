@@ -176,7 +176,13 @@ struct RemoteSubtitleMatch: Identifiable, Hashable, Sendable {
     }
 }
 
-struct OpenSubtitlesClient: Sendable {
+/// Remote subtitle search: Jellyfin's Open Subtitles plugin or Emby's own subtitle providers.
+protocol RemoteSubtitleSearching: Sendable {
+    func search(itemID: String, language: String, perfectMatch: Bool) async throws -> [RemoteSubtitleMatch]
+    func download(itemID: String, subtitleID: String, userID: String) async throws
+}
+
+struct OpenSubtitlesClient: RemoteSubtitleSearching {
     private let client: JellyfinClient
 
     init(client: JellyfinClient) {

@@ -238,7 +238,7 @@ private fun LibraryHome(
     val layout = state.libraryLayout
     val rooms = layout.displayed(eligible)
     val overview = state.libraryOverview
-    // The Watchlist is a Jellyfin playlist, and Silo serves no playlists.
+    // The Watchlist is a server playlist, and Silo serves no playlists.
     val jumps = listOf(LibraryPageBlock.Favorites, LibraryPageBlock.Watchlist, LibraryPageBlock.Genres)
         .filter { it !in layout.hiddenBlocks && !(silo && it == LibraryPageBlock.Watchlist) }
     val collections = if (LibraryPageBlock.Collections in layout.hiddenBlocks) emptyList() else overview.collections.take(12)

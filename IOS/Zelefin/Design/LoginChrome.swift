@@ -2,17 +2,19 @@ import SwiftUI
 import UIKit
 
 /// Shared sign-in canvas colors.
+/// Sign-in colours, taken from the Zelefin icon: its navy ground and the iridescent faces of the mark.
 enum LoginPalette {
-    static let cyan = AccentPreferences.cyan.color
-    static let cobalt = Color(red: 0.0, green: 0.22, blue: 0.98)
-    static let canvas = Color.black
+    static let canvas = Color(red: 0.034, green: 0.036, blue: 0.181)
+    static let lavender = Color(red: 0.70, green: 0.55, blue: 0.78)
+    static let sky = Color(red: 0.57, green: 0.70, blue: 0.91)
+    static let periwinkle = Color(red: 0.60, green: 0.59, blue: 0.82)
     static let primaryText = Color.white
     static let secondaryText = Color.white.opacity(0.72)
     static let captionText = Color.white.opacity(0.55)
     static let iconTint = Color.white.opacity(0.55)
     static let fieldValue = Color.white
     static let divider = Color.white.opacity(0.12)
-    static let actionLabel = Color.black
+    static let actionLabel = canvas
     static let success = Color(red: 0.22, green: 0.78, blue: 0.42)
     static let failure = Color(red: 1, green: 0.38, blue: 0.38)
 }
@@ -28,8 +30,8 @@ struct LoginCanvasGlow: View, Equatable {
 
             RadialGradient(
                 colors: [
-                    LoginPalette.cyan.opacity(0.28),
-                    LoginPalette.cobalt.opacity(0.16),
+                    LoginPalette.lavender.opacity(0.30),
+                    LoginPalette.sky.opacity(0.14),
                     LoginPalette.canvas
                 ],
                 center: .top,
@@ -52,7 +54,13 @@ struct LoginActionButtonStyle: ViewModifier {
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.accentColor)
+                    .fill(
+                        LinearGradient(
+                            colors: [LoginPalette.lavender, LoginPalette.sky],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
             )
     }
 }

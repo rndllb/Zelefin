@@ -451,6 +451,8 @@ struct PlayerView: View {
         }
         if let skipSegments {
             created.skipSegments = skipSegments
+        } else if !plan.skipSegments.isEmpty {
+            created.skipSegments = plan.skipSegments
         } else if created.plan.isLive != true,
            OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
            let client = session.client {

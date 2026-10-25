@@ -2482,6 +2482,10 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
 extension JellyfinLibraryClient: LibraryServing {}
 
+extension JellyfinLibraryClient: LiveTVServing, RemoteSessionServing, ServerAdministering {
+    var canEditBranding: Bool { true }
+}
+
 struct CatalogPageUpdate: Sendable {
     var items: [MediaItem]
     var totalCount: Int?

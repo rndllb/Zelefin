@@ -566,6 +566,7 @@ fun DetailPage(
         onIdentify = actions.identifyHits?.let { { target -> sheet = DetailSheet.Identify(pageItem ?: target) } },
         onEditMetadata = actions.saveMetadata?.let { { target -> sheet = DetailSheet.Metadata(pageItem ?: target) } },
         onDownloadSeason = actions.downloadRelated,
+        onToggleLike = actions.onToggleLike,
         isSiloServer = session?.isSiloServer == true,
         skipCinemaIntros = skipCinema,
         onCollections = detail?.item?.let { pageItem ->

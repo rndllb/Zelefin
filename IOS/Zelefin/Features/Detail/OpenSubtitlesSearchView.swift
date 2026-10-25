@@ -70,7 +70,7 @@ struct OpenSubtitlesSearchView: View {
             }
             .zelefinRowBackground()
         }
-        .zelefinSettingsChrome(title: "Add Subtitles")
+        .zelefinSettingsChrome(title: session.isEmbyServer ? "Find Subtitles" : "Add Subtitles")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }
@@ -88,7 +88,7 @@ struct OpenSubtitlesSearchView: View {
         .alert("Subtitles saved", isPresented: $didSave) {
             Button("OK") { dismiss() }
         } message: {
-            Text("Jellyfin stored the file on the server. The subtitle list on this title is updated.")
+            Text("\(session.isEmbyServer ? "Emby" : "Jellyfin") stored the file on the server. The subtitle list on this title is updated.")
         }
     }
 
@@ -98,7 +98,7 @@ struct OpenSubtitlesSearchView: View {
 
     private var emptyCopy: String {
         if isSearching {
-            "Searching Open Subtitles…"
+            session.isEmbyServer ? "Searching subtitles…" : "Searching Open Subtitles…"
         } else if perfectMatch {
             "No hash match for this file in \(language.name)."
         } else {
@@ -111,11 +111,11 @@ struct OpenSubtitlesSearchView: View {
         matches = []
         defer { isSearching = false }
         do {
-            guard let client = session.client else {
+            guard let searcher = session.remoteSubtitleSearcher() else {
                 errorMessage = ZelefinError.missingUser.localizedDescription
                 return
             }
-            matches = try await OpenSubtitlesClient(client: client).search(
+            matches = try await searcher.search(
                 itemID: item.id,
                 language: language.code,
                 perfectMatch: perfectMatch
@@ -129,11 +129,11 @@ struct OpenSubtitlesSearchView: View {
         downloadingID = match.id
         defer { downloadingID = nil }
         do {
-            guard let client = session.client else {
+            guard let searcher = session.remoteSubtitleSearcher() else {
                 errorMessage = ZelefinError.missingUser.localizedDescription
                 return
             }
-            try await OpenSubtitlesClient(client: client).download(
+            try await searcher.download(
                 itemID: item.id,
                 subtitleID: match.id,
                 userID: session.session?.userID ?? ""

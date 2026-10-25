@@ -4,7 +4,11 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.SystemClock
+import app.zelefin.client.network.GatewayHttp
+import app.zelefin.core.ZelefinException
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import okhttp3.Request
 
 /** Mirrors iOS `PlaybackQuality`. [bits] of 0 is Auto, which streams at the device ceiling. */
 enum class PlaybackQuality(val bits: Int, val title: String) {
@@ -136,6 +140,30 @@ data class BitrateProbeResult(
                 measuredAtMillis = SystemClock.elapsedRealtime(),
             )
         }
+    }
+}
+
+/** Times a `/Playback/BitrateTest` download, like iOS `measureStreamingBitrate`. Null when too little arrived. */
+internal fun timedBitrateDownload(
+    request: Request,
+    timeoutMillis: Long,
+    transport: NetworkTransport,
+    serverName: String,
+): BitrateProbeResult? {
+    val client = GatewayHttp.client.newBuilder()
+        .callTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+        .build()
+    val response = runCatching { client.newCall(request).execute() }.getOrNull() ?: return null
+    // Timed from the headers, so DNS, TLS and the server's time to first byte do not count
+    // against the link: on a small sample they made a fast remote connection read as slow.
+    val started = System.nanoTime()
+    response.use {
+        if (!it.isSuccessful) {
+            throw ZelefinException.server("$serverName did not send the test file (HTTP ${it.code}). Check the connection and try again.")
+        }
+        val bytes = runCatching { it.body?.bytes()?.size ?: 0 }.getOrDefault(0)
+        if (bytes < 16_000) return null
+        return BitrateProbeResult.from(bytes, System.nanoTime() - started, transport)
     }
 }
 

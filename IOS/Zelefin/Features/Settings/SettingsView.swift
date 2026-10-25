@@ -52,7 +52,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountDisplayName)
                             .font(.body.weight(.semibold))
-                        Text(session.isSiloServer ? "Silo account" : "Jellyfin account")
+                        Text(session.isSiloServer ? "Silo account" : session.isEmbyServer ? "Emby account" : "Jellyfin account")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -70,9 +70,11 @@ struct SettingsView: View {
                 NotificationSettingsView()
             }
             if !session.isSiloServer {
-                settingsRow("Sessions", systemImage: "laptopcomputer.and.iphone", subtitle: "Devices signed in to Jellyfin") {
+                settingsRow("Sessions", systemImage: "laptopcomputer.and.iphone", subtitle: "Devices signed in to \(serverProduct)") {
                     SessionsView()
                 }
+            }
+            if !session.lacksJellyfinOnlyFeatures {
                 settingsRow("SyncPlay", systemImage: "person.3", subtitle: "Watch together in a group") {
                     SyncPlayView()
                 }
@@ -110,8 +112,10 @@ struct SettingsView: View {
             settingsRow("Activity Log", systemImage: "list.bullet", subtitle: "Sign-ins, scans, and failures") {
                 ActivityLogView()
             }
-            settingsRow("Backups", systemImage: "archivebox", subtitle: "Archive and restore this server") {
-                ServerBackupsView()
+            if !session.isEmbyServer {
+                settingsRow("Backups", systemImage: "archivebox", subtitle: "Archive and restore this server") {
+                    ServerBackupsView()
+                }
             }
             settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
                 ServerBrandingView()
@@ -120,7 +124,7 @@ struct SettingsView: View {
         } header: {
             Text("Server")
         } footer: {
-            Text("Administer this Jellyfin server.")
+            Text("Administer this \(serverProduct) server.")
         }
         .zelefinRowBackground()
     }
@@ -198,6 +202,10 @@ struct SettingsView: View {
             .font(.body.weight(.medium))
             .foregroundStyle(Color.accentColor)
             .frame(width: 28, alignment: .center)
+    }
+
+    private var serverProduct: String {
+        session.isEmbyServer ? "Emby" : "Jellyfin"
     }
 
     private var canAdminister: Bool {

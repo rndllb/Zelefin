@@ -75,7 +75,7 @@ struct SessionsView: View {
     }
 
     private func load(showProgress: Bool = true) async {
-        guard let library = session.jellyfinLibrary else {
+        guard let library = session.remoteSessions else {
             isLoading = false
             errorMessage = "Sign in to see sessions."
             return
@@ -395,7 +395,7 @@ struct SessionDetailView: View {
     }
 
     private func refresh() async {
-        guard let library = session.jellyfinLibrary else { return }
+        guard let library = session.remoteSessions else { return }
         do {
             let latest = try await library.playbackSessions()
             if let match = latest.first(where: { $0.id == sessionID }) {
@@ -412,7 +412,7 @@ struct SessionDetailView: View {
     }
 
     private func send(_ action: SessionControlAction) async {
-        guard let library = session.jellyfinLibrary, let current = item else { return }
+        guard let library = session.remoteSessions, let current = item else { return }
         isBusy = true
         defer { isBusy = false }
         do {
@@ -431,7 +431,7 @@ struct SessionDetailView: View {
     }
 
     private func sendMessage() async {
-        guard let library = session.jellyfinLibrary else { return }
+        guard let library = session.remoteSessions else { return }
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         isBusy = true

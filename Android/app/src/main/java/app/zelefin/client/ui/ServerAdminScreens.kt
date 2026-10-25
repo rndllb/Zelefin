@@ -210,7 +210,7 @@ internal fun UsersTopic() {
                     }
                 }
             }
-            SettingsFooter("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.")
+            SettingsFooter("Administrators can change photos, permissions, library access, and parental controls on this ${model.state.value.session?.serverTypeName ?: "Jellyfin"} server.")
         }
     }
 }
@@ -240,7 +240,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     suspend fun reload() {
         val latest = model.adminUser(userId)
         account = latest
-        draft = latest.policy?.let(::UserPolicyDraft)
+        draft = latest.policy
         username = latest.name
         ratingId = ratings.firstOrNull { it.value == latest.policy?.maxParentalRating }?.id ?: "none"
     }
@@ -249,7 +249,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         runCatching {
             val latest = model.adminUser(userId)
             account = latest
-            draft = latest.policy?.let(::UserPolicyDraft)
+            draft = latest.policy
             username = latest.name
             folders = model.adminMediaFolders()
             ratings = model.parentalRatings()
@@ -265,20 +265,19 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         scope.launch {
             runCatching { work(); reload() }
                 .onSuccess { status = success to false }
-                .onFailure { status = (it.message ?: "Jellyfin did not save that change.") to true }
+                .onFailure { status = (it.message ?: "The server did not save that change.") to true }
             saving = false
         }
     }
 
     fun savePolicy(next: UserPolicyDraft) {
         val current = account ?: return
-        val policy = current.policy
-        if (policy == null) {
+        if (current.policy == null) {
             status = "This user has no policy on the server." to true
             return
         }
         draft = next
-        run { model.updateUserPolicy(current.id, next.applyTo(policy)) }
+        run { model.updateUserPolicy(current.id, next) }
     }
 
     if (confirmDisable) {
@@ -297,7 +296,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     if (confirmReset) {
         SettingsAlertDialog(
             title = "Reset this password?",
-            message = "Jellyfin clears the password. They set a new one the next time they sign in.",
+            message = "The server clears the password. They set a new one the next time they sign in.",
             confirmLabel = "Reset Password",
             destructive = true,
             onConfirm = {

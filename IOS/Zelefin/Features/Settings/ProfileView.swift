@@ -357,7 +357,7 @@ struct ProfileView: View {
     }
 
     private var serverKindLabel: String {
-        session.isSiloServer ? "Silo" : "Jellyfin"
+        session.isSiloServer ? "Silo" : session.isEmbyServer ? "Emby" : "Jellyfin"
     }
 
     private var profileAvatar: some View {

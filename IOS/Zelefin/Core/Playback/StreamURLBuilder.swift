@@ -2,12 +2,24 @@ import Foundation
 import JellyfinAPI
 
 struct StreamURLBuilder: Sendable {
-    let client: JellyfinClient
+    private let endpoint: @Sendable () -> (url: URL, token: String?)
+
+    init(client: JellyfinClient) {
+        endpoint = { (client.configuration.url, client.accessToken) }
+    }
+
+    /// Emby serves subtitle sidecars at the same paths.
+    init(serverURL: URL, accessToken: String?) {
+        endpoint = { (serverURL, accessToken) }
+    }
+
+    private var serverURL: URL { endpoint().url }
+    private var accessToken: String? { endpoint().token }
 
     func url(itemID: String, source: MediaSourceInfo) throws -> URL {
         let method = ItemMapper.playbackMethod(from: source)
         if method != .directPlay, let transcodingPath = source.transcodingURL {
-            guard let url = ServerURL.resolve(base: client.configuration.url, path: transcodingPath, token: client.accessToken) else {
+            guard let url = ServerURL.resolve(base: serverURL, path: transcodingPath, token: accessToken) else {
                 throw ZelefinError.missingStreamURL
             }
             return url
@@ -16,12 +28,12 @@ struct StreamURLBuilder: Sendable {
         let container = StreamContainer.pathExtension(from: source)
         let query = Self.directPlayQuery(
             sourceID: source.id,
-            token: client.accessToken,
+            token: accessToken,
             liveStreamID: source.liveStreamID
         )
 
         guard let url = ServerURL.resolve(
-            base: client.configuration.url,
+            base: serverURL,
             path: "/Videos/\(itemID)/stream.\(container)?\(query)"
         ) else {
             throw ZelefinError.missingStreamURL
@@ -46,8 +58,10 @@ struct StreamURLBuilder: Sendable {
 
     func externalSubtitles(itemID: String, source: MediaSourceInfo) -> [ExternalSubtitleSidecar] {
         guard let sourceID = source.id, !sourceID.isEmpty else { return [] }
+        let base = serverURL
+        let token = accessToken
         return (source.mediaStreams ?? []).compactMap { stream in
-            Self.sidecar(from: stream, itemID: itemID, mediaSourceID: sourceID, client: client)
+            Self.sidecar(from: stream, itemID: itemID, mediaSourceID: sourceID, base: base, token: token)
         }
     }
 
@@ -69,7 +83,8 @@ struct StreamURLBuilder: Sendable {
         from stream: MediaStream,
         itemID: String,
         mediaSourceID: String,
-        client: JellyfinClient
+        base: URL,
+        token: String?
     ) -> ExternalSubtitleSidecar? {
         guard isExternalSubtitle(stream), let index = stream.index else { return nil }
         let format = subtitleExtension(codec: stream.codec)
@@ -79,7 +94,8 @@ struct StreamURLBuilder: Sendable {
             index: index,
             format: format,
             deliveryPath: stream.deliveryURL,
-            client: client
+            base: base,
+            token: token
         ) else {
             return nil
         }
@@ -100,15 +116,16 @@ struct StreamURLBuilder: Sendable {
         index: Int,
         format: String,
         deliveryPath: String?,
-        client: JellyfinClient
+        base: URL,
+        token: String?
     ) -> URL? {
         if let deliveryPath, !deliveryPath.isEmpty {
-            return ServerURL.resolve(base: client.configuration.url, path: deliveryPath, token: client.accessToken)
+            return ServerURL.resolve(base: base, path: deliveryPath, token: token)
         }
         var path = "/Videos/\(itemID)/\(mediaSourceID)/Subtitles/\(index)/Stream.\(format)"
-        if let token = client.accessToken, !token.isEmpty {
+        if let token, !token.isEmpty {
             path += "?api_key=\(token)"
         }
-        return ServerURL.resolve(base: client.configuration.url, path: path)
+        return ServerURL.resolve(base: base, path: path)
     }
 }

@@ -192,9 +192,16 @@ final class SessionStore {
            let avatar = siloProfiles.first(where: { $0.id == link.profileID })?.avatarURL {
             return avatar
         }
-        guard let client else { return nil }
+        let builder: ArtworkURLBuilder
+        if account.isEmbyServer {
+            builder = ArtworkURLBuilder(serverURL: account.serverURL, accessToken: account.accessToken)
+        } else if let client {
+            builder = ArtworkURLBuilder(client: client)
+        } else {
+            return nil
+        }
         let revision = account.accountID == session?.accountID ? avatarRevision : 0
-        return ArtworkURLBuilder(client: client).userAvatar(
+        return builder.userAvatar(
             userID: account.userID,
             tag: account.userImageTag,
             revision: revision
@@ -212,11 +219,42 @@ final class SessionStore {
 
     var currentSiloProfileID: String? { session?.siloLink?.profileID }
 
+    /// Signed in to an Emby server through Emby's own API. There is no Jellyfin `client`.
+    var isEmbyServer: Bool { session?.isEmbyServer == true }
+
+    /// Neither Silo's Jellyfin-compatible API nor Emby has SyncPlay, Quick Connect, or Jellyfin
+    /// plugins (Zelefin's notifications, Intro Skipper, Jellyfin Enhanced).
+    var lacksJellyfinOnlyFeatures: Bool { isSiloServer || isEmbyServer }
+
+    /// Silo serves no Live TV; on Emby it shows only when the server has Live TV turned on.
+    var hidesLiveTV: Bool { isSiloServer || (isEmbyServer && !embyLiveTVEnabled) }
+
+    private(set) var embyLiveTVEnabled = false
+
     var jellyfinLibrary: JellyfinLibraryClient? { library as? JellyfinLibraryClient }
+
+    var embyLibrary: EmbyLibraryClient? { library as? EmbyLibraryClient }
+
+    var liveTVLibrary: (any LiveTVServing)? { library as? any LiveTVServing }
+
+    var remoteSessions: (any RemoteSessionServing)? { library as? any RemoteSessionServing }
+
+    var serverAdmin: (any ServerAdministering)? { library as? any ServerAdministering }
+
+    /// Jellyfin's Open Subtitles plugin, or Emby's own subtitle providers.
+    func remoteSubtitleSearcher() -> (any RemoteSubtitleSearching)? {
+        if let embyLibrary {
+            return EmbySubtitleClient(api: embyLibrary.api, userID: embyLibrary.userID)
+        }
+        return client.map(OpenSubtitlesClient.init(client:))
+    }
 
     func makePlaybackReporter(for plan: PlaybackPlan) -> (any PlaybackReporting)? {
         guard OfflinePlaybackPolicy.shouldReportToServer(isLocalFile: plan.streamURL.isFileURL) else {
             return nil
+        }
+        if let embyLibrary {
+            return EmbyPlaybackReporter(api: embyLibrary.api, plan: plan)
         }
         if let client {
             return PlaybackReporter(client: client, plan: plan)
@@ -232,7 +270,7 @@ final class SessionStore {
     }
 
     var activeServerURL: URL? {
-        client?.configuration.url ?? session?.serverURL
+        client?.configuration.url ?? embyLibrary?.api.serverURL ?? session?.serverURL
     }
 
     var otherAccounts: [SavedSession] {
@@ -264,7 +302,8 @@ final class SessionStore {
         try await connect(
             serverAddress: current.serverURL.absoluteString,
             username: name,
-            password: password
+            password: password,
+            serverType: current.isEmbyServer ? .emby : .jellyfin
         )
     }
 
@@ -275,6 +314,10 @@ final class SessionStore {
         serverType: SignInServerType = .jellyfin
     ) async throws {
         let url = try probe.normalizedURL(from: serverAddress)
+        if serverType == .emby {
+            try await connectEmby(url: url, username: username, password: password)
+            return
+        }
         let isSiloMainAddress = await SiloAccountClient.isSiloAddress(url)
         switch serverType {
         case .silo:
@@ -289,6 +332,11 @@ final class SessionStore {
             if isSiloMainAddress {
                 throw ZelefinError.server("This is Silo's main address. Choose Silo, or enter Silo's Jellyfin-compatible address.")
             }
+            if await EmbyAPI.isEmbyServer(at: url) {
+                throw ZelefinError.server("This is an Emby server. Choose Emby.")
+            }
+        case .emby:
+            break
         }
         let info = try await probe.publicInfo(at: url)
         let isSilo = await probe.isSiloServer(at: url)
@@ -304,6 +352,37 @@ final class SessionStore {
             fallbackName: username,
             client: jellyfin
         )
+    }
+
+    private func connectEmby(url: URL, username: String, password: String) async throws {
+        let info: EmbyPublicInfo
+        do {
+            info = try await EmbyAPI.publicInfo(at: url)
+        } catch ZelefinError.accessGateway {
+            throw ZelefinError.accessGateway
+        } catch {
+            throw ZelefinError.server("This isn't an Emby server. Choose Jellyfin, or check the address.")
+        }
+        guard info.isEmby else {
+            throw ZelefinError.server("This isn't an Emby server. Choose Jellyfin, or check the address.")
+        }
+        let deviceID = DeviceIdentity.deviceID()
+        let auth = try await EmbyAPI.authenticate(url: url, username: username, password: password, deviceID: deviceID)
+        let saved = SavedSession(
+            serverURL: url,
+            accessToken: auth.accessToken,
+            userID: auth.user.id,
+            userName: auth.user.name ?? username,
+            deviceID: deviceID,
+            userImageTag: auth.user.primaryImageTag,
+            serverVersion: info.version,
+            serverName: info.serverName,
+            serverKind: .emby
+        )
+        serverName = info.serverName
+        apply(saved, serverVersion: info.version)
+        persist(saved)
+        beginFirstRunSetupIfNeeded(for: saved)
     }
 
     /// Silo's own sign-in: the account, its household profiles, and where its Jellyfin-compatible API is.
@@ -439,6 +518,9 @@ final class SessionStore {
         if await SiloAccountClient.isSiloAddress(url) {
             throw ZelefinError.siloNativeAddress
         }
+        if await EmbyAPI.isEmbyServer(at: url) {
+            throw ZelefinError.server("This is an Emby server. Choose Emby.")
+        }
         let info = try await probe.publicInfo(at: url)
         let isSilo = await probe.isSiloServer(at: url)
         let deviceID = DeviceIdentity.deviceID()
@@ -514,6 +596,7 @@ final class SessionStore {
             Task { await silo.logout() }
         }
         let remote = client
+        let emby = embyLibrary?.api
         let companion = remote.map(ZelefinCompanionClient.init)
         let remaining: SavedSession?
         if let id = session?.accountID, var box = try? vault.loadBox() {
@@ -534,6 +617,7 @@ final class SessionStore {
         Task {
             await companion?.deleteDevice()
             try? await remote?.signOut()
+            await emby?.signOut()
         }
     }
 
@@ -542,6 +626,10 @@ final class SessionStore {
         let newPassword = new.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !currentPassword.isEmpty, !newPassword.isEmpty else {
             throw ZelefinError.server("Enter your current password and a new password.")
+        }
+        if let embyLibrary {
+            try await embyLibrary.changePassword(current: currentPassword, new: newPassword)
+            return
         }
         guard let client, let session else { throw ZelefinError.missingUser }
         _ = try await client.send(
@@ -575,7 +663,11 @@ final class SessionStore {
             throw ZelefinError.server("Zelefin could not read that photo.")
         }
         try ensureCanChangePhoto(of: userID)
-        try await postProfileImage(jpeg, userID: userID)
+        if let embyLibrary {
+            try await embyLibrary.uploadUserImage(userID: userID, jpeg: jpeg)
+        } else {
+            try await postProfileImage(jpeg, userID: userID)
+        }
         if userID == session?.userID {
             avatarRevision += 1
             await refreshAccount()
@@ -602,8 +694,12 @@ final class SessionStore {
 
     func removeProfileImage(userID: String) async throws {
         try ensureCanChangePhoto(of: userID)
-        guard let client else { throw ZelefinError.missingUser }
-        _ = try await client.send(Paths.deleteUserImage(userID: userID))
+        if let embyLibrary {
+            try await embyLibrary.deleteUserImage(userID: userID)
+        } else {
+            guard let client else { throw ZelefinError.missingUser }
+            _ = try await client.send(Paths.deleteUserImage(userID: userID))
+        }
         if userID == session?.userID {
             avatarRevision += 1
             await refreshAccount()
@@ -749,7 +845,7 @@ final class SessionStore {
     /// Regular Play while already in a group should queue the title for everyone.
     @discardableResult
     func playIfSyncPlay(_ item: MediaItem) -> Bool {
-        guard syncPlayGroupID != nil, !isSiloServer else { return false }
+        guard syncPlayGroupID != nil, !lacksJellyfinOnlyFeatures else { return false }
         Task { try? await playInSyncPlay(item) }
         return true
     }
@@ -815,6 +911,14 @@ final class SessionStore {
 
     private func refreshAccount() async {
         guard !ReviewDemo.isSession(session) else { return }
+        if let embyLibrary {
+            guard let user = try? await embyLibrary.currentUser(), var saved = session, saved.isEmbyServer else { return }
+            if let name = user.name { saved.userName = name }
+            saved.userImageTag = user.primaryImageTag
+            session = saved
+            persist(saved)
+            return
+        }
         guard let client else { return }
         guard let user = try? await client.send(Paths.getCurrentUser).value else { return }
         guard var saved = session else { return }
@@ -856,6 +960,7 @@ final class SessionStore {
         jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         isAdministrator = false
+        embyLiveTVEnabled = false
         enableSubtitleManagement = false
         syncPlayGroupID = nil
         syncPlayGroupName = nil
@@ -934,8 +1039,11 @@ final class SessionStore {
         startHomeNetworkMonitor()
         let endpoint = homeNetworkEndpoint(for: saved)
         activeRoute = endpoint.route
-        let jellyfin: JellyfinClient
-        if let existing, HomeNetworkResolver.isSameEndpoint(existing.configuration.url, endpoint.url) {
+        let jellyfin: JellyfinClient?
+        if saved.isEmbyServer {
+            jellyfin = nil
+            library = Self.makeEmbyLibrary(for: saved, url: endpoint.url)
+        } else if let existing, HomeNetworkResolver.isSameEndpoint(existing.configuration.url, endpoint.url) {
             jellyfin = existing
         } else {
             jellyfin = JellyfinNetworking.client(
@@ -945,7 +1053,9 @@ final class SessionStore {
             )
         }
         client = jellyfin
-        library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
+        if let jellyfin {
+            library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
+        }
         serverName = saved.serverName ?? saved.serverURL.host
         introSkipperAvailable = false
         openSubtitlesAvailable = false
@@ -953,6 +1063,7 @@ final class SessionStore {
         jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         isAdministrator = false
+        embyLiveTVEnabled = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
         libraryPage = LibraryPageCache()
@@ -963,8 +1074,19 @@ final class SessionStore {
         Task { await pullDisplayPreferences() }
         Task { await loadHome(force: true) }
         Task { await refreshHomeNetworkSSID() }
-        RemoteControlHub.shared.connect(client: jellyfin, session: saved)
+        if let jellyfin {
+            RemoteControlHub.shared.connect(client: jellyfin, session: saved)
+        } else if let embyLibrary {
+            RemoteControlHub.shared.connect(emby: embyLibrary.api)
+        }
         Task { await refreshServerCapabilities(at: endpoint.url) }
+    }
+
+    private static func makeEmbyLibrary(for saved: SavedSession, url: URL) -> EmbyLibraryClient {
+        EmbyLibraryClient(
+            api: EmbyAPI(serverURL: url, accessToken: saved.accessToken, deviceID: saved.deviceID),
+            userID: saved.userID
+        )
     }
 
     private func applySiloLink(_ saved: SavedSession) {
@@ -1042,6 +1164,7 @@ final class SessionStore {
         jellyfinEnhancedRemoveContinueWatching = false
         companionAvailable = false
         isAdministrator = false
+        embyLiveTVEnabled = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
         libraryPage = LibraryPageCache()
@@ -1096,6 +1219,15 @@ final class SessionStore {
         guard let saved = session, !ReviewDemo.isSession(saved) else { return }
         let endpoint = homeNetworkEndpoint(for: saved)
         activeRoute = endpoint.route
+        if saved.isEmbyServer {
+            if let embyLibrary, HomeNetworkResolver.isSameEndpoint(embyLibrary.api.serverURL, endpoint.url) {
+                return
+            }
+            let emby = Self.makeEmbyLibrary(for: saved, url: endpoint.url)
+            library = emby
+            RemoteControlHub.shared.connect(emby: emby.api)
+            return
+        }
         if let client, HomeNetworkResolver.isSameEndpoint(client.configuration.url, endpoint.url) {
             return
         }
@@ -1125,6 +1257,15 @@ final class SessionStore {
     }
 
     private func refreshServerCapabilities(at url: URL) async {
+        if isEmbyServer {
+            guard let info = try? await EmbyAPI.publicInfo(at: url), var saved = session, saved.isEmbyServer else { return }
+            serverName = info.serverName ?? serverName
+            saved.serverVersion = info.version ?? saved.serverVersion
+            saved.serverName = info.serverName ?? saved.serverName
+            session = saved
+            persist(saved)
+            return
+        }
         guard let info = try? await probe.publicInfo(at: url) else { return }
         let isSilo = await probe.isSiloServer(at: url)
         serverName = info.serverName
@@ -1159,22 +1300,35 @@ final class SessionStore {
     func applyPlaybackLanguages(audioCode: String, subtitleCode: String) async {
         PlaybackPreferences.audioLanguageCode = audioCode
         PlaybackPreferences.subtitleLanguageCode = subtitleCode
-        guard let client, let userID = session?.userID else { return }
-        var config = (try? await client.send(Paths.getCurrentUser).value.configuration) ?? UserConfiguration()
         let audio = audioCode == PlaybackLanguage.automaticCode ? "" : ServerLanguageCode.toServer(audioCode)
         let subtitle = (subtitleCode == PlaybackLanguage.automaticCode || subtitleCode == PlaybackLanguage.offCode)
             ? ""
             : ServerLanguageCode.toServer(subtitleCode)
+        let mode: SubtitlePlaybackMode = subtitleCode == PlaybackLanguage.offCode
+            ? .none
+            : subtitle.isEmpty ? .default : .smart
+        if let embyLibrary {
+            var preferences = JellyfinPlaybackPreferences()
+            preferences.audioLanguage = ServerLanguageCode.fromServer(audio)
+            preferences.playDefaultAudioTrack = audio.isEmpty
+            preferences.subtitleLanguage = ServerLanguageCode.fromServer(subtitle)
+            preferences.subtitleMode = mode
+            try? await embyLibrary.updatePlaybackPreferences(preferences)
+            return
+        }
+        guard let client, let userID = session?.userID else { return }
+        var config = (try? await client.send(Paths.getCurrentUser).value.configuration) ?? UserConfiguration()
         config.audioLanguagePreference = audio
         config.isPlayDefaultAudioTrack = audio.isEmpty
         config.subtitleLanguagePreference = subtitle
-        config.subtitleMode = subtitleCode == PlaybackLanguage.offCode
-            ? SubtitlePlaybackMode.none
-            : subtitle.isEmpty ? .default : .smart
+        config.subtitleMode = mode
         _ = try? await client.send(Paths.updateUserConfiguration(userID: userID, config))
     }
 
     func jellyfinPlaybackPreferences() async throws -> JellyfinPlaybackPreferences {
+        if let embyLibrary {
+            return JellyfinPlaybackPreferences(configuration: try await embyLibrary.userConfiguration())
+        }
         guard let client else {
             throw ZelefinError.server("Sign in to a Jellyfin server to change these settings.")
         }
@@ -1185,6 +1339,12 @@ final class SessionStore {
     /// Jellyfin picks the starting streams from these, so the device-side language picks
     /// step aside; otherwise an older local pick would override what the user just chose.
     func saveJellyfinPlaybackPreferences(_ preferences: JellyfinPlaybackPreferences) async throws {
+        if let embyLibrary {
+            try await embyLibrary.updatePlaybackPreferences(preferences)
+            PlaybackPreferences.audioLanguageCode = PlaybackLanguage.automaticCode
+            PlaybackPreferences.subtitleLanguageCode = PlaybackLanguage.automaticCode
+            return
+        }
         guard let client, let userID = session?.userID else {
             throw ZelefinError.server("Sign in to a Jellyfin server to change these settings.")
         }
@@ -1212,7 +1372,8 @@ final class SessionStore {
     func detectPlugins() async {
         guard let client else {
             introSkipperAvailable = false
-            openSubtitlesAvailable = false
+            // Emby searches subtitles with its own providers; there is no plugin to look for.
+            openSubtitlesAvailable = isEmbyServer && canManageSubtitles
             jellyfinEnhancedAvailable = false
             jellyfinEnhancedRemoveContinueWatching = false
             companionAvailable = false
@@ -1293,9 +1454,18 @@ final class SessionStore {
         await refreshAdministratorStatus()
         await detectPlugins()
         downloadsAvailable = await (library?.downloadsAvailable() ?? true)
+        if let embyLibrary {
+            embyLiveTVEnabled = (try? await embyLibrary.liveTVInfoEnabled()) ?? false
+        }
     }
 
     func refreshAdministratorStatus() async {
+        if let embyLibrary {
+            guard let user = try? await embyLibrary.currentUser() else { return }
+            isAdministrator = user.policy?.isAdministrator == true
+            enableSubtitleManagement = user.policy?.enableSubtitleManagement == true
+            return
+        }
         guard let client else { return }
         do {
             let user = try await client.send(Paths.getCurrentUser).value
@@ -1307,8 +1477,14 @@ final class SessionStore {
         }
     }
 
-    func userAdminClient() throws -> JellyfinUserAdminClient {
-        guard isAdministrator, let client else {
+    func userAdminClient() throws -> any UserAdministering {
+        guard isAdministrator else {
+            throw ZelefinError.server("Sign in with an administrator to manage users.")
+        }
+        if let embyLibrary {
+            return EmbyUserAdminClient(api: embyLibrary.api)
+        }
+        guard let client else {
             throw ZelefinError.server("Sign in with an administrator to manage users.")
         }
         return JellyfinUserAdminClient(client: client)

@@ -134,8 +134,7 @@ data class ServerUserAccount(
     val id: String,
     val name: String,
     val primaryImageTag: String?,
-    val policy: UserPolicy?,
-    val dto: UserDto,
+    val policy: UserPolicyDraft?,
 ) {
     val isAdministrator: Boolean get() = policy?.isAdministrator == true
     val isDisabled: Boolean get() = policy?.isDisabled == true
@@ -331,15 +330,19 @@ suspend fun JellyfinLibrary.parentalRatings(): List<ParentalRatingChoice> = with
     }
 }
 
-suspend fun JellyfinLibrary.updateUserPolicy(userId: String, policy: UserPolicy) = withContext(Dispatchers.IO) {
-    sdk.userApi.updateUserPolicy(UUID.fromString(userId), policy)
+/** Applies [draft] over the user's current policy, so fields the editor does not show are kept. */
+suspend fun JellyfinLibrary.updateUserPolicy(userId: String, draft: UserPolicyDraft) = withContext(Dispatchers.IO) {
+    val id = UUID.fromString(userId)
+    val current = sdk.userApi.getUserById(id).content.policy ?: throw ZelefinException.server("This user has no policy on the server.")
+    sdk.userApi.updateUserPolicy(id, draft.applyTo(current))
     Unit
 }
 
 suspend fun JellyfinLibrary.renameUser(account: ServerUserAccount, name: String) = withContext(Dispatchers.IO) {
     val trimmed = name.trim()
     if (trimmed.isEmpty()) throw ZelefinException.server("Enter a username.")
-    sdk.userApi.updateUser(UUID.fromString(account.id), account.dto.copy(name = trimmed))
+    val id = UUID.fromString(account.id)
+    sdk.userApi.updateUser(id, sdk.userApi.getUserById(id).content.copy(name = trimmed))
     Unit
 }
 
@@ -378,7 +381,6 @@ private fun serverUser(dto: UserDto): ServerUserAccount? {
         id = id,
         name = dto.name?.trim()?.ifEmpty { null } ?: "User",
         primaryImageTag = dto.primaryImageTag,
-        policy = dto.policy,
-        dto = dto,
+        policy = dto.policy?.let(::UserPolicyDraft),
     )
 }

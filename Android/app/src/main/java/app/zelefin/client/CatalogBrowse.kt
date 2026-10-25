@@ -72,6 +72,9 @@ data class CatalogFilterOptions(
         fileFilters = false,
     )
 
+    /** Emby has no audio or subtitle language filters. */
+    fun forEmbyServer(): CatalogFilterOptions = copy(languages = emptyList())
+
     companion object {
         val SiloSorts = listOf(
             CatalogSortField.Name,
@@ -126,6 +129,9 @@ data class CatalogBrowseQuery(
         studios = emptySet(),
         sort = if (sort in CatalogFilterOptions.SiloSorts) sort else CatalogSortField.Name,
     )
+
+    /** Drops what [CatalogFilterOptions.forEmbyServer] hides. */
+    fun forEmbyServer(): CatalogBrowseQuery = copy(audioLanguages = emptySet(), subtitleLanguages = emptySet())
 
     /** SD+4K cannot be one Jellyfin query, so those two resolutions are fetched separately. */
     fun resolutionPasses(): List<Pair<Boolean?, Boolean?>> {

@@ -1,21 +1,23 @@
 <div align="center">
 
+<img src=".github/assets/zelefin-logo.png" width="140" alt="Zelefin logo" />
+
 # Zelefin
 
-**Native Jellyfin and Silo for iPhone, iPad, and Android.**  
+**Native Jellyfin, Silo, and Emby for iPhone, iPad, and Android.**  
 Your server. Direct play. No Plus, no subscription, no in-app purchase.
 
 <img src="https://img.shields.io/badge/iOS-26+-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 26+" />
 <img src="https://img.shields.io/badge/Android-8+-3DDC84?style=for-the-badge&logo=android&logoColor=111" alt="Android 8+" />
 <img src="https://img.shields.io/badge/Jellyfin-ready-00A4DC?style=for-the-badge&logoColor=white" alt="Jellyfin ready" />
 <img src="https://img.shields.io/badge/Silo-ready-2ad4fc?style=for-the-badge&labelColor=111111&color=2ad4fc" alt="Silo ready" />
+<img src="https://img.shields.io/badge/Emby-ready-52B54B?style=for-the-badge&labelColor=111111&color=52B54B" alt="Emby ready" />
 
 <img src="https://img.shields.io/badge/Direct%20Play-on%20device-2ad4fc?style=flat-square&labelColor=111111" alt="Direct Play" />
 <img src="https://img.shields.io/badge/HDR%20%2F%20Dolby%20Vision-yes-7c5cff?style=flat-square&labelColor=111111" alt="HDR" />
 <img src="https://img.shields.io/badge/Atmos-yes-ff6b4a?style=flat-square&labelColor=111111" alt="Atmos" />
 <img src="https://img.shields.io/badge/SyncPlay-Jellyfin-00A4DC?style=flat-square&labelColor=111111" alt="SyncPlay" />
 <img src="https://img.shields.io/badge/Seerr-requests-22c55e?style=flat-square&labelColor=111111" alt="Seerr" />
-<img src="https://img.shields.io/badge/Emby%20%2F%20Plex-coming-555555?style=flat-square&labelColor=111111" alt="Emby and Plex coming" />
 
 [Jump](#what-you-get) · [Servers](#servers) · [Platforms](#who-gets-what) · [Run](#run-it) · [Plugin](https://github.com/rndllb/Zelefin-Plugin) · [Site](https://zelefin.app)
 

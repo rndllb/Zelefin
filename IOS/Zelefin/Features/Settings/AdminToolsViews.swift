@@ -40,7 +40,7 @@ struct ActivityLogView: View {
     }
 
     private func load(showProgress: Bool = true) async {
-        guard let library = session.jellyfinLibrary else {
+        guard let library = session.serverAdmin else {
             isLoading = false
             errorMessage = "Sign in to see the activity log."
             return
@@ -198,11 +198,18 @@ struct ServerBrandingView: View {
             Section {
                 TextField("Login Disclaimer", text: $branding.loginDisclaimer, axis: .vertical)
                     .lineLimit(3...8)
-                Toggle("Show Splashscreen", isOn: $branding.splashscreenEnabled)
+                if canEdit {
+                    Toggle("Show Splashscreen", isOn: $branding.splashscreenEnabled)
+                }
             } header: {
                 Text("Sign-In")
+            } footer: {
+                if !canEdit {
+                    Text("Emby's branding is read-only here. Change it in Emby's web dashboard.")
+                }
             }
             .zelefinRowBackground()
+            .disabled(!canEdit)
 
             Section {
                 TextField("CSS", text: $branding.customCSS, axis: .vertical)
@@ -212,24 +219,27 @@ struct ServerBrandingView: View {
                 Text("Custom CSS")
             }
             .zelefinRowBackground()
+            .disabled(!canEdit)
 
-            Section {
-                PhotosPicker("Upload Splashscreen", selection: $pickerItem, matching: .images)
-                Button("Remove Custom Splashscreen", role: .destructive) {
-                    Task { await deleteSplash() }
+            if canEdit {
+                Section {
+                    PhotosPicker("Upload Splashscreen", selection: $pickerItem, matching: .images)
+                    Button("Remove Custom Splashscreen", role: .destructive) {
+                        Task { await deleteSplash() }
+                    }
+                } header: {
+                    Text("Splash Image")
                 }
-            } header: {
-                Text("Splash Image")
-            }
-            .zelefinRowBackground()
+                .zelefinRowBackground()
 
-            Section {
-                Button("Save Branding") {
-                    Task { await save() }
+                Section {
+                    Button("Save Branding") {
+                        Task { await save() }
+                    }
+                    .disabled(isSaving || isLoading)
                 }
-                .disabled(isSaving || isLoading)
+                .zelefinRowBackground()
             }
-            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Branding")
         .task { await load() }
@@ -244,8 +254,12 @@ struct ServerBrandingView: View {
         return name.isEmpty ? "This server" : name
     }
 
+    private var canEdit: Bool {
+        session.serverAdmin?.canEditBranding ?? false
+    }
+
     private func load() async {
-        guard let library = session.jellyfinLibrary else {
+        guard let library = session.serverAdmin else {
             isLoading = false
             errorMessage = "Sign in as an administrator to edit branding."
             return
@@ -260,7 +274,7 @@ struct ServerBrandingView: View {
     }
 
     private func save() async {
-        guard let library = session.jellyfinLibrary else { return }
+        guard let library = session.serverAdmin else { return }
         isSaving = true
         defer { isSaving = false }
         do {
@@ -278,7 +292,7 @@ struct ServerBrandingView: View {
             return
         }
         do {
-            try await session.jellyfinLibrary?.uploadSplashscreen(data)
+            try await session.serverAdmin?.uploadSplashscreen(data)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -287,7 +301,7 @@ struct ServerBrandingView: View {
 
     private func deleteSplash() async {
         do {
-            try await session.jellyfinLibrary?.deleteSplashscreen()
+            try await session.serverAdmin?.deleteSplashscreen()
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

@@ -68,7 +68,6 @@ import app.zelefin.core.SiloProfile
 
 private val PickerCaption = Color.White.copy(alpha = 0.55f)
 private val PickerFailure = Color(1f, 0.38f, 0.38f)
-private val PickerCobalt = Color(0f, 0.22f, 0.98f)
 private const val PinMaxLength = 8
 
 /** Kids, Primary, and PIN, in the order the picker badges show them. */
@@ -85,7 +84,7 @@ fun SiloProfileAvatar(profile: SiloProfile, diameter: Dp) {
         Modifier
             .size(diameter)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(ZelefinCyan.copy(alpha = 0.55f), PickerCobalt.copy(alpha = 0.55f)))),
+            .background(Brush.linearGradient(listOf(LoginPalette.Lavender.copy(alpha = 0.55f), LoginPalette.Sky.copy(alpha = 0.55f)))),
         contentAlignment = Alignment.Center,
     ) {
         Text(initial, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.4f).sp)
@@ -102,12 +101,12 @@ fun SiloProfilePickerScreen(picker: SiloProfilePicker, onChoose: (SiloProfile) -
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(LoginPalette.Canvas)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
             .drawBehind {
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(ZelefinCyan.copy(alpha = 0.24f), PickerCobalt.copy(alpha = 0.14f), Color.Black),
+                        colors = listOf(LoginPalette.Lavender.copy(alpha = 0.26f), LoginPalette.Sky.copy(alpha = 0.12f), LoginPalette.Canvas),
                         center = Offset(size.width / 2f, 0f),
                         radius = maxOf(size.width * 0.8f, 260.dp.toPx()),
                     ),
@@ -227,12 +226,12 @@ private fun ProfileTile(profile: SiloProfile, busy: Boolean, enabled: Boolean, o
             Spacer(Modifier.height(6.dp))
             Text(
                 "KIDS",
-                color = Color.Black,
+                color = LoginPalette.Canvas,
                 fontFamily = ZelefinFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.sp,
                 letterSpacing = 0.8.sp,
-                modifier = Modifier.clip(RoundedCornerShape(50)).background(ZelefinCyan).padding(horizontal = 8.dp, vertical = 2.dp),
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(LoginPalette.Action).padding(horizontal = 8.dp, vertical = 2.dp),
             )
         }
     }
@@ -275,7 +274,7 @@ fun SiloPinDialog(prompt: SiloPinPrompt, onSubmit: (String) -> Unit, onCancel: (
                     letterSpacing = 8.sp,
                     textAlign = TextAlign.Center,
                 ),
-                cursorBrush = SolidColor(ZelefinCyan),
+                cursorBrush = SolidColor(LoginPalette.Periwinkle),
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { if (canSubmit) onSubmit(pin) }),

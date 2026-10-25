@@ -1,26 +1,66 @@
 package app.zelefin.client.jellyfin
 
+import app.zelefin.core.EmbyItem
 import app.zelefin.core.MediaItem
 import app.zelefin.core.TitleMoreInfo
 import app.zelefin.core.TitleMoreLink
 import app.zelefin.core.TitleMoreRow
 import java.util.Locale
 import org.jellyfin.sdk.model.api.BaseItemDto
-import org.jellyfin.sdk.model.api.MediaStream
 import org.jellyfin.sdk.model.api.MediaStreamType
 
+/** What a server says about a title, in the shape both Jellyfin and Emby can fill. */
+internal data class FactStream(
+    val kind: Kind,
+    val language: String? = null,
+    val codec: String? = null,
+    val channelLayout: String? = null,
+    val spatialFormat: String = "",
+    val title: String? = null,
+    val displayTitle: String? = null,
+    val isHearingImpaired: Boolean = false,
+    val isForced: Boolean = false,
+    val width: Int? = null,
+    val height: Int? = null,
+    val videoRange: String = "",
+    val bitRate: Int? = null,
+) {
+    enum class Kind { Video, Audio, Subtitle, Other }
+}
+
+internal data class FactSource(val container: String?, val bitrate: Int?)
+
+internal data class FactInput(
+    val streams: List<FactStream> = emptyList(),
+    val sources: List<FactSource> = emptyList(),
+    val links: List<TitleMoreLink> = emptyList(),
+    val studios: List<String> = emptyList(),
+    val originalTitle: String? = null,
+    val premiereDate: String? = null,
+    val officialRating: String? = null,
+    val tags: List<String> = emptyList(),
+    val regions: List<String> = emptyList(),
+    val status: String? = null,
+    val airTime: String? = null,
+    val container: String? = null,
+)
+
 internal object TitleFacts {
-    fun from(dto: BaseItemDto, item: MediaItem): TitleMoreInfo {
-        val streams = dto.mediaStreams.orEmpty().ifEmpty { dto.mediaSources?.firstOrNull()?.mediaStreams.orEmpty() }
-        val audio = streams.filter { it.type == MediaStreamType.AUDIO }
-        val subtitles = streams.filter { it.type == MediaStreamType.SUBTITLE }
+    fun from(dto: BaseItemDto, item: MediaItem): TitleMoreInfo = from(dto.factInput(), item)
+
+    fun from(dto: EmbyItem, item: MediaItem): TitleMoreInfo = from(dto.factInput(), item)
+
+    fun from(input: FactInput, item: MediaItem): TitleMoreInfo {
+        val streams = input.streams
+        val audio = streams.filter { it.kind == FactStream.Kind.Audio }
+        val subtitles = streams.filter { it.kind == FactStream.Kind.Subtitle }
         return TitleMoreInfo(
-            information = information(dto, item),
+            information = information(input, item),
             languages = languages(audio, subtitles),
-            file = fileRows(dto, streams),
-            links = dto.externalUrls.orEmpty().mapNotNull { link ->
-                val name = link.name?.trim().orEmpty()
-                val url = link.url?.trim().orEmpty()
+            file = fileRows(input, streams),
+            links = input.links.mapNotNull { link ->
+                val name = link.name.trim()
+                val url = link.url.trim()
                 if (name.isEmpty() || url.isEmpty()) null else TitleMoreLink(name, url)
             },
             accessibilityNote = if (subtitles.any { it.isHearingImpaired }) {
@@ -31,30 +71,104 @@ internal object TitleFacts {
         )
     }
 
-    private fun information(dto: BaseItemDto, item: MediaItem): List<TitleMoreRow> = buildList {
-        val studios = dto.studios.orEmpty().mapNotNull { it.name?.trim()?.ifEmpty { null } }
-        if (studios.isNotEmpty()) add(TitleMoreRow("Studio", studios.joinToString(", ")))
-        val original = dto.originalTitle?.trim()?.ifEmpty { null }
-        if (original != null && original != item.name) add(TitleMoreRow("Original Title", original))
-        released(dto.premiereDate?.toString(), item.year)?.let { add(TitleMoreRow("Released", it)) }
-        item.runtimeLabel?.let { add(TitleMoreRow("Run Time", it)) }
-        val rated = dto.officialRating?.trim()?.ifEmpty { null } ?: item.officialRating?.trim()?.ifEmpty { null }
-        if (rated != null) add(TitleMoreRow("Rated", rated))
-        val tags = dto.tags.orEmpty().mapNotNull { it.trim().ifEmpty { null } }
-        if (tags.isNotEmpty()) add(TitleMoreRow("Content Advisories", tags.joinToString(", ")))
-        val regions = dto.productionLocations.orEmpty().mapNotNull { it.trim().ifEmpty { null } }
-        if (regions.isNotEmpty()) add(TitleMoreRow("Regions of Origin", regions.joinToString(", ")))
-        dto.status?.trim()?.ifEmpty { null }?.let { add(TitleMoreRow("Status", it.replaceFirstChar { char -> char.uppercase() })) }
-        dto.airTime?.trim()?.ifEmpty { null }?.let { add(TitleMoreRow("Airs", it)) }
+    private fun BaseItemDto.factInput(): FactInput {
+        val streams = mediaStreams.orEmpty().ifEmpty { mediaSources?.firstOrNull()?.mediaStreams.orEmpty() }
+        return FactInput(
+            streams = streams.map { stream ->
+                FactStream(
+                    kind = when (stream.type) {
+                        MediaStreamType.VIDEO -> FactStream.Kind.Video
+                        MediaStreamType.AUDIO -> FactStream.Kind.Audio
+                        MediaStreamType.SUBTITLE -> FactStream.Kind.Subtitle
+                        else -> FactStream.Kind.Other
+                    },
+                    language = stream.language,
+                    codec = stream.codec,
+                    channelLayout = stream.channelLayout,
+                    spatialFormat = stream.audioSpatialFormat.serialName,
+                    title = stream.title,
+                    displayTitle = stream.displayTitle,
+                    isHearingImpaired = stream.isHearingImpaired,
+                    isForced = stream.isForced,
+                    width = stream.width,
+                    height = stream.height,
+                    videoRange = stream.videoRangeType.serialName,
+                    bitRate = stream.bitRate,
+                )
+            },
+            sources = mediaSources.orEmpty().map { FactSource(it.container, it.bitrate) },
+            links = externalUrls.orEmpty().map { TitleMoreLink(it.name.orEmpty(), it.url.orEmpty()) },
+            studios = studios.orEmpty().mapNotNull { it.name },
+            originalTitle = originalTitle,
+            premiereDate = premiereDate?.toString(),
+            officialRating = officialRating,
+            tags = tags.orEmpty(),
+            regions = productionLocations.orEmpty(),
+            status = status,
+            airTime = airTime,
+            container = container,
+        )
     }
 
-    private fun languages(audio: List<MediaStream>, subtitles: List<MediaStream>): List<TitleMoreRow> = buildList {
+    private fun EmbyItem.factInput(): FactInput = FactInput(
+        streams = streams.map { stream ->
+            FactStream(
+                kind = when {
+                    stream.isVideo -> FactStream.Kind.Video
+                    stream.isAudio -> FactStream.Kind.Audio
+                    stream.isSubtitle -> FactStream.Kind.Subtitle
+                    else -> FactStream.Kind.Other
+                },
+                language = stream.language,
+                codec = stream.codec,
+                channelLayout = stream.channelLayout,
+                title = stream.title,
+                displayTitle = stream.displayTitle,
+                isHearingImpaired = stream.isHearingImpaired,
+                isForced = stream.isForced,
+                width = stream.width,
+                height = stream.height,
+                videoRange = stream.rangeLabel.orEmpty(),
+                bitRate = stream.bitRate,
+            )
+        },
+        sources = mediaSources.map { FactSource(it.container, it.bitrate) },
+        links = externalUrls.map { TitleMoreLink(it.name.orEmpty(), it.url.orEmpty()) },
+        studios = studios.mapNotNull { it.name },
+        originalTitle = originalTitle,
+        premiereDate = premiereDate,
+        officialRating = officialRating,
+        tags = tagItems.mapNotNull { it.name },
+        regions = productionLocations,
+        status = status,
+        airTime = airTime,
+        container = container,
+    )
+
+    private fun information(input: FactInput, item: MediaItem): List<TitleMoreRow> = buildList {
+        val studios = input.studios.mapNotNull { it.trim().ifEmpty { null } }
+        if (studios.isNotEmpty()) add(TitleMoreRow("Studio", studios.joinToString(", ")))
+        val original = input.originalTitle?.trim()?.ifEmpty { null }
+        if (original != null && original != item.name) add(TitleMoreRow("Original Title", original))
+        released(input.premiereDate, item.year)?.let { add(TitleMoreRow("Released", it)) }
+        item.runtimeLabel?.let { add(TitleMoreRow("Run Time", it)) }
+        val rated = input.officialRating?.trim()?.ifEmpty { null } ?: item.officialRating?.trim()?.ifEmpty { null }
+        if (rated != null) add(TitleMoreRow("Rated", rated))
+        val tags = input.tags.mapNotNull { it.trim().ifEmpty { null } }
+        if (tags.isNotEmpty()) add(TitleMoreRow("Content Advisories", tags.joinToString(", ")))
+        val regions = input.regions.mapNotNull { it.trim().ifEmpty { null } }
+        if (regions.isNotEmpty()) add(TitleMoreRow("Regions of Origin", regions.joinToString(", ")))
+        input.status?.trim()?.ifEmpty { null }?.let { add(TitleMoreRow("Status", it.replaceFirstChar { char -> char.uppercase() })) }
+        input.airTime?.trim()?.ifEmpty { null }?.let { add(TitleMoreRow("Airs", it)) }
+    }
+
+    private fun languages(audio: List<FactStream>, subtitles: List<FactStream>): List<TitleMoreRow> = buildList {
         val original = audio.map { languageName(it.language) }.distinct()
         if (original.isNotEmpty()) add(TitleMoreRow("Original Audio", original.joinToString(", ")))
         val grouped = linkedMapOf<String, MutableList<String>>()
         audio.forEach { stream ->
             val language = languageName(stream.language)
-            val format = audioFormatName(stream.codec, stream.channelLayout, stream.audioSpatialFormat.serialName)
+            val format = audioFormatName(stream.codec, stream.channelLayout, stream.spatialFormat)
             val formats = grouped.getOrPut(language) { mutableListOf() }
             if (format.isNotEmpty() && format !in formats) formats += format
             val described = listOfNotNull(stream.title, stream.displayTitle).joinToString(" ").lowercase()
@@ -79,27 +193,27 @@ internal object TitleFacts {
         if (captions.isNotEmpty()) add(TitleMoreRow("Subtitles", captions.joinToString(", ")))
     }
 
-    private fun fileRows(dto: BaseItemDto, streams: List<MediaStream>): List<TitleMoreRow> = buildList {
-        val sources = dto.mediaSources.orEmpty()
+    private fun fileRows(input: FactInput, streams: List<FactStream>): List<TitleMoreRow> = buildList {
+        val sources = input.sources
         val versions = sources.mapNotNull { containerLabel(it.container) }
         when {
             versions.size > 1 -> add(TitleMoreRow("Versions", versions.joinToString("\n")))
             versions.size == 1 -> add(TitleMoreRow("File", versions.first()))
-            else -> containerLabel(dto.container)?.let { add(TitleMoreRow("Format", it)) }
+            else -> containerLabel(input.container)?.let { add(TitleMoreRow("Format", it)) }
         }
-        videoLine(streams.firstOrNull { it.type == MediaStreamType.VIDEO })?.let { add(TitleMoreRow("Video", it)) }
-        val bitrate = sources.firstNotNullOfOrNull { it.bitrate } ?: streams.firstOrNull { it.type == MediaStreamType.VIDEO }?.bitRate
+        videoLine(streams.firstOrNull { it.kind == FactStream.Kind.Video })?.let { add(TitleMoreRow("Video", it)) }
+        val bitrate = sources.firstNotNullOfOrNull { it.bitrate } ?: streams.firstOrNull { it.kind == FactStream.Kind.Video }?.bitRate
         if (bitrate != null && bitrate > 0) add(TitleMoreRow("Bitrate", bitrateLabel(bitrate)))
     }
 
-    private fun videoLine(stream: MediaStream?): String? {
+    private fun videoLine(stream: FactStream?): String? {
         stream ?: return null
         val parts = mutableListOf<String>()
         val width = stream.width
         val height = stream.height
         if (width != null && height != null && width > 0 && height > 0) parts += "${width}×${height}"
         videoCodecName(stream.codec)?.let { parts += it }
-        val range = stream.videoRangeType.serialName.lowercase()
+        val range = stream.videoRange.lowercase()
         when {
             range.contains("dolby") || range.contains("dovi") -> parts += "Dolby Vision"
             range.contains("hdr10+") || range.contains("hdr10plus") -> parts += "HDR10+"

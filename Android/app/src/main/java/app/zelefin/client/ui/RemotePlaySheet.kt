@@ -63,7 +63,7 @@ internal fun RemotePlaySheet(
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (failure: Throwable) {
-            error = failure.message ?: "Jellyfin didn’t list connected devices."
+            error = failure.message ?: "The server didn’t list connected devices."
         }
         loading = false
     }
@@ -125,7 +125,7 @@ internal fun RemotePlaySheet(
                             Icon(Icons.Outlined.ConnectedTv, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
                             Box(Modifier.width(12.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(target.deviceLabel.ifBlank { "Jellyfin client" }, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp)
+                                Text(target.deviceLabel.ifBlank { "Media client" }, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp)
                                 Text(
                                     if (target.isPlaying) "${target.userLabel} · ${target.title}" else target.userLabel,
                                     color = RemoteCaption,

@@ -1,6 +1,13 @@
 import Foundation
 import Security
 
+/// Which server API the account talks to. Silo sessions are `.jellyfin`: they use Silo's
+/// Jellyfin-compatible API and are told apart by `isSiloServer`.
+enum ServerKind: String, Codable, Sendable {
+    case jellyfin
+    case emby
+}
+
 struct SavedSession: Codable, Equatable, Sendable, Identifiable {
     var serverURL: URL
     var accessToken: String
@@ -15,11 +22,14 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
     var isSiloServer: Bool
     /// Present when Zelefin signed in through Silo's own sign-in and picked a household profile.
     var siloLink: SiloLink?
+    var serverKind: ServerKind
     /// Signed in through the Silo-native backend Zelefin no longer has; its tokens do not work
     /// against the Jellyfin-compatible API, so the account is dropped on load.
     private(set) var isRetiredSiloSignIn = false
 
     var id: String { accountID }
+
+    var isEmbyServer: Bool { serverKind == .emby }
 
     var accountID: String {
         let host = serverURL.host?.lowercased() ?? serverURL.absoluteString.lowercased()
@@ -50,7 +60,8 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         serverVersion: String? = nil,
         serverName: String? = nil,
         isSiloServer: Bool = false,
-        siloLink: SiloLink? = nil
+        siloLink: SiloLink? = nil,
+        serverKind: ServerKind = .jellyfin
     ) {
         self.serverURL = serverURL
         self.accessToken = accessToken
@@ -62,11 +73,12 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         self.serverName = serverName
         self.isSiloServer = isSiloServer
         self.siloLink = siloLink
+        self.serverKind = serverKind
     }
 
     private enum CodingKeys: String, CodingKey {
         case serverURL, accessToken, userID, userName, deviceID, userImageTag, serverVersion, serverName
-        case isSiloServer, siloLink
+        case isSiloServer, siloLink, serverKind
         case backend
     }
 
@@ -83,6 +95,7 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         isSiloServer = try container.decodeIfPresent(Bool.self, forKey: .isSiloServer) ?? false
         userName = Self.displayName(userName, isSiloServer: isSiloServer)
         siloLink = try? container.decodeIfPresent(SiloLink.self, forKey: .siloLink)
+        serverKind = (try? container.decodeIfPresent(ServerKind.self, forKey: .serverKind)) ?? .jellyfin
         isRetiredSiloSignIn = (try? container.decodeIfPresent(String.self, forKey: .backend)) == "silo"
     }
 
@@ -98,6 +111,7 @@ struct SavedSession: Codable, Equatable, Sendable, Identifiable {
         try container.encodeIfPresent(serverName, forKey: .serverName)
         try container.encode(isSiloServer, forKey: .isSiloServer)
         try container.encodeIfPresent(siloLink, forKey: .siloLink)
+        try container.encode(serverKind, forKey: .serverKind)
     }
 }
 

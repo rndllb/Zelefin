@@ -267,7 +267,7 @@ struct LibraryView: View {
 
     private func eligibleLibraries(from source: [MediaLibrary]) -> [MediaLibrary] {
         var libraries = HomeLayoutPreferences.libraryTabLibraries(source)
-        if session.isSiloServer {
+        if session.hidesLiveTV {
             libraries.removeAll { $0.libraryKind == .liveTV }
         }
         return libraries

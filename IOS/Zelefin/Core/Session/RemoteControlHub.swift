@@ -81,14 +81,35 @@ final class RemoteControlHub {
     private var socket: URLSessionWebSocketTask?
     private var keepAlive: Task<Void, Never>?
     private var generation = 0
+    private var socketKind: ServerKind = .jellyfin
 
     func connect(client: JellyfinClient, session: SavedSession) {
         disconnect()
         generation += 1
+        socketKind = .jellyfin
         let token = generation
         connection = Task { [client, session] in
             await self.advertiseCapabilities(using: client)
             await self.runSocket(client: client, session: session, generation: token)
+        }
+    }
+
+    /// Emby speaks the same message types over `/embywebsocket`, in its own JSON.
+    func connect(emby api: EmbyAPI) {
+        disconnect()
+        generation += 1
+        socketKind = .emby
+        let token = generation
+        connection = Task { [api] in
+            _ = try? await api.data("POST", "/Sessions/Capabilities/Full", body: try api.json(EmbySocket.capabilities))
+            guard let url = EmbySocket.url(base: api.serverURL, token: api.accessToken, deviceID: api.deviceID) else { return }
+            await self.runSocket(generation: token) {
+                var request = URLRequest(url: url)
+                AccessGateway.apply(&request)
+                request.setValue(api.accessToken, forHTTPHeaderField: "X-Emby-Token")
+                request.setValue(EmbyAPI.authorization(deviceID: api.deviceID), forHTTPHeaderField: "X-Emby-Authorization")
+                return URLSession.shared.webSocketTask(with: request)
+            }
         }
     }
 
@@ -123,10 +144,13 @@ final class RemoteControlHub {
             token: session.accessToken,
             deviceID: session.deviceID
         ) else { return }
+        await runSocket(generation: generation) { Self.socketTask(url: url, session: session) }
+    }
 
+    private func runSocket(generation: Int, makeTask: () -> URLSessionWebSocketTask) async {
         var backoff: TimeInterval = 1
         while !Task.isCancelled, generation == self.generation {
-            let task = Self.socketTask(url: url, session: session)
+            let task = makeTask()
             socket = task
             task.resume()
             let dropped = await openAndListen(task, generation: generation)
@@ -151,6 +175,11 @@ final class RemoteControlHub {
     }
 
     private func openAndListen(_ task: URLSessionWebSocketTask, generation: Int) async -> Bool {
+        if socketKind == .emby {
+            await subscribeToSessions(task)
+            startKeepAlive(every: 30, generation: generation)
+            return await listen(task, generation: generation)
+        }
         do {
             let first = try await task.receive()
             guard !Task.isCancelled, generation == self.generation else { return false }
@@ -193,6 +222,10 @@ final class RemoteControlHub {
         case let .string(value): data = Data(value.utf8)
         @unknown default: return
         }
+        if socketKind == .emby {
+            handleEmby(data)
+            return
+        }
         publishRawSyncPlayGroup(data)
         let shownDisplayMessage = SessionDisplayMessage.parse(json: data).map {
             SessionMessageCenter.present($0)
@@ -229,6 +262,40 @@ final class RemoteControlHub {
         case let .syncPlayGroupUpdateMessage(message):
             applySyncPlayGroup(message.data)
         default:
+            break
+        }
+    }
+
+    private func handleEmby(_ data: Data) {
+        let shownDisplayMessage = SessionDisplayMessage.parse(json: data).map {
+            SessionMessageCenter.present($0)
+            return true
+        } ?? false
+        guard let event = EmbySocketEvent.parse(data) else { return }
+        switch event {
+        case let .forceKeepAlive(seconds):
+            startKeepAlive(every: TimeInterval(max(5, seconds / 2)), generation: generation)
+        case let .sessions(sessions):
+            NotificationCenter.default.post(name: .zelefinPlaybackSessions, object: sessions)
+        case .libraryChanged:
+            NotificationCenter.default.post(name: .zelefinLibraryChanged, object: nil)
+        case let .playstate(command, seekTicks):
+            if let command = PlaystateCommand(rawValue: command),
+               let action = RemotePlaybackAction.playstate(command, seekTicks: seekTicks.map(Int.init)) {
+                apply(action)
+            }
+        case let .generalCommand(name, arguments):
+            if name == GeneralCommandType.displayMessage.rawValue {
+                if !shownDisplayMessage, let inbound = SessionDisplayMessage.parse(arguments: arguments) {
+                    SessionMessageCenter.present(inbound)
+                }
+            } else if let command = GeneralCommandType(rawValue: name),
+                      let action = RemotePlaybackAction.general(command) {
+                apply(action)
+            }
+        case let .play(itemIDs, startIndex, _):
+            publishRemotePlay(itemIDs: itemIDs, startIndex: startIndex)
+        case .keepAlive, .userDataChanged, .other:
             break
         }
     }

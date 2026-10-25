@@ -7,7 +7,19 @@ struct ArtworkURLBuilder: Sendable {
     /// fill boxes crop and can request a larger image than this cap.
     static let posterMaxHeight = 420
 
-    let client: JellyfinClient
+    private let endpoint: @Sendable () -> (url: URL, token: String?)
+
+    init(client: JellyfinClient) {
+        endpoint = { (client.configuration.url, client.accessToken) }
+    }
+
+    /// Emby serves images at the same paths with the same query parameters.
+    init(serverURL: URL, accessToken: String?) {
+        endpoint = { (serverURL, accessToken) }
+    }
+
+    private var serverURL: URL { endpoint().url }
+    private var accessToken: String? { endpoint().token }
 
     func primary(for item: MediaItem, maxHeight: Int = posterMaxHeight) -> URL? {
         guard Self.requestsPrimary(kind: item.kind, tag: item.primaryImageTag) else { return nil }
@@ -27,7 +39,7 @@ struct ArtworkURLBuilder: Sendable {
     }
 
     func splashscreenURL() -> URL? {
-        ServerURL.resolve(base: client.configuration.url, path: "/Branding/Splashscreen")
+        ServerURL.resolve(base: serverURL, path: "/Branding/Splashscreen")
     }
 
     func thumb(for item: MediaItem, maxWidth: Int) -> URL? {
@@ -100,11 +112,11 @@ struct ArtworkURLBuilder: Sendable {
         if revision > 0 {
             query.append("v=\(revision)")
         }
-        if let token = client.accessToken {
+        if let token = accessToken {
             query.append("api_key=\(token)")
         }
         let path = "/Users/\(userID)/Images/Primary?\(query.joined(separator: "&"))"
-        return ServerURL.resolve(base: client.configuration.url, path: path)
+        return ServerURL.resolve(base: serverURL, path: path)
     }
 
     func image(
@@ -121,10 +133,10 @@ struct ArtworkURLBuilder: Sendable {
             maxHeight: maxHeight,
             maxWidth: maxWidth,
             tag: tag,
-            token: client.accessToken
+            token: accessToken
         )
         let path = "/Items/\(itemID)/Images/\(type)?\(query.joined(separator: "&"))"
-        return ServerURL.resolve(base: client.configuration.url, path: path)
+        return ServerURL.resolve(base: serverURL, path: path)
     }
 
     static func queryItems(
@@ -147,8 +159,8 @@ struct ArtworkURLBuilder: Sendable {
     func trickplayTile(itemID: String, width: Int, index: Int, mediaSourceID: String?) -> URL? {
         var query = ["quality=90"]
         if let mediaSourceID { query.append("mediaSourceId=\(mediaSourceID)") }
-        if let token = client.accessToken { query.append("api_key=\(token)") }
+        if let token = accessToken { query.append("api_key=\(token)") }
         let path = "/Videos/\(itemID)/Trickplay/\(width)/\(index).jpg?\(query.joined(separator: "&"))"
-        return ServerURL.resolve(base: client.configuration.url, path: path)
+        return ServerURL.resolve(base: serverURL, path: path)
     }
 }

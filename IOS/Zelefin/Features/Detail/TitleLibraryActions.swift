@@ -218,21 +218,24 @@ struct TitleUserActions: View {
                     systemImage: item.isWatchlisted ? "text.badge.minus" : "text.badge.plus"
                 )
             }
-            Button {
-                Task { await setLikes(item.likes == true ? nil : true) }
-            } label: {
-                Label(
-                    item.likes == true ? "Liked" : "Like",
-                    systemImage: item.likes == true ? "hand.thumbsup.fill" : "hand.thumbsup"
-                )
-            }
-            Button {
-                Task { await setLikes(item.likes == false ? nil : false) }
-            } label: {
-                Label(
-                    item.likes == false ? "Disliked" : "Dislike",
-                    systemImage: item.likes == false ? "hand.thumbsdown.fill" : "hand.thumbsdown"
-                )
+            // Emby 4.10 answers rating calls but never stores a like.
+            if !session.isEmbyServer {
+                Button {
+                    Task { await setLikes(item.likes == true ? nil : true) }
+                } label: {
+                    Label(
+                        item.likes == true ? "Liked" : "Like",
+                        systemImage: item.likes == true ? "hand.thumbsup.fill" : "hand.thumbsup"
+                    )
+                }
+                Button {
+                    Task { await setLikes(item.likes == false ? nil : false) }
+                } label: {
+                    Label(
+                        item.likes == false ? "Disliked" : "Dislike",
+                        systemImage: item.likes == false ? "hand.thumbsdown.fill" : "hand.thumbsdown"
+                    )
+                }
             }
         }
         if let onCollections {
@@ -244,7 +247,7 @@ struct TitleUserActions: View {
         if let onPlayElsewhere, !session.isSiloServer {
             Button("Play on Another Device…", systemImage: "tv.badge.wifi", action: onPlayElsewhere)
         }
-        if let onSyncPlay, !session.isSiloServer {
+        if let onSyncPlay, !session.lacksJellyfinOnlyFeatures {
             Button("Play in SyncPlay…", systemImage: "person.2.wave.2", action: onSyncPlay)
         }
         if onRefreshMetadata != nil || onRemoteImage != nil || onDelete != nil {
@@ -331,7 +334,7 @@ struct PlayOnDeviceSheet: View {
     }
 
     private func load() async {
-        sessions = (try? await session.jellyfinLibrary?.playbackSessions()) ?? []
+        sessions = (try? await session.remoteSessions?.playbackSessions()) ?? []
     }
 
     private func play(on target: PlaybackSession) async {

@@ -47,7 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,30 +56,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.zelefin.client.jellyfin.JellyfinLibrary
+import app.zelefin.client.ZelefinModel
 import app.zelefin.client.jellyfin.RemoteSession
 import app.zelefin.client.jellyfin.SessionControl
-import app.zelefin.client.jellyfin.playbackSessions
-import app.zelefin.client.jellyfin.reportedDeviceId
-import app.zelefin.client.jellyfin.sendSessionControl
-import app.zelefin.client.jellyfin.sendSessionMessage
 import app.zelefin.core.SavedSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Live Jellyfin sessions with remote control (iOS `SessionsView` / `SessionDetailView`).
+ * Live server sessions with remote control (iOS `SessionsView` / `SessionDetailView`).
  * Renders inside the settings page sheet, where floating glass overlays and discs are not drawn, so everything is inline.
  */
 @Composable
 internal fun SessionsPanel(session: SavedSession?) {
     val saved = session ?: return
-    val context = LocalContext.current
-    val client = remember(saved.accountId, saved.serverUrl, saved.accessToken) {
-        JellyfinLibrary(context.applicationContext, saved.serverUrl, saved.accessToken)
-    }
-    val localDevice = remember(client) { runCatching { client.reportedDeviceId }.getOrNull() }
+    val model: ZelefinModel = viewModel()
+    val client = saved.accountId
+    val localDevice = remember(client) { model.thisDeviceId() }
     var sessions by remember(client) { mutableStateOf<List<RemoteSession>?>(null) }
     var loadError by remember(client) { mutableStateOf<String?>(null) }
     var selectedId by remember(client) { mutableStateOf<String?>(null) }
@@ -88,12 +82,12 @@ internal fun SessionsPanel(session: SavedSession?) {
     LaunchedEffect(client, refreshTick, selectedId) {
         while (true) {
             try {
-                sessions = client.playbackSessions()
+                sessions = model.remoteSessions()
                 loadError = null
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (failure: Throwable) {
-                loadError = failure.message ?: "Jellyfin didn’t list sessions."
+                loadError = failure.message ?: "The server didn’t list sessions."
             }
             delay(if (selectedId != null) 3_000 else 4_000)
         }
@@ -113,7 +107,7 @@ internal fun SessionsPanel(session: SavedSession?) {
                     session = selected,
                     saved = saved,
                     isThisDevice = selected.isThisDevice(localDevice),
-                    client = client,
+                    model = model,
                     onChanged = { refreshTick++ },
                 )
             }
@@ -179,7 +173,7 @@ private fun SessionRow(session: RemoteSession, saved: SavedSession, isThisDevice
             Text(session.title, style = SettingsRowText, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(session.userLabel, color = IOSColors.secondaryLabel, fontSize = 13.sp, maxLines = 1)
             Text(
-                if (isThisDevice) "This device" else session.deviceLabel.ifBlank { session.deviceType ?: "Jellyfin client" },
+                if (isThisDevice) "This device" else session.deviceLabel.ifBlank { session.deviceType ?: "Media client" },
                 color = IOSColors.secondaryLabel,
                 fontSize = 12.sp,
                 maxLines = 1,
@@ -204,7 +198,7 @@ private fun SessionDetail(
     session: RemoteSession,
     saved: SavedSession,
     isThisDevice: Boolean,
-    client: JellyfinLibrary,
+    model: ZelefinModel,
     onChanged: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -219,7 +213,7 @@ private fun SessionDetail(
         busy = command
         scope.launch {
             try {
-                client.sendSessionControl(session, command, saved.userId)
+                model.sendSessionControl(session, command)
                 status = null
                 delay(400)
                 onChanged()
@@ -237,7 +231,7 @@ private fun SessionDetail(
         sending = true
         scope.launch {
             try {
-                client.sendSessionMessage(session.id, message)
+                model.sendSessionMessage(session.id, message)
                 status = "Message sent to ${session.deviceName.ifBlank { session.userLabel }}."
                 message = ""
                 composing = false

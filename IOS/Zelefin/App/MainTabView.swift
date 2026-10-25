@@ -180,7 +180,7 @@ struct MainTabView: View {
 
     private var enabledTabs: [AppTab] {
         var ordered = AppTab.ordered(from: tabOrderRaw)
-        if session.isSiloServer {
+        if session.hidesLiveTV {
             ordered.removeAll { $0 == .liveTV }
         }
         if UIDevice.current.userInterfaceIdiom == .pad {
@@ -605,7 +605,7 @@ struct ProfileMenu: View {
                     onSessions: session.isSiloServer
                         ? nil
                         : { ProfilePresentation.show(.sessions) },
-                    onSyncPlay: session.isSiloServer
+                    onSyncPlay: session.lacksJellyfinOnlyFeatures
                         ? nil
                         : { ProfilePresentation.show(.syncplay) },
                     onScheduledTasks: session.isAdministrator

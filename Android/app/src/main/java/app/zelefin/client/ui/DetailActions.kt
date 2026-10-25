@@ -20,6 +20,7 @@ class DetailTitleActions(
     val applyArtwork: suspend (MediaItem, RemoteArtworkKind, RemoteImageChoice) -> Unit = { _, _, _ -> },
     val deleteFromLibrary: (suspend (MediaItem) -> Unit)? = null,
     val onToggleWatchlist: ((MediaItem) -> Unit)? = null,
+    val onToggleLike: ((MediaItem) -> Unit)? = null,
     val identifyHits: (suspend (MediaItem) -> List<app.zelefin.client.jellyfin.RemoteIdentifyHit>)? = null,
     val applyIdentify: (suspend (MediaItem, app.zelefin.client.jellyfin.RemoteIdentifyHit) -> Unit)? = null,
     val saveMetadata: (suspend (MediaItem, app.zelefin.client.jellyfin.ItemMetadataDraft) -> Unit)? = null,
