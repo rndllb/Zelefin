@@ -78,7 +78,16 @@ enum ServerReachability: Equatable, Sendable {
     static func explanation(for error: URLError) -> String {
         switch error.code {
         case .notConnectedToInternet:
-            "No internet connection."
+            switch error.networkUnavailableReason {
+            case .cellular:
+                "Cellular data is off for Zelefin. Turn it on in Settings > Zelefin > Cellular Data."
+            case .constrained:
+                "Low Data Mode is blocking Zelefin. Turn it off for this network, or use Wi-Fi."
+            case .expensive:
+                "This network is blocked for Zelefin. Try Wi-Fi."
+            default:
+                "No internet connection."
+            }
         case .timedOut:
             "The request timed out."
         case .cannotFindHost:
@@ -97,6 +106,14 @@ enum ServerReachability: Equatable, Sendable {
         default:
             error.localizedDescription
         }
+    }
+
+    /// Sign-in copy for `error`, with network failures explained.
+    static func signInMessage(for error: Error) -> String {
+        if !(error is ZelefinError), let urlError = urlError(from: error) {
+            return explanation(for: urlError)
+        }
+        return error.localizedDescription
     }
 
     private static func urlError(from error: Error) -> URLError? {

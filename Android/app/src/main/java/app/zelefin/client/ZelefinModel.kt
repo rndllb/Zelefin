@@ -1390,7 +1390,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
      */
     private fun streamingCap(context: Context, measure: BitrateMeasure, sourceBitrate: Int?): Int {
         val selected = PlaybackPreferences.selectedQuality(context)
-        if (selected == PlaybackQuality.Auto && ServerUrl.isInternalHost(playbackHost())) {
+        if (selected == PlaybackQuality.Auto && ServerUrl.isOnLocalNetwork(playbackHost(), localSubnets(context))) {
             return PlaybackQuality.MAX_BITRATE
         }
         viewModelScope.launch {
@@ -1406,7 +1406,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
      */
     private suspend fun measureConnectionIfUnknown(context: Context, measure: BitrateMeasure) {
         if (PlaybackPreferences.selectedQuality(context) != PlaybackQuality.Auto) return
-        if (ServerUrl.isInternalHost(playbackHost())) return
+        if (ServerUrl.isOnLocalNetwork(playbackHost(), localSubnets(context))) return
         runCatching { AdaptiveBitrateStore.refreshIfNeeded(context, measure) }
     }
 

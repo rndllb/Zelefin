@@ -315,7 +315,7 @@ struct PlayerView: View {
         }
         if launch.resolvedQuality == .auto,
            let host = session.activeServerURL?.host,
-           ServerURL.isInternalHost(host) {
+           ServerURL.isOnLocalNetwork(host) {
             return PlaybackQuality.auto.bitsPerSecond
         }
         // Off the home network only: the test download competes with the stream's first bytes.
@@ -403,7 +403,7 @@ struct PlayerView: View {
     private func measureConnectionIfUnknown(for launch: PlaybackLaunchOptions) async {
         guard PlaybackPreferences.adaptiveBitrateEnabled, liveBitrateOverride == nil else { return }
         guard launch.resolvedQuality == .auto else { return }
-        if let host = session.activeServerURL?.host, ServerURL.isInternalHost(host) { return }
+        if let host = session.activeServerURL?.host, ServerURL.isOnLocalNetwork(host) { return }
         await session.adaptiveBitrate.refreshIfNeeded(library: session.library)
     }
 

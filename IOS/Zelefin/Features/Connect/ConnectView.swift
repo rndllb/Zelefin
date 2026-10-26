@@ -527,7 +527,7 @@ struct ConnectView: View {
                 serverType: serverType
             )
         } catch {
-            signInError = error.localizedDescription
+            signInError = ServerReachability.signInMessage(for: error)
         }
     }
 

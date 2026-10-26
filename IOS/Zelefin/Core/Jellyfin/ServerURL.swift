@@ -104,6 +104,17 @@ enum ServerURL {
         return isPrivateIPv4(value)
     }
 
+    /// True when `host` is on a network the device is attached to right now, so Auto can skip the
+    /// speed test. A LAN IP reached through a VPN subnet route (Tailscale) is still private, but the
+    /// stream crosses the VPN's uplink and has to be measured like any remote server.
+    static func isOnLocalNetwork(_ host: String, subnets: [LocalSubnet] = LocalSubnet.current()) -> Bool {
+        let value = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        guard let address = LocalSubnet.ipv4(value) else { return isInternalHost(value) }
+        if value.hasPrefix("127.") { return true }
+        guard isPrivateIPv4(value) else { return false }
+        return subnets.contains { $0.contains(address) }
+    }
+
     static func join(base: URL, path: String) -> URL? {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             return nil
@@ -165,6 +176,48 @@ enum ServerURL {
         case 172: return (16 ... 31).contains(parts[1])
         case 192: return parts[1] == 168
         default: return false
+        }
+    }
+
+    /// An IPv4 network the device sits on directly.
+    struct LocalSubnet: Equatable, Sendable {
+        var address: UInt32
+        var mask: UInt32
+
+        func contains(_ ip: UInt32) -> Bool {
+            ip & mask == address & mask
+        }
+
+        static func ipv4(_ value: String) -> UInt32? {
+            var parsed = in_addr()
+            guard inet_pton(AF_INET, value, &parsed) == 1 else { return nil }
+            return UInt32(bigEndian: parsed.s_addr)
+        }
+
+        /// Wi-Fi and Ethernet (`en*`) only. VPN tunnels (`utun`, `ipsec`) and cellular (`pdp_ip`)
+        /// don't put the device on the server's LAN, even when they route to its addresses.
+        static func current() -> [LocalSubnet] {
+            var head: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&head) == 0, let first = head else { return [] }
+            defer { freeifaddrs(head) }
+            var subnets: [LocalSubnet] = []
+            for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
+                let entry = pointer.pointee
+                let flags = Int32(entry.ifa_flags)
+                guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0,
+                      String(cString: entry.ifa_name).hasPrefix("en"),
+                      let address = entry.ifa_addr, address.pointee.sa_family == sa_family_t(AF_INET),
+                      let netmask = entry.ifa_netmask else { continue }
+                let ip = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                    UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
+                }
+                let mask = netmask.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                    UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
+                }
+                guard mask != 0 else { continue }
+                subnets.append(LocalSubnet(address: ip, mask: mask))
+            }
+            return subnets
         }
     }
 

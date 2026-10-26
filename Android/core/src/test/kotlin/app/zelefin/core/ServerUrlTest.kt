@@ -63,6 +63,19 @@ class ServerUrlTest {
     }
 
     @Test
+    fun lanIpCountsAsLocalOnlyOnItsSubnet() {
+        val home = listOf(ServerUrl.LocalSubnet("192.168.1.42", 24))
+        assertTrue(ServerUrl.isOnLocalNetwork("192.168.1.153", home))
+        // Cellular with a Tailscale subnet route: no Wi-Fi subnet, so the LAN IP is remote.
+        assertFalse(ServerUrl.isOnLocalNetwork("192.168.1.153", emptyList()))
+        assertFalse(ServerUrl.isOnLocalNetwork("192.168.2.10", home))
+        assertFalse(ServerUrl.isOnLocalNetwork("100.101.102.103", home))
+        assertTrue(ServerUrl.isOnLocalNetwork("127.0.0.1", emptyList()))
+        assertTrue(ServerUrl.isOnLocalNetwork("jellyfin.local", emptyList()))
+        assertFalse(ServerUrl.isOnLocalNetwork("jellyfin.example.com", home))
+    }
+
+    @Test
     fun appendsApiKeyWithoutDroppingQuery() {
         val url = ServerUrl.resolve("https://example.com", "/Videos/1/stream.ts?static=true", token = "tok")
         assertEquals("https://example.com/Videos/1/stream.ts?static=true&api_key=tok", url)

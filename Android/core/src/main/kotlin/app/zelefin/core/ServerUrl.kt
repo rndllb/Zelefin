@@ -69,6 +69,39 @@ object ServerUrl {
         return isPrivateIPv4(value)
     }
 
+    /** An IPv4 network the device sits on directly. */
+    data class LocalSubnet(val address: String, val prefixLength: Int)
+
+    /**
+     * True when [host] is on a network the device is attached to right now, so Auto can skip the
+     * speed test. A LAN IP reached through a VPN subnet route (Tailscale) is still private, but the
+     * stream crosses the VPN's uplink and has to be measured like any remote server.
+     */
+    fun isOnLocalNetwork(host: String, subnets: List<LocalSubnet>): Boolean {
+        val value = host.trim('[', ']').lowercase(Locale.US)
+        val ip = ipv4(value) ?: return isInternalHost(value)
+        if (value.startsWith("127.")) return true
+        if (!isPrivateIPv4(value)) return false
+        return subnets.any { subnet ->
+            val network = ipv4(subnet.address) ?: return@any false
+            val prefix = subnet.prefixLength.coerceIn(0, 32)
+            if (prefix == 0) return@any false
+            val mask = (0xFFFFFFFFL shl (32 - prefix)) and 0xFFFFFFFFL
+            (ip and mask) == (network and mask)
+        }
+    }
+
+    private fun ipv4(value: String): Long? {
+        val pieces = value.split(".")
+        if (pieces.size != 4) return null
+        var result = 0L
+        for (piece in pieces) {
+            val part = piece.toIntOrNull()?.takeIf { it in 0..255 } ?: return null
+            result = (result shl 8) or part.toLong()
+        }
+        return result
+    }
+
     fun join(base: String, path: String): String? {
         val parsed = parse(base) ?: return null
         val split = path.split("?", limit = 2)

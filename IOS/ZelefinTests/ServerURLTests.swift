@@ -51,6 +51,21 @@ final class ServerURLTests: XCTestCase {
         XCTAssertFalse(ServerURL.isInternalHost("jellyfin.example.com"))
     }
 
+    func testLanIPCountsAsLocalOnlyOnItsSubnet() throws {
+        let home = ServerURL.LocalSubnet(
+            address: try XCTUnwrap(ServerURL.LocalSubnet.ipv4("192.168.1.42")),
+            mask: try XCTUnwrap(ServerURL.LocalSubnet.ipv4("255.255.255.0"))
+        )
+        XCTAssertTrue(ServerURL.isOnLocalNetwork("192.168.1.153", subnets: [home]))
+        // Cellular with a Tailscale subnet route: no Wi-Fi subnet, so the LAN IP is remote.
+        XCTAssertFalse(ServerURL.isOnLocalNetwork("192.168.1.153", subnets: []))
+        XCTAssertFalse(ServerURL.isOnLocalNetwork("192.168.2.10", subnets: [home]))
+        XCTAssertFalse(ServerURL.isOnLocalNetwork("100.101.102.103", subnets: [home]))
+        XCTAssertTrue(ServerURL.isOnLocalNetwork("127.0.0.1", subnets: []))
+        XCTAssertTrue(ServerURL.isOnLocalNetwork("jellyfin.local", subnets: []))
+        XCTAssertFalse(ServerURL.isOnLocalNetwork("jellyfin.example.com", subnets: [home]))
+    }
+
     func testAppendsAPIKeyWithoutDroppingQuery() {
         let base = URL(string: "https://example.com")!
         let url = ServerURL.resolve(base: base, path: "/Videos/1/stream.ts?static=true", token: "tok")

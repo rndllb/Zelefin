@@ -13,7 +13,8 @@ enum JellyfinNetworking {
         configuration.httpCookieStorage = .shared
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
-        configuration.waitsForConnectivity = true
+        // Waiting hides a blocked route (cellular data off for the app, Low Data Mode) as an endless load.
+        configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 45
         configuration.timeoutIntervalForResource = cacheImages ? 60 : 300
         if cacheImages {

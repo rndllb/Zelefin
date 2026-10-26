@@ -5,7 +5,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.SystemClock
 import app.zelefin.client.network.GatewayHttp
+import app.zelefin.core.ServerUrl
 import app.zelefin.core.ZelefinException
+import java.net.Inet4Address
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import okhttp3.Request
@@ -120,6 +122,27 @@ data class NetworkPathSnapshot(
             )
         }
     }
+}
+
+/**
+ * IPv4 subnets on Wi-Fi and Ethernet. A VPN (Tailscale) routes to LAN addresses without putting
+ * the device on that LAN, and cellular never does, so neither counts.
+ */
+@Suppress("DEPRECATION")
+internal fun localSubnets(context: Context): List<ServerUrl.LocalSubnet> {
+    val manager = context.getSystemService(ConnectivityManager::class.java) ?: return emptyList()
+    return runCatching {
+        manager.allNetworks.flatMap { network ->
+            val caps = manager.getNetworkCapabilities(network) ?: return@flatMap emptyList()
+            val direct = !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+            if (!direct) return@flatMap emptyList()
+            manager.getLinkProperties(network)?.linkAddresses.orEmpty().mapNotNull { link ->
+                (link.address as? Inet4Address)?.hostAddress?.let { ServerUrl.LocalSubnet(it, link.prefixLength) }
+            }
+        }
+    }.getOrDefault(emptyList())
 }
 
 data class BitrateProbeResult(
