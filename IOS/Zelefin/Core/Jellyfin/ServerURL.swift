@@ -2,7 +2,7 @@ import Foundation
 
 enum ServerURL {
     static func normalize(_ raw: String) throws -> URL {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = repairScheme(raw.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !trimmed.isEmpty else { throw ZelefinError.invalidServerURL }
 
         let prefixed: String
@@ -36,7 +36,7 @@ enum ServerURL {
 
     /// LAN addresses default to HTTP; public hosts still default to HTTPS.
     static func normalizeLanAddress(_ raw: String) throws -> URL {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = repairScheme(raw.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !trimmed.isEmpty else { throw ZelefinError.invalidServerURL }
         if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
             return try normalize(trimmed)
@@ -47,6 +47,17 @@ enum ServerURL {
             return try normalize("http://\(trimmed)")
         }
         return try normalize(trimmed)
+    }
+
+    /// Keyboards capitalize the first letter, and `https:/` or `https//` are easy slips. Left alone,
+    /// `Https://host` gained a second `https://` and the device looked up a server named "Https".
+    private static func repairScheme(_ value: String) -> String {
+        guard let match = value.range(of: #"^(https?)(:/{0,3}|/{1,3})"#, options: [.regularExpression, .caseInsensitive]) else {
+            return value
+        }
+        let prefix = value[match]
+        let scheme = prefix.lowercased().hasPrefix("https") ? "https" : "http"
+        return scheme + "://" + value[match.upperBound...]
     }
 
     static func resolve(base: URL, path: String, token: String? = nil) -> URL? {

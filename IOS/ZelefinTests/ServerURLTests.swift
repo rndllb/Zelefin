@@ -51,6 +51,17 @@ final class ServerURLTests: XCTestCase {
         XCTAssertFalse(ServerURL.isInternalHost("jellyfin.example.com"))
     }
 
+    func testRepairsCapitalizedOrMistypedScheme() throws {
+        XCTAssertEqual(try ServerURL.normalize("Https://jellyfin.example.de").absoluteString, "https://jellyfin.example.de")
+        XCTAssertEqual(try ServerURL.normalize("HTTPS://jellyfin.example.de/").absoluteString, "https://jellyfin.example.de")
+        XCTAssertEqual(try ServerURL.normalize("Http://192.168.1.12:8096").absoluteString, "http://192.168.1.12:8096")
+        XCTAssertEqual(try ServerURL.normalize("https:/jellyfin.example.de").absoluteString, "https://jellyfin.example.de")
+        XCTAssertEqual(try ServerURL.normalize("https//jellyfin.example.de").absoluteString, "https://jellyfin.example.de")
+        XCTAssertEqual(try ServerURL.normalizeLanAddress("Http://192.168.1.12:8096").absoluteString, "http://192.168.1.12:8096")
+        XCTAssertEqual(try ServerURL.normalize("httpbin.example.com").absoluteString, "https://httpbin.example.com")
+        XCTAssertEqual(try ServerURL.normalize("http.example.com").absoluteString, "https://http.example.com")
+    }
+
     func testLanIPCountsAsLocalOnlyOnItsSubnet() throws {
         let home = ServerURL.LocalSubnet(
             address: try XCTUnwrap(ServerURL.LocalSubnet.ipv4("192.168.1.42")),

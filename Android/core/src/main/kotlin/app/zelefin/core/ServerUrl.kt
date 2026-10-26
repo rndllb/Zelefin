@@ -5,7 +5,7 @@ import java.util.Locale
 
 object ServerUrl {
     fun normalize(raw: String): String {
-        val trimmed = raw.trim()
+        val trimmed = repairScheme(raw.trim())
         if (trimmed.isEmpty()) throw ZelefinException.invalidServerUrl()
         val prefixed = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
             trimmed
@@ -17,7 +17,7 @@ object ServerUrl {
 
     /** LAN addresses default to HTTP; public hosts still default to HTTPS. */
     fun normalizeLanAddress(raw: String): String {
-        val trimmed = raw.trim()
+        val trimmed = repairScheme(raw.trim())
         if (trimmed.isEmpty()) throw ZelefinException.invalidServerUrl()
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
             return normalize(trimmed)
@@ -147,6 +147,17 @@ object ServerUrl {
         if (parsed.host.isEmpty()) throw ZelefinException.invalidServerUrl()
         return assemble(scheme, parsed.host, parsed.port, trimPath(parsed.path), null)
     }
+
+    /**
+     * Keyboards capitalize the first letter, and `https:/` or `https//` are easy slips. Left alone,
+     * `Https://host` gained a second `https://` and the phone looked up a server named "Https".
+     */
+    private fun repairScheme(value: String): String {
+        val match = SCHEME_PREFIX.find(value) ?: return value
+        return match.groupValues[1].lowercase(Locale.US) + "://" + value.substring(match.range.last + 1)
+    }
+
+    private val SCHEME_PREFIX = Regex("^(https?)(?::/{0,3}|/{1,3})", RegexOption.IGNORE_CASE)
 
     private fun trimPath(path: String): String {
         var value = path

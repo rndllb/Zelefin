@@ -16,6 +16,18 @@ class ServerUrlTest {
     }
 
     @Test
+    fun normalizeRepairsCapitalizedOrMistypedScheme() {
+        assertEquals("https://jellyfin.example.de", ServerUrl.normalize("Https://jellyfin.example.de"))
+        assertEquals("https://jellyfin.example.de", ServerUrl.normalize("HTTPS://jellyfin.example.de/"))
+        assertEquals("http://192.168.1.12:8096", ServerUrl.normalize("Http://192.168.1.12:8096"))
+        assertEquals("https://jellyfin.example.de", ServerUrl.normalize("https:/jellyfin.example.de"))
+        assertEquals("https://jellyfin.example.de", ServerUrl.normalize("https//jellyfin.example.de"))
+        assertEquals("http://192.168.1.12:8096", ServerUrl.normalizeLanAddress("Http://192.168.1.12:8096"))
+        assertEquals("https://httpbin.example.com", ServerUrl.normalize("httpbin.example.com"))
+        assertEquals("https://http.example.com", ServerUrl.normalize("http.example.com"))
+    }
+
+    @Test
     fun normalizeKeepsHttpForLan() {
         assertEquals("http://192.168.1.12:8096", ServerUrl.normalize("http://192.168.1.12:8096/"))
     }
