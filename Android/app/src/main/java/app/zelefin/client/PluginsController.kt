@@ -4,6 +4,7 @@ import android.app.Application
 import app.zelefin.client.emby.EmbyLibrary
 import app.zelefin.client.emby.accountRights
 import app.zelefin.client.push.PushHookRelay
+import app.zelefin.core.MediaItem
 import app.zelefin.core.ZelefinException
 import app.zelefin.client.silo.SiloAccountClient
 import app.zelefin.client.silo.SiloAlertCategory
@@ -42,6 +43,7 @@ import app.zelefin.client.plugins.SeerrRequestDraft
 import app.zelefin.client.plugins.SeerrTitle
 import app.zelefin.client.plugins.SeerrUser
 import app.zelefin.client.plugins.SkipSegment
+import app.zelefin.client.plugins.TheIntroDB
 import app.zelefin.client.plugins.TmdbUserReview
 import app.zelefin.client.plugins.ZelefinCompanionClient
 import app.zelefin.client.plugins.ZelefinPluginInstaller
@@ -71,8 +73,11 @@ data class PluginsUiState(
     val seerrUser: SeerrUser? = null,
     val seerrBusy: Boolean = false,
     val seerrMessage: String? = null,
+    val autoSkipRecap: Boolean = false,
     val autoSkipIntro: Boolean = false,
     val autoSkipCredits: Boolean = false,
+    val autoSkipPreview: Boolean = false,
+    val usesTheIntroDB: Boolean = true,
     val isSiloServer: Boolean = false,
     val isEmbyServer: Boolean = false,
     val pushEnabled: Boolean = true,
@@ -165,8 +170,11 @@ class PluginsController(
         PluginsUiState(
             seerrUrl = settings.seerrUrl,
             seerrName = settings.seerrSession?.displayName,
+            autoSkipRecap = settings.autoSkipRecap,
             autoSkipIntro = settings.autoSkipIntro,
             autoSkipCredits = settings.autoSkipCredits,
+            autoSkipPreview = settings.autoSkipPreview,
+            usesTheIntroDB = settings.usesTheIntroDB,
             pushEnabled = ZelefinPush.isEnabled(application),
         ),
     )
@@ -416,6 +424,50 @@ class PluginsController(
             SiloAlertRegistration.save(application, current.accountId, null)
         }
         _state.update { it.copy(alertsOn = false) }
+    }
+
+    /**
+     * Stops this phone's Emby and Silo alerts for an account leaving it. The push service drops the
+     * hook first, so delivery stops even when the server can't be reached; then the server forgets
+     * the webhook. Needs the account's sign-in, so it runs before Silo or Emby sign out.
+     */
+    suspend fun removeWebhookAlerts(account: SavedSession, emby: EmbyLibrary?, silo: SiloAccountClient?) {
+        EmbyAlertRegistration.saved(application, account.accountId)?.let { registration ->
+            runCatching { PushHookRelay.remove(PushHookRelay.Service.Emby, registration.hookId) }
+            registration.entryId?.let { entryId -> runCatching { emby?.deleteAlertWebhook(entryId) } }
+            EmbyAlertRegistration.save(application, account.accountId, null)
+        }
+        SiloAlertRegistration.saved(application, account.accountId)?.let { registration ->
+            runCatching { PushHookRelay.remove(PushHookRelay.Service.Silo, registration.hookId) }
+            val link = account.siloLink
+            if (registration.webhookId != null && link != null) {
+                runCatching { silo?.deleteWebhook(registration.webhookId, link.profileId, link.profileToken) }
+            }
+            SiloAlertRegistration.save(application, account.accountId, null)
+        }
+    }
+
+    /**
+     * Sign-outs before this fix left their alerts running. The push service hook needs no sign-in to
+     * drop, so a registration whose account is gone can still be stopped.
+     */
+    fun removeOrphanedWebhookAlerts(kept: Set<String>) {
+        val orphaned = (EmbyAlertRegistration.savedAccountIds(application) + SiloAlertRegistration.savedAccountIds(application)) - kept
+        if (orphaned.isEmpty()) return
+        scope.launch {
+            withContext(NonCancellable) {
+                for (accountId in orphaned) {
+                    EmbyAlertRegistration.saved(application, accountId)?.let { registration ->
+                        EmbyAlertRegistration.save(application, accountId, null)
+                        runCatching { PushHookRelay.remove(PushHookRelay.Service.Emby, registration.hookId) }
+                    }
+                    SiloAlertRegistration.saved(application, accountId)?.let { registration ->
+                        SiloAlertRegistration.save(application, accountId, null)
+                        runCatching { PushHookRelay.remove(PushHookRelay.Service.Silo, registration.hookId) }
+                    }
+                }
+            }
+        }
     }
 
     /** A new Firebase token goes to the push service under the same hook, so Silo's webhook stays valid. */
@@ -712,6 +764,21 @@ class PluginsController(
         _state.update { it.copy(autoSkipCredits = value) }
     }
 
+    fun setAutoSkipRecap(value: Boolean) {
+        settings.autoSkipRecap = value
+        _state.update { it.copy(autoSkipRecap = value) }
+    }
+
+    fun setAutoSkipPreview(value: Boolean) {
+        settings.autoSkipPreview = value
+        _state.update { it.copy(autoSkipPreview = value) }
+    }
+
+    fun setUsesTheIntroDB(value: Boolean) {
+        settings.usesTheIntroDB = value
+        _state.update { it.copy(usesTheIntroDB = value) }
+    }
+
     fun loadDiscoverHome(force: Boolean = false) {
         val current = _discover.value
         if (!force && (current.sections.isNotEmpty() || current.loading)) return
@@ -817,16 +884,32 @@ class PluginsController(
         _discover.update { it.copy(notice = null) }
     }
 
-    /** Emby marks intros and credits in its chapter list; Jellyfin uses media segments or Intro Skipper. */
-    suspend fun skipSegments(itemId: String): List<SkipSegment> {
+    /**
+     * Emby marks intros and credits in its chapter list; Jellyfin and Silo serve media segments, which
+     * Intro Skipper, the TheIntroDB plugin and Silo fill in. A title with none falls back to asking
+     * TheIntroDB directly, which is the only way Emby gets recaps and previews.
+     */
+    suspend fun skipSegments(item: MediaItem, loadItem: suspend (String) -> MediaItem?): List<SkipSegment> {
         val current = session() ?: return emptyList()
-        return runCatching {
+        val server = runCatching {
             if (current.isEmbyServer) {
-                emby()?.skipSegments(itemId).orEmpty()
+                emby()?.skipSegments(item.id).orEmpty()
             } else {
-                IntroSkipperClient(current.serverUrl, current.accessToken).segments(itemId)
+                IntroSkipperClient(current.serverUrl, current.accessToken).segments(item.id)
             }
         }.getOrElse { if (it is CancellationException) throw it else emptyList() }
+        if (server.isNotEmpty() || !settings.usesTheIntroDB) return server
+        return runCatching { TheIntroDB.segments(item, loadItem) }
+            .getOrElse { if (it is CancellationException) throw it else emptyList() }
+    }
+
+    fun autoSkips(kind: SkipSegment.Kind): Boolean = with(_state.value) {
+        when (kind) {
+            SkipSegment.Kind.Recap -> autoSkipRecap
+            SkipSegment.Kind.Intro -> autoSkipIntro
+            SkipSegment.Kind.Outro -> autoSkipCredits
+            SkipSegment.Kind.Preview -> autoSkipPreview
+        }
     }
 
     fun subtitles(): OpenSubtitlesClient? {

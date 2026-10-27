@@ -424,6 +424,7 @@ private fun ZelefinScreen(
             directives = model.playerDirectives,
             session = state.session,
             onLoadNext = model::nextEpisode,
+            onLoadItem = model::lookupItem,
             onPlayNext = { next, position -> model.playNext(screen.plan, position, next) },
             onReload = { position -> model.reloadPlayback(screen.plan, position) },
             onRecover = { position -> model.recoverPlayback(screen.plan, position) },

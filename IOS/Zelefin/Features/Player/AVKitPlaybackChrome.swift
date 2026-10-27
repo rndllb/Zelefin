@@ -244,12 +244,17 @@ struct AVKitPlaybackChrome: View {
         72
     }
 
+    /// The padding sits inside the button so the whole pill takes the tap. Outside it, only the words
+    /// did; a tap on the rest of the pill fell through to the show/hide-controls layer behind it.
     private func skipIntro(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(.white)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .contentShape(Capsule())
+        }
         .avkitGlassCapsule()
     }
 

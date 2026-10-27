@@ -5,12 +5,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlin.math.max
 
 data class SkipSegment(val kind: Kind, val start: Double, val end: Double) {
-    enum class Kind { Intro, Outro }
+    /** The four kinds TheIntroDB and Jellyfin's media segments share. `Outro` is the credits. */
+    enum class Kind { Recap, Intro, Outro, Preview }
 
     val title: String
         get() = when (kind) {
+            Kind.Recap -> "Skip Recap"
             Kind.Intro -> "Skip Intro"
-            Kind.Outro -> "Skip Outro"
+            Kind.Outro -> "Skip Credits"
+            Kind.Preview -> "Skip Preview"
         }
 
     val seekTime: Double get() = max(end, start)
@@ -23,12 +26,9 @@ data class SkipSegment(val kind: Kind, val start: Double, val end: Double) {
     companion object {
         const val MIN_LENGTH = 3.0
 
-        /** Intro wins over outro when both are active. */
-        fun prompt(segments: List<SkipSegment>, timeSeconds: Double): SkipPrompt? {
-            val active = segments.firstOrNull { it.kind == Kind.Intro && it.isActive(timeSeconds) }
-                ?: segments.firstOrNull { it.kind == Kind.Outro && it.isActive(timeSeconds) }
-            return active?.let(::SkipPrompt)
-        }
+        /** The earliest-starting segment playing now; overlapping sources settle on one button. */
+        fun prompt(segments: List<SkipSegment>, timeSeconds: Double): SkipPrompt? =
+            segments.filter { it.isActive(timeSeconds) }.minByOrNull { it.start }?.let(::SkipPrompt)
 
         fun fromPluginTimestamps(intro: IntroTimestampPayload?, credits: IntroTimestampPayload?): List<SkipSegment> =
             listOfNotNull(intro?.segment(Kind.Intro), credits?.segment(Kind.Outro))
@@ -66,6 +66,11 @@ data class IntroTimestampPayload(
     }
 }
 
+/** TheIntroDB's Jellyfin plugin, which fills media segments from TheIntroDB's community timestamps. */
+object TheIntroDBPlugin {
+    fun isInstalled(names: List<String>): Boolean = names.any { it.lowercase().filter(Char::isLetter).contains("theintrodb") }
+}
+
 object IntroSkipperPlugin {
     fun isInstalled(names: List<String>): Boolean = names.any { name ->
         val lower = name.lowercase()
@@ -86,7 +91,7 @@ class IntroSkipperClient(private val baseUrl: String, private val accessToken: S
 
     private suspend fun mediaSegments(itemId: String): List<SkipSegment>? {
         val path = "/MediaSegments/${PluginHttp.segment(itemId)}" +
-            "?includeSegmentTypes=Intro&includeSegmentTypes=Outro"
+            "?includeSegmentTypes=Recap&includeSegmentTypes=Intro&includeSegmentTypes=Outro&includeSegmentTypes=Preview"
         val response = PluginHttp.sendOrNull(baseUrl, accessToken, "GET", path) ?: return null
         if (!response.isSuccess) return null
         val root = PluginJson.obj(response.body) ?: return null
@@ -96,8 +101,10 @@ class IntroSkipperClient(private val baseUrl: String, private val accessToken: S
             val startTicks = PluginJson.long(dto, "StartTicks") ?: return@mapNotNull null
             val endTicks = PluginJson.long(dto, "EndTicks") ?: return@mapNotNull null
             val kind = when (PluginJson.string(dto, "Type")?.lowercase()) {
+                "recap" -> SkipSegment.Kind.Recap
                 "intro" -> SkipSegment.Kind.Intro
                 "outro" -> SkipSegment.Kind.Outro
+                "preview" -> SkipSegment.Kind.Preview
                 else -> return@mapNotNull null
             }
             SkipSegment(kind, startTicks / TICKS_PER_SECOND, endTicks / TICKS_PER_SECOND)

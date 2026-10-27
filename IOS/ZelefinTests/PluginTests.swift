@@ -12,7 +12,56 @@ final class SkipSegmentTests: XCTestCase {
         XCTAssertEqual(SkipSegment.prompt(in: [intro, outro], at: 38)?.kind, .intro)
         XCTAssertNil(SkipSegment.prompt(in: [intro, outro], at: 40))
         XCTAssertEqual(SkipSegment.prompt(in: [intro, outro], at: 1210)?.kind, .outro)
-        XCTAssertEqual(SkipSegment.prompt(in: [intro, outro], at: 1210)?.title, "Skip Outro")
+        XCTAssertEqual(SkipSegment.prompt(in: [intro, outro], at: 1210)?.title, "Skip Credits")
+    }
+
+    func testRecapAndPreviewGetTheirOwnButtons() {
+        let recap = SkipSegment(kind: .recap, start: 0, end: 75)
+        let intro = SkipSegment(kind: .intro, start: 75, end: 110)
+        let preview = SkipSegment(kind: .preview, start: 2580, end: 2640)
+        XCTAssertEqual(SkipSegment.prompt(in: [intro, recap, preview], at: 5)?.title, "Skip Recap")
+        XCTAssertEqual(SkipSegment.prompt(in: [intro, recap, preview], at: 80)?.title, "Skip Intro")
+        XCTAssertEqual(SkipSegment.prompt(in: [intro, recap, preview], at: 2600)?.title, "Skip Preview")
+    }
+
+    func testTheIntroDBResponseBecomesSegments() throws {
+        let body = Data("""
+        {"tvdb_id":81189,"type":"tv","season":1,"episode":1,
+         "recap":[{"start_ms":null,"end_ms":45000}],
+         "intro":[{"start_ms":228566,"end_ms":246538}],
+         "credits":[{"start_ms":3431000,"end_ms":null}],
+         "preview":[{"start_ms":3440000,"end_ms":3441000}]}
+        """.utf8)
+        let segments = TheIntroDB.parse(body, runtime: 3480)
+        XCTAssertEqual(segments.map(\.kind), [.recap, .intro, .outro])
+        XCTAssertEqual(segments[0].start, 0)
+        XCTAssertEqual(segments[1].start, 228.566, accuracy: 0.001)
+        XCTAssertEqual(segments[2].end, 3480)
+    }
+
+    func testOpenEndedCreditsNeedARuntime() {
+        let body = Data(#"{"credits":[{"start_ms":3431000,"end_ms":null}]}"#.utf8)
+        XCTAssertTrue(TheIntroDB.parse(body, runtime: nil).isEmpty)
+        XCTAssertTrue(TheIntroDB.parse(Data(#"{"error":"no submissions"}"#.utf8), runtime: 100).isEmpty)
+    }
+
+    func testTheIntroDBLookupURL() throws {
+        let episode = TheIntroDB.Lookup(tvdbID: 81189, tmdbID: 1396, imdbID: "tt0903747", season: 1, episode: 2, durationMS: 2_901_920)
+        let url = try XCTUnwrap(TheIntroDB.url(for: episode))
+        let items = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(url.host, "api.theintrodb.org")
+        XCTAssertEqual(items, ["tvdb_id": "81189", "tmdb_id": "1396", "imdb_id": "tt0903747", "season": "1", "episode": "2", "duration_ms": "2901920"])
+        XCTAssertNil(TheIntroDB.url(for: .init()))
+        let movie = try XCTUnwrap(TheIntroDB.url(for: .init(tmdbID: 603)))
+        let movieItems = URLComponents(url: movie, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(movieItems.map(\.name), ["tmdb_id"])
+    }
+
+    func testProviderIDsReadTvdbAndImdb() {
+        XCTAssertEqual(ProviderID.tvdb(from: ["Tvdb": "81189", "Imdb": "tt0903747"]), 81189)
+        XCTAssertEqual(ProviderID.imdb(from: ["IMDb": "tt0903747"]), "tt0903747")
+        XCTAssertNil(ProviderID.imdb(from: ["Imdb": "0903747"]))
+        XCTAssertNil(ProviderID.tvdb(from: nil))
     }
 
     func testShortSegmentsAreIgnored() {
@@ -34,6 +83,32 @@ final class SkipSegmentTests: XCTestCase {
     func testInvalidPluginTimestampsAreDropped() {
         let payload = IntroTimestampPayload(introStart: 0, introEnd: 0, valid: true)
         XCTAssertNil(payload.segment(kind: .intro))
+    }
+
+    func testPluginPresenceReadsEnabledDisabledAndMissing() {
+        let entries = [
+            JellyfinPluginCatalog.Entry(name: "Intro Skipper", isEnabled: false),
+            JellyfinPluginCatalog.Entry(name: "TheIntroDB", isEnabled: true),
+            JellyfinPluginCatalog.Entry(name: "TheIntroDB", isEnabled: false),
+        ]
+        XCTAssertEqual(PluginPresence.of({ IntroSkipperPlugin.isInstalled(names: [$0]) }, in: entries), .disabled)
+        XCTAssertEqual(PluginPresence.of({ TheIntroDBPlugin.isInstalled(names: [$0]) }, in: entries), .enabled)
+        XCTAssertEqual(PluginPresence.of({ $0 == "Open Subtitles" }, in: entries), .notInstalled)
+    }
+
+    func testOnlyTheOtherSkipPluginIsGreyedOut() {
+        XCTAssertTrue(SkipPluginChoice.isGreyedOut(.disabled, other: .enabled))
+        XCTAssertTrue(SkipPluginChoice.isGreyedOut(.notInstalled, other: .enabled))
+        XCTAssertFalse(SkipPluginChoice.isGreyedOut(.enabled, other: .disabled))
+        XCTAssertFalse(SkipPluginChoice.isGreyedOut(.enabled, other: .enabled))
+        XCTAssertFalse(SkipPluginChoice.isGreyedOut(.disabled, other: .notInstalled))
+    }
+
+    func testDetectsTheIntroDBPluginName() {
+        XCTAssertTrue(TheIntroDBPlugin.isInstalled(names: ["TheIntroDB"]))
+        XCTAssertTrue(TheIntroDBPlugin.isInstalled(names: ["The IntroDB"]))
+        XCTAssertFalse(TheIntroDBPlugin.isInstalled(names: ["Intro Skipper"]))
+        XCTAssertFalse(IntroSkipperPlugin.isInstalled(names: ["TheIntroDB"]))
     }
 
     func testDetectsIntroSkipperPluginNames() {

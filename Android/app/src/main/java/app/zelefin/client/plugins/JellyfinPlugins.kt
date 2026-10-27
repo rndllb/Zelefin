@@ -22,7 +22,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 data class JellyfinPluginState(
-    val introSkipper: Boolean = false,
+    val introSkipper: PluginPresence = PluginPresence.NotInstalled,
+    val theIntroDB: PluginPresence = PluginPresence.NotInstalled,
     val openSubtitles: Boolean = false,
     val enhanced: Boolean = false,
     val enhancedRemoveContinueWatching: Boolean = false,
@@ -30,19 +31,59 @@ data class JellyfinPluginState(
     val names: List<String> = emptyList(),
 )
 
+/** Whether a plugin is on the server and running, from an administrator's `/Plugins` list. Mirrors iOS. */
+enum class PluginPresence(val label: String) {
+    NotInstalled("Not Installed"),
+    Disabled("Disabled"),
+    Enabled("Enabled");
+
+    companion object {
+        /** The strongest state among the plugin's entries, so an old disabled copy never hides the running one. */
+        fun of(entries: List<PluginEntry>, matches: (String) -> Boolean): PluginPresence {
+            val mine = entries.filter { matches(it.name) }
+            return when {
+                mine.any { it.enabled } -> Enabled
+                mine.isEmpty() -> NotInstalled
+                else -> Disabled
+            }
+        }
+    }
+}
+
+data class PluginEntry(val name: String, val enabled: Boolean)
+
+/**
+ * Zelefin's settings treat Intro Skipper and TheIntroDB as alternatives: with one enabled, the other is
+ * shown greyed out. Jellyfin itself would run both.
+ */
+object SkipPluginChoice {
+    fun isGreyedOut(plugin: PluginPresence, other: PluginPresence): Boolean =
+        other == PluginPresence.Enabled && plugin != PluginPresence.Enabled
+}
+
 object JellyfinPlugins {
-    /** Names of plugins from `GET /Plugins` that are not Disabled, Deleted, or Malfunctioned. Empty on failure. */
-    suspend fun activeNames(baseUrl: String, accessToken: String): List<String> {
+    /**
+     * Every plugin from `GET /Plugins` with whether it runs. Deleted and superseded copies are left out:
+     * they sit beside the version that replaced them and would read as a second, disabled install.
+     */
+    suspend fun entries(baseUrl: String, accessToken: String): List<PluginEntry> {
         val response = PluginHttp.sendOrNull(baseUrl, accessToken, "GET", "/Plugins") ?: return emptyList()
         if (!response.isSuccess) return emptyList()
         val rows = PluginJson.parse(response.body) as? JsonArray ?: return emptyList()
         return rows.mapNotNull { row ->
             val plugin = row as? JsonObject ?: return@mapNotNull null
-            val status = PluginJson.string(plugin, "Status")?.lowercase()
-            if (status == "disabled" || status == "deleted" || status == "malfunctioned") return@mapNotNull null
-            PluginJson.string(plugin, "Name")
+            val name = PluginJson.string(plugin, "Name") ?: return@mapNotNull null
+            when (PluginJson.string(plugin, "Status")?.lowercase()) {
+                "deleted", "superseded", "superceded" -> null
+                "disabled", "malfunctioned", "notsupported" -> PluginEntry(name, enabled = false)
+                else -> PluginEntry(name, enabled = true)
+            }
         }
     }
+
+    /** Names of plugins that run. Empty on failure. */
+    suspend fun activeNames(baseUrl: String, accessToken: String): List<String> =
+        entries(baseUrl, accessToken).filter { it.enabled }.map { it.name }
 
     /** `(Policy.IsAdministrator, Policy.EnableSubtitleManagement)` from `GET /Users/{userId}`; `(false, false)` on failure. */
     suspend fun userPolicy(baseUrl: String, accessToken: String, userId: String): Pair<Boolean, Boolean> {
@@ -68,8 +109,10 @@ object JellyfinPlugins {
         isAdmin: Boolean,
         canManageSubtitles: Boolean,
     ): JellyfinPluginState {
-        val names = activeNames(baseUrl, token)
-        val introSkipper = IntroSkipperPlugin.isInstalled(names)
+        val entries = entries(baseUrl, token)
+        val names = entries.filter { it.enabled }.map { it.name }
+        val introSkipper = PluginPresence.of(entries) { IntroSkipperPlugin.isInstalled(listOf(it)) }
+        val theIntroDB = PluginPresence.of(entries) { TheIntroDBPlugin.isInstalled(listOf(it)) }
         val openSubtitles = RemoteSubtitleOffer.pluginAvailable(
             listed = OpenSubtitlesPlugin.isInstalled(names),
             catalogNames = names,
@@ -83,6 +126,7 @@ object JellyfinPlugins {
             ZelefinCompanionClient(baseUrl, token).config() != null
         return JellyfinPluginState(
             introSkipper = introSkipper,
+            theIntroDB = theIntroDB,
             openSubtitles = openSubtitles,
             enhanced = enhanced,
             enhancedRemoveContinueWatching = removeContinueWatching,

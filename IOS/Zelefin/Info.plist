@@ -36,8 +36,12 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Zelefin does not use the camera. A video library built into its player can capture from a camera, so iOS asks apps that include it to explain why; Zelefin never turns it on.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Zelefin does not use the microphone. A video library built into its player can record audio, so iOS asks apps that include it to explain why; Zelefin never turns it on.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -35,8 +35,8 @@ Send playback to a Cast device from the player.
 <tr>
 <td width="50%" valign="top">
 
-▶️ **ExoPlayer & mpv**  
-Media3 / ExoPlayer by default. Optional mpv.
+▶️ **mpv & ExoPlayer**  
+mpv by default. Media3 / ExoPlayer optional.
 
 </td>
 <td width="50%" valign="top">

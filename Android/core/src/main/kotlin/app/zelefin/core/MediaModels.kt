@@ -48,6 +48,9 @@ data class MediaItem(
     val audioFormat: AudioFormat = AudioFormat.Unknown,
     val communityRating: Double? = null,
     val tmdbId: Int? = null,
+    /** TheIntroDB keys titles by TVDB first; IMDb is its last resort. */
+    val tvdbId: Int? = null,
+    val imdbId: String? = null,
     val criticRating: Double? = null,
     val videoResolution: VideoResolution = VideoResolution.Unknown,
     val hasClosedCaptions: Boolean = false,

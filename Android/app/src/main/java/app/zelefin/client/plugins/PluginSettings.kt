@@ -111,12 +111,28 @@ class PluginSettings(context: Context) {
         get() = prefs.getBoolean(AUTO_SKIP_CREDITS_KEY, false)
         set(value) = prefs.edit().putBoolean(AUTO_SKIP_CREDITS_KEY, value).apply()
 
+    var autoSkipRecap: Boolean
+        get() = prefs.getBoolean(AUTO_SKIP_RECAP_KEY, false)
+        set(value) = prefs.edit().putBoolean(AUTO_SKIP_RECAP_KEY, value).apply()
+
+    var autoSkipPreview: Boolean
+        get() = prefs.getBoolean(AUTO_SKIP_PREVIEW_KEY, false)
+        set(value) = prefs.edit().putBoolean(AUTO_SKIP_PREVIEW_KEY, value).apply()
+
+    /** Ask TheIntroDB for skip times when the server has none for a title. On unless turned off. */
+    var usesTheIntroDB: Boolean
+        get() = prefs.getBoolean(THEINTRODB_KEY, true)
+        set(value) = prefs.edit().putBoolean(THEINTRODB_KEY, value).apply()
+
     companion object {
         const val PREFS_NAME = "zelefin.plugins"
         const val SECRETS_NAME = "zelefin.secrets"
         const val SEERR_URL_KEY = "zelefin.seerr.url"
         const val AUTO_SKIP_INTRO_KEY = "zelefin.playback.auto-skip-intro"
         const val AUTO_SKIP_CREDITS_KEY = "zelefin.playback.auto-skip-credits"
+        const val AUTO_SKIP_RECAP_KEY = "zelefin.playback.auto-skip-recap"
+        const val AUTO_SKIP_PREVIEW_KEY = "zelefin.playback.auto-skip-preview"
+        const val THEINTRODB_KEY = "zelefin.playback.theintrodb"
         private const val SEERR_SESSION_KEY = "seerr-session"
         private const val SEERR_CREDENTIALS_KEY = "seerr-credentials"
         private const val SEERR_OWNER_KEY = "zelefin.seerr.owner"

@@ -2,6 +2,7 @@ import Foundation
 import JellyfinAPI
 import Network
 import Observation
+import UIKit
 
 @MainActor
 @Observable
@@ -34,7 +35,8 @@ final class SessionStore {
     /// automatically. Shown on the login screen so the user knows why.
     var authNotice: String?
     private(set) var isLoadingHome = false
-    private(set) var introSkipperAvailable = false
+    private(set) var introSkipperPresence = PluginPresence.notInstalled
+    private(set) var theIntroDBPresence = PluginPresence.notInstalled
     /// Whether offline downloads are offered for the active session.
     private(set) var downloadsAvailable = true
     private(set) var openSubtitlesAvailable = false
@@ -281,6 +283,7 @@ final class SessionStore {
 
     func restore() async {
         defer { isRestoring = false }
+        removeOrphanedWebhookAlerts()
         guard let box = try? vault.loadBox() else { return }
         if box.retiredSiloAccounts > 0 {
             try? vault.persist(box)
@@ -502,7 +505,11 @@ final class SessionStore {
             accessToken: previous.accessToken,
             deviceID: previous.deviceID
         )
-        Task { try? await stale.signOut() }
+        Task {
+            // The old profile's webhook would keep pushing that profile's alerts to this phone.
+            await Self.removeWebhookAlerts(for: previous, emby: nil, silo: client)
+            try? await stale.signOut()
+        }
     }
 
     func connectReviewDemo() {
@@ -595,9 +602,9 @@ final class SessionStore {
 
     func signOut() async {
         homeTask?.cancel()
-        if let silo = siloClient {
-            Task { await silo.logout() }
-        }
+        let leaving = session
+        let silo = siloClient
+        let embyClient = embyLibrary
         let remote = client
         let emby = embyLibrary?.api
         let companion = remote.map(ZelefinCompanionClient.init)
@@ -618,9 +625,64 @@ final class SessionStore {
             persist(remaining)
         }
         Task {
+            // Deleting an Emby or Silo webhook needs the sign-in that the calls below revoke.
+            if let leaving {
+                await Self.removeWebhookAlerts(for: leaving, emby: embyClient, silo: silo)
+            }
+            await silo?.logout()
             await companion?.deleteDevice()
             try? await remote?.signOut()
             await emby?.signOut()
+        }
+    }
+
+    /// Sign-outs before this fix left their alerts running. The push service hook needs no sign-in to
+    /// drop, so a registration whose account is gone can still be stopped. An unreadable keychain
+    /// (before the first unlock after a restart) is not "no accounts", so then nothing is touched.
+    private func removeOrphanedWebhookAlerts() {
+        let kept: Set<String>
+        if let box = try? vault.loadBox() {
+            kept = Set(box.accounts.map(\.accountID))
+        } else if UIApplication.shared.isProtectedDataAvailable {
+            kept = []
+        } else {
+            return
+        }
+        let orphaned = Set(EmbyAlertRegistration.savedAccountIDs() + SiloAlertRegistration.savedAccountIDs())
+            .subtracting(kept)
+        for accountID in orphaned {
+            if let registration = EmbyAlertRegistration.saved(for: accountID) {
+                EmbyAlertRegistration.save(nil, for: accountID)
+                Task { await PushHookRelay.remove(.emby, hookID: registration.hookID) }
+            }
+            if let registration = SiloAlertRegistration.saved(for: accountID) {
+                SiloAlertRegistration.save(nil, for: accountID)
+                Task { await PushHookRelay.remove(.silo, hookID: registration.hookID) }
+            }
+        }
+    }
+
+    /// Stops this phone's Emby and Silo alerts for an account leaving it. The push service drops the
+    /// hook first, so delivery stops even when the server can't be reached; then the server forgets
+    /// the webhook.
+    private static func removeWebhookAlerts(
+        for account: SavedSession,
+        emby: EmbyLibraryClient?,
+        silo: SiloAccountClient?
+    ) async {
+        if let registration = EmbyAlertRegistration.saved(for: account.accountID) {
+            EmbyAlertRegistration.save(nil, for: account.accountID)
+            await PushHookRelay.remove(.emby, hookID: registration.hookID)
+            if let entryID = registration.entryID {
+                await emby?.deleteAlertWebhook(entryID: entryID)
+            }
+        }
+        if let registration = SiloAlertRegistration.saved(for: account.accountID) {
+            SiloAlertRegistration.save(nil, for: account.accountID)
+            await PushHookRelay.remove(.silo, hookID: registration.hookID)
+            if let webhookID = registration.webhookID, let link = account.siloLink, let silo {
+                await silo.deleteWebhook(id: webhookID, profileID: link.profileID, profileToken: link.profileToken)
+            }
         }
     }
 
@@ -957,7 +1019,8 @@ final class SessionStore {
         libraries = []
         homeError = nil
         isLoadingHome = false
-        introSkipperAvailable = false
+        introSkipperPresence = .notInstalled
+        theIntroDBPresence = .notInstalled
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
         jellyfinEnhancedRemoveContinueWatching = false
@@ -1061,7 +1124,8 @@ final class SessionStore {
             library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
         }
         serverName = saved.serverName ?? saved.serverURL.host
-        introSkipperAvailable = false
+        introSkipperPresence = .notInstalled
+        theIntroDBPresence = .notInstalled
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
         jellyfinEnhancedRemoveContinueWatching = false
@@ -1163,7 +1227,8 @@ final class SessionStore {
         client = jellyfin
         library = ReviewDemo.libraryClient(deviceID: saved.deviceID)
         serverName = saved.serverName
-        introSkipperAvailable = false
+        introSkipperPresence = .notInstalled
+        theIntroDBPresence = .notInstalled
         openSubtitlesAvailable = false
         jellyfinEnhancedAvailable = false
         jellyfinEnhancedRemoveContinueWatching = false
@@ -1377,7 +1442,8 @@ final class SessionStore {
 
     func detectPlugins() async {
         guard let client else {
-            introSkipperAvailable = false
+            introSkipperPresence = .notInstalled
+            theIntroDBPresence = .notInstalled
             if let embyLibrary {
                 // Emby lists its plugins to administrators only, so other users fall back to their subtitle rights.
                 let names = isAdministrator ? await embyLibrary.pluginNames() : []
@@ -1396,8 +1462,10 @@ final class SessionStore {
             CompanionSettings.pluginInstalled = false
             return
         }
-        let names = await JellyfinPluginCatalog.activeNames(client: client)
-        introSkipperAvailable = IntroSkipperPlugin.isInstalled(names: names)
+        let entries = await JellyfinPluginCatalog.entries(client: client)
+        let names = entries.filter(\.isEnabled).map(\.name)
+        introSkipperPresence = .of({ IntroSkipperPlugin.isInstalled(names: [$0]) }, in: entries)
+        theIntroDBPresence = .of({ TheIntroDBPlugin.isInstalled(names: [$0]) }, in: entries)
         openSubtitlesAvailable = RemoteSubtitleOffer.pluginAvailable(
             listed: OpenSubtitlesPlugin.isInstalled(names: names),
             catalogNames: names,

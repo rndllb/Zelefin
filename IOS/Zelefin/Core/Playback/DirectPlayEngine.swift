@@ -148,7 +148,7 @@ enum DirectPlayLoadOptions {
         switch pipeline {
         case .directDecode:
             true
-        case .appleNative:
+        case .appleNative, .mpv:
             false
         }
     }
@@ -173,7 +173,8 @@ enum DirectPlayLoadOptions {
                 url: plan.streamURL,
                 container: plan.container
             ),
-            preserveASSMarkup: true,
+            // The overlay draws cue text as-is; raw ASS event lines put "0,0,Main,..." on screen.
+            preserveASSMarkup: false,
             prepareNativeSubtitles: true,
             eagerNativeSubtitleReaders: false,
             sequentialOrigin: plan.isLive,

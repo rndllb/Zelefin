@@ -111,14 +111,14 @@ Movies and episodes for offline play. Downloads tab with storage totals. Progres
 
 ### ▶️ Playback
 
-Play, pause, skip, speed, audio, subtitles, chapters. Resume from the server. Direct play when the device can decode; transcode only when it cannot.
+Play, pause, skip, speed, audio, subtitles, chapters. Resume from the server. Direct play when the device can decode; transcode only when it cannot. MPV by default on both platforms, with every audio and subtitle track in the file in the menus; AetherEngine and Apple’s player on iPhone, ExoPlayer on Android.
 
 </td>
 <td width="33%" valign="top">
 
 ### 🎨 Picture & sound
 
-HDR, Dolby Vision, Atmos badges when the file has them. Cinema bumpers. Intro / credits skip. Subtitle size, color, and position.
+HDR, Dolby Vision, Atmos badges when the file has them. Cinema bumpers. Skip Recap, Intro, Credits, and Preview, each with its own auto-skip. Styled anime subtitles. Subtitle size, color, and position.
 
 </td>
 <td width="33%" valign="top">
@@ -164,7 +164,7 @@ Appearance, home rows, playback languages, downloads, notifications, which tabs 
 
 ### 🔌 Plugins
 
-Intro Skipper, Open Subtitles (Jellyfin and Emby), Jellyfin Enhanced, Seerr / Jellyseerr. First-run setup can install the Zelefin companion.
+Intro Skipper or TheIntroDB, Open Subtitles (Jellyfin and Emby), Jellyfin Enhanced, Seerr / Jellyseerr (requests work without Sonarr or Radarr too). Emby gets skip times straight from TheIntroDB. First-run setup can install the Zelefin companion.
 
 </td>
 <td width="33%" valign="top">
@@ -197,7 +197,9 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 | Picture in Picture · AirPlay | ✅ | — |
 | Review Demo | ✅ | — |
 | Chromecast | — | ✅ |
-| ExoPlayer · mpv | — | ✅ |
+| MPV (default) | ✅ | ✅ |
+| ExoPlayer | — | ✅ |
+| AetherEngine | ✅ | — |
 | Material 3 chrome | — | ✅ |
 | AVPlayer / VideoToolbox | ✅ | — |
 
@@ -216,6 +218,8 @@ Android UI is Material 3: edge-to-edge navigation bar, accent-tinted surfaces, s
 1. Open `IOS/Zelefin.xcodeproj`
 2. Pick a simulator or a signed-in device
 3. Run
+
+MPV ships as a framework too large for git. Build it once with `IOS/scripts/build-mpv.sh` before the first run.
 
 `IOS/project.yml` regenerates the project if you need XcodeGen.
 
@@ -262,7 +266,7 @@ Not yet.
 
 🛒 **Stores**
 
-iPhone and iPad beta on [TestFlight](https://testflight.apple.com/join/hHBVNKTj). Android coming soon. Free.
+iPhone and iPad beta on [TestFlight](https://testflight.apple.com/join/hHBVNKTj). Android from [zelefin.app/android](https://zelefin.app/android). Free.
 
 </td>
 <td width="33%" valign="top">
@@ -274,6 +278,12 @@ Not yet.
 </td>
 </tr>
 </table>
+
+---
+
+## License
+
+Zelefin is free software under the [GNU General Public License v3.0](LICENSE). It plays video with [mpv](https://mpv.io) through an MPVKit build with AVFoundation video output (GPL-3.0; `IOS/scripts/build-mpv.sh` names the exact release), alongside [AetherEngine](https://github.com/superuser404notfound/AetherEngine) and FFmpeg (LGPL-2.1). Skip times can come from [TheIntroDB](https://theintrodb.org).
 
 ---
 

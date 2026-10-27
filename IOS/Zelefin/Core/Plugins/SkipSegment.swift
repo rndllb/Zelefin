@@ -1,9 +1,12 @@
 import Foundation
 
 struct SkipSegment: Hashable, Sendable {
-    enum Kind: String, Hashable, Sendable {
+    /// The four kinds TheIntroDB and Jellyfin's media segments share. `outro` is the credits.
+    enum Kind: String, Hashable, Sendable, CaseIterable {
+        case recap
         case intro
         case outro
+        case preview
     }
 
     let kind: Kind
@@ -12,8 +15,10 @@ struct SkipSegment: Hashable, Sendable {
 
     var title: String {
         switch kind {
+        case .recap: "Skip Recap"
         case .intro: "Skip Intro"
-        case .outro: "Skip Outro"
+        case .outro: "Skip Credits"
+        case .preview: "Skip Preview"
         }
     }
 
@@ -24,11 +29,11 @@ struct SkipSegment: Hashable, Sendable {
         return time >= (start - 0.35) && time < (end - 0.8)
     }
 
+    /// The earliest-starting segment playing now; overlapping sources settle on one button.
     static func prompt(in segments: [SkipSegment], at time: TimeInterval) -> SkipSegment? {
-        if let intro = segments.first(where: { $0.kind == .intro && $0.isActive(at: time) }) {
-            return intro
-        }
-        return segments.first { $0.kind == .outro && $0.isActive(at: time) }
+        segments
+            .filter { $0.isActive(at: time) }
+            .min { $0.start < $1.start }
     }
 
     static func fromPluginTimestamps(intro: IntroTimestampPayload?, credits: IntroTimestampPayload?) -> [SkipSegment] {
@@ -122,5 +127,20 @@ enum IntroSkipperPlugin {
             let lower = name.lowercased()
             return lower.contains("intro skip") || lower.contains("introskipper")
         }
+    }
+}
+
+/// Zelefin's settings treat Intro Skipper and TheIntroDB as alternatives: with one enabled, the other is
+/// shown greyed out. Jellyfin itself would run both.
+enum SkipPluginChoice {
+    static func isGreyedOut(_ plugin: PluginPresence, other: PluginPresence) -> Bool {
+        other == .enabled && plugin != .enabled
+    }
+}
+
+/// TheIntroDB's Jellyfin plugin, which fills media segments from TheIntroDB's community timestamps.
+enum TheIntroDBPlugin {
+    static func isInstalled(names: [String]) -> Bool {
+        names.contains { $0.lowercased().filter(\.isLetter).contains("theintrodb") }
     }
 }

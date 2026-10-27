@@ -28,6 +28,8 @@ packages:
   AetherEngine:
     url: https://github.com/superuser404notfound/AetherEngine
     from: "6.67.2"
+  ZelefinMPV:
+    path: Packages/ZelefinMPV
 targets:
   Zelefin:
     type: application
@@ -59,6 +61,8 @@ targets:
         product: JellyfinAPI
       - package: AetherEngine
         product: AetherEngine
+      - package: ZelefinMPV
+        product: ZelefinMPV
     postBuildScripts:
       - name: Generate Aether dSYMs
         basedOnDependencyAnalysis: false

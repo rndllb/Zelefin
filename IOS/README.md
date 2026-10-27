@@ -30,6 +30,9 @@ On Now, channels, listings, recordings already on the server.
 🖼️ **PiP & AirPlay**  
 AVPlayer / VideoToolbox. HDR stays on Apple’s decoder.
 
+▶️ **MPV, AetherEngine, or Native**  
+MPV by default: every audio and subtitle track, styled subtitles, hardware decoding.
+
 </td>
 </tr>
 <tr>
@@ -57,6 +60,12 @@ Jellyfin, Silo, and Emby, with home, library, search, Discover, downloads, SyncP
 1. Open `Zelefin.xcodeproj`
 2. Pick an iPhone or iPad simulator, or a signed-in device
 3. Run
+
+MPV is a framework too large for git (`Packages/ZelefinMPV`). Build it once before the first run:
+
+```bash
+scripts/build-mpv.sh
+```
 
 `project.yml` is the XcodeGen spec if you need to regenerate the project.
 

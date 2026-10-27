@@ -12,10 +12,14 @@ struct IntroSkipperClient: Sendable {
         IntroSkipperPlugin.isInstalled(names: await JellyfinPluginCatalog.activeNames(client: client))
     }
 
+    /// Jellyfin's own MediaSegments first: any user can read them, and current Intro Skipper, the
+    /// TheIntroDB plugin, and Silo all write there. The plugin's older routes are only asked when `/Plugins` shows Intro Skipper, which
+    /// needs an administrator, so a regular user never spends three 404s per title.
     func segments(for itemID: String) async -> [SkipSegment] {
         if let core = try? await mediaSegments(for: itemID), !core.isEmpty {
             return core
         }
+        guard await isInstalled() else { return [] }
         if let plugin = await pluginSegments(for: itemID), !plugin.isEmpty {
             return plugin
         }
@@ -24,15 +28,17 @@ struct IntroSkipperClient: Sendable {
 
     private func mediaSegments(for itemID: String) async throws -> [SkipSegment] {
         let result = try await client.send(
-            Paths.getItemSegments(itemID: itemID, includeSegmentTypes: [.intro, .outro])
+            Paths.getItemSegments(itemID: itemID, includeSegmentTypes: [.recap, .intro, .outro, .preview])
         ).value
         return (result.items ?? []).compactMap { dto in
             guard let startTicks = dto.startTicks, let endTicks = dto.endTicks else { return nil }
             let kind: SkipSegment.Kind
             switch dto.type {
+            case .recap: kind = .recap
             case .intro: kind = .intro
             case .outro: kind = .outro
-            default: return nil
+            case .preview: kind = .preview
+            case .commercial, .unknown, nil: return nil
             }
             return SkipSegment(
                 kind: kind,

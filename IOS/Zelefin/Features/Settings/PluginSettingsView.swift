@@ -2,8 +2,11 @@ import SwiftUI
 
 struct PluginSettingsView: View {
     @Environment(SessionStore.self) private var session
+    @AppStorage(PlaybackPreferences.autoSkipRecapKey) private var autoSkipRecap = false
     @AppStorage(PlaybackPreferences.autoSkipIntroKey) private var autoSkipIntro = false
     @AppStorage(PlaybackPreferences.autoSkipCreditsKey) private var autoSkipCredits = false
+    @AppStorage(PlaybackPreferences.autoSkipPreviewKey) private var autoSkipPreview = false
+    @AppStorage(PlaybackPreferences.theIntroDBKey) private var usesTheIntroDB = true
     @AppStorage(PluginSettings.seerrURLKey) private var seerrURL = ""
     @State private var seerrUsername = ""
     @State private var seerrPassword = ""
@@ -40,13 +43,13 @@ struct PluginSettingsView: View {
     @ViewBuilder
     private var jellyfinPluginSections: some View {
         Section {
-            pluginStatusRow("Skip Intro / Outro", installed: session.introSkipperAvailable)
-            Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
-            Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
+            skipPluginRow("Intro Skipper", session.introSkipperPresence, other: ("TheIntroDB", session.theIntroDBPresence))
+            skipPluginRow("TheIntroDB", session.theIntroDBPresence, other: ("Intro Skipper", session.introSkipperPresence))
+            skipToggles
         } header: {
-            Text("Intro Skipper")
+            Text("Skip Recaps, Intros, Credits and Previews")
         } footer: {
-            Text("Skip buttons appear during playback when the plugin is installed on this Jellyfin server.")
+            Text("Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly. Plugins only show as installed to an administrator.")
         }
         .zelefinRowBackground()
 
@@ -113,26 +116,33 @@ struct PluginSettingsView: View {
     /// Silo has no Jellyfin plugins, but it finds intros and credits itself and serves them as media segments.
     private var siloSkipSection: some View {
         Section {
-            Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
-            Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
+            skipToggles
         } header: {
-            Text("Skip Intro / Outro")
+            Text("Skip Recaps, Intros, Credits and Previews")
         } footer: {
-            Text("Skip buttons appear during playback when Silo has found an intro or credits for the episode.")
+            Text("Skip buttons appear when Silo has found a recap, intro, credits or preview, including from its built-in TheIntroDB support. For titles with none, Zelefin can ask TheIntroDB directly.")
         }
         .zelefinRowBackground()
     }
 
     private var embySkipSection: some View {
         Section {
-            Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
-            Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
+            skipToggles
         } header: {
-            Text("Skip Intro / Outro")
+            Text("Skip Recaps, Intros, Credits and Previews")
         } footer: {
-            Text("Skip buttons appear during playback when Emby has marked an intro or credits, or the file has chapters named Intro or Credits. Jellyfin plugins are not available on Emby.")
+            Text("Skip buttons appear when Emby has marked an intro or credits, or the file has chapters named Intro or Credits. Emby has no TheIntroDB plugin, so for everything else Zelefin can ask TheIntroDB directly.")
         }
         .zelefinRowBackground()
+    }
+
+    @ViewBuilder
+    private var skipToggles: some View {
+        Toggle("Automatically Skip Recaps", isOn: $autoSkipRecap)
+        Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
+        Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
+        Toggle("Automatically Skip Previews", isOn: $autoSkipPreview)
+        Toggle("Look Up Skip Times on TheIntroDB", isOn: $usesTheIntroDB)
     }
 
     @ViewBuilder
@@ -168,6 +178,35 @@ struct PluginSettingsView: View {
             Text("Jellyseerr or Seerr lets you request movies and shows that are not on Jellyfin yet. Use your Jellyfin username and password. Search for a title, then tap Request.")
         }
         .zelefinRowBackground()
+    }
+
+    private func skipPluginRow(
+        _ title: String,
+        _ presence: PluginPresence,
+        other: (name: String, presence: PluginPresence)
+    ) -> some View {
+        let greyed = SkipPluginChoice.isGreyedOut(presence, other: other.presence)
+        return VStack(alignment: .leading, spacing: 4) {
+            LabeledContent(title) {
+                Text(presence.label)
+                    .foregroundStyle(greyed ? Color.secondary : presenceColor(presence))
+            }
+            if greyed {
+                Text("Only one skip plugin can be enabled at a time. \(other.name) is enabled.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .opacity(greyed ? 0.5 : 1)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func presenceColor(_ presence: PluginPresence) -> Color {
+        switch presence {
+        case .enabled: .green
+        case .disabled: .orange
+        case .notInstalled: .red
+        }
     }
 
     private func pluginStatusRow(_ title: String, installed: Bool) -> some View {

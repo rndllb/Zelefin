@@ -37,6 +37,13 @@ struct SiloAlertRegistration: Codable, Equatable, Sendable {
 
     private static func key(for accountID: String) -> String { "zelefin.silo.alerts.\(accountID)" }
 
+    /// Accounts with a registration saved on this device, including ones since signed out.
+    static func savedAccountIDs() -> [String] {
+        UserDefaults.standard.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix("zelefin.silo.alerts.") }
+            .map { String($0.dropFirst("zelefin.silo.alerts.".count)) }
+    }
+
     static func saved(for accountID: String) -> SiloAlertRegistration? {
         guard let data = UserDefaults.standard.data(forKey: key(for: accountID)) else { return nil }
         return try? JSONDecoder().decode(SiloAlertRegistration.self, from: data)

@@ -765,7 +765,7 @@ fun MpvPlayerSurface(
             }
         }
         val lift by animateDpAsState(if (showChrome) 84.dp else 18.dp, label = "mpv-player-lift")
-        val promptVisible = prompt != null && !inPip && !locked && !(upNextVisible && prompt.kind == SkipSegment.Kind.Outro)
+        val promptVisible = prompt != null && !inPip && !locked && !(upNextVisible && (prompt.kind == SkipSegment.Kind.Outro || prompt.kind == SkipSegment.Kind.Preview))
         AnimatedVisibility(
             visible = promptVisible,
             enter = fadeIn(),

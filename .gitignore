@@ -11,3 +11,6 @@ build/
 *.dSYM.zip
 *.dSYM
 .impeccable/
+
+# Built by IOS/scripts/build-mpv.sh (too large for git)
+IOS/Packages/ZelefinMPV/ZelefinMPV.xcframework/

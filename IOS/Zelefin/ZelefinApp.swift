@@ -13,6 +13,7 @@ enum InterfaceOrientationLock {
         return allowsLandscapeOnPhone ? .allButUpsideDown : .portrait
     }
 
+    /// Playback opens in landscape; turning the phone back to portrait still works while it plays.
     @MainActor
     static func setPhoneLandscapeAllowed(_ allowed: Bool) {
         allowsLandscapeOnPhone = allowed
@@ -20,9 +21,25 @@ enum InterfaceOrientationLock {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
             return
         }
+        // UIKit caches each controller's supported orientations. Without this the new mask waits for
+        // some later re-query, so turning the phone did nothing until something else forced one.
+        for window in scene.windows {
+            var controller = window.rootViewController
+            while let current = controller {
+                current.setNeedsUpdateOfSupportedInterfaceOrientations()
+                controller = current.presentedViewController
+            }
+        }
         // No error handler: UIKit calls it off the main thread, and a closure written here is
         // main-actor isolated, so Swift 6 traps when it runs.
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: allowed ? playbackOrientation : .portrait))
+    }
+
+    /// The landscape side the phone is already tilted to. Device and interface orientations are
+    /// mirrored: a phone turned left shows the interface rotated right.
+    @MainActor
+    private static var playbackOrientation: UIInterfaceOrientationMask {
+        UIDevice.current.orientation == .landscapeRight ? .landscapeLeft : .landscapeRight
     }
 }
 
@@ -57,6 +74,10 @@ struct ZelefinApp: App {
     @State private var session = SessionStore()
     @State private var downloads = DownloadStore()
     @State private var deepLinks = DeepLinkStore()
+
+    init() {
+        PlaybackPreferences.moveEveryoneToMPVOnce()
+    }
 
     var body: some Scene {
         WindowGroup {

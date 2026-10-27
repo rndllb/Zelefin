@@ -40,8 +40,17 @@ struct SeerrRequestView: View {
         Set(regularSeasons.map(\.seasonNumber).filter { !occupiedSeasonNumbers.contains($0) })
     }
 
+    /// Seerr with no Sonarr or Radarr still records a request, so admins can see what people want;
+    /// nothing downloads. Only once the list has loaded empty, not while it is still on its way.
+    private var requestsWithoutDownloader: Bool {
+        !isLoading && servers.isEmpty && errorMessage == nil
+    }
+
     private var canSubmit: Bool {
-        guard !isSubmitting, serverID != nil, profileID != nil, !rootFolder.isEmpty else { return false }
+        guard !isSubmitting else { return false }
+        if !requestsWithoutDownloader {
+            guard serverID != nil, profileID != nil, !rootFolder.isEmpty else { return false }
+        }
         if title.kind == .movie, title.availability == .available, !is4k {
             return false
         }
@@ -240,8 +249,8 @@ struct SeerrRequestView: View {
                 .foregroundStyle(.white)
             if servers.isEmpty {
                 Text(title.kind == .movie
-                     ? "No Radarr server is set up in Seerr."
-                     : "No Sonarr server is set up in Seerr.")
+                     ? "No Radarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads."
+                     : "No Sonarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads.")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.7))
             } else {

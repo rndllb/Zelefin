@@ -3,7 +3,7 @@ import SwiftUI
 
 struct PlaybackSettingsView: View {
     @Environment(SessionStore.self) private var session
-    @AppStorage(PlaybackPreferences.useNativeVideoPlayerKey) private var useNativeVideoPlayer = false
+    @AppStorage(PlaybackPreferences.playerEngineKey) private var playerEngine = PlaybackPreferences.playerEngine
     @AppStorage(PlaybackPreferences.preferFMP4InHLSKey) private var preferFMP4InHLS = true
     @AppStorage(PlaybackPreferences.skipBackwardKey) private var skipBackward = 10
     @AppStorage(PlaybackPreferences.skipForwardKey) private var skipForward = 10
@@ -215,9 +215,10 @@ struct PlaybackSettingsView: View {
                     Text(interval.title).tag(interval.rawValue)
                 }
             }
-            Picker("Player Engine", selection: $useNativeVideoPlayer) {
-                Text("AetherEngine").tag(false)
-                Text("Native Player").tag(true)
+            Picker("Player Engine", selection: $playerEngine) {
+                ForEach(PlayerEngineChoice.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
             }
             .pickerStyle(.menu)
             if useNativeVideoPlayer {
@@ -254,11 +255,19 @@ struct PlaybackSettingsView: View {
         )
     }
 
+    private var useNativeVideoPlayer: Bool {
+        playerEngine == .native
+    }
+
     private var playerFooter: String {
-        if useNativeVideoPlayer {
+        switch playerEngine {
+        case .native:
             return "Apple’s player opens MP4 and remuxed HLS. MKV remuxes on Jellyfin first. Turn off Prefer fMP4 to ask for MPEG-TS."
+        case .mpv:
+            return "MPV Direct Plays every stream on this device and lists every audio and subtitle track in the file, including styled subtitles."
+        case .aether:
+            return "AetherEngine Direct Plays every stream on this device, including remuxed HLS."
         }
-        return "AetherEngine Direct Plays every stream on this device, including remuxed HLS."
     }
 
     private func recommendedTitle(for result: BitrateProbeResult) -> String {

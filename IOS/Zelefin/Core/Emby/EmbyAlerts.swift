@@ -32,6 +32,13 @@ struct EmbyAlertRegistration: Codable, Equatable, Sendable {
 
     private static func key(for accountID: String) -> String { "zelefin.emby.alerts.\(accountID)" }
 
+    /// Accounts with a registration saved on this device, including ones since signed out.
+    static func savedAccountIDs() -> [String] {
+        UserDefaults.standard.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix("zelefin.emby.alerts.") }
+            .map { String($0.dropFirst("zelefin.emby.alerts.".count)) }
+    }
+
     static func saved(for accountID: String) -> EmbyAlertRegistration? {
         guard let data = UserDefaults.standard.data(forKey: key(for: accountID)) else { return nil }
         return try? JSONDecoder().decode(EmbyAlertRegistration.self, from: data)

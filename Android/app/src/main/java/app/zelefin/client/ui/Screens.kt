@@ -253,6 +253,7 @@ fun PlayerScreen(
     directives: SharedFlow<PlayerDirective>? = null,
     session: app.zelefin.core.SavedSession? = null,
     onLoadNext: suspend (MediaItem) -> MediaItem? = { null },
+    onLoadItem: suspend (String) -> MediaItem? = { null },
     onPlayNext: (MediaItem, Double) -> Unit = { _, _ -> },
     onReload: (Double) -> Unit = {},
     onRecover: (Double) -> Unit = {},
@@ -270,7 +271,7 @@ fun PlayerScreen(
         null
     }
     var segments by remember(plan.item.id) { mutableStateOf(emptyList<app.zelefin.client.plugins.SkipSegment>()) }
-    LaunchedEffect(plan.item.id) { segments = plugins.skipSegments(plan.item.id) }
+    LaunchedEffect(plan.item.id) { segments = plugins.skipSegments(plan.item, onLoadItem) }
     var nextEpisode by remember(plan.item.id) { mutableStateOf<MediaItem?>(null) }
     LaunchedEffect(plan.item.id) {
         if (plan.item.kind == app.zelefin.core.MediaKind.Episode) nextEpisode = runCatching { onLoadNext(plan.item) }.getOrNull()
@@ -286,12 +287,7 @@ fun PlayerScreen(
             onStopped = onStopped,
             onClose = onClose,
             skipSegments = segments,
-            autoSkip = { kind ->
-                when (kind) {
-                    app.zelefin.client.plugins.SkipSegment.Kind.Intro -> pluginState.autoSkipIntro
-                    app.zelefin.client.plugins.SkipSegment.Kind.Outro -> pluginState.autoSkipCredits
-                }
-            },
+            autoSkip = plugins::autoSkips,
             nextEpisode = nextEpisode,
             nextArtwork = nextArtwork,
             onPlayNext = onPlayNext,

@@ -140,6 +140,9 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var hasAudioDescription: Bool = false
     var sourceBitrate: Int? = nil
     var tmdbID: Int? = nil
+    /// TheIntroDB keys titles by TVDB first; IMDb is its last resort.
+    var tvdbID: Int? = nil
+    var imdbID: String? = nil
     var isFavorite: Bool = false
     var isWatchlisted: Bool = false
     var likes: Bool? = nil

@@ -19,6 +19,7 @@ final class PlayerModel {
     let pipeline: PlaybackPipeline
     private(set) var player: AVPlayer?
     private(set) var engine: DirectPlayEngine?
+    private(set) var mpv: MPVPlayback?
     private(set) var errorMessage: String?
     private(set) var hasFirstFrame = false
     private(set) var isPaused = false
@@ -109,6 +110,14 @@ final class PlayerModel {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        case .mpv:
+            do {
+                let created = try MPVPlayback()
+                mpv = created
+                observeMPV(created)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -129,6 +138,13 @@ final class PlayerModel {
                 await waitUntilSurfaceReady()
                 try Task.checkCancellation()
                 try await startDirectPlay()
+                setPlaybackRate(PlaybackPreferences.defaultRate)
+            case .mpv:
+                try Task.checkCancellation()
+                await PlaybackAudioSession.activate()
+                await waitUntilSurfaceReady()
+                try Task.checkCancellation()
+                startMPV()
                 setPlaybackRate(PlaybackPreferences.defaultRate)
             }
             await reportPlaybackStarted()
@@ -167,6 +183,7 @@ final class PlayerModel {
         pendingDirectPlaySeek = nil
         player?.pause()
         engine?.stop()
+        mpv?.stop()
         didStart = false
         nativePictureInPictureActive = false
         stopWhenPictureInPictureEnds = false
@@ -223,6 +240,14 @@ final class PlayerModel {
         isRestoringForeground = true
         defer { isRestoringForeground = false }
 
+        if let mpv {
+            // A display layer iOS invalidated in the background stays black until flushed.
+            if mpv.displayLayer.status == .failed {
+                mpv.displayLayer.flush()
+            }
+            return
+        }
+
         if let engine {
             let resume = !isPaused
             do {
@@ -260,6 +285,8 @@ final class PlayerModel {
         let pause = !isPaused
         if let engine {
             engine.togglePlayPause()
+        } else if let mpv {
+            if pause { mpv.pause() } else { mpv.play() }
         } else {
             guard let player else { return }
             if player.rate == 0 {
@@ -307,6 +334,10 @@ final class PlayerModel {
             if !isPaused { engine.togglePlayPause() }
             return
         }
+        if let mpv {
+            mpv.pause()
+            return
+        }
         player?.pause()
         isPaused = true
     }
@@ -314,6 +345,10 @@ final class PlayerModel {
     private func resumePlayback() {
         if let engine {
             if isPaused { engine.togglePlayPause() }
+            return
+        }
+        if let mpv {
+            mpv.play()
             return
         }
         player?.play()
@@ -355,6 +390,8 @@ final class PlayerModel {
         currentTime = clamped
         if engine != nil {
             enqueueDirectPlaySeek(clamped)
+        } else if let mpv {
+            mpv.seek(to: clamped)
         } else if let player {
             let time = CMTime(seconds: clamped, preferredTimescale: 600)
             player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
@@ -456,6 +493,7 @@ final class PlayerModel {
         pendingServerAudioID = nil
         selectedAudioID = id
         engine?.selectAudioTrack(index: id)
+        mpv?.selectAudio(id)
     }
 
     func selectSubtitle(id: Int?) {
@@ -469,6 +507,10 @@ final class PlayerModel {
     }
 
     private func applySubtitleSelection(_ id: Int?) {
+        if let mpv {
+            mpv.selectSubtitle(id)
+            return
+        }
         guard let engine else { return }
         if let id {
             let resolved = PlaybackSubtitleSelection.engineIndex(
@@ -492,6 +534,7 @@ final class PlayerModel {
     func setPlaybackRate(_ rate: Float) {
         playbackRate = rate
         engine?.setRate(rate)
+        mpv?.setRate(rate)
         if let player {
             player.rate = player.rate == 0 ? 0 : rate
         }
@@ -916,6 +959,102 @@ final class PlayerModel {
             .store(in: &cancellables)
     }
 
+    private func startMPV() {
+        guard let mpv else { return }
+        var headers = PlaybackHTTPHeaders.fields(for: plan.streamURL)
+        for (name, value) in plan.extraHTTPHeaders {
+            headers[name] = value
+        }
+        mpv.load(.init(
+            url: plan.streamURL,
+            headers: plan.streamURL.isFileURL ? [:] : headers,
+            startPosition: resumeStartPosition,
+            externalSubtitles: plan.externalSubtitles
+        ))
+        noteResumePlayhead()
+        applyFillScreen()
+    }
+
+    private func observeMPV(_ mpv: MPVPlayback) {
+        mpv.onEvent = { [weak self] event in
+            self?.handleMPV(event)
+        }
+    }
+
+    private func handleMPV(_ event: MPVPlayback.Event) {
+        switch event {
+        case .time(let seconds):
+            currentTime = seconds
+            lastTrustedTime = seconds
+            applySkipPrompt(at: seconds)
+            if showsPlaybackStats {
+                refreshPlaybackStats()
+            }
+            Task { await reportProgress(at: seconds, isPaused: isPaused) }
+        case .duration(let seconds):
+            duration = seconds
+        case .paused(let paused):
+            isPaused = paused
+        case .buffering(let buffering):
+            engineIsBuffering = buffering
+            publishWaitState()
+        case .firstFrame:
+            hasFirstFrame = true
+        case .tracks(let tracks):
+            applyMPVTracks(tracks)
+        case .audioSelected(let id):
+            if let id, selectedAudioID != id { selectedAudioID = id }
+        case .subtitleSelected(let id):
+            if selectedSubtitleID != id { selectedSubtitleID = id }
+        case .videoSize(let size):
+            pictureSize = size
+        case .ended:
+            guard plan.isLive != true else { return }
+            if hasFirstFrame {
+                isFinished = true
+            } else {
+                errorMessage = "The server stopped sending video before playback started."
+            }
+        case .failed(let message):
+            errorMessage = message
+        }
+    }
+
+    /// The menus list mpv's own tracks, so every track in the file is choosable. Jellyfin's picks are
+    /// applied once: audio as soon as tracks appear, subtitles after the sidecar files have joined.
+    private func applyMPVTracks(_ tracks: [MPVPlayback.Track]) {
+        guard let mpv else { return }
+        let audio = tracks.filter { $0.kind == .audio }
+        let subtitles = tracks.filter { $0.kind == .subtitle }
+        let audioMenu = audio.map { PlaybackTrackOption(id: $0.id, title: MPVTrackMatch.title(for: $0)) }
+        let subtitleMenu = subtitles.map { PlaybackTrackOption(id: $0.id, title: MPVTrackMatch.title(for: $0)) }
+        if audioOptions != audioMenu { audioOptions = audioMenu }
+        if subtitleOptions != subtitleMenu { subtitleOptions = subtitleMenu }
+
+        if !startedOnServerAudio, !audio.isEmpty {
+            startedOnServerAudio = true
+            let planned = plan.audioTracks.first(where: \.isSelected)
+            if let target = MPVTrackMatch.track(for: serverAudioID, language: planned?.language, in: tracks, kind: .audio) {
+                selectedAudioID = target.id
+                mpv.selectAudio(target.id)
+            }
+        }
+
+        let externalCount = subtitles.filter(\.isExternal).count
+        if !startedOnServerSubtitle, externalCount >= plan.externalSubtitles.count {
+            startedOnServerSubtitle = true
+            guard serverSubtitleID != nil else {
+                selectedSubtitleID = nil
+                mpv.selectSubtitle(nil)
+                return
+            }
+            let planned = plan.subtitleTracks.first(where: \.isSelected)
+            let target = MPVTrackMatch.track(for: serverSubtitleID, language: planned?.language, in: tracks, kind: .subtitle)
+            selectedSubtitleID = target?.id
+            mpv.selectSubtitle(target?.id)
+        }
+    }
+
     private func observeNativeTime() {
         guard let player else { return }
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
@@ -953,6 +1092,9 @@ final class PlayerModel {
     }
 
     private var currentSeconds: TimeInterval {
+        if mpv != nil {
+            return currentTime
+        }
         if let engine {
             let seconds = engine.clock.currentTime
             return seconds.isFinite ? seconds : 0
@@ -1003,6 +1145,7 @@ final class PlayerModel {
 
     private func applyFillScreen() {
         engine?.videoGravity = fillsScreen ? .resizeAspectFill : .resizeAspect
+        mpv?.setFillsScreen(fillsScreen)
     }
 
     private func refreshPlaybackStats() {
@@ -1018,12 +1161,14 @@ final class PlayerModel {
                 .init(label: "Playhead", value: "\(PlaybackStats.clockLabel(playhead)) / \(PlaybackStats.clockLabel(duration))"),
                 .init(label: "Rate", value: abs(playbackRate - 1) < 0.01 ? "1x" : String(format: "%.2fx", playbackRate)),
                 .init(label: "Stream", value: plan.method.displayName),
-                .init(label: "Player", value: pipeline == .directDecode ? "Direct Play" : "AVPlayer"),
+                .init(label: "Player", value: playerLabel),
                 .init(label: "Zoom", value: fillsScreen ? "Fill" : "Fit")
             ])
         ]
 
-        if let engine {
+        if let mpv {
+            sections += mpvStatsSections(mpv.stats(), playhead: playhead)
+        } else if let engine {
             // A server transcode or remux plays through AVPlayer inside the engine, which never
             // reads the source, so these fall back to what the server reported for the file.
             let facts = plan.sourceVideo
@@ -1037,7 +1182,10 @@ final class PlayerModel {
                 .init(label: "Display", value: pixelLabel(width: Int32(width.rounded()), height: Int32(height.rounded()))),
                 .init(label: "Aspect", value: PlaybackStats.aspectName(width: width, height: height)),
                 .init(label: "Frame rate", value: frameRateLabel(engine.sourceVideoFrameRate ?? facts?.frameRate)),
-                .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(sourceVideoBitrate(engine: engine))),
+                .init(label: "Average bitrate", value: PlaybackStats.bitrateLabel(sourceVideoBitrate(engine: engine))),
+                // What the engine read from the stream over the last 10 seconds, video and audio together.
+                .init(label: "Live bitrate", value: engine.liveTelemetry?.instantBitrateMbps
+                    .map { PlaybackStats.bitrateLabel(Int64($0 * 1_000_000)) } ?? "—"),
                 .init(label: "Range", value: videoRangeLabel(engine)),
                 .init(label: "Container", value: (engine.sourceContainerFormat ?? plan.container).uppercased())
             ]
@@ -1103,6 +1251,78 @@ final class PlayerModel {
         }
 
         return PlaybackStatsSnapshot(sections: sections)
+    }
+
+    private var playerLabel: String {
+        switch pipeline {
+        case .directDecode: "AetherEngine"
+        case .mpv: "MPV"
+        case .appleNative: "AVPlayer"
+        }
+    }
+
+    private func mpvStatsSections(_ stats: MPVStats, playhead: TimeInterval) -> [PlaybackStatsSection] {
+        let facts = plan.sourceVideo
+        let width = stats.width ?? facts?.width ?? 0
+        let height = stats.height ?? facts?.height ?? 0
+        let displayWidth = stats.displayWidth ?? width
+        let displayHeight = stats.displayHeight ?? height
+        let sourceBitrate = Int64(facts?.bitrate ?? plan.item.sourceBitrate ?? 0)
+        var videoRows: [PlaybackStatsRow] = [
+            .init(label: "Codec", value: (stats.videoCodec ?? facts?.codec ?? plan.videoCodec)?.uppercased() ?? "—"),
+            .init(label: "Size", value: pixelLabel(width: Int32(width), height: Int32(height))),
+            .init(label: "Display", value: pixelLabel(width: Int32(displayWidth), height: Int32(displayHeight))),
+            .init(label: "Aspect", value: PlaybackStats.aspectName(width: CGFloat(displayWidth), height: CGFloat(displayHeight))),
+            .init(label: "Frame rate", value: frameRateLabel(stats.frameRate ?? facts?.frameRate)),
+            .init(label: "Average bitrate", value: PlaybackStats.bitrateLabel(sourceBitrate)),
+            .init(label: "Live bitrate", value: stats.videoBitrate.map { PlaybackStats.bitrateLabel(Int64($0)) } ?? "—"),
+            .init(label: "Range", value: stats.rangeLabel),
+            .init(label: "Pixels", value: [stats.hardwarePixelFormat, stats.pixelFormat].compactMap { $0 }.joined(separator: " → ").nonEmpty ?? "—"),
+            .init(label: "Container", value: (stats.container ?? plan.container).uppercased())
+        ]
+        if plan.method != .directPlay, let stream = Self.transcodeBitrate(in: plan.streamURL) {
+            videoRows.append(.init(label: "Stream", value: PlaybackStats.bitrateLabel(Int64(stream))))
+        }
+
+        let audioTrack = [NativeLanguage.displayName(stats.audioLanguage), stats.audioTitle]
+            .compactMap { $0 }.joined(separator: " · ")
+        let sampleRate = stats.audioSampleRate.map { String(format: "%.1f kHz", Double($0) / 1000) }
+        let audioRows: [PlaybackStatsRow] = [
+            .init(label: "Track", value: audioTrack.nonEmpty ?? "—"),
+            .init(label: "Codec", value: stats.audioCodec?.uppercased() ?? "—"),
+            .init(label: "Layout", value: [stats.channelLabel, sampleRate].compactMap { $0 }.joined(separator: " · ").nonEmpty ?? "—"),
+            .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(Int64(stats.audioBitrate ?? 0))),
+            .init(label: "Output", value: stats.audioOutput ?? "—")
+        ]
+
+        let hardware = stats.hardwareDecoder.flatMap { $0 == "no" ? nil : $0 }
+        let captions = [NativeLanguage.displayName(stats.subtitleLanguage), stats.subtitleTitle, stats.subtitleCodec?.uppercased()]
+            .compactMap { $0 }.joined(separator: " · ")
+        let dropped = (stats.droppedFrames ?? 0) + (stats.decoderDroppedFrames ?? 0)
+        let decodeRows: [PlaybackStatsRow] = [
+            .init(label: "Video", value: hardware.map { "Hardware (\($0))" } ?? "Software"),
+            .init(label: "Output", value: stats.videoOutput ?? "—"),
+            .init(label: "Rendered", value: stats.estimatedFrameRate.map { String(format: "%.2f fps", $0) } ?? "—"),
+            .init(label: "Dropped", value: "\(dropped) frames"),
+            .init(label: "A/V sync", value: stats.avSync.map { String(format: "%+.0f ms", $0 * 1000) } ?? "—"),
+            .init(label: "Captions", value: captions.nonEmpty ?? "Off")
+        ]
+
+        let networkRows: [PlaybackStatsRow] = [
+            .init(label: "Host", value: plan.streamURL.host ?? "Local file"),
+            .init(label: "File", value: PlaybackStats.bytesLabel(plan.byteSize ?? 0)),
+            .init(label: "Buffer", value: stats.isBuffering ? "Rebuffering" : String(format: "%.1fs ahead", stats.cacheSeconds ?? 0)),
+            .init(label: "Speed", value: PlaybackStats.bitrateLabel(Int64((stats.cacheSpeed ?? 0) * 8))),
+            .init(label: "Seeking", value: stats.isSeeking ? "Yes" : "No"),
+            .init(label: "Live", value: plan.isLive ? "Yes" : "No")
+        ]
+
+        return [
+            PlaybackStatsSection(title: "Video", rows: videoRows),
+            PlaybackStatsSection(title: "Audio", rows: audioRows),
+            PlaybackStatsSection(title: "Decode", rows: decodeRows),
+            PlaybackStatsSection(title: "Network", rows: networkRows)
+        ]
     }
 
     private func sourceVideoBitrate(engine: DirectPlayEngine) -> Int64 {
@@ -1310,4 +1530,8 @@ struct PlaybackTrackOption: Identifiable, Hashable, Sendable {
         }
         return parts.joined(separator: " · ")
     }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }

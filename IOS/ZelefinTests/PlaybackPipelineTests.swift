@@ -214,10 +214,13 @@ final class PlaybackSettingsPolicyTests: XCTestCase {
     }
 
     func testAutoSkipRespectsKindToggles() {
-        XCTAssertTrue(PlaybackPreferences.shouldAutoSkip(.intro, intro: true, credits: false))
-        XCTAssertFalse(PlaybackPreferences.shouldAutoSkip(.outro, intro: true, credits: false))
-        XCTAssertTrue(PlaybackPreferences.shouldAutoSkip(.outro, intro: false, credits: true))
-        XCTAssertFalse(PlaybackPreferences.shouldAutoSkip(.intro, intro: false, credits: true))
+        // Intro and credits keep their original keys, so earlier choices carry over.
+        XCTAssertEqual(PlaybackPreferences.autoSkipKey(for: .intro), PlaybackPreferences.autoSkipIntroKey)
+        XCTAssertEqual(PlaybackPreferences.autoSkipKey(for: .outro), PlaybackPreferences.autoSkipCreditsKey)
+        XCTAssertEqual(
+            Set(SkipSegment.Kind.allCases.map(PlaybackPreferences.autoSkipKey(for:))).count,
+            SkipSegment.Kind.allCases.count
+        )
     }
 
     func testQualityIsWrittenIntoTheDeviceProfile() {
@@ -962,5 +965,93 @@ final class JellyfinByteRangeReaderTests: XCTestCase {
         var byte: UInt8 = 0
         let count = withUnsafeMutablePointer(to: &byte) { reader.read($0, size: 1) }
         XCTAssertEqual(count, -1)
+    }
+}
+
+final class MPVTrackMatchTests: XCTestCase {
+    private func track(
+        _ id: Int,
+        _ kind: MPVPlayback.Track.Kind,
+        index: Int?,
+        language: String?,
+        external: Bool = false
+    ) -> MPVPlayback.Track {
+        MPVPlayback.Track(
+            id: id, kind: kind, streamIndex: index, language: language, title: nil, codec: "eac3",
+            channels: 6, isExternal: external, isDefault: false, isForced: false
+        )
+    }
+
+    func testJellyfinStreamIndexPicksTheExactTrack() {
+        let tracks = [
+            track(1, .audio, index: 1, language: "eng"),
+            track(2, .audio, index: 2, language: "eng"),
+            track(3, .audio, index: 3, language: "jpn"),
+        ]
+        XCTAssertEqual(MPVTrackMatch.track(for: 2, language: "eng", in: tracks, kind: .audio)?.id, 2)
+    }
+
+    func testLanguageIsTheFallbackForAServerStream() {
+        let tracks = [track(1, .audio, index: 0, language: "jpn"), track(1, .subtitle, index: nil, language: "ger", external: true)]
+        XCTAssertEqual(MPVTrackMatch.track(for: 13, language: "jpn", in: tracks, kind: .audio)?.id, 1)
+        XCTAssertEqual(MPVTrackMatch.track(for: 30, language: "deu", in: tracks, kind: .subtitle)?.id, 1)
+        XCTAssertNil(MPVTrackMatch.track(for: 30, language: "fra", in: tracks, kind: .subtitle))
+    }
+
+    func testBibliographicLanguageCodesResolve() {
+        XCTAssertEqual(NativeLanguage.alpha2("ger"), "de")
+        XCTAssertEqual(NativeLanguage.alpha2("cze"), "cs")
+        XCTAssertEqual(NativeLanguage.alpha2("chi"), "zh")
+        XCTAssertEqual(NativeLanguage.alpha2("jpn"), "ja")
+        XCTAssertEqual(NativeLanguage.alpha2("en-US"), "en")
+        XCTAssertNil(NativeLanguage.alpha2("und"))
+    }
+
+    func testMenuTitleNamesLanguageCodecAndChannels() {
+        XCTAssertEqual(MPVTrackMatch.title(for: track(1, .audio, index: 1, language: "cze")), "Czech — E-AC-3 5.1")
+    }
+}
+
+final class PlayerEngineChoiceTests: XCTestCase {
+    private let defaults = UserDefaults.standard
+    private let keys = [
+        PlaybackPreferences.playerEngineKey,
+        PlaybackPreferences.useNativeVideoPlayerKey,
+        PlaybackPreferences.movedToMPVKey,
+    ]
+    private var saved: [String: Any] = [:]
+
+    override func setUp() {
+        saved = [:]
+        for key in keys {
+            saved[key] = defaults.object(forKey: key)
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    override func tearDown() {
+        for key in keys {
+            defaults.set(saved[key], forKey: key)
+        }
+    }
+
+    func testMPVIsTheDefault() {
+        XCTAssertEqual(PlaybackPreferences.playerEngine, .mpv)
+        XCTAssertEqual(PlayerEngineChoice.allCases.first, .mpv)
+    }
+
+    func testEarlierChoicesMoveToMPVOnce() {
+        defaults.set(true, forKey: PlaybackPreferences.useNativeVideoPlayerKey)
+        defaults.set(PlayerEngineChoice.aether.rawValue, forKey: PlaybackPreferences.playerEngineKey)
+        XCTAssertEqual(PlaybackPreferences.playerEngine, .mpv)
+        XCTAssertFalse(PlaybackPreferences.useNativeVideoPlayer)
+    }
+
+    func testAPickAfterTheMoveSticks() {
+        PlaybackPreferences.moveEveryoneToMPVOnce()
+        defaults.set(PlayerEngineChoice.native.rawValue, forKey: PlaybackPreferences.playerEngineKey)
+        PlaybackPreferences.moveEveryoneToMPVOnce()
+        XCTAssertEqual(PlaybackPreferences.playerEngine, .native)
+        XCTAssertTrue(PlaybackPreferences.useNativeVideoPlayer)
     }
 }

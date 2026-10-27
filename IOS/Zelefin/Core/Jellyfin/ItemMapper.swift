@@ -168,6 +168,8 @@ enum ItemMapper {
             hasAudioDescription: hasAudioDescription(from: dto.mediaStreams),
             sourceBitrate: sourceBitrate(from: dto),
             tmdbID: JellyfinTmdbCatalog.tmdbID(from: dto.providerIDs),
+            tvdbID: ProviderID.tvdb(from: dto.providerIDs),
+            imdbID: ProviderID.imdb(from: dto.providerIDs),
             isFavorite: dto.userData?.isFavorite ?? false,
             likes: dto.userData?.isLikes,
             premiereDate: dto.premiereDate,

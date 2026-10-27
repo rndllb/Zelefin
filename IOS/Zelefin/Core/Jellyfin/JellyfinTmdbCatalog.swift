@@ -49,3 +49,23 @@ struct JellyfinTmdbCatalog: Equatable, Sendable {
         return nil
     }
 }
+
+/// Provider ids beyond TMDB, read the same tolerant way: Jellyfin and Emby spell the keys differently.
+enum ProviderID {
+    static func tvdb(from providerIDs: [String: String]?) -> Int? {
+        value(in: providerIDs, key: "tvdb").flatMap(Int.init)
+    }
+
+    static func imdb(from providerIDs: [String: String]?) -> String? {
+        value(in: providerIDs, key: "imdb").flatMap { $0.hasPrefix("tt") ? $0 : nil }
+    }
+
+    private static func value(in providerIDs: [String: String]?, key wanted: String) -> String? {
+        guard let providerIDs else { return nil }
+        for (key, raw) in providerIDs where key.lowercased().filter(\.isLetter) == wanted {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+}

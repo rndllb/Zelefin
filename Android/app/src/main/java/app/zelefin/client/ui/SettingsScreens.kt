@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.plugins.PluginPresence
+import app.zelefin.client.plugins.SkipPluginChoice
 import android.Manifest
 import android.app.Activity
 import android.content.ClipData
@@ -1395,21 +1397,29 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
     val jellyfin = pluginState.jellyfin
     val silo = state.isSiloServer
     val emby = state.isEmbyServer
-    SettingsHeader(if (silo || emby) "Skipping" else "Intro Skipper")
+    SettingsHeader("Skip Recaps, Intros, Credits and Previews")
     SettingsCard {
         if (!silo && !emby) {
-            PluginStatusRow("Skip Intro / Outro", jellyfin.introSkipper)
+            SkipPluginRow("Intro Skipper", jellyfin.introSkipper, "TheIntroDB", jellyfin.theIntroDB)
+            CardDivider()
+            SkipPluginRow("TheIntroDB", jellyfin.theIntroDB, "Intro Skipper", jellyfin.introSkipper)
             CardDivider()
         }
+        SettingsToggle("Automatically Skip Recaps", pluginState.autoSkipRecap, plugins::setAutoSkipRecap)
+        CardDivider()
         SettingsToggle("Automatically Skip Intros", pluginState.autoSkipIntro, plugins::setAutoSkipIntro)
         CardDivider()
         SettingsToggle("Automatically Skip Credits", pluginState.autoSkipCredits, plugins::setAutoSkipCredits)
+        CardDivider()
+        SettingsToggle("Automatically Skip Previews", pluginState.autoSkipPreview, plugins::setAutoSkipPreview)
+        CardDivider()
+        SettingsToggle("Look Up Skip Times on TheIntroDB", pluginState.usesTheIntroDB, plugins::setUsesTheIntroDB)
     }
     SettingsFooter(
         when {
-            silo -> "Skip buttons appear during playback when Silo has intro and credit markers for the title. Silo does not run Jellyfin plugins."
-            emby -> "Skip buttons appear during playback when Emby has detected the intro or credits of the title. Emby does not run Jellyfin plugins."
-            else -> "Skip buttons appear during playback when the plugin is installed on this Jellyfin server."
+            silo -> "Skip buttons appear when Silo has found a recap, intro, credits or preview, including from its built-in TheIntroDB support. For titles with none, Zelefin can ask TheIntroDB directly."
+            emby -> "Skip buttons appear when Emby has marked an intro or credits. Emby has no TheIntroDB plugin, so for everything else Zelefin can ask TheIntroDB directly."
+            else -> "Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly. Plugins only show as installed to an administrator."
         },
     )
     if (!silo && !emby) JellyfinServerPlugins(state, jellyfin)
@@ -1544,6 +1554,38 @@ private fun SeerrSignInCard(state: ZelefinUiState, pluginState: PluginsUiState, 
 /** Fixed status colors, independent of the accent (iOS `LoginPalette.success`). */
 private val StatusInstalled = Color(0xFF38C76B)
 private val StatusMissing = IOSColors.red
+private val StatusDisabled = Color(0xFFFF9F0A)
+
+@Composable
+private fun SkipPluginRow(title: String, presence: PluginPresence, otherName: String, other: PluginPresence) {
+    val greyed = SkipPluginChoice.isGreyedOut(presence, other)
+    Column(Modifier.fillMaxWidth().alpha(if (greyed) 0.5f else 1f).padding(vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = SettingsRowText, modifier = Modifier.weight(1f))
+            Text(
+                presence.label,
+                color = when {
+                    greyed -> Color.White.copy(alpha = 0.6f)
+                    presence == PluginPresence.Enabled -> StatusInstalled
+                    presence == PluginPresence.Disabled -> StatusDisabled
+                    else -> StatusMissing
+                },
+                fontFamily = ZelefinFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+            )
+        }
+        if (greyed) {
+            Text(
+                "Only one skip plugin can be enabled at a time. $otherName is enabled.",
+                color = Color.White.copy(alpha = 0.6f),
+                fontFamily = ZelefinFont,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
 
 @Composable
 private fun PluginStatusRow(title: String, installed: Boolean, installedLabel: String = "Installed") {

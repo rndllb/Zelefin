@@ -105,6 +105,8 @@ object ItemMapper {
             audioFormat = audioFormat(snapshot.streams),
             communityRating = snapshot.communityRating,
             tmdbId = tmdbId(snapshot.providerIds),
+            tvdbId = providerId(snapshot.providerIds, "tvdb")?.toIntOrNull(),
+            imdbId = providerId(snapshot.providerIds, "imdb")?.takeIf { it.startsWith("tt") },
             criticRating = snapshot.criticRating,
             videoResolution = videoResolution(width, height),
             hasClosedCaptions = snapshot.streams.any { it.type.equals("Subtitle", true) },
@@ -139,6 +141,11 @@ object ItemMapper {
         null -> null
         else -> MediaKind.Unknown
     }
+
+    /** Jellyfin and Emby spell provider keys differently ("Imdb", "IMDB"), so letters are compared only. */
+    fun providerId(providerIds: Map<String, String>, key: String): String? =
+        providerIds.entries.firstOrNull { (name, _) -> name.lowercase().filter(Char::isLetter) == key }
+            ?.value?.trim()?.takeIf { it.isNotEmpty() }
 
     fun tmdbId(providerIds: Map<String, String>): Int? {
         val raw = providerIds.entries.firstOrNull { it.key.equals("Tmdb", true) }?.value ?: return null

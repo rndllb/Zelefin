@@ -11,6 +11,9 @@ enum PlaybackPreferences {
     static let autoPlayNextEpisodeKey = "zelefin.playback.autoplay-next-episode"
     static let autoSkipIntroKey = "zelefin.playback.auto-skip-intro"
     static let autoSkipCreditsKey = "zelefin.playback.auto-skip-credits"
+    static let autoSkipRecapKey = "zelefin.playback.auto-skip-recap"
+    static let autoSkipPreviewKey = "zelefin.playback.auto-skip-preview"
+    static let theIntroDBKey = "zelefin.playback.theintrodb"
     static let defaultRateKey = "zelefin.playback.default-rate"
     static let audioLanguageKey = "zelefin.playback.audio-language"
     static let subtitleLanguageKey = "zelefin.playback.subtitle-language"
@@ -20,8 +23,32 @@ enum PlaybackPreferences {
     static let themeVideosKey = "zelefin.playback.theme-videos"
     static let themeVideoSoundKey = "zelefin.playback.theme-video-sound"
 
+    static let playerEngineKey = "zelefin.playback.player-engine"
+
+    static let movedToMPVKey = "zelefin.playback.moved-to-mpv"
+
+    /// MPV unless the user picked otherwise since moving to it.
+    static var playerEngine: PlayerEngineChoice {
+        moveEveryoneToMPVOnce()
+        if let raw = UserDefaults.standard.string(forKey: playerEngineKey),
+           let choice = PlayerEngineChoice(rawValue: raw) {
+            return choice
+        }
+        return .mpv
+    }
+
+    /// MPV replaced every earlier player choice once, the first launch with it; a pick made after
+    /// that sticks.
+    static func moveEveryoneToMPVOnce() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: movedToMPVKey) else { return }
+        defaults.set(PlayerEngineChoice.mpv.rawValue, forKey: playerEngineKey)
+        defaults.set(false, forKey: useNativeVideoPlayerKey)
+        defaults.set(true, forKey: movedToMPVKey)
+    }
+
     static var useNativeVideoPlayer: Bool {
-        bool(for: useNativeVideoPlayerKey, default: false)
+        playerEngine == .native
     }
 
     static var preferFMP4InHLS: Bool {
@@ -47,13 +74,6 @@ enum PlaybackPreferences {
         bool(for: themeVideoSoundKey, default: false)
     }
 
-    static var autoSkipIntro: Bool {
-        bool(for: autoSkipIntroKey, default: false)
-    }
-
-    static var autoSkipCredits: Bool {
-        bool(for: autoSkipCreditsKey, default: false)
-    }
 
     static var skipBackward: TimeInterval {
         PlaybackSkipInterval.resolved(storedInt(skipBackwardKey, default: 10)).time
@@ -108,15 +128,22 @@ enum PlaybackPreferences {
         usesFMP4HLS(nativePlayer: useNativeVideoPlayer, preferFMP4: preferFMP4InHLS)
     }
 
-    static func shouldAutoSkip(_ kind: SkipSegment.Kind, intro: Bool, credits: Bool) -> Bool {
+    static func autoSkipKey(for kind: SkipSegment.Kind) -> String {
         switch kind {
-        case .intro: intro
-        case .outro: credits
+        case .recap: autoSkipRecapKey
+        case .intro: autoSkipIntroKey
+        case .outro: autoSkipCreditsKey
+        case .preview: autoSkipPreviewKey
         }
     }
 
     static func shouldAutoSkip(_ kind: SkipSegment.Kind) -> Bool {
-        shouldAutoSkip(kind, intro: autoSkipIntro, credits: autoSkipCredits)
+        bool(for: autoSkipKey(for: kind), default: false)
+    }
+
+    /// Ask TheIntroDB for skip times when the server has none for a title. On unless turned off.
+    static var usesTheIntroDB: Bool {
+        bool(for: theIntroDBKey, default: true)
     }
 
     private static func bool(for key: String, default fallback: Bool) -> Bool {
@@ -268,17 +295,39 @@ enum PlaybackEpisodeAdvance {
     }
 }
 
+/// The player the user picked in Playback settings.
+enum PlayerEngineChoice: String, CaseIterable, Identifiable, Sendable {
+    case mpv
+    case aether
+    case native
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .aether: "AetherEngine"
+        case .mpv: "MPV"
+        case .native: "Native Player"
+        }
+    }
+}
+
 /// Which Apple-facing decoder path should open a planned stream.
 enum PlaybackPipeline: Equatable, Sendable {
     /// AVPlayer opens server HLS (remux / transcode).
     case appleNative
     /// Zelefin Direct Play: FFmpeg demuxes the container, VideoToolbox decodes, and a sample-buffer layer paints.
     case directDecode
+    /// libmpv opens the stream itself, the same Direct Play plan as `directDecode`.
+    case mpv
 }
 
 enum PlaybackPipelineResolver {
     static func pipeline(for plan: PlaybackPlan) -> PlaybackPipeline {
-        pipeline(
+        if PlaybackPreferences.playerEngine == .mpv {
+            return .mpv
+        }
+        return pipeline(
             url: plan.streamURL,
             method: plan.method,
             container: plan.container,

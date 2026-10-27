@@ -183,11 +183,13 @@ struct PlayerView: View {
         }
     }
 
+    /// Plays `activeItem`, which the next-episode advance and the cinema queue move along. Starting
+    /// from `item` (what the player opened with) replayed the first episode at every advance.
     private func prepareAndStart() async {
-        var target = item
-        if item.kind == .series || item.kind == .season {
+        var target = activeItem
+        if target.kind == .series || target.kind == .season {
             do {
-                target = try await resolvePlayableItem(item)
+                target = try await resolvePlayableItem(target)
                 activeItem = target
             } catch {
                 fallbackError = error.localizedDescription
@@ -454,16 +456,20 @@ struct PlayerView: View {
         } else if !plan.skipSegments.isEmpty {
             created.skipSegments = plan.skipSegments
         } else if created.plan.isLive != true,
-           OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL),
-           let client = session.client {
-            let readsCoreSegments = session.isSiloServer
+           OfflinePlaybackPolicy.shouldFetchSkipSegments(isLocalFile: plan.streamURL.isFileURL) {
+            let client = session.client
+            let library = session.library
             Task {
-                let skipper = IntroSkipperClient(client: client)
-                // Silo serves Jellyfin's MediaSegments itself; on Jellyfin they come from the Intro Skipper plugin.
-                if !readsCoreSegments {
-                    guard await skipper.isInstalled() else { return }
+                var segments: [SkipSegment] = []
+                if let client {
+                    // Checking `/Plugins` first left every non-administrator without skip markers:
+                    // that list is admin-only, so Intro Skipper always looked missing to them.
+                    segments = await IntroSkipperClient(client: client).segments(for: plan.item.id)
                 }
-                created.skipSegments = await skipper.segments(for: plan.item.id)
+                if segments.isEmpty, PlaybackPreferences.usesTheIntroDB, let library {
+                    segments = await TheIntroDB.segments(for: plan.item, library: library)
+                }
+                created.skipSegments = segments
             }
         }
         model = created
@@ -606,32 +612,18 @@ struct PlayerView: View {
                     pictureSize: model.pictureSize,
                     fillsScreen: model.fillsScreen
                 )
-                AVKitPlaybackChrome(
-                    model: model,
-                    title: model.plan.item.name,
-                    quality: session.launchOptions(for: item.id).resolvedQuality,
-                    canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
-                    onClose: { dismiss() },
-                    onQualityChange: { quality in
-                        Task { await changeQuality(quality) }
-                    },
-                    onAddSubtitles: {
-                        subtitleSearchFileID = model.plan.mediaSourceID
-                        subtitleSearchItem = activeItem
-                    },
-                    onAudioChange: { id in
-                        model.selectAudio(id: id)
-                        session.updateLaunchOptions(for: activeItem.id) { $0.audioIndex = id }
-                    },
-                    onSubtitleChange: { id in
-                        model.selectSubtitle(id: id)
-                        session.updateLaunchOptions(for: activeItem.id) { options in
-                            options.subtitlesDisabled = id == nil
-                            options.subtitleIndex = id
-                        }
-                    },
-                    onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
-                )
+                playerChrome(model)
+                if model.showsPlaybackStats {
+                    PlaybackStatsOverlay(snapshot: model.playbackStats)
+                }
+            }
+        } else if let mpv = model.mpv {
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+                MPVVideoSurface(layer: mpv.displayLayer, onBound: { model.noteSurfaceReady() })
+                    .ignoresSafeArea()
+                playerChrome(model)
                 if model.showsPlaybackStats {
                     PlaybackStatsOverlay(snapshot: model.playbackStats)
                 }
@@ -654,6 +646,36 @@ struct PlayerView: View {
         } else {
             loadingSurface
         }
+    }
+
+    /// Zelefin's controls and track menus, shared by the AetherEngine and MPV players.
+    private func playerChrome(_ model: PlayerModel) -> some View {
+        AVKitPlaybackChrome(
+            model: model,
+            title: model.plan.item.name,
+            quality: session.launchOptions(for: item.id).resolvedQuality,
+            canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
+            onClose: { dismiss() },
+            onQualityChange: { quality in
+                Task { await changeQuality(quality) }
+            },
+            onAddSubtitles: {
+                subtitleSearchFileID = model.plan.mediaSourceID
+                subtitleSearchItem = activeItem
+            },
+            onAudioChange: { id in
+                model.selectAudio(id: id)
+                session.updateLaunchOptions(for: activeItem.id) { $0.audioIndex = id }
+            },
+            onSubtitleChange: { id in
+                model.selectSubtitle(id: id)
+                session.updateLaunchOptions(for: activeItem.id) { options in
+                    options.subtitlesDisabled = id == nil
+                    options.subtitleIndex = id
+                }
+            },
+            onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
+        )
     }
 
     private func errorOverlay(_ message: String) -> some View {
@@ -715,6 +737,44 @@ private final class DirectPlaySurfaceView: UIView {
 
 /// Rebinds on every SwiftUI update (Aether #188). An empty `updateUIView` leaves a
 /// reused surface showing a detached layer: black video over working audio.
+/// Hosts the layer mpv's vo_avfoundation paints into.
+private struct MPVVideoSurface: UIViewRepresentable {
+    let layer: AVSampleBufferDisplayLayer
+    var onBound: () -> Void
+
+    func makeUIView(context: Context) -> LayerHostView {
+        let view = LayerHostView()
+        view.backgroundColor = .black
+        view.host(layer)
+        return view
+    }
+
+    func updateUIView(_ uiView: LayerHostView, context: Context) {
+        uiView.host(layer)
+        onBound()
+    }
+
+    final class LayerHostView: UIView {
+        private weak var hosted: CALayer?
+
+        func host(_ layer: CALayer) {
+            guard hosted !== layer else { return }
+            hosted?.removeFromSuperlayer()
+            self.layer.addSublayer(layer)
+            hosted = layer
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            hosted?.frame = bounds
+            CATransaction.commit()
+        }
+    }
+}
+
 private struct DirectPlayVideoLayer: UIViewRepresentable {
     let engine: DirectPlayEngine
     var surfaceGeneration: Int

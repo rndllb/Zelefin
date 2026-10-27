@@ -34,6 +34,10 @@ data class SiloAlertRegistration(
         private const val PREFS = "zelefin.silo.alerts"
         private val json = Json { ignoreUnknownKeys = true }
 
+        /** Accounts with a registration saved on this phone, including ones since signed out. */
+        fun savedAccountIds(context: Context): Set<String> =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all.keys
+
         fun saved(context: Context, accountId: String): SiloAlertRegistration? =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(accountId, null)
                 ?.let { runCatching { json.decodeFromString<SiloAlertRegistration>(it) }.getOrNull() }

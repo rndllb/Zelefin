@@ -164,6 +164,7 @@ import app.zelefin.client.downloads.SessionDownloadBackend
 import app.zelefin.client.downloads.ZelefinDownloads
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 /** [Room] is a custom library pinned to the dock; [ZelefinUiState.dockRoomId] says which one. */
@@ -341,6 +342,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             )
         }
         runCatching { application.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(networkCallback) }
+        plugins.removeOrphanedWebhookAlerts(vault.accounts().map { it.accountId }.toSet())
         if (saved != null) {
             restore(saved)
             _state.update { it.copy(screen = Screen.Library) }
@@ -688,6 +690,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 if (_state.value.session?.accountId != session.accountId) return@onSuccess
                 sessionSocket.disconnect()
                 plugins.unregisterPush(session)
+                // The old profile's webhook would keep pushing that profile's alerts to this phone.
+                viewModelScope.launch { withContext(NonCancellable) { plugins.removeWebhookAlerts(session, null, client) } }
                 vault.replace(session.accountId, next)
                 siloClient = next.accountId to client
                 activate(next)
@@ -1679,8 +1683,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val current = _state.value.session
         sessionSocket.disconnect()
         embySocket.disconnect()
-        plugins.unregisterPush(current)
-        current?.let(::endSiloSession)
+        current?.let(::endAccountSession)
         val remaining = if (current != null) vault.remove(current.accountId) else null
         if (current == null) vault.clear()
         if (remaining != null) {
@@ -1715,17 +1718,33 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             signOut()
             return
         }
-        endSiloSession(account)
+        endAccountSession(account)
         vault.remove(account.accountId)
         _state.update { it.copy(accounts = vault.accounts()) }
     }
 
-    /** Best-effort native Silo logout for an account that is leaving this phone. */
-    private fun endSiloSession(account: SavedSession) {
-        val link = account.siloLink ?: return
+    /**
+     * An account leaving this phone takes its notifications with it: the Zelefin plugin forgets the
+     * device, Emby and Silo lose their webhooks, and only then does Silo sign out, since deleting a
+     * Silo webhook needs that sign-in.
+     */
+    private fun endAccountSession(account: SavedSession) {
+        plugins.unregisterPush(account)
+        val link = account.siloLink
         val cached = siloClient?.takeIf { it.first == account.accountId }?.second
         if (cached != null) siloClient = null
-        logOutSiloQuietly(cached ?: SiloAccountClient(link.nativeUrl, link.tokens))
+        val silo = link?.let { cached ?: SiloAccountClient(it.nativeUrl, it.tokens) }
+        val embyLibrary = if (account.isEmbyServer) {
+            EmbyLibrary(getApplication(), account.serverUrl, account.accessToken, account.userId)
+        } else {
+            null
+        }
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                plugins.removeWebhookAlerts(account, embyLibrary, silo)
+                silo?.let { runCatching { it.logout() } }
+            }
+        }
     }
 
     fun resetAddAccount() {
@@ -2354,6 +2373,11 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun userUuid(): UUID = UUID.fromString(_state.value.session?.userId)
+
+    /** One title by id from whichever server is signed in; null when it can't be read. */
+    suspend fun lookupItem(id: String): MediaItem? = runCatching {
+        if (_state.value.isEmbyServer) embyClient()?.mediaItem(id) else jellyfinClient().mediaItem(userUuid(), id)
+    }.getOrElse { if (it is CancellationException) throw it else null }
 
     private fun CatalogBrowseQuery.forServer(): CatalogBrowseQuery = when {
         _state.value.isSiloServer -> forSiloServer()

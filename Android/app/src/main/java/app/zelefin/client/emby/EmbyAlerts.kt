@@ -48,6 +48,10 @@ data class EmbyAlertRegistration(
         private const val PREFS = "zelefin.emby.alerts"
         private val json = Json { ignoreUnknownKeys = true }
 
+        /** Accounts with a registration saved on this phone, including ones since signed out. */
+        fun savedAccountIds(context: Context): Set<String> =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all.keys
+
         fun saved(context: Context, accountId: String): EmbyAlertRegistration? =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(accountId, null)
                 ?.let { runCatching { json.decodeFromString<EmbyAlertRegistration>(it) }.getOrNull() }

@@ -473,7 +473,11 @@ internal fun SeerrRequestSheet(
     val specials = seasons.filter { it.isSpecials }
     val occupied = mediaSeasons.filter { it.isOccupied(is4k) }.map { it.seasonNumber }.toSet()
     val requestable = regular.map { it.seasonNumber }.filterNot { it in occupied }.toSet()
-    val canSubmit = !submitting && serverId != null && profileId != null && rootFolder.isNotEmpty() &&
+    // Seerr with no Sonarr or Radarr still records a request, so admins can see what people want;
+    // nothing downloads. Only once the list has loaded empty, not while it is still on its way.
+    val requestsWithoutDownloader = !loading && servers.isEmpty() && error == null
+    val canSubmit = !submitting &&
+        (requestsWithoutDownloader || (serverId != null && profileId != null && rootFolder.isNotEmpty())) &&
         !(title.kind == SeerrTitle.Kind.Movie && title.availability == SeerrTitle.Availability.Available && !is4k) &&
         (title.kind != SeerrTitle.Kind.Tv || (selected - occupied).isNotEmpty())
 
@@ -695,7 +699,11 @@ private fun DestinationSection(
         Text("Download", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 20.sp)
         if (servers.isEmpty()) {
             Text(
-                if (kind == SeerrTitle.Kind.Movie) "No Radarr server is set up in Seerr." else "No Sonarr server is set up in Seerr.",
+                if (kind == SeerrTitle.Kind.Movie) {
+                    "No Radarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads."
+                } else {
+                    "No Sonarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads."
+                },
                 color = Color.White.copy(alpha = 0.7f),
                 fontFamily = ZelefinFont,
                 fontSize = 15.sp,

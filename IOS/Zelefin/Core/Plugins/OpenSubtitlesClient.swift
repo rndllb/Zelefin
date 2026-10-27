@@ -3,16 +3,52 @@ import Get
 import JellyfinAPI
 
 enum JellyfinPluginCatalog {
-    static func activeNames(client: JellyfinClient) async -> [String] {
+    struct Entry: Equatable, Sendable {
+        let name: String
+        let isEnabled: Bool
+    }
+
+    /// Every plugin the server lists, with whether it runs. Deleted and superseded copies are left out:
+    /// they sit beside the version that replaced them and would read as a second, disabled install.
+    static func entries(client: JellyfinClient) async -> [Entry] {
         guard let plugins = try? await client.send(Paths.getPlugins).value else { return [] }
         return plugins.compactMap { plugin in
+            guard let name = plugin.name else { return nil }
             switch plugin.status {
-            case .disabled, .deleted, .malfunctioned:
+            case .deleted, .superseded, .superceded:
                 return nil
-            default:
-                return plugin.name
+            case .disabled, .malfunctioned, .notSupported:
+                return Entry(name: name, isEnabled: false)
+            case .active, .restart, nil:
+                return Entry(name: name, isEnabled: true)
             }
         }
+    }
+
+    static func activeNames(client: JellyfinClient) async -> [String] {
+        await entries(client: client).filter(\.isEnabled).map(\.name)
+    }
+}
+
+/// Whether a plugin is on the server and running, from an administrator's `/Plugins` list.
+enum PluginPresence: Equatable, Sendable {
+    case notInstalled
+    case disabled
+    case enabled
+
+    var label: String {
+        switch self {
+        case .notInstalled: "Not Installed"
+        case .disabled: "Disabled"
+        case .enabled: "Enabled"
+        }
+    }
+
+    /// The strongest state among the plugin's entries, so an old disabled copy never hides the running one.
+    static func of(_ matches: (String) -> Bool, in entries: [JellyfinPluginCatalog.Entry]) -> PluginPresence {
+        let mine = entries.filter { matches($0.name) }
+        if mine.contains(where: \.isEnabled) { return .enabled }
+        return mine.isEmpty ? .notInstalled : .disabled
     }
 }
 
