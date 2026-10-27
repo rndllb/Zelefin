@@ -1,6 +1,8 @@
 #!/bin/sh
-# Aether's FFmpeg xcframeworks are stripped. Apple still wants a dSYM UUID
-# match on TestFlight upload. dsymutil writes that UUID even without DWARF.
+# Aether's FFmpeg xcframeworks are stripped and ship without dSYMs. Apple still
+# wants a dSYM UUID match on TestFlight upload. dsymutil writes that UUID even
+# without DWARF. ZelefinMPV's xcframework normally carries real dSYMs (see
+# build-mpv.sh), which Xcode copies in first; this only fills the gap.
 set -euo pipefail
 
 case "${DEBUG_INFORMATION_FORMAT:-}" in
@@ -15,9 +17,13 @@ fi
 
 mkdir -p "$dsym_dir"
 
+uuids() {
+  xcrun dwarfdump --uuid "$1" 2>/dev/null | awk '{print $2}' | sort
+}
+
 collect() {
   if [ -d "$1" ]; then
-    find "$1" -maxdepth 5 -name 'AetherLib*.framework' 2>/dev/null
+    find "$1" -maxdepth 5 \( -name 'AetherLib*.framework' -o -name 'ZelefinMPV.framework' \) 2>/dev/null
   fi
 }
 
@@ -30,5 +36,8 @@ collect() {
   binary="${framework}/${name}"
   [ -f "$binary" ] || continue
   dest="${dsym_dir}/${name}.framework.dSYM"
+  if [ -d "$dest" ] && [ "$(uuids "$dest")" = "$(uuids "$binary")" ]; then
+    continue
+  fi
   xcrun dsymutil "$binary" -o "$dest"
 done

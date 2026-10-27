@@ -66,13 +66,23 @@ make_framework() {
     -c "Add :MinimumOSVersion string 18.0" "$fw/Info.plist" >/dev/null
 }
 
+# dsymutil reads DWARF from the archive's objects via the debug map, so it has to run before $src goes
+# away. Stripping the debug map afterwards keeps build paths out of the app; the UUID stays the same.
+make_dsym() {
+  local fw=$1
+  xcrun dsymutil "$fw/ZelefinMPV" -o "$fw.dSYM"
+  xcrun strip -S "$fw/ZelefinMPV"
+}
+
 make_framework ios-arm64 "$build/device"
 link_slice ios-arm64 iphoneos arm64-apple-ios18.0 "$build/device/ZelefinMPV.framework/ZelefinMPV"
+make_dsym "$build/device/ZelefinMPV.framework"
 
 make_framework ios-arm64_x86_64-simulator "$build/sim"
 link_slice ios-arm64_x86_64-simulator iphonesimulator arm64-apple-ios18.0-simulator "$build/sim/arm64"
 link_slice ios-arm64_x86_64-simulator iphonesimulator x86_64-apple-ios18.0-simulator "$build/sim/x86_64"
 lipo -create "$build/sim/arm64" "$build/sim/x86_64" -output "$build/sim/ZelefinMPV.framework/ZelefinMPV"
+make_dsym "$build/sim/ZelefinMPV.framework"
 
 if nm -gU "$build/device/ZelefinMPV.framework/ZelefinMPV" | awk '{print $3}' | grep -qv '^_mpv_'; then
   echo "ZelefinMPV exports something other than mpv_*; FFmpeg would leak into the app." >&2
@@ -81,6 +91,7 @@ fi
 
 rm -rf "$OUT"
 xcodebuild -create-xcframework \
-  -framework "$build/device/ZelefinMPV.framework" -framework "$build/sim/ZelefinMPV.framework" \
+  -framework "$build/device/ZelefinMPV.framework" -debug-symbols "$build/device/ZelefinMPV.framework.dSYM" \
+  -framework "$build/sim/ZelefinMPV.framework" -debug-symbols "$build/sim/ZelefinMPV.framework.dSYM" \
   -output "$OUT" >/dev/null
 echo "Built $OUT"

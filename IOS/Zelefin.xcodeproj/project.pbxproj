@@ -838,7 +838,7 @@
 				82F9F66127347C1DA246E1BB /* Sources */,
 				EC05AE2ABB672F0999A28C0B /* Resources */,
 				EF21439071061A6E0159FBEB /* Frameworks */,
-				E390468B0C2306B2FE2DA38A /* Generate Aether dSYMs */,
+				E390468B0C2306B2FE2DA38A /* Generate framework dSYMs */,
 			);
 			buildRules = (
 			);
@@ -925,7 +925,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		E390468B0C2306B2FE2DA38A /* Generate Aether dSYMs */ = {
+		E390468B0C2306B2FE2DA38A /* Generate framework dSYMs */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -934,16 +934,16 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/scripts/generate-aether-dsyms.sh",
+				"$(SRCROOT)/scripts/generate-framework-dsyms.sh",
 			);
-			name = "Generate Aether dSYMs";
+			name = "Generate framework dSYMs";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
-			shellScript = "sh \"${SRCROOT}/scripts/generate-aether-dsyms.sh\"\n";
+			shellScript = "sh \"${SRCROOT}/scripts/generate-framework-dsyms.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

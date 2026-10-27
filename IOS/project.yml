@@ -64,13 +64,13 @@ targets:
       - package: ZelefinMPV
         product: ZelefinMPV
     postBuildScripts:
-      - name: Generate Aether dSYMs
+      - name: Generate framework dSYMs
         basedOnDependencyAnalysis: false
         runOnlyWhenInstalling: true
         inputFiles:
-          - $(SRCROOT)/scripts/generate-aether-dsyms.sh
+          - $(SRCROOT)/scripts/generate-framework-dsyms.sh
         script: |
-          sh "${SRCROOT}/scripts/generate-aether-dsyms.sh"
+          sh "${SRCROOT}/scripts/generate-framework-dsyms.sh"
     info:
       path: Zelefin/Info.plist
       properties:
