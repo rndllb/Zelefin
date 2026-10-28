@@ -36,6 +36,10 @@ final class PlayerModel {
         pictureInPicture.isActive || nativePictureInPictureActive
     }
     private(set) var fillsScreen = false
+    /// Top edge of the visible progress bar in screen points, nil while the controls are hidden.
+    /// Subtitles that would sit under it rise above it.
+    private(set) var controlsTop: CGFloat?
+    private var mpvSurfaceFrame: CGRect = .zero
     private(set) var showsPlaybackStats = false
     private(set) var playbackStats = PlaybackStatsSnapshot(sections: [])
     private(set) var sleepTimer: SleepTimerMode = .off
@@ -77,6 +81,7 @@ final class PlayerModel {
     private var didStart = false
     private var didAttemptDeferredResume = false
     private var isRestoringForeground = false
+    private var mpvTracks: [MPVPlayback.Track] = []
     private var nativePictureInPictureActive = false
     private var stopWhenPictureInPictureEnds = false
     /// Bumped after background return so SwiftUI detaches and reattaches the layer.
@@ -240,13 +245,13 @@ final class PlayerModel {
         isRestoringForeground = true
         defer { isRestoringForeground = false }
 
-        if let mpv {
-            // A display layer iOS invalidated in the background stays black until flushed.
-            if mpv.displayLayer.status == .failed {
-                mpv.displayLayer.flush()
-            }
-            return
+        #if !targetEnvironment(macCatalyst)
+        // A display layer iOS invalidated in the background stays black until flushed.
+        if let mpv, mpv.displayLayer.status == .failed {
+            mpv.displayLayer.flush()
         }
+        #endif
+        if mpv != nil { return }
 
         if let engine {
             let resume = !isPaused
@@ -503,7 +508,33 @@ final class PlayerModel {
 
     func applySubtitleAppearance() {
         player?.currentItem?.textStyleRules = SubtitleAppearance.textStyleRules()
+        mpv?.setSubtitleStyle(SubtitleAppearance.mpvProperties())
+        applyMPVSubtitlePosition()
         publishVisibleSubtitleCues(at: currentSeconds)
+    }
+
+    func setControlsTop(_ top: CGFloat?) {
+        guard controlsTop != top else { return }
+        controlsTop = top
+        applyMPVSubtitlePosition()
+    }
+
+    func setMPVSurfaceFrame(_ frame: CGRect) {
+        guard mpvSurfaceFrame != frame else { return }
+        mpvSurfaceFrame = frame
+        applyMPVSubtitlePosition()
+    }
+
+    private func applyMPVSubtitlePosition() {
+        guard let mpv else { return }
+        let base = SubtitleAppearance.mpvSubtitlePosition
+        guard mpvSurfaceFrame.height > 0, pictureSize.width > 0, pictureSize.height > 0 else {
+            mpv.setSubtitlePosition(base)
+            return
+        }
+        let video = DirectPlayPictureLayout.pictureRect(picture: pictureSize, in: mpvSurfaceFrame.size, fill: fillsScreen)
+            .offsetBy(dx: mpvSurfaceFrame.minX, dy: mpvSurfaceFrame.minY)
+        mpv.setSubtitlePosition(SubtitleAppearance.mpvSubtitlePosition(base: base, video: video, ceiling: controlsTop.map { $0 - 8 }))
     }
 
     private func applySubtitleSelection(_ id: Int?) {
@@ -973,6 +1004,7 @@ final class PlayerModel {
         ))
         noteResumePlayhead()
         applyFillScreen()
+        mpv.setSubtitleStyle(SubtitleAppearance.mpvProperties())
     }
 
     private func observeMPV(_ mpv: MPVPlayback) {
@@ -1008,6 +1040,7 @@ final class PlayerModel {
             if selectedSubtitleID != id { selectedSubtitleID = id }
         case .videoSize(let size):
             pictureSize = size
+            applyMPVSubtitlePosition()
         case .ended:
             guard plan.isLive != true else { return }
             if hasFirstFrame {
@@ -1024,6 +1057,7 @@ final class PlayerModel {
     /// applied once: audio as soon as tracks appear, subtitles after the sidecar files have joined.
     private func applyMPVTracks(_ tracks: [MPVPlayback.Track]) {
         guard let mpv else { return }
+        mpvTracks = tracks
         let audio = tracks.filter { $0.kind == .audio }
         let subtitles = tracks.filter { $0.kind == .subtitle }
         let audioMenu = audio.map { PlaybackTrackOption(id: $0.id, title: MPVTrackMatch.title(for: $0)) }
@@ -1040,8 +1074,9 @@ final class PlayerModel {
             }
         }
 
+        // mpv reports an empty list before the file opens; picking then would turn subtitles off for good.
         let externalCount = subtitles.filter(\.isExternal).count
-        if !startedOnServerSubtitle, externalCount >= plan.externalSubtitles.count {
+        if !startedOnServerSubtitle, !tracks.isEmpty, externalCount >= plan.externalSubtitles.count {
             startedOnServerSubtitle = true
             guard serverSubtitleID != nil else {
                 selectedSubtitleID = nil
@@ -1053,6 +1088,49 @@ final class PlayerModel {
             selectedSubtitleID = target?.id
             mpv.selectSubtitle(target?.id)
         }
+    }
+
+    /// The server's stream index for a track picked in this player's menu, plus what it is, for the
+    /// per-show memory. MPV numbers tracks per type, so its ids are not stream indices; its streamIndex
+    /// is, for a file played as-is. Aether and AVPlayer list tracks by stream index already.
+    func audioPick(id: Int) -> (serverIndex: Int?, choice: TrackChoice?) {
+        if mpv != nil {
+            guard let track = mpvTracks.first(where: { $0.kind == .audio && $0.id == id }) else { return (nil, nil) }
+            let index = plan.method == .directPlay ? track.streamIndex : nil
+            return (index, TrackChoice(language: track.language, title: track.title, isForced: track.isForced))
+        }
+        if let engine, let track = engine.audioTracks.first(where: { $0.id == id }) {
+            return (id, TrackChoice(language: track.language, title: track.name, isForced: track.isForced))
+        }
+        let track = plan.audioTracks.first { $0.id == id }
+        return (id, track.map { TrackChoice(language: $0.language, title: $0.title, isForced: SeriesTrackMemory.isForced($0)) })
+    }
+
+    /// True while the subtitle on screen is a picture (PGS, VobSub), which only the size setting changes.
+    var showsPictureSubtitles: Bool {
+        guard let id = selectedSubtitleID else { return false }
+        let codec: String?
+        if mpv != nil {
+            codec = mpvTracks.first { $0.kind == .subtitle && $0.id == id }?.codec
+        } else if let engine {
+            codec = engine.subtitleTracks.first { $0.id == id }?.codec
+        } else {
+            codec = plan.subtitleTracks.first { $0.id == id }?.codec
+        }
+        return SubtitleAppearance.isPictureCodec(codec)
+    }
+
+    func subtitlePick(id: Int) -> (serverIndex: Int?, choice: TrackChoice?) {
+        if mpv != nil {
+            guard let track = mpvTracks.first(where: { $0.kind == .subtitle && $0.id == id }) else { return (nil, nil) }
+            let index = plan.method == .directPlay && !track.isExternal ? track.streamIndex : nil
+            return (index, TrackChoice(language: track.language, title: track.title, isForced: track.isForced))
+        }
+        if let engine, let track = engine.subtitleTracks.first(where: { $0.id == id }) {
+            return (id, TrackChoice(language: track.language, title: track.name, isForced: track.isForced))
+        }
+        let track = plan.subtitleTracks.first { $0.id == id }
+        return (id, track.map { TrackChoice(language: $0.language, title: $0.title, isForced: SeriesTrackMemory.isForced($0)) })
     }
 
     private func observeNativeTime() {
@@ -1146,6 +1224,7 @@ final class PlayerModel {
     private func applyFillScreen() {
         engine?.videoGravity = fillsScreen ? .resizeAspectFill : .resizeAspect
         mpv?.setFillsScreen(fillsScreen)
+        applyMPVSubtitlePosition()
     }
 
     private func refreshPlaybackStats() {

@@ -9,6 +9,8 @@ struct ItemDetailView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    /// The page's own width: a pushed page doesn't always get the measured layout from its column.
+    @State private var pageWidth: CGFloat = 0
     @Environment(\.scenePhase) private var scenePhase
     let itemID: String
     let focusEpisodeID: String?
@@ -83,6 +85,7 @@ struct ItemDetailView: View {
 
     var body: some View {
         page
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
             .presentsPlayerFromRoot($playingItem) {
                 Task { await refreshPlaybackProgress() }
             }
@@ -644,7 +647,7 @@ struct ItemDetailView: View {
 
             if !episodeStrip.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
+                    LazyHStack(alignment: .top, spacing: DetailRowLayout.spacing) {
                         ForEach(episodeStrip) { card in
                             ZStack(alignment: .bottomTrailing) {
                                 Button {
@@ -653,7 +656,8 @@ struct ItemDetailView: View {
                                     EpisodeShowcaseCard(
                                         item: card.episode,
                                         imageURL: session.library?.primaryURL(for: card.episode, maxHeight: 480),
-                                        showsOverflowIcon: false
+                                        showsOverflowIcon: false,
+                                        width: wideCardWidth
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -669,16 +673,13 @@ struct ItemDetailView: View {
                                 .padding(.trailing, 2)
                                 .padding(.bottom, 2)
                             }
-                            .frame(
-                                width: PosterMetrics.episodeCardSize.width * sidebarLayout.scale,
-                                height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale
-                            )
+                            .frame(width: episodeCardSize.width, height: episodeCardSize.height)
                             .accessibilityHidden(card.copy != EpisodeCarousel.homeCopy)
                         }
                     }
                     .scrollTargetLayout()
                 }
-                .frame(height: PosterMetrics.episodeCardSize.height * sidebarLayout.scale)
+                .frame(height: episodeCardSize.height)
                 .contentMargins(.horizontal, 16, for: .scrollContent)
                 .scrollTargetBehavior(.viewAligned)
                 .scrollPosition(id: $scrolledEpisodeID)
@@ -703,7 +704,7 @@ struct ItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Additional Parts", showsChevron: false)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(additionalParts) { part in
                         Button {
                             play(part)
@@ -712,7 +713,8 @@ struct ItemDetailView: View {
                                 title: part.name,
                                 caption: "Part",
                                 imageURL: session.library?.artworkURL(for: part, style: .replayLandscape)
-                                    ?? session.library?.backdropURL(for: part)
+                                    ?? session.library?.backdropURL(for: part),
+                                width: wideCardWidth
                             )
                         }
                         .buttonStyle(.plain)
@@ -720,7 +722,7 @@ struct ItemDetailView: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .frame(height: PosterMetrics.landscapeSize.height * sidebarLayout.scale)
+            .frame(height: landscapeCardHeight)
         }
     }
 
@@ -738,7 +740,7 @@ struct ItemDetailView: View {
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(trailers) { trailer in
                         Button {
                             playTrailer(trailer)
@@ -746,7 +748,8 @@ struct ItemDetailView: View {
                             TrailerLandscapeCard(
                                 title: trailer.title,
                                 caption: trailer.caption,
-                                imageURL: thumbnailURL(for: trailer, title: item)
+                                imageURL: thumbnailURL(for: trailer, title: item),
+                                width: wideCardWidth
                             )
                         }
                         .buttonStyle(.plain)
@@ -754,7 +757,7 @@ struct ItemDetailView: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .frame(height: PosterMetrics.landscapeSize.height * sidebarLayout.scale)
+            .frame(height: landscapeCardHeight)
         }
     }
 
@@ -762,7 +765,7 @@ struct ItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Extras", showsChevron: false)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(extras) { extra in
                         Button {
                             play(extra.item)
@@ -772,7 +775,8 @@ struct ItemDetailView: View {
                                 caption: extra.caption,
                                 imageURL: session.library?.artworkURL(for: extra.item, style: .replayLandscape)
                                     ?? session.library?.backdropURL(for: extra.item)
-                                    ?? session.library?.backdropURL(for: item)
+                                    ?? session.library?.backdropURL(for: item),
+                                width: wideCardWidth
                             )
                         }
                         .buttonStyle(.plain)
@@ -780,7 +784,7 @@ struct ItemDetailView: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .frame(height: PosterMetrics.landscapeSize.height * sidebarLayout.scale)
+            .frame(height: landscapeCardHeight)
         }
     }
 
@@ -809,7 +813,7 @@ struct ItemDetailView: View {
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
+                LazyHStack(alignment: .top, spacing: DetailRowLayout.spacing) {
                     ForEach(credits) { person in
                         NavigationLink {
                             PersonDetailView(
@@ -821,7 +825,8 @@ struct ItemDetailView: View {
                         } label: {
                             CastMemberCard(
                                 person: person,
-                                imageURL: person.imageURL ?? session.library?.personImageURL(id: person.id, tag: person.imageTag)
+                                imageURL: person.imageURL ?? session.library?.personImageURL(id: person.id, tag: person.imageTag),
+                                width: DetailRowLayout.cardWidth(fitting: 10, in: rowWidth)
                             )
                         }
                         .buttonStyle(.plain)
@@ -866,14 +871,15 @@ struct ItemDetailView: View {
 
     private func posterScroller(_ items: [MediaItem]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: PosterMetrics.rowSpacing) {
+            LazyHStack(spacing: DetailRowLayout.spacing) {
                 ForEach(items) { item in
                     NavigationLink {
                         LibraryItemRoute(item: item)
                     } label: {
                         PortraitPoster(
                             item: item,
-                            imageURL: session.library?.primaryURL(for: item)
+                            imageURL: session.library?.primaryURL(for: item),
+                            size: rowPosterSize
                         )
                     }
                     .buttonStyle(.plain)
@@ -881,7 +887,30 @@ struct ItemDetailView: View {
             }
             .padding(.horizontal, 16)
         }
-        .frame(height: PosterMetrics.portraitSize.height * sidebarLayout.scale)
+        .frame(height: rowPosterSize?.height ?? PosterMetrics.portraitSize.height * sidebarLayout.scale)
+    }
+
+    /// Five episode, trailer or extra cards across the Mac's visible width; nil keeps the phone sizes.
+    private var wideCardWidth: CGFloat? {
+        DetailRowLayout.cardWidth(fitting: 5, in: rowWidth)
+    }
+
+    private var rowWidth: CGFloat {
+        pageWidth > 1 ? pageWidth : sidebarLayout.contentWidth
+    }
+
+    private var episodeCardSize: CGSize {
+        wideCardWidth.map(PosterMetrics.episodeCardSize(width:))
+            ?? PosterMetrics.episodeCardSize.scaled(by: sidebarLayout.scale)
+    }
+
+    private var landscapeCardHeight: CGFloat {
+        wideCardWidth.map { ($0 * 9 / 16).rounded() } ?? PosterMetrics.landscapeSize.height * sidebarLayout.scale
+    }
+
+    /// Eight related posters across the Mac's visible width.
+    private var rowPosterSize: CGSize? {
+        DetailRowLayout.cardWidth(fitting: 8, in: rowWidth).map { CGSize(width: $0, height: ($0 * 1.5).rounded()) }
     }
 
     private func thumbnailURL(for trailer: TitleTrailer, title: MediaItem) -> URL? {

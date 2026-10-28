@@ -1055,3 +1055,103 @@ final class PlayerEngineChoiceTests: XCTestCase {
         XCTAssertTrue(PlaybackPreferences.useNativeVideoPlayer)
     }
 }
+
+final class SubtitleAppearanceMPVTests: XCTestCase {
+    private let keys = [
+        SubtitleAppearance.sizeKey, SubtitleAppearance.colorKey, SubtitleAppearance.backgroundKey,
+        SubtitleAppearance.brightnessKey, SubtitleAppearance.positionKey, SubtitleAppearance.syncKey,
+    ]
+    private var saved: [String: Any] = [:]
+
+    override func setUp() {
+        saved = [:]
+        for key in keys {
+            saved[key] = UserDefaults.standard.object(forKey: key)
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    override func tearDown() {
+        for key in keys { UserDefaults.standard.set(saved[key], forKey: key) }
+    }
+
+    private func value(_ name: String) -> String? {
+        SubtitleAppearance.mpvProperties().first { $0.name == name }?.value
+    }
+
+    func testSizeColorPositionAndSyncReachMPV() {
+        SubtitleAppearance.size = .extraLarge
+        SubtitleAppearance.color = .yellow
+        SubtitleAppearance.position = .raised
+        SubtitleAppearance.syncSeconds = 0.5
+        XCTAssertEqual(value("sub-scale"), "1.58")
+        XCTAssertEqual(value("sub-color")?.prefix(3), "#FF")
+        XCTAssertEqual(value("sub-pos"), "86")
+        XCTAssertEqual(value("sub-delay"), "0.50")
+        XCTAssertEqual(value("sub-ass-override"), "force")
+    }
+
+    func testSubtitlesRiseOnlyAsFarAsTheControlsCover() {
+        let video = CGRect(x: 0, y: 0, width: 1000, height: 400)
+        XCTAssertEqual(SubtitleAppearance.mpvSubtitlePosition(base: 100, video: video, ceiling: nil), 100)
+        // Text bottom sits at 400 - 400 * 22/720 ≈ 387.8; a bar from 330 covers 57.8 points, about 15%.
+        XCTAssertEqual(SubtitleAppearance.mpvSubtitlePosition(base: 100, video: video, ceiling: 330), 85)
+        // A letterboxed picture whose subtitles end above the bar stays put.
+        let letterboxed = CGRect(x: 0, y: 100, width: 1000, height: 200)
+        XCTAssertEqual(SubtitleAppearance.mpvSubtitlePosition(base: 100, video: letterboxed, ceiling: 330), 100)
+    }
+
+    func testPictureSubtitleCodecs() {
+        for codec in ["hdmv_pgs_subtitle", "PGSSUB", "dvd_subtitle", "dvdsub", "dvb_subtitle", "xsub"] {
+            XCTAssertTrue(SubtitleAppearance.isPictureCodec(codec), codec)
+        }
+        for codec in ["subrip", "ass", "webvtt", "mov_text", nil] as [String?] {
+            XCTAssertFalse(SubtitleAppearance.isPictureCodec(codec), codec ?? "nil")
+        }
+    }
+
+    func testBackgroundsMapToBorderAndBox() {
+        SubtitleAppearance.background = .highlight
+        XCTAssertEqual(value("sub-border-style"), "background-box")
+        XCTAssertNotNil(value("sub-back-color"))
+        SubtitleAppearance.background = .outline
+        XCTAssertEqual(value("sub-border-style"), "outline-and-shadow")
+        XCTAssertEqual(value("sub-border-size"), "2.5")
+        SubtitleAppearance.background = .none
+        XCTAssertEqual(value("sub-border-size"), "0")
+        XCTAssertEqual(value("sub-shadow-offset"), "0")
+    }
+
+    func testMPVColorsAreAlphaFirstHex() {
+        XCTAssertEqual(SubtitleAppearance.mpvColor(.black, alpha: 1), "#FF000000")
+        XCTAssertEqual(SubtitleAppearance.mpvColor(.white, alpha: 0.5), "#80FFFFFF")
+    }
+}
+
+final class SeriesTrackMemoryTests: XCTestCase {
+    private func track(_ id: Int, _ kind: MediaTrack.Kind, _ language: String?, _ title: String, selected: Bool = false) -> MediaTrack {
+        MediaTrack(id: id, kind: kind, language: language, title: title, codec: nil, isSelected: selected, isDefault: false)
+    }
+
+    func testSameLanguageAtADifferentIndexIsFound() {
+        let tracks = [track(1, .audio, "eng", "English"), track(4, .audio, "jpn", "Japanese")]
+        XCTAssertEqual(SeriesTrackMemory.match(TrackChoice(language: "ja"), in: tracks)?.id, 4)
+        XCTAssertNil(SeriesTrackMemory.match(TrackChoice(language: "fre"), in: tracks))
+    }
+
+    func testTitleAndForcedNarrowTheMatch() {
+        let audio = [track(1, .audio, "eng", "English 5.1"), track(2, .audio, "eng", "English Commentary")]
+        XCTAssertEqual(SeriesTrackMemory.match(TrackChoice(language: "eng", title: "Commentary"), in: audio)?.id, 2)
+        let subtitles = [track(5, .subtitle, "eng", "English"), track(6, .subtitle, "eng", "English Forced")]
+        XCTAssertEqual(SeriesTrackMemory.match(TrackChoice(language: "en", isForced: true), in: subtitles)?.id, 6)
+        XCTAssertEqual(SeriesTrackMemory.match(TrackChoice(language: "en"), in: subtitles)?.id, 5)
+    }
+
+    func testMemoryIsKeptPerAccountAndShow() {
+        let account = "test-\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: "zelefin.series-tracks.\(account).show") }
+        SeriesTrackMemory.update(accountID: account, seriesID: "show") { $0.subtitlesOff = true }
+        XCTAssertEqual(SeriesTrackMemory.saved(accountID: account, seriesID: "show")?.subtitlesOff, true)
+        XCTAssertNil(SeriesTrackMemory.saved(accountID: account, seriesID: "other"))
+    }
+}

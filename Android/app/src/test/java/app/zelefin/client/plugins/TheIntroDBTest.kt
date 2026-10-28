@@ -73,4 +73,26 @@ class TheIntroDBTest {
         assertTrue(!SkipPluginChoice.isGreyedOut(PluginPresence.Enabled, PluginPresence.Enabled))
         assertTrue(!SkipPluginChoice.isGreyedOut(PluginPresence.Disabled, PluginPresence.NotInstalled))
     }
+
+    @Test
+    fun onlyFillsKindsTheServerLacks() {
+        val serverIntro = SkipSegment(SkipSegment.Kind.Intro, 60.0, 90.0)
+        val community = listOf(
+            SkipSegment(SkipSegment.Kind.Recap, 0.0, 45.0),
+            SkipSegment(SkipSegment.Kind.Intro, 50.0, 80.0),
+            SkipSegment(SkipSegment.Kind.Outro, 1300.0, 1350.0),
+        )
+        val merged = TheIntroDB.filling(listOf(serverIntro), community)
+        assertEquals(listOf(SkipSegment.Kind.Recap, SkipSegment.Kind.Intro, SkipSegment.Kind.Outro), merged.map { it.kind })
+        assertEquals(60.0, merged.first { it.kind == SkipSegment.Kind.Intro }.start, 0.0)
+        assertTrue(!TheIntroDB.coversEveryKind(merged))
+        assertTrue(TheIntroDB.coversEveryKind(merged + SkipSegment(SkipSegment.Kind.Preview, 1350.0, 1380.0)))
+    }
+
+    @Test
+    fun usageLimitWaitsForRetryAfter() {
+        assertEquals(1_000_000L + 13_646_000L, TheIntroDB.blockedUntil("13646", 1_000_000L))
+        assertEquals(1_000_000L + 3_600_000L, TheIntroDB.blockedUntil(null, 1_000_000L))
+        assertEquals(1_000_000L + 3_600_000L, TheIntroDB.blockedUntil("soon", 1_000_000L))
+    }
 }

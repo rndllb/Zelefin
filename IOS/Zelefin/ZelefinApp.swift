@@ -43,6 +43,38 @@ enum InterfaceOrientationLock {
     }
 }
 
+#if targetEnvironment(macCatalyst)
+/// Loads `ZelefinMacBridge.bundle` (AppKit) from the app's PlugIns folder. Catalyst's split view can't
+/// stop the sidebar from collapsing or resizing; AppKit's can.
+enum MacBridge {
+    @MainActor private static var bridge: NSObject?
+
+    @MainActor
+    static func start() {
+        guard bridge == nil,
+              let url = Bundle.main.builtInPlugInsURL?.appendingPathComponent("ZelefinMacBridge.bundle"),
+              let bundle = Bundle(url: url), bundle.load(),
+              let type = bundle.principalClass as? NSObject.Type else { return }
+        let instance = type.init()
+        instance.perform(NSSelectorFromString("start"))
+        bridge = instance
+    }
+}
+
+/// Apple Music's window on the Mac: no title bar, so the sidebar runs to the top and holds the
+/// close, minimize and zoom buttons.
+enum MacWindowChrome {
+    @MainActor
+    static func apply() {
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            guard let titlebar = scene.titlebar else { continue }
+            titlebar.titleVisibility = .hidden
+            titlebar.toolbar = nil
+        }
+    }
+}
+#endif
+
 @MainActor
 final class ZelefinAppDelegate: NSObject, UIApplicationDelegate {
     func application(
@@ -50,6 +82,9 @@ final class ZelefinAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         LibraryAlertCenter.shared.prepare()
+        #if targetEnvironment(macCatalyst)
+        MacBridge.start()
+        #endif
         return true
     }
 
@@ -87,6 +122,12 @@ struct ZelefinApp: App {
                 .environment(\.libraryArtworkRevision, session.artworkRevision)
                 .environment(downloads)
                 .environment(deepLinks)
+                #if targetEnvironment(macCatalyst)
+                .onAppear(perform: MacWindowChrome.apply)
+                .onReceive(NotificationCenter.default.publisher(for: UIScene.didActivateNotification)) { _ in
+                    MacWindowChrome.apply()
+                }
+                #endif
         }
     }
 }

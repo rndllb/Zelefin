@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +49,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,6 +62,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.zelefin.client.PlaybackPreferences
+import app.zelefin.client.TrackPick
 import app.zelefin.client.PlayerDirective
 import app.zelefin.client.SubtitleAppearance
 import app.zelefin.client.SubtitlePictureLayout
@@ -72,6 +77,7 @@ import app.zelefin.core.SavedSession
 import dev.jdtech.mpv.MPVLib
 import java.util.Locale
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -101,6 +107,14 @@ class MpvController(private val mpv: MPVLib) {
     private var viewHeight = 0
     private var fillScreen = false
     private var subtitleStyle = SubtitleAppearance.Snapshot()
+    private var controlsTop: Float? = null
+
+    /** Top of the visible progress bar in view pixels, or null once the controls hide. */
+    fun setControlsTop(top: Float?) {
+        if (controlsTop == top) return
+        controlsTop = top
+        applySubtitlePlacement()
+    }
 
     fun setFillScreen(fill: Boolean) {
         fillScreen = fill
@@ -155,8 +169,13 @@ class MpvController(private val mpv: MPVLib) {
             videoHeight = videoHeight(),
             fill = fillScreen,
             style = subtitleStyle,
+            controlsTop = controlsTop,
         )
-        mpv.setPropertyString("sub-font-size", placed.mpvFontSize.toString())
+        // sub-scale is what resizes image subtitles (PGS, VobSub); text takes it on top of the font size,
+        // so the font size is divided back out to keep text where the layout put it.
+        val scale = subtitleStyle.sizeScale
+        mpv.setPropertyString("sub-scale", "%.2f".format(Locale.US, scale))
+        mpv.setPropertyString("sub-font-size", (placed.mpvFontSize / scale).roundToInt().toString())
         mpv.setPropertyString("sub-pos", placed.mpvSubPos.toString())
         mpv.setPropertyString("sub-margin-y", "0")
     }
@@ -179,7 +198,13 @@ class MpvController(private val mpv: MPVLib) {
             val name = listOfNotNull(title.takeIf { it.isNotEmpty() }, language)
                 .joinToString(" · ")
                 .ifBlank { if (kind == "audio") "Audio ${found.size + 1}" else "Subtitle ${found.size + 1}" }
-            found += OverlayTrack(id.toString(), name, selected, lang.takeIf { it.isNotEmpty() })
+            found += OverlayTrack(
+                id.toString(),
+                name,
+                selected,
+                lang.takeIf { it.isNotEmpty() },
+                isPicture = SubtitleAppearance.isPictureCodec(mpv.getPropertyString("track-list/$index/codec")),
+            )
         }
         return found
     }
@@ -400,6 +425,7 @@ fun MpvPlayerSurface(
     suspended: Boolean = false,
     onPlaybackReady: () -> Unit = {},
     onUserTransport: (PlayerDirective) -> Unit = {},
+    onTrackPicked: (TrackPick) -> Unit = {},
     directives: SharedFlow<PlayerDirective>? = null,
 ) {
     val context = LocalContext.current
@@ -514,6 +540,8 @@ fun MpvPlayerSurface(
     var chromeVisible by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
     var locked by remember { mutableStateOf(false) }
+    var timelineTop by remember { mutableStateOf<Float?>(null) }
+    var surfaceTop by remember { mutableFloatStateOf(0f) }
     var lockHint by remember { mutableStateOf(false) }
     var scrubTime by remember { mutableStateOf<Double?>(null) }
     var menuPage by remember { mutableStateOf<PlayerMenuPage?>(null) }
@@ -659,8 +687,11 @@ fun MpvPlayerSurface(
     val title = if (item.kind == MediaKind.Episode) item.seriesName ?: item.name else item.name
     val subtitle = if (item.kind == MediaKind.Episode) episodeCaption(item, includeName = item.seriesName != null) else null
     val showChrome = chromeVisible && !locked && !inPip && !suspended
+    val captionGap = with(LocalDensity.current) { 8.dp.toPx() }
+    val subtitleCeiling = timelineTop?.takeIf { showChrome }?.let { it - surfaceTop - captionGap }
+    LaunchedEffect(controller, subtitleCeiling) { controller?.setControlsTop(subtitleCeiling) }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(Color.Black).onGloballyPositioned { surfaceTop = it.positionInRoot().y }) {
         MpvPlayerHost(
             plan = plan,
             startSeconds = plan.startTimeSeconds,
@@ -710,6 +741,7 @@ fun MpvPlayerSurface(
                 pipSupported = pipSupported,
                 chapterStarts = plan.chapters.map { it.startSeconds },
                 fillsScreen = fillsScreen,
+                onTimelineTop = { timelineTop = it },
                 onToggleFill = {
                     fillsScreen = !fillsScreen
                     reveal()
@@ -859,12 +891,14 @@ fun MpvPlayerSurface(
             audioNote = null,
             onAudio = { track ->
                 controller?.selectAudio(track.key)
+                onTrackPicked(TrackPick.Audio(track.language))
                 trackTick += 1
                 menuPage = null
             },
             subtitles = subtitleTracks,
             onSubtitle = { track ->
                 controller?.selectSubtitle(track?.key)
+                onTrackPicked(track?.let { TrackPick.Subtitle(it.language) } ?: TrackPick.SubtitlesOff)
                 trackTick += 1
                 menuPage = null
             },

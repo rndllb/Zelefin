@@ -1,6 +1,7 @@
 package app.zelefin.client
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -97,4 +98,34 @@ class SubtitleAppearanceTest {
         assertTrue(raised.bottomPaddingFraction > lowered.bottomPaddingFraction)
         assertTrue(raised.mpvSubPos < lowered.mpvSubPos)
     }
+
+    @Test
+    fun pictureSubtitlesAreRecognised() {
+        listOf("hdmv_pgs_subtitle", "application/pgs", "dvd_subtitle", "application/vobsub", "application/dvbsubs", "PGSSUB")
+            .forEach { assertTrue(it, SubtitleAppearance.isPictureCodec(it)) }
+        listOf("subrip", "ass", "application/x-subrip", "text/x-ssa", "text/vtt", null)
+            .forEach { assertFalse(it.toString(), SubtitleAppearance.isPictureCodec(it)) }
+    }
+
+    @Test
+    fun captionsRiseAboveVisibleControlsOnly() {
+        val style = SubtitleAppearance.Snapshot()
+        fun place(controlsTop: Float?, videoHeight: Float = 1080f) = SubtitlePictureLayout.placement(
+            viewWidth = 2400,
+            viewHeight = 1080,
+            videoWidth = 1920f,
+            videoHeight = videoHeight,
+            fill = false,
+            style = style,
+            controlsTop = controlsTop,
+        )
+        val hidden = place(null)
+        val shown = place(900f)
+        assertEquals(83, shown.mpvSubPos)
+        assertEquals((1080f - 900f) / 1080f, shown.bottomPaddingFraction, 0.001f)
+        assertTrue(shown.mpvSubPos < hidden.mpvSubPos)
+        // Controls that end below where captions already sit leave them alone.
+        assertEquals(hidden.mpvSubPos, place(1070f).mpvSubPos)
+    }
 }
+

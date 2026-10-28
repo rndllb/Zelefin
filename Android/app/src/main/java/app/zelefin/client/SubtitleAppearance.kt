@@ -15,6 +15,12 @@ import kotlin.math.roundToInt
 
 /** Text-subtitle look and timing stored on this device. */
 object SubtitleAppearance {
+    /** Image subtitle codecs, as mpv, Media3 and Jellyfin name them (hdmv_pgs_subtitle, application/pgs, dvdsub). */
+    fun isPictureCodec(codec: String?): Boolean {
+        val name = codec?.lowercase() ?: return false
+        return listOf("pgs", "dvd_sub", "dvdsub", "vobsub", "dvb_sub", "dvbsub", "xsub").any { it in name }
+    }
+
     const val SIZE = "subtitle-size"
     const val COLOR = "subtitle-color"
     const val BACKGROUND = "subtitle-background"
@@ -163,7 +169,7 @@ object SubtitleAppearance {
     }
 
     @OptIn(UnstableApi::class)
-    fun applyTo(view: PlayerView, style: Snapshot = current(view.context), fill: Boolean = false) {
+    fun applyTo(view: PlayerView, style: Snapshot = current(view.context), fill: Boolean = false, controlsTop: Float? = null) {
         val video = view.player?.videoSize
         val videoWidth = if (video != null && video.width > 0) {
             video.width * video.pixelWidthHeightRatio
@@ -178,6 +184,7 @@ object SubtitleAppearance {
             videoHeight = videoHeight,
             fill = fill,
             style = style,
+            controlsTop = controlsTop,
         )
         view.subtitleView?.apply {
             setStyle(

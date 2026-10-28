@@ -886,7 +886,7 @@ class PluginsController(
 
     /**
      * Emby marks intros and credits in its chapter list; Jellyfin and Silo serve media segments, which
-     * Intro Skipper, the TheIntroDB plugin and Silo fill in. A title with none falls back to asking
+     * Intro Skipper, the TheIntroDB plugin and Silo fill in. Kinds the server has none of are asked of
      * TheIntroDB directly, which is the only way Emby gets recaps and previews.
      */
     suspend fun skipSegments(item: MediaItem, loadItem: suspend (String) -> MediaItem?): List<SkipSegment> {
@@ -898,9 +898,10 @@ class PluginsController(
                 IntroSkipperClient(current.serverUrl, current.accessToken).segments(item.id)
             }
         }.getOrElse { if (it is CancellationException) throw it else emptyList() }
-        if (server.isNotEmpty() || !settings.usesTheIntroDB) return server
-        return runCatching { TheIntroDB.segments(item, loadItem) }
+        if (!settings.usesTheIntroDB || TheIntroDB.coversEveryKind(server)) return server
+        val community = runCatching { TheIntroDB.segments(application, item, loadItem) }
             .getOrElse { if (it is CancellationException) throw it else emptyList() }
+        return TheIntroDB.filling(server, community)
     }
 
     fun autoSkips(kind: SkipSegment.Kind): Boolean = with(_state.value) {

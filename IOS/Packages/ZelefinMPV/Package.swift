@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-// libmpv for the iOS player. The xcframework is built by IOS/scripts/build-mpv.sh and is not in git.
+// libmpv for the iOS and Mac Catalyst player. The xcframework is built by IOS/scripts/build-mpv.sh and is not in git.
 let package = Package(
     name: "ZelefinMPV",
     platforms: [.iOS(.v18)],

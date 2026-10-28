@@ -1,8 +1,8 @@
 import Foundation
 
-/// TheIntroDB's community skip times, for titles the server has no markers for: every Emby title,
-/// and Jellyfin without a skip plugin. Jellyfin's TheIntroDB plugin and Silo write the same data
-/// into media segments, so those servers usually answer before this is asked.
+/// TheIntroDB's community skip times, for the kinds the server has no markers for: every Emby title,
+/// Jellyfin without a skip plugin, and the recaps or credits Intro Skipper didn't find. Jellyfin's
+/// TheIntroDB plugin and Silo write the same data into media segments.
 enum TheIntroDB {
     struct Lookup: Hashable, Sendable {
         var tvdbID: Int?
@@ -18,6 +18,30 @@ enum TheIntroDB {
 
     private static let endpoint = URL(string: "https://api.theintrodb.org/v4/media")!
     private static let cache = Cache()
+    static let blockedUntilKey = "zelefin.theintrodb.blocked-until"
+    /// Without an API key TheIntroDB allows a daily number of lookups per public address, shared with
+    /// every device and server at home; once it says they're spent, asking again only wastes requests.
+    private static let fallbackBlock: TimeInterval = 60 * 60
+
+    /// Server markers win; TheIntroDB only adds the kinds the server has none of.
+    static func filling(_ server: [SkipSegment], from community: [SkipSegment]) -> [SkipSegment] {
+        let known = Set(server.map(\.kind))
+        return (server + community.filter { !known.contains($0.kind) }).sorted { $0.start < $1.start }
+    }
+
+    static func coversEveryKind(_ segments: [SkipSegment]) -> Bool {
+        Set(segments.map(\.kind)).count == SkipSegment.Kind.allCases.count
+    }
+
+    static func isBlocked(now: Date = .now, defaults: UserDefaults = .standard) -> Bool {
+        defaults.double(forKey: blockedUntilKey) > now.timeIntervalSince1970
+    }
+
+    static func block(retryAfter: String?, now: Date = .now, defaults: UserDefaults = .standard) {
+        let seconds = retryAfter.flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) } ?? 0
+        let wait = seconds > 0 ? seconds : fallbackBlock
+        defaults.set(now.timeIntervalSince1970 + wait, forKey: blockedUntilKey)
+    }
 
     /// Skip segments for `item`. Episodes are looked up by their show plus season and episode, which
     /// costs one library request for the show's provider ids.
@@ -51,13 +75,17 @@ enum TheIntroDB {
 
     static func segments(for lookup: Lookup, runtime: TimeInterval?) async -> [SkipSegment] {
         if let cached = await cache.value(for: lookup) { return cached }
-        guard let url = url(for: lookup) else { return [] }
+        guard !isBlocked(), let url = url(for: lookup) else { return [] }
         var request = URLRequest(url: url, timeoutInterval: 8)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse else { return [] }
-        // 404 is "no submissions for this media": a real answer, worth remembering. A 429 or an
-        // outage is not, so the next play asks again.
+        if http.statusCode == 429 {
+            block(retryAfter: http.value(forHTTPHeaderField: "Retry-After"))
+            return []
+        }
+        // 404 is "no submissions for this media": a real answer, worth remembering. An outage is
+        // not, so the next play asks again.
         guard http.statusCode == 200 || http.statusCode == 404 else { return [] }
         let segments = http.statusCode == 200 ? parse(data, runtime: runtime) : []
         await cache.store(segments, for: lookup)

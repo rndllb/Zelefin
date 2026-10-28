@@ -199,6 +199,66 @@ enum SubtitleAppearance {
         return AVTextStyleRule(textMarkupAttributes: attributes).map { [$0] } ?? []
     }
 
+    /// The same look for mpv, which draws its own subtitles. Text, styled ASS included, takes every
+    /// setting; image subtitles (PGS, VobSub) are pictures, so only their size changes.
+    static func mpvProperties() -> [(name: String, value: String)] {
+        let alpha = brightness / 100
+        var properties: [(String, String)] = [
+            ("sub-ass-override", "force"),
+            ("sub-scale", String(format: "%.2f", size.scale)),
+            ("sub-color", mpvColor(color.color, alpha: alpha)),
+            ("sub-pos", String(mpvSubtitlePosition)),
+            ("sub-delay", String(format: "%.2f", syncSeconds)),
+        ]
+        switch background {
+        case .none:
+            properties += [("sub-border-style", "outline-and-shadow"), ("sub-border-size", "0"), ("sub-shadow-offset", "0")]
+        case .dropShadow:
+            properties += [
+                ("sub-border-style", "outline-and-shadow"), ("sub-border-size", "0"),
+                ("sub-shadow-offset", "2"), ("sub-shadow-color", mpvColor(.black, alpha: 0.7 * alpha)),
+            ]
+        case .outline:
+            properties += [
+                ("sub-border-style", "outline-and-shadow"), ("sub-border-size", "2.5"),
+                ("sub-border-color", mpvColor(.black, alpha: alpha)), ("sub-shadow-offset", "0"),
+            ]
+        case .highlight:
+            properties += [
+                ("sub-border-style", "background-box"), ("sub-back-color", mpvColor(.black, alpha: 0.62 * alpha)),
+                ("sub-border-size", "1"), ("sub-shadow-offset", "0"),
+            ]
+        }
+        return properties
+    }
+
+    /// mpv's `sub-pos` for the Position setting: 100 is its usual spot near the bottom of the picture.
+    static var mpvSubtitlePosition: Int {
+        Int((100 - positionLift * 0.32).rounded())
+    }
+
+    /// How far mpv's `sub-pos` has to drop so subtitles clear controls whose top edge sits at `ceiling`.
+    /// mpv keeps text `sub-margin-y` (22 of 720 lines) above the position line.
+    static func mpvSubtitlePosition(base: Int, video: CGRect, ceiling: CGFloat?) -> Int {
+        guard let ceiling, video.height > 0 else { return base }
+        let bottom = video.minY + video.height * CGFloat(base) / 100 - video.height * 22 / 720
+        let overlap = bottom - ceiling
+        guard overlap > 0 else { return base }
+        return max(0, base - Int((overlap / video.height * 100).rounded(.up)))
+    }
+
+    /// Image subtitle codecs, as mpv, FFmpeg and Jellyfin name them (hdmv_pgs_subtitle, PGSSUB, dvd_subtitle, dvdsub).
+    static func isPictureCodec(_ codec: String?) -> Bool {
+        guard let codec = codec?.lowercased() else { return false }
+        return ["pgs", "dvd_sub", "dvdsub", "vobsub", "dvb_sub", "dvbsub", "xsub"].contains { codec.contains($0) }
+    }
+
+    /// mpv reads colors as `#AARRGGBB`.
+    static func mpvColor(_ color: Color, alpha: Double) -> String {
+        let components = argb(color, alpha: alpha).map { Int(($0 * 255).rounded()) }
+        return "#" + components.map { String(format: "%02X", $0) }.joined()
+    }
+
     private static func argb(_ color: Color, alpha: Double) -> [CGFloat] {
         let ui = UIColor(color)
         var r: CGFloat = 1

@@ -44,7 +44,7 @@ android {
         applicationId = "app.zelefin.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
+        versionCode = 17
         versionName = "1.0.0"
 
         val firebase = firebaseValues(applicationId!!)
@@ -52,16 +52,30 @@ android {
         buildConfigField("boolean", "PUSH_CONFIGURED", (firebase != null).toString())
     }
 
-    // Release APKs are signed with the key `scripts/release-android.sh` hands over in these variables;
-    // without them (Android Studio, CI) release builds fall back to the debug key.
-    val releaseKey = System.getenv("ZELEFIN_RELEASE_STORE_FILE")?.let(::file)?.takeIf { it.exists() }
+    // Release APKs are signed with the key `scripts/release-android.sh` hands over in these variables.
+    // A release build started without them (Android Studio's Run) reads the same key and Keychain
+    // password itself: phones running a zelefin.app build refuse an update signed any other way, which
+    // Android Studio reports as INSTALL_BASELINE_PROFILE_FAILED. Elsewhere (CI) it falls back to the debug key.
+    val buildsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+    val localKey = file("${System.getProperty("user.home")}/.zelefin/android/zelefin-release.jks").takeIf { it.exists() }
+    val envPassword = System.getenv("ZELEFIN_RELEASE_STORE_PASSWORD")
+    val storePassword = envPassword ?: if (buildsRelease && localKey != null) {
+        providers.exec {
+            commandLine("security", "find-generic-password", "-a", "zelefin-release", "-s", "Zelefin Android release key", "-w")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim().takeIf { it.isNotEmpty() }
+    } else {
+        null
+    }
+    val releaseKey = (System.getenv("ZELEFIN_RELEASE_STORE_FILE")?.let(::file)?.takeIf { it.exists() } ?: localKey)
+        ?.takeIf { storePassword != null }
     signingConfigs {
         if (releaseKey != null) {
             create("release") {
                 storeFile = releaseKey
-                storePassword = System.getenv("ZELEFIN_RELEASE_STORE_PASSWORD")
+                this.storePassword = storePassword
                 keyAlias = System.getenv("ZELEFIN_RELEASE_KEY_ALIAS") ?: "zelefin"
-                keyPassword = System.getenv("ZELEFIN_RELEASE_KEY_PASSWORD") ?: System.getenv("ZELEFIN_RELEASE_STORE_PASSWORD")
+                keyPassword = System.getenv("ZELEFIN_RELEASE_KEY_PASSWORD") ?: storePassword
             }
         }
     }

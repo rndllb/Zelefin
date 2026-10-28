@@ -71,7 +71,7 @@ struct TabCustomizationView: View {
             }
             .zelefinRowBackground()
 
-            if UIDevice.current.userInterfaceIdiom != .pad {
+            if !UIDevice.current.userInterfaceIdiom.isLargeScreen {
                 Section {
                     Toggle("Show Tab Names", isOn: $showsTabNames)
                 }
@@ -160,7 +160,7 @@ struct TabCustomizationView: View {
     }
 
     private var libraryDockFooter: String {
-        if UIDevice.current.userInterfaceIdiom == .pad {
+        if UIDevice.current.userInterfaceIdiom.isLargeScreen {
             "Turn on a custom library, such as Anime, to put it in the dock."
         } else {
             "Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 iPhone spots."
@@ -168,7 +168,7 @@ struct TabCustomizationView: View {
     }
 
     private var tabFooterCopy: String {
-        let names = UIDevice.current.userInterfaceIdiom == .pad
+        let names = UIDevice.current.userInterfaceIdiom.isLargeScreen
             ? ""
             : (showsTabNames
                 ? "Each dock icon shows its name. The iPhone dock holds 5 tabs, including Search. "

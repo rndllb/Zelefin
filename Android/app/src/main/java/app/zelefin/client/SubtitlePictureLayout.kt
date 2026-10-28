@@ -20,6 +20,8 @@ object SubtitlePictureLayout {
         videoHeight: Float,
         fill: Boolean,
         style: SubtitleAppearance.Snapshot,
+        /** Top of the visible progress bar in view pixels; captions that would sit under it rise above it. */
+        controlsTop: Float? = null,
     ): Placement {
         if (viewWidth <= 0 || viewHeight <= 0) {
             return fallback(style)
@@ -34,7 +36,9 @@ object SubtitlePictureLayout {
         val letterboxBottom = ((viewHeight - picture.height) / 2f).coerceAtLeast(0f)
         val lift = (style.positionLift / 100f).coerceIn(0f, 1f)
         val inset = picture.height * (0.06f + 0.32f * lift)
-        val bottom = (letterboxBottom + inset).coerceIn(0f, viewHeight * 0.48f)
+        val placedBottom = (letterboxBottom + inset).coerceIn(0f, viewHeight * 0.48f)
+        val bottom = controlsTop?.let { maxOf(placedBottom, viewHeight - it) }?.coerceAtMost(viewHeight * 0.7f) ?: placedBottom
+        val line = minOf(picture.bottom - inset, controlsTop ?: Float.MAX_VALUE)
         val shortSide = minOf(viewWidth, viewHeight).toFloat()
         val fontPx = (0.0533f * style.sizeScale * shortSide).coerceAtMost(picture.height * 0.16f)
         val videoScale = (shortSide / picture.height.coerceAtLeast(1f)).coerceIn(1f, 2.4f)
@@ -43,7 +47,7 @@ object SubtitlePictureLayout {
             letterboxBottom = letterboxBottom,
             fractionalTextSize = (fontPx / viewHeight).coerceIn(0.018f, 0.09f),
             bottomPaddingFraction = bottom / viewHeight,
-            mpvSubPos = (((picture.bottom - inset) / viewHeight) * 100f).roundToInt().coerceIn(18, 100),
+            mpvSubPos = ((line / viewHeight) * 100f).toInt().coerceIn(18, 100),
             mpvFontSize = (style.mpvFontSize * videoScale).roundToInt().coerceIn(28, 72),
         )
     }

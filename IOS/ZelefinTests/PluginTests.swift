@@ -45,6 +45,33 @@ final class SkipSegmentTests: XCTestCase {
         XCTAssertTrue(TheIntroDB.parse(Data(#"{"error":"no submissions"}"#.utf8), runtime: 100).isEmpty)
     }
 
+    func testTheIntroDBOnlyFillsKindsTheServerLacks() {
+        let serverIntro = SkipSegment(kind: .intro, start: 60, end: 90)
+        let community = [
+            SkipSegment(kind: .recap, start: 0, end: 45),
+            SkipSegment(kind: .intro, start: 50, end: 80),
+            SkipSegment(kind: .outro, start: 1300, end: 1350),
+        ]
+        let merged = TheIntroDB.filling([serverIntro], from: community)
+        XCTAssertEqual(merged.map(\.kind), [.recap, .intro, .outro])
+        XCTAssertEqual(merged.first { $0.kind == .intro }?.start, 60)
+        XCTAssertFalse(TheIntroDB.coversEveryKind(merged))
+        XCTAssertTrue(TheIntroDB.coversEveryKind(merged + [SkipSegment(kind: .preview, start: 1350, end: 1380)]))
+    }
+
+    func testTheIntroDBStaysQuietUntilTheUsageLimitResets() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "TheIntroDBBlockTests"))
+        defaults.removePersistentDomain(forName: "TheIntroDBBlockTests")
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertFalse(TheIntroDB.isBlocked(now: now, defaults: defaults))
+        TheIntroDB.block(retryAfter: "13646", now: now, defaults: defaults)
+        XCTAssertTrue(TheIntroDB.isBlocked(now: now.addingTimeInterval(13_000), defaults: defaults))
+        XCTAssertFalse(TheIntroDB.isBlocked(now: now.addingTimeInterval(13_700), defaults: defaults))
+        TheIntroDB.block(retryAfter: nil, now: now, defaults: defaults)
+        XCTAssertTrue(TheIntroDB.isBlocked(now: now.addingTimeInterval(3_000), defaults: defaults))
+        defaults.removePersistentDomain(forName: "TheIntroDBBlockTests")
+    }
+
     func testTheIntroDBLookupURL() throws {
         let episode = TheIntroDB.Lookup(tvdbID: 81189, tmdbID: 1396, imdbID: "tt0903747", season: 1, episode: 2, durationMS: 2_901_920)
         let url = try XCTUnwrap(TheIntroDB.url(for: episode))

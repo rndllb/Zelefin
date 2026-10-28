@@ -37,15 +37,24 @@ enum PosterMetrics {
         CGSize(width: 280, height: 158)
     }
 
+    static func landscapeSize(width: CGFloat) -> CGSize {
+        CGSize(width: width, height: (width * 158 / 280).rounded())
+    }
+
     /// Episode still width; text stacks tightly under the image.
     static var episodeCardWidth: CGFloat {
         252
     }
 
+    /// The text stacked under an episode still.
+    static let episodeTextHeight: CGFloat = 132
+
     static var episodeCardSize: CGSize {
-        let width = episodeCardWidth
-        let textHeight: CGFloat = 132
-        return CGSize(width: width, height: (width * 9 / 16) + textHeight)
+        episodeCardSize(width: episodeCardWidth)
+    }
+
+    static func episodeCardSize(width: CGFloat) -> CGSize {
+        CGSize(width: width, height: (width * 9 / 16) + episodeTextHeight)
     }
 
     static var portraitSize: CGSize {
@@ -288,12 +297,14 @@ struct LandscapeCard: View {
     let item: MediaItem
     let imageURL: URL?
     var showsOverflowIcon = true
+    var width: CGFloat? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
 
     private var size: CGSize {
-        PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
+        if let width { return PosterMetrics.landscapeSize(width: width) }
+        return PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
     }
 
     var body: some View {
@@ -379,12 +390,14 @@ struct ReplayLandscapeCard: View {
     let item: MediaItem
     let imageURL: URL?
     var showsOverflowIcon = true
+    var width: CGFloat? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
 
     private var size: CGSize {
-        PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
+        if let width { return PosterMetrics.landscapeSize(width: width) }
+        return PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
     }
 
     var body: some View {
@@ -459,10 +472,12 @@ struct TrailerLandscapeCard: View {
     let title: String
     let caption: String
     let imageURL: URL?
+    var width: CGFloat? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
     private var size: CGSize {
-        PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
+        if let width { return CGSize(width: width, height: (width * 9 / 16).rounded()) }
+        return PosterMetrics.landscapeSize.scaled(by: sidebarLayout.scale)
     }
 
     var body: some View {
@@ -513,12 +528,14 @@ struct EpisodeShowcaseCard: View {
     let item: MediaItem
     let imageURL: URL?
     var showsOverflowIcon = true
+    var width: CGFloat? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
 
     private var size: CGSize {
-        PosterMetrics.episodeCardSize.scaled(by: sidebarLayout.scale)
+        if let width { return PosterMetrics.episodeCardSize(width: width) }
+        return PosterMetrics.episodeCardSize.scaled(by: sidebarLayout.scale)
     }
     private var imageHeight: CGFloat { size.width * 9 / 16 }
 
@@ -1016,9 +1033,13 @@ struct FillingPortraitPoster: View {
 struct CastMemberCard: View {
     let person: CreditPerson
     let imageURL: URL?
+    var width: CGFloat? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
-    private var photoSize: CGFloat { 110 * sidebarLayout.scale }
+    private var photoSize: CGFloat {
+        if let width { return width - 6 }
+        return 110 * sidebarLayout.scale
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1644,7 +1665,7 @@ enum RootPageChrome {
     /// second row when a pushed page shows the system bar. Overlay those controls instead.
     @MainActor
     static var usesOverlayPushedBar: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
+        UIDevice.current.userInterfaceIdiom.isLargeScreen
     }
 
     static func pushedOverlayTopPadding(
@@ -1800,11 +1821,22 @@ private struct HeaderScrollVisibilityModifier: ViewModifier {
     }
 }
 
+/// The top-right profile button. The iPad sidebar and the Mac's permanent sidebar carry their own.
+enum PageProfileButton {
+    static func shows(tabBarPlacement: TabBarPlacement?) -> Bool {
+        #if targetEnvironment(macCatalyst)
+        false
+        #else
+        tabBarPlacement != .sidebar
+        #endif
+    }
+}
+
 private struct PageHeaderProfileButton: View {
     @Environment(\.tabBarPlacement) private var tabBarPlacement
 
     var body: some View {
-        if tabBarPlacement != .sidebar {
+        if PageProfileButton.shows(tabBarPlacement: tabBarPlacement) {
             ProfileMenu()
         }
     }
@@ -1877,8 +1909,40 @@ enum SidebarLayoutMetrics {
     }
 }
 
+/// Detail-page rows on the Mac fit a set number of cards to the visible width (five episodes or trailers,
+/// eight posters, as in the TV app); the rest scroll sideways. iPhone and iPad keep their fixed sizes.
+enum DetailRowLayout {
+    static let inset: CGFloat = 16
+
+    static var spacing: CGFloat { PosterGridLayout.columnSpacing }
+
+    static func cardWidth(fitting count: Int, in contentWidth: CGFloat) -> CGFloat? {
+        #if targetEnvironment(macCatalyst)
+        guard contentWidth > 1, count > 0 else { return nil }
+        let inner = contentWidth - inset * 2 - spacing * CGFloat(count - 1)
+        return max(60, (inner / CGFloat(count)).rounded(.down))
+        #else
+        nil
+        #endif
+    }
+}
+
 enum PosterGridLayout {
     static let horizontalInset: CGFloat = 16
+
+    #if targetEnvironment(macCatalyst)
+    /// The TV app's library grid on the Mac: posters at least 240 pt wide, six across a full-screen window.
+    static let macPosterWidth: CGFloat = 240
+    static let macSpacing: CGFloat = 20
+    #endif
+
+    static var columnSpacing: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        macSpacing
+        #else
+        PosterMetrics.rowSpacing
+        #endif
+    }
 
     static func columnCount(expandedWidth: CGFloat) -> Int {
         let inner = max(expandedWidth - horizontalInset * 2, PosterMetrics.portraitSize.width)
@@ -1887,6 +1951,11 @@ enum PosterGridLayout {
     }
 
     static func columns(for layout: ZelefinSidebarLayout) -> [GridItem] {
+        #if targetEnvironment(macCatalyst)
+        // Adaptive columns size from the grid's own width, so a page opened from another page gets
+        // the same grid as Movies and Shows even without the measured layout.
+        return [GridItem(.adaptive(minimum: macPosterWidth), spacing: macSpacing)]
+        #else
         let width: CGFloat
         if layout.expandedWidth > 1 {
             width = layout.expandedWidth
@@ -1896,7 +1965,8 @@ enum PosterGridLayout {
             width = 390
         }
         let count = columnCount(expandedWidth: width)
-        return Array(repeating: GridItem(.flexible(), spacing: PosterMetrics.rowSpacing), count: count)
+        return Array(repeating: GridItem(.flexible(), spacing: columnSpacing), count: count)
+        #endif
     }
 
     static func landscapeColumnCount(expandedWidth: CGFloat) -> Int {
@@ -2065,7 +2135,7 @@ struct FloatingPageHeader<Accessory: View, Center: View>: View {
     }
 
     private var showsProfile: Bool {
-        tabBarPlacement != .sidebar
+        PageProfileButton.shows(tabBarPlacement: tabBarPlacement)
     }
 
     private var showsCenter: Bool {

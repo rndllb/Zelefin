@@ -10,7 +10,7 @@ struct SearchView: View {
     @State private var headerVisible = true
 
     private var usesPadTopChrome: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
+        UIDevice.current.userInterfaceIdiom.isLargeScreen
     }
 
     private var isSearchSessionActive: Bool {
@@ -102,7 +102,7 @@ private struct SearchTabChrome: View {
     var onCancel: () -> Void
 
     private var showsScopeBar: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad || searchFieldFocused
+        UIDevice.current.userInterfaceIdiom.isLargeScreen || searchFieldFocused
     }
 
     private var showsTitleRow: Bool {

@@ -3,9 +3,29 @@ import UIKit
 import Foundation
 import ZelefinMPV
 
-/// libmpv playing into an `AVSampleBufferDisplayLayer` through `vo_avfoundation`. mpv demuxes and
-/// decodes (VideoToolbox), renders subtitles with libass into the frames, and switches audio and
-/// subtitle tracks in-process, so every track in the file is choosable without a server round trip.
+#if targetEnvironment(macCatalyst)
+/// ZelefinMPV's Mac Catalyst slice (upstream MPVKit) has no `vo_avfoundation`; it draws with
+/// `gpu-next` through Vulkan on MoltenVK into this layer.
+typealias MPVVideoLayer = MPVMetalLayer
+
+final class MPVMetalLayer: CAMetalLayer {
+    /// MoltenVK briefly asks for a 1×1 drawable while the swapchain starts, which stalls the first
+    /// frame; the layer keeps its real size instead.
+    override var drawableSize: CGSize {
+        get { super.drawableSize }
+        set {
+            guard newValue.width > 1, newValue.height > 1 else { return }
+            super.drawableSize = newValue
+        }
+    }
+}
+#else
+typealias MPVVideoLayer = AVSampleBufferDisplayLayer
+#endif
+
+/// libmpv playing into an `AVSampleBufferDisplayLayer` through `vo_avfoundation` (a Metal layer on
+/// Mac Catalyst). mpv demuxes and decodes (VideoToolbox), renders subtitles with libass, and switches
+/// audio and subtitle tracks in-process, so every track in the file is choosable without a server round trip.
 @MainActor
 final class MPVPlayback {
     struct Track: Equatable, Sendable {
@@ -49,13 +69,15 @@ final class MPVPlayback {
         var externalSubtitles: [ExternalSubtitleSidecar]
     }
 
-    let displayLayer = AVSampleBufferDisplayLayer()
+    let displayLayer = MPVVideoLayer()
     var onEvent: (Event) -> Void = { _ in }
 
     private let core: MPVCore
 
     init() throws {
+        #if !targetEnvironment(macCatalyst)
         displayLayer.videoGravity = .resizeAspect
+        #endif
         displayLayer.backgroundColor = UIColor.black.cgColor
         core = try MPVCore(layer: displayLayer)
         core.onEvent = { [weak self] event in
@@ -74,8 +96,22 @@ final class MPVPlayback {
     func selectAudio(_ id: Int) { core.setString("aid", String(id)) }
     func selectSubtitle(_ id: Int?) { core.setString("sid", id.map(String.init) ?? "no") }
 
+    func setSubtitleStyle(_ properties: [(name: String, value: String)]) {
+        for property in properties {
+            core.setString(property.name, property.value)
+        }
+    }
+
+    func setSubtitlePosition(_ position: Int) {
+        core.setString("sub-pos", String(position))
+    }
+
     func setFillsScreen(_ fills: Bool) {
+        #if targetEnvironment(macCatalyst)
+        core.setString("panscan", fills ? "1.0" : "0.0")
+        #else
         displayLayer.videoGravity = fills ? .resizeAspectFill : .resizeAspect
+        #endif
     }
 
     /// mpv's own view of the session, for the stats overlay.
@@ -95,8 +131,8 @@ private final class MPVCore: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "app.zelefin.mpv", qos: .userInitiated)
     private var handle: OpaquePointer?
-    /// vo_avfoundation keeps a raw pointer to the layer, so the layer must outlive the core.
-    private let layer: AVSampleBufferDisplayLayer
+    /// mpv keeps a raw pointer to the layer (`wid`), so the layer must outlive the core.
+    private let layer: MPVVideoLayer
     private var pendingSubtitles: [ExternalSubtitleSidecar] = []
     private var sawFirstFrame = false
     private var lastReportedTime: Double = -1
@@ -114,20 +150,31 @@ private final class MPVCore: @unchecked Sendable {
         case timePos = 1, duration, pause, pausedForCache, seeking, eofReached, trackCount, aid, sid, width, height
     }
 
-    init(layer: AVSampleBufferDisplayLayer) throws {
+    init(layer: MPVVideoLayer) throws {
         self.layer = layer
         guard let handle = mpv_create() else { throw ZelefinError.playbackEngineUnavailable }
         self.handle = handle
 
         var wid = Int64(Int(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
         mpv_set_option(handle, "wid", MPV_FORMAT_INT64, &wid)
-        let options: [(String, String)] = [
+        #if targetEnvironment(macCatalyst)
+        let output: [(String, String)] = [
+            ("vo", "gpu-next"),
+            ("gpu-api", "vulkan"),
+            ("gpu-context", "moltenvk"),
+            ("hwdec", "videotoolbox"),
+        ]
+        #else
+        let output: [(String, String)] = [
             ("vo", "avfoundation"),
             // On a device, subtitles are drawn into the frames so they also show in Picture in
             // Picture. Core Image can't composite the simulator's software-decoded frames, so the
             // simulator keeps mpv's separate subtitle overlay and decodes in software.
             ("avfoundation-composite-osd", Self.isSimulator ? "no" : "yes"),
             ("hwdec", Self.isSimulator ? "no" : "videotoolbox"),
+        ]
+        #endif
+        let options: [(String, String)] = output + [
             ("hwdec-codecs", "all"),
             ("hwdec-software-fallback", "yes"),
             ("target-colorspace-hint", "yes"),

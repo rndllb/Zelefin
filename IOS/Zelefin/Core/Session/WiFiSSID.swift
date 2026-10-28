@@ -4,12 +4,20 @@ import CoreLocation
 import NetworkExtension
 
 enum WiFiSSID {
+    /// Mac Catalyst has no Wi-Fi name API (`NEHotspotNetwork` answers with an error there), so the
+    /// Mac recognizes home by the server's subnet alone.
     static func current() async -> String? {
+        #if targetEnvironment(macCatalyst)
+        nil
+        #else
         await HotspotSSID.fetch()
+        #endif
     }
 
     static func requestAccess() async {
+        #if !targetEnvironment(macCatalyst)
         await LocationSSIDAccess.shared.request()
+        #endif
     }
 }
 

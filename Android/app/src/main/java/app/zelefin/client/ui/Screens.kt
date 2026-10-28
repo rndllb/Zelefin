@@ -250,6 +250,7 @@ fun PlayerScreen(
     onClose: () -> Unit,
     onPlaybackReady: () -> Unit = {},
     onUserTransport: (PlayerDirective) -> Unit = {},
+    onTrackPicked: (app.zelefin.client.TrackPick) -> Unit = {},
     directives: SharedFlow<PlayerDirective>? = null,
     session: app.zelefin.core.SavedSession? = null,
     onLoadNext: suspend (MediaItem) -> MediaItem? = { null },
@@ -305,6 +306,7 @@ fun PlayerScreen(
             onRetryStream = if (remote) onRecover else null,
             onPlaybackReady = onPlaybackReady,
             onUserTransport = onUserTransport,
+            onTrackPicked = onTrackPicked,
             directives = directives,
         )
         if (subtitleSheet.displayed != null) {

@@ -1,7 +1,11 @@
+#if !targetEnvironment(macCatalyst)
 import AetherEngine
+#endif
 import AVFoundation
 import Foundation
 import UIKit
+
+#if !targetEnvironment(macCatalyst)
 
 typealias DirectPlayEngine = AetherEngine
 typealias DirectPlayPlayerView = AetherPlayerView
@@ -16,6 +20,7 @@ typealias DirectPlayVideoRoute = VideoRoute
 typealias DirectPlayAudioDelivery = AudioDelivery
 typealias DirectPlayPlaybackPhase = PlaybackPhase
 typealias DirectPlaySeekEvent = SeekEvent
+#endif
 
 /// `AVAudioSession.setActive(true)` is a synchronous round trip to the audio server, and the
 /// first one after launch can hold the main thread long enough that the player ignores taps.
@@ -153,6 +158,16 @@ enum DirectPlayLoadOptions {
         }
     }
 
+    /// Server HLS remux/transcode has subtitle renditions on the playlist, not
+    /// demuxable packets. Open that playlist with AVPlayer.
+    static func shouldUseNativeRemoteHLS(url: URL, container: String?) -> Bool {
+        if PlaybackPipelineResolver.isHLS(url) { return true }
+        return (container ?? "").lowercased().contains("hls")
+    }
+}
+
+#if !targetEnvironment(macCatalyst)
+extension DirectPlayLoadOptions {
     @MainActor
     static func make(for plan: PlaybackPlan) -> LoadOptions {
         var headers = PlaybackHTTPHeaders.fields(for: plan.streamURL)
@@ -185,13 +200,6 @@ enum DirectPlayLoadOptions {
             externalSubtitles: aetherSidecars(from: plan.externalSubtitles, extraHeaders: headers),
             preferredDecodePath: usesSampleBufferDecode(for: .directDecode) ? .software : .automatic
         )
-    }
-
-    /// Server HLS remux/transcode has subtitle renditions on the playlist, not
-    /// demuxable packets. Open that playlist with AVPlayer.
-    static func shouldUseNativeRemoteHLS(url: URL, container: String?) -> Bool {
-        if PlaybackPipelineResolver.isHLS(url) { return true }
-        return (container ?? "").lowercased().contains("hls")
     }
 
     private static func aetherSidecars(
@@ -227,6 +235,7 @@ enum DirectPlayLoadOptions {
         UIScreen.main.currentEDRHeadroom > 1
     }
 }
+#endif
 
 /// Plan track IDs are server stream indexes or catalog ordinals. Aether uses
 /// AVStream indexes for embedded cues and `100_000 + n` for sidecars.

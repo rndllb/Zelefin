@@ -49,6 +49,9 @@ struct AVKitPlaybackChrome: View {
                                 revealControls()
                             }
                         )
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                            model.setControlsTop(top)
+                        }
                     }
                     .padding(.horizontal, horizontalPadding)
                     .padding(.top, 8)
@@ -97,6 +100,9 @@ struct AVKitPlaybackChrome: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+        .onChange(of: controlsVisible) { _, visible in
+            if !visible { model.setControlsTop(nil) }
+        }
         .task(id: hideTaskID) {
             await hideControlsIfPlaying()
         }
@@ -396,6 +402,11 @@ private struct AVKitPlaybackSettingsPanel: View {
     var onAddSubtitles: () -> Void
     var onAudioChange: ((Int) -> Void)? = nil
     var onSubtitleChange: ((Int?) -> Void)? = nil
+    // Read through @AppStorage so a tap re-renders the checkmarks; the static getters are invisible to SwiftUI.
+    @AppStorage(SubtitleAppearance.sizeKey) private var sizeRaw = SubtitleAppearance.Size.medium.rawValue
+    @AppStorage(SubtitleAppearance.colorKey) private var colorRaw = SubtitleAppearance.TextColor.white.rawValue
+    @AppStorage(SubtitleAppearance.backgroundKey) private var backgroundRaw = SubtitleAppearance.Background.dropShadow.rawValue
+    @AppStorage(SubtitleAppearance.syncKey) private var syncSeconds = 0.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -671,22 +682,36 @@ private struct AVKitPlaybackSettingsPanel: View {
     private var subtitleStyleRows: some View {
         menuSection("Font Size")
         ForEach(SubtitleAppearance.Size.allCases) { option in
-            choiceRow(option.title, selected: SubtitleAppearance.size == option) {
-                SubtitleAppearance.size = option
+            choiceRow(option.title, selected: (SubtitleAppearance.Size(rawValue: sizeRaw) ?? .medium) == option) {
+                sizeRaw = option.rawValue
                 model.applySubtitleAppearance()
             }
         }
+        if model.showsPictureSubtitles {
+            Text("These subtitles are pictures (PGS or VobSub), so only their size can change.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.55))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+        } else {
+            textLookRows
+        }
+    }
+
+    @ViewBuilder
+    private var textLookRows: some View {
         menuSection("Text Color")
         ForEach(SubtitleAppearance.TextColor.allCases) { option in
-            choiceRow(option.title, selected: SubtitleAppearance.color == option) {
-                SubtitleAppearance.color = option
+            choiceRow(option.title, selected: (SubtitleAppearance.TextColor(rawValue: colorRaw) ?? .white) == option) {
+                colorRaw = option.rawValue
                 model.applySubtitleAppearance()
             }
         }
         menuSection("Background")
         ForEach(SubtitleAppearance.Background.allCases) { option in
-            choiceRow(option.title, selected: SubtitleAppearance.background == option) {
-                SubtitleAppearance.background = option
+            choiceRow(option.title, selected: (SubtitleAppearance.Background(rawValue: backgroundRaw) ?? .dropShadow) == option) {
+                backgroundRaw = option.rawValue
                 model.applySubtitleAppearance()
             }
         }
@@ -704,12 +729,12 @@ private struct AVKitPlaybackSettingsPanel: View {
 
     private var subtitleSyncRows: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(SubtitleAppearance.syncTitle())
+            Text(SubtitleAppearance.syncTitle(syncSeconds))
                 .font(.body.weight(.semibold))
                 .frame(maxWidth: .infinity)
             HStack(spacing: 10) {
                 Button("−0.25") {
-                    SubtitleAppearance.syncSeconds -= SubtitleAppearance.syncStep
+                    syncSeconds = SubtitleAppearance.snappedSync(syncSeconds - SubtitleAppearance.syncStep)
                     model.applySubtitleAppearance()
                 }
                 .buttonStyle(.plain)
@@ -717,7 +742,7 @@ private struct AVKitPlaybackSettingsPanel: View {
                 .padding(.vertical, 10)
                 .background(Color.white.opacity(0.12), in: Capsule())
                 Button("+0.25") {
-                    SubtitleAppearance.syncSeconds += SubtitleAppearance.syncStep
+                    syncSeconds = SubtitleAppearance.snappedSync(syncSeconds + SubtitleAppearance.syncStep)
                     model.applySubtitleAppearance()
                 }
                 .buttonStyle(.plain)
@@ -727,9 +752,9 @@ private struct AVKitPlaybackSettingsPanel: View {
             }
             Slider(
                 value: Binding(
-                    get: { SubtitleAppearance.syncSeconds },
+                    get: { syncSeconds },
                     set: {
-                        SubtitleAppearance.syncSeconds = $0
+                        syncSeconds = SubtitleAppearance.snappedSync($0)
                         model.applySubtitleAppearance()
                     }
                 ),
@@ -738,7 +763,7 @@ private struct AVKitPlaybackSettingsPanel: View {
             )
             .tint(.white)
             Button("Reset") {
-                SubtitleAppearance.syncSeconds = 0
+                syncSeconds = 0
                 model.applySubtitleAppearance()
             }
             .buttonStyle(.plain)

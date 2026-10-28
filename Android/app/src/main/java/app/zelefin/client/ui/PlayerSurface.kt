@@ -98,9 +98,12 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -131,6 +134,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import app.zelefin.client.PlaybackLanguage
 import app.zelefin.client.PlaybackPreferences
+import app.zelefin.client.TrackPick
 import app.zelefin.client.PlayerDirective
 import app.zelefin.client.R
 import app.zelefin.client.SubtitleAppearance
@@ -170,10 +174,17 @@ internal data class OverlayTrack(
     val title: String,
     val selected: Boolean,
     val language: String? = null,
+    /** PGS, VobSub and DVB subtitles are pictures, which only the size setting changes. */
+    val isPicture: Boolean = false,
 )
 
 private class PlayerTrack(val title: String, val group: Tracks.Group, val index: Int, val selected: Boolean) {
-    fun overlay(): OverlayTrack = OverlayTrack("${System.identityHashCode(group)}:$index", title, selected)
+    fun overlay(): OverlayTrack = OverlayTrack(
+        "${System.identityHashCode(group)}:$index",
+        title,
+        selected,
+        isPicture = SubtitleAppearance.isPictureCodec(group.getTrackFormat(index).sampleMimeType),
+    )
 }
 
 @OptIn(UnstableApi::class)
@@ -196,6 +207,7 @@ fun PlayerSurface(
     onRetryStream: ((Double) -> Unit)? = null,
     onPlaybackReady: () -> Unit = {},
     onUserTransport: (PlayerDirective) -> Unit = {},
+    onTrackPicked: (TrackPick) -> Unit = {},
     directives: SharedFlow<PlayerDirective>? = null,
 ) {
     val context = LocalContext.current
@@ -226,6 +238,7 @@ fun PlayerSurface(
             suspended = suspended,
             onPlaybackReady = onPlaybackReady,
             onUserTransport = onUserTransport,
+            onTrackPicked = onTrackPicked,
             directives = directives,
         )
         return
@@ -458,6 +471,8 @@ fun PlayerSurface(
     var chromeVisible by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
     var locked by remember { mutableStateOf(false) }
+    var timelineTop by remember { mutableStateOf<Float?>(null) }
+    var surfaceTop by remember { mutableFloatStateOf(0f) }
     var lockHint by remember { mutableStateOf(false) }
     var scrubTime by remember { mutableStateOf<Double?>(null) }
     var menuPage by remember { mutableStateOf<PlayerMenuPage?>(null) }
@@ -582,6 +597,7 @@ fun PlayerSurface(
             .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
             .setOverrideForType(TrackSelectionOverride(track.group.mediaTrackGroup, track.index))
             .build()
+        onTrackPicked(TrackPick.Audio(track.group.getTrackFormat(track.index).language))
         menuPage = null
     }
     val selectSubtitle: (PlayerTrack?) -> Unit = { track ->
@@ -593,6 +609,7 @@ fun PlayerSurface(
                 .setOverrideForType(TrackSelectionOverride(track.group.mediaTrackGroup, track.index))
         }
         player.trackSelectionParameters = builder.build()
+        onTrackPicked(track?.let { TrackPick.Subtitle(it.group.getTrackFormat(it.index).language) } ?: TrackPick.SubtitlesOff)
         menuPage = null
     }
     val selectSpeed: (Float) -> Unit = { rate ->
@@ -611,13 +628,15 @@ fun PlayerSurface(
     val buffering = playbackError == null &&
         (playbackState == Player.STATE_BUFFERING || (playbackState == Player.STATE_IDLE && playWhenReady))
     val showChrome = chromeVisible && !locked && !inPip && !suspended
+    val captionGap = with(LocalDensity.current) { 8.dp.toPx() }
+    val subtitleCeiling = timelineTop?.takeIf { showChrome }?.let { it - surfaceTop - captionGap }
 
     // SDR plays on a TextureView so the liquid glass controls can refract the picture; HDR keeps the
     // SurfaceView, which no layer can sample, and its controls fall back to tinted glass.
     val videoGlass = remember { GlassSource() }
     val sampleVideo = plan.item.videoRange == VideoRange.Sdr
     CompositionLocalProvider(LocalGlassSource provides if (sampleVideo) videoGlass else null) {
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(Color.Black).onGloballyPositioned { surfaceTop = it.positionInRoot().y }) {
         val configuration = LocalConfiguration.current
         AndroidView(
             factory = { viewContext ->
@@ -642,11 +661,11 @@ fun PlayerSurface(
                 styleRevision
                 aspect
                 fillsScreen
-                SubtitleAppearance.applyTo(view, fill = fillsScreen)
+                SubtitleAppearance.applyTo(view, fill = fillsScreen, controlsTop = subtitleCeiling)
                 view.post {
                     view.requestLayout()
                     (view.videoSurfaceView as? android.view.SurfaceView)?.holder?.setSizeFromLayout()
-                    SubtitleAppearance.applyTo(view, fill = fillsScreen)
+                    SubtitleAppearance.applyTo(view, fill = fillsScreen, controlsTop = subtitleCeiling)
                 }
             },
             modifier = if (sampleVideo) Modifier.fillMaxSize().glassSource(videoGlass) else Modifier.fillMaxSize(),
@@ -684,6 +703,7 @@ fun PlayerSurface(
                 pipSupported = pipSupported,
                 chapterStarts = plan.chapters.map { it.startSeconds },
                 fillsScreen = fillsScreen,
+                onTimelineTop = { timelineTop = it },
                 onToggleFill = {
                     fillsScreen = !fillsScreen
                     reveal()
@@ -908,6 +928,7 @@ internal fun PlayerChrome(
     trickplay: app.zelefin.core.TrickplayInfo? = null,
     trickplayUrl: ((Double) -> Any?)? = null,
     onCast: (() -> Unit)? = null,
+    onTimelineTop: (Float) -> Unit = {},
 ) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val horizontal = if (wide) 28.dp else 16.dp
@@ -1009,6 +1030,7 @@ internal fun PlayerChrome(
                 onSeek = onSeek,
                 trickplay = trickplay,
                 trickplayUrl = { time -> trickplayUrl?.invoke(time) },
+                onBarTop = onTimelineTop,
             )
         }
     }
@@ -1023,6 +1045,7 @@ private fun Timeline(
     onSeek: (Double) -> Unit,
     trickplay: app.zelefin.core.TrickplayInfo? = null,
     trickplayUrl: (Double) -> Any? = { null },
+    onBarTop: (Float) -> Unit = {},
 ) {
     var previewing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
@@ -1037,6 +1060,7 @@ private fun Timeline(
     Row(
         Modifier
             .fillMaxWidth()
+            .onGloballyPositioned { onBarTop(it.positionInRoot().y) }
             .playerGlass(RoundedCornerShape(50))
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1531,16 +1555,20 @@ internal fun PlayerMenuPanel(
                                 updateAppearance { SubtitleAppearance.setSize(context, option) }
                             }
                         }
-                        MenuNote("Text Color")
-                        SubtitleAppearance.colors.forEach { option ->
-                            ChoiceRow(SubtitleAppearance.colorTitle(option), selected = appearance.color == option) {
-                                updateAppearance { SubtitleAppearance.setColor(context, option) }
+                        if (subtitles.any { it.selected && it.isPicture }) {
+                            MenuNote("These subtitles are pictures (PGS or VobSub), so only their size can change.")
+                        } else {
+                            MenuNote("Text Color")
+                            SubtitleAppearance.colors.forEach { option ->
+                                ChoiceRow(SubtitleAppearance.colorTitle(option), selected = appearance.color == option) {
+                                    updateAppearance { SubtitleAppearance.setColor(context, option) }
+                                }
                             }
-                        }
-                        MenuNote("Background")
-                        SubtitleAppearance.backgrounds.forEach { option ->
-                            ChoiceRow(SubtitleAppearance.backgroundTitle(option), selected = appearance.background == option) {
-                                updateAppearance { SubtitleAppearance.setBackground(context, option) }
+                            MenuNote("Background")
+                            SubtitleAppearance.backgrounds.forEach { option ->
+                                ChoiceRow(SubtitleAppearance.backgroundTitle(option), selected = appearance.background == option) {
+                                    updateAppearance { SubtitleAppearance.setBackground(context, option) }
+                                }
                             }
                         }
                     }

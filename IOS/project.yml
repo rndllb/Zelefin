@@ -34,7 +34,7 @@ targets:
   Zelefin:
     type: application
     platform: iOS
-    supportedDestinations: [iOS]
+    supportedDestinations: [iOS, macCatalyst]
     sources:
       - path: Zelefin
         excludes:
@@ -52,17 +52,31 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_UIImageName: LaunchMark
         ENABLE_PREVIEWS: YES
         TARGETED_DEVICE_FAMILY: "1,2"
-        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MACCATALYST: YES
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        # Mac Catalyst runs as the Mac idiom ("Optimize Interface for Mac"): AppKit draws the split view's
+        # sidebar full height, with the window buttons inside it.
+        "TARGETED_DEVICE_FAMILY[sdk=macosx*]": "1,2,6"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Zelefin/Zelefin.entitlements
+        # Mac Catalyst: no Wi-Fi info entitlement there, and the Mac needs App Sandbox with network access.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Zelefin/Zelefin-Mac.entitlements
         ENABLE_USER_SCRIPT_SANDBOXING: NO
     dependencies:
       - package: JellyfinAPI
         product: JellyfinAPI
+      # AetherEngine's FFmpeg and LibDovi ship no Mac Catalyst slices yet (AetherEngine#253).
       - package: AetherEngine
         product: AetherEngine
+        platformFilter: iOS
       - package: ZelefinMPV
         product: ZelefinMPV
+      # AppKit for the Mac sidebar (no collapsing, fixed width, no sidebar button), loaded from PlugIns.
+      - target: ZelefinMacBridge
+        platformFilter: macCatalyst
+        embed: true
+        copy:
+          destination: plugins
     postBuildScripts:
       - name: Generate framework dSYMs
         basedOnDependencyAnalysis: false
@@ -89,6 +103,21 @@ targets:
         UIBackgroundModes:
           - audio
           - remote-notification
+  ZelefinMacBridge:
+    type: bundle
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: ZelefinMacBridge
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.zelefin.client.MacBridge
+        INFOPLIST_FILE: ZelefinMacBridge/Info.plist
+        WRAPPER_EXTENSION: bundle
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Automatic
   ZelefinTests:
     type: bundle.unit-test
     platform: iOS

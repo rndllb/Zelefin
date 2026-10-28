@@ -216,7 +216,7 @@ struct PlaybackSettingsView: View {
                 }
             }
             Picker("Player Engine", selection: $playerEngine) {
-                ForEach(PlayerEngineChoice.allCases) { choice in
+                ForEach(PlayerEngineChoice.available) { choice in
                     Text(choice.title).tag(choice)
                 }
             }

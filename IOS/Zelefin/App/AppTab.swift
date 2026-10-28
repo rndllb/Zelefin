@@ -115,13 +115,19 @@ extension AppTab {
     }
 }
 
+extension UIUserInterfaceIdiom {
+    /// iPad and the Mac share the large-screen layout; the Mac build runs as `.mac`
+    /// ("Optimize Interface for Mac").
+    var isLargeScreen: Bool { self == .pad || self == .mac }
+}
+
 enum PhoneDockLimit {
     /// Five slots in one bar. Search always takes the last one.
     static let capacity = 5
 
     @MainActor
     static var applies: Bool {
-        UIDevice.current.userInterfaceIdiom != .pad
+        !UIDevice.current.userInterfaceIdiom.isLargeScreen
     }
 
     @MainActor
@@ -197,6 +203,7 @@ struct TabBarIcon: View {
     var assetName: String?
     var systemImage: String
     var isSelected = false
+    var side: CGFloat = TabBarIconMetrics.side
 
     var body: some View {
         Group {
@@ -211,7 +218,7 @@ struct TabBarIcon: View {
                 Image(systemName: systemImage)
             }
         }
-        .frame(width: TabBarIconMetrics.side, height: TabBarIconMetrics.side)
+        .frame(width: side, height: side)
         .accessibilityHidden(true)
     }
 }

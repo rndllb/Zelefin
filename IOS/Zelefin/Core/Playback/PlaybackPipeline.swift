@@ -31,7 +31,8 @@ enum PlaybackPreferences {
     static var playerEngine: PlayerEngineChoice {
         moveEveryoneToMPVOnce()
         if let raw = UserDefaults.standard.string(forKey: playerEngineKey),
-           let choice = PlayerEngineChoice(rawValue: raw) {
+           let choice = PlayerEngineChoice(rawValue: raw),
+           PlayerEngineChoice.available.contains(choice) {
             return choice
         }
         return .mpv
@@ -245,6 +246,71 @@ struct PlaybackLaunchOptions: Hashable, Sendable {
     }
 }
 
+/// One remembered audio or subtitle pick, by what it is rather than its stream number, so it carries to
+/// the next episode where the same language sits at a different index.
+struct TrackChoice: Codable, Hashable, Sendable {
+    var language: String?
+    var title: String?
+    var isForced: Bool = false
+}
+
+/// The audio and subtitle a viewer last picked for a show, so later episodes and auto-play open the same way.
+struct SeriesTrackMemory: Codable, Hashable, Sendable {
+    var audio: TrackChoice?
+    var subtitle: TrackChoice?
+    var subtitlesOff = false
+
+    static func saved(accountID: String, seriesID: String) -> SeriesTrackMemory? {
+        guard let data = UserDefaults.standard.data(forKey: key(accountID, seriesID)) else { return nil }
+        return try? JSONDecoder().decode(SeriesTrackMemory.self, from: data)
+    }
+
+    static func update(accountID: String, seriesID: String, _ mutate: (inout SeriesTrackMemory) -> Void) {
+        var memory = saved(accountID: accountID, seriesID: seriesID) ?? SeriesTrackMemory()
+        mutate(&memory)
+        guard let data = try? JSONEncoder().encode(memory) else { return }
+        UserDefaults.standard.set(data, forKey: key(accountID, seriesID))
+    }
+
+    /// Server stream indices for this episode, or nil where nothing matches or the server already picked it.
+    /// A subtitle index of -1 turns subtitles off.
+    func indices(in plan: PlaybackPlan) -> (audio: Int?, subtitle: Int?) {
+        let selectedAudio = plan.audioTracks.first(where: \.isSelected)?.id
+        let selectedSubtitle = plan.subtitleTracks.first(where: \.isSelected)?.id
+        var audioIndex: Int?
+        if let audio, let match = Self.match(audio, in: plan.audioTracks), match.id != selectedAudio {
+            audioIndex = match.id
+        }
+        var subtitleIndex: Int?
+        if subtitlesOff {
+            if selectedSubtitle != nil { subtitleIndex = -1 }
+        } else if let subtitle, let match = Self.match(subtitle, in: plan.subtitleTracks), match.id != selectedSubtitle {
+            subtitleIndex = match.id
+        }
+        return (audioIndex, subtitleIndex)
+    }
+
+    /// Same language first; among those, the same title (a commentary, "Signs & Songs"), then the same
+    /// forced or full kind.
+    static func match(_ choice: TrackChoice, in tracks: [MediaTrack]) -> MediaTrack? {
+        guard let language = NativeLanguage.alpha2(choice.language) else { return nil }
+        let sameLanguage = tracks.filter { NativeLanguage.alpha2($0.language) == language }
+        if let title = choice.title?.lowercased(), !title.isEmpty,
+           let titled = sameLanguage.first(where: { $0.title.lowercased().contains(title) }) {
+            return titled
+        }
+        return sameLanguage.first { isForced($0) == choice.isForced } ?? sameLanguage.first
+    }
+
+    static func isForced(_ track: MediaTrack) -> Bool {
+        track.title.lowercased().contains("forced")
+    }
+
+    private static func key(_ accountID: String, _ seriesID: String) -> String {
+        "zelefin.series-tracks.\(accountID).\(seriesID)"
+    }
+}
+
 enum PlaybackChromeIdlePolicy {
     /// Controls stay up while loading or rebuffering, so a stall never looks like a frozen picture.
     static func shouldHide(
@@ -303,6 +369,15 @@ enum PlayerEngineChoice: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// Mac Catalyst builds without AetherEngine (its FFmpeg ships no Catalyst slices).
+    static var available: [PlayerEngineChoice] {
+        #if targetEnvironment(macCatalyst)
+        allCases.filter { $0 != .aether }
+        #else
+        allCases
+        #endif
+    }
+
     var title: String {
         switch self {
         case .aether: "AetherEngine"
@@ -327,7 +402,7 @@ enum PlaybackPipelineResolver {
         if PlaybackPreferences.playerEngine == .mpv {
             return .mpv
         }
-        return pipeline(
+        let resolved = pipeline(
             url: plan.streamURL,
             method: plan.method,
             container: plan.container,
@@ -337,6 +412,11 @@ enum PlaybackPipelineResolver {
                 hasSidecarSubtitles: !plan.externalSubtitles.isEmpty
             )
         )
+        #if targetEnvironment(macCatalyst)
+        // What AVPlayer can't open goes to MPV on the Mac, where there is no AetherEngine.
+        if resolved == .directDecode { return .mpv }
+        #endif
+        return resolved
     }
 
     /// AVPlayer cannot overlay Jellyfin sidecar SRT/VTT files.

@@ -105,6 +105,7 @@ struct MediaRow: View {
     @State private var playbackError: String?
     @State private var removalPrompt: DownloadRemovalPrompt?
     @State private var removalItem: MediaItem?
+    @State private var rowWidth: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -120,7 +121,7 @@ struct MediaRow: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(Array(section.displayItems.enumerated()), id: \.element.id) { index, item in
                         queueCard(item, rank: index + 1)
                             .frame(width: cardWidth(for: section.style), alignment: .leading)
@@ -129,6 +130,7 @@ struct MediaRow: View {
                 .padding(.horizontal, 16)
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
         .presentsPlayerFromRoot($playingItem)
         .alert("Playback", isPresented: Binding(
             get: { playbackError != nil },
@@ -215,35 +217,48 @@ struct MediaRow: View {
     @ViewBuilder
     private func card(for item: MediaItem, rank: Int, showsOverflowIcon: Bool = true) -> some View {
         let url = session.library?.artworkURL(for: item, style: section.style)
+        let poster = fittedPosterSize
         switch section.style {
         case .landscape:
-            LandscapeCard(item: item, imageURL: url, showsOverflowIcon: showsOverflowIcon)
+            LandscapeCard(item: item, imageURL: url, showsOverflowIcon: showsOverflowIcon, width: fittedCardWidth)
         case .replayLandscape:
-            ReplayLandscapeCard(item: item, imageURL: url, showsOverflowIcon: showsOverflowIcon)
+            ReplayLandscapeCard(item: item, imageURL: url, showsOverflowIcon: showsOverflowIcon, width: fittedCardWidth)
         case .portrait:
-            PortraitPoster(item: item, imageURL: url)
+            PortraitPoster(item: item, imageURL: url, size: poster)
         case .ranked:
-            PortraitPoster(item: item, imageURL: url, rank: rank)
+            PortraitPoster(item: item, imageURL: url, rank: rank, size: poster)
         case .labeledPortrait:
             if item.kind == .genre {
-                GenrePosterCard(title: item.browsingCardTitle)
+                GenrePosterCard(title: item.browsingCardTitle, width: poster?.width, height: poster?.height)
             } else {
                 LabeledPortraitCard(
                     title: item.browsingCardTitle,
                     imageURL: url,
-                    collection: item.kind == .collection ? item : nil
+                    collection: item.kind == .collection ? item : nil,
+                    width: poster?.width,
+                    height: poster?.height
                 )
             }
         }
+    }
+
+    /// Five wide cards across the Mac's visible width; nil keeps the phone sizes.
+    private var fittedCardWidth: CGFloat? {
+        DetailRowLayout.cardWidth(fitting: 5, in: rowWidth)
+    }
+
+    /// Eight posters across the Mac's visible width.
+    private var fittedPosterSize: CGSize? {
+        DetailRowLayout.cardWidth(fitting: 8, in: rowWidth).map { CGSize(width: $0, height: ($0 * 1.5).rounded()) }
     }
 
     private func cardWidth(for style: HomeSection.Style) -> CGFloat {
         let scale = sidebarLayout.scale
         switch style {
         case .landscape, .replayLandscape:
-            return PosterMetrics.landscapeSize.width * scale
+            return fittedCardWidth ?? PosterMetrics.landscapeSize.width * scale
         case .portrait, .ranked, .labeledPortrait:
-            return PosterMetrics.portraitSize.width * scale
+            return fittedPosterSize?.width ?? PosterMetrics.portraitSize.width * scale
         }
     }
 

@@ -4,10 +4,11 @@
 
 # Zelefin
 
-**Native Jellyfin, Silo, and Emby for iPhone, iPad, and Android.**  
+**Native Jellyfin, Silo, and Emby for iPhone, iPad, Mac, and Android.**  
 Your server. Direct play. No Plus, no subscription, no in-app purchase.
 
 <img src="https://img.shields.io/badge/iOS-18+-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 18+" />
+<img src="https://img.shields.io/badge/macOS-15+%20·%20Intel%20%26%20Apple%20silicon-111111?style=for-the-badge&logo=apple&logoColor=white" alt="macOS 15+, Intel and Apple silicon" />
 <img src="https://img.shields.io/badge/Android-8+-3DDC84?style=for-the-badge&logo=android&logoColor=111" alt="Android 8+" />
 <img src="https://img.shields.io/badge/Jellyfin-ready-00A4DC?style=for-the-badge&logoColor=white" alt="Jellyfin ready" />
 <img src="https://img.shields.io/badge/Silo-ready-2ad4fc?style=for-the-badge&labelColor=111111&color=2ad4fc" alt="Silo ready" />
@@ -181,27 +182,29 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 
 ## Who gets what
 
-| | iPhone / iPad | Android |
-| :--- | :---: | :---: |
-| Jellyfin · Silo · Emby | ✅ | ✅ |
-| Home, library, search, Discover | ✅ | ✅ |
-| Downloads & resume | ✅ | ✅ |
-| Direct play · HDR · Atmos | ✅ | ✅ |
-| Subtitle looks | ✅ | ✅ |
-| SyncPlay + official web | ✅ | ✅ |
-| Sessions & messages | ✅ | ✅ |
-| Lock-screen alerts (plugin or webhooks) | ✅ | ✅ |
-| Jellyfin admin | ✅ | ✅ |
-| Seerr requests | ✅ | ✅ |
-| Live TV guide | ✅ | — |
-| Picture in Picture · AirPlay | ✅ | — |
-| Review Demo | ✅ | — |
-| Chromecast | — | ✅ |
-| MPV (default) | ✅ | ✅ |
-| ExoPlayer | — | ✅ |
-| AetherEngine | ✅ | — |
-| Material 3 chrome | — | ✅ |
-| AVPlayer / VideoToolbox | ✅ | — |
+| | iPhone / iPad | Mac | Android |
+| :--- | :---: | :---: | :---: |
+| Jellyfin · Silo · Emby | ✅ | ✅ | ✅ |
+| Home, library, search, Discover | ✅ | ✅ | ✅ |
+| Downloads & resume | ✅ | ✅ | ✅ |
+| Direct play · HDR · Atmos | ✅ | ✅ | ✅ |
+| Subtitle looks | ✅ | ✅ | ✅ |
+| SyncPlay + official web | ✅ | ✅ | ✅ |
+| Sessions & messages | ✅ | ✅ | ✅ |
+| Lock-screen alerts (plugin or webhooks) | ✅ | Soon | ✅ |
+| Jellyfin admin | ✅ | ✅ | ✅ |
+| Seerr requests | ✅ | ✅ | ✅ |
+| Live TV guide | ✅ | ✅ | — |
+| Picture in Picture · AirPlay | ✅ | — | — |
+| Review Demo | ✅ | ✅ | — |
+| Chromecast | — | — | ✅ |
+| MPV (default) | ✅ | ✅ | ✅ |
+| ExoPlayer | — | — | ✅ |
+| AetherEngine | ✅ | — | — |
+| Material 3 chrome | — | — | ✅ |
+| AVPlayer / VideoToolbox | ✅ | ✅ | — |
+
+The Mac app is the iPad app built for the Mac (Mac Catalyst) and runs natively on Intel and Apple silicon (M-series) Macs with macOS 15 or later. It has a fixed sidebar like the TV app, with grids and rows sized for a Mac window. AetherEngine isn’t on the Mac until its FFmpeg ships Mac Catalyst builds, so the Mac plays with MPV or Apple’s player.
 
 Android UI is Material 3: edge-to-edge navigation bar, accent-tinted surfaces, settings hub.
 
@@ -216,10 +219,10 @@ Android UI is Material 3: edge-to-edge navigation bar, accent-tinted surfaces, s
 ### 🍎 Xcode
 
 1. Open `IOS/Zelefin.xcodeproj`
-2. Pick a simulator or a signed-in device
+2. Pick a simulator, a signed-in device, or **My Mac (Mac Catalyst)**
 3. Run
 
-MPV ships as a framework too large for git. Build it once with `IOS/scripts/build-mpv.sh` before the first run.
+MPV ships as a framework too large for git. Build it once with `IOS/scripts/build-mpv.sh` before the first run; it builds the iPhone, simulator, and Mac slices.
 
 `IOS/project.yml` regenerates the project if you need XcodeGen.
 
@@ -242,7 +245,7 @@ Needs Android 8 (API 26)+.
 </tr>
 </table>
 
-**Needs:** iOS 18 (Liquid Glass on iOS 26), or Android 8+, and a Jellyfin or Emby server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
+**Needs:** iOS 18 (Liquid Glass on iOS 26), macOS 15 on an Intel or Apple silicon Mac, or Android 8+, and a Jellyfin or Emby server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
 
 ```bash
 cd IOS
@@ -266,7 +269,7 @@ Not yet.
 
 🛒 **Stores**
 
-iPhone and iPad beta on [TestFlight](https://testflight.apple.com/join/hHBVNKTj). Android from [zelefin.app/android](https://zelefin.app/android). Free.
+iPhone and iPad beta on [TestFlight](https://testflight.apple.com/join/hHBVNKTj). Android from [zelefin.app/android](https://zelefin.app/android). Mac from source in Xcode for now. Free.
 
 </td>
 <td width="33%" valign="top">
@@ -283,7 +286,7 @@ Not yet.
 
 ## License
 
-Zelefin is free software under the [GNU General Public License v3.0](LICENSE). It plays video with [mpv](https://mpv.io) through an MPVKit build with AVFoundation video output (GPL-3.0; `IOS/scripts/build-mpv.sh` names the exact release), alongside [AetherEngine](https://github.com/superuser404notfound/AetherEngine) and FFmpeg (LGPL-2.1). Skip times can come from [TheIntroDB](https://theintrodb.org).
+Zelefin is free software under the [GNU General Public License v3.0](LICENSE). It plays video with [mpv](https://mpv.io) through an MPVKit build with AVFoundation video output on iPhone and iPad and [MPVKit](https://github.com/mpvkit/MPVKit) on the Mac (GPL-3.0; `IOS/scripts/build-mpv.sh` names the exact releases), alongside [AetherEngine](https://github.com/superuser404notfound/AetherEngine) and FFmpeg (LGPL-2.1). Skip times can come from [TheIntroDB](https://theintrodb.org).
 
 ---
 

@@ -22,8 +22,104 @@ struct MainTabView: View {
     }
 
     var body: some View {
+        #if targetEnvironment(macCatalyst)
+        macSplitView
+        #else
         tabView
+        #endif
     }
+
+    #if targetEnvironment(macCatalyst)
+    /// The Mac uses a split view: its sidebar runs the full window height with the close, minimize
+    /// and zoom buttons inside it, where the adaptable tab sidebar floats below them.
+    private var macSplitView: some View {
+        // ZelefinMacBridge keeps the sidebar from collapsing or resizing and hides its button.
+        NavigationSplitView {
+            // Drawn by hand: Catalyst's sidebar list has a fixed 46 pt row on the Mac, where the TV
+            // and Music apps use 32 pt.
+            ScrollView {
+                VStack(spacing: 2) {
+                    ForEach(dockTabs) { tab in
+                        macSidebarRow(tab.title, systemImage: tab.systemImage, assetName: tab.iconAsset, selection: .tab(tab))
+                    }
+                    ForEach(dockLibraries) { library in
+                        macSidebarRow(library.name, systemImage: "square.grid.2x2", assetName: "IconsaxLibrary", selection: .library(library.id))
+                    }
+                    macSidebarRow("Search", systemImage: "magnifyingglass", assetName: "IconsaxSearch", selection: .search)
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+            }
+            // Removing the sidebar button here would make the split view ignore this width and drop the
+            // window buttons out of the sidebar, so ZelefinMacBridge hides it in AppKit instead.
+            .navigationSplitViewColumnWidth(229)
+            .safeAreaInset(edge: .bottom) {
+                ProfileMenu(diameter: 36, showsName: true, nameFont: .system(size: 13, weight: .medium), showsGlassRing: false)
+                    .padding(.leading, 10)
+                    .padding(.trailing, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } detail: {
+            NavigationStack {
+                macDetail(dockSelection)
+            }
+            .zelefinSidebarLayout()
+        }
+        // Picking another page in the sidebar leaves any title or season it had open. The split view
+        // keeps pushed pages in its own detail stack, so it is rebuilt rather than just its root.
+        .id(dockSelection)
+        .modifier(MiniPlayerDockChrome(isEnabled: session.nowPlayingItem != nil))
+        .onAppear {
+            applyHiddenTabDefaultsIfNeeded()
+            resolveStartSelectionIfNeeded()
+        }
+    }
+
+    /// The TV app's sidebar metrics: 13 pt text, 18 pt icons, 30 pt rows 2 pt apart.
+    private func macSidebarRow(_ title: String, systemImage: String, assetName: String?, selection: DockSelection) -> some View {
+        let isSelected = dockSelection == selection
+        return Button {
+            dockSelection = selection
+        } label: {
+            HStack(spacing: 10) {
+                TabBarIcon(assetName: assetName, systemImage: systemImage, isSelected: isSelected, side: 18)
+                Text(title)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            // The asset, not `Color.accentColor`: on the Mac that follows the system accent setting.
+            .foregroundStyle(isSelected ? Color("AccentColor") : Color.primary)
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(0.1))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func macDetail(_ selection: DockSelection) -> some View {
+        switch selection {
+        case .tab(let tab):
+            tabRoot(tab)
+        case .library(let id):
+            if let library = dockLibraries.first(where: { $0.id == id }) {
+                CatalogBrowseView(title: library.name, libraryKind: library.libraryKind, libraryID: library.id)
+            }
+        case .search:
+            SearchView()
+        }
+    }
+    #endif
 
     private var tabView: some View {
         TabView(selection: $dockSelection) {
@@ -123,7 +219,7 @@ struct MainTabView: View {
 
     /// iPad always shows tab names. The dock caption setting is iPhone only.
     private var showsDockTitles: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad || showsTabNames
+        UIDevice.current.userInterfaceIdiom.isLargeScreen || showsTabNames
     }
 
     private func dockLabel(
@@ -581,9 +677,12 @@ struct ProfileMenu: View {
     @Environment(SessionStore.self) private var session
     var diameter: CGFloat = 45
     var showsName = false
+    var nameFont: Font = .body.weight(.semibold)
+    /// The thin glass outline; the Mac sidebar shows the plain photo, as the TV app does.
+    var showsGlassRing = true
 
     /// Thin glass outline; photo fills most of the circle.
-    private var glassInset: CGFloat { max(3, (diameter * 0.08).rounded()) }
+    private var glassInset: CGFloat { showsGlassRing ? max(3, (diameter * 0.08).rounded()) : 0 }
     private var photoDiameter: CGFloat { diameter - glassInset * 2 }
     private var displayName: String {
         let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -631,7 +730,7 @@ struct ProfileMenu: View {
             HStack(spacing: 10) {
                 avatarBadge
                 Text(displayName)
-                    .font(.body.weight(.semibold))
+                    .font(nameFont)
                     .foregroundStyle(.white)
                     .lineLimit(1)
             }
@@ -641,11 +740,17 @@ struct ProfileMenu: View {
         }
     }
 
+    @ViewBuilder
     private var avatarBadge: some View {
-        UserAvatarView(url: session.avatarURL, diameter: photoDiameter)
-            .padding(glassInset)
-            .zelefinLiquidGlassCircle(interactive: false)
-            .contentShape(Circle())
+        if showsGlassRing {
+            UserAvatarView(url: session.avatarURL, diameter: photoDiameter)
+                .padding(glassInset)
+                .zelefinLiquidGlassCircle(interactive: false)
+                .contentShape(Circle())
+        } else {
+            UserAvatarView(url: session.avatarURL, diameter: photoDiameter)
+                .contentShape(Circle())
+        }
     }
 
     private func switchSiloProfile(_ profile: SiloProfile) async {

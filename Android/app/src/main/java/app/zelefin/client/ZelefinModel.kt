@@ -1347,14 +1347,16 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 LocalPlayback.None -> Unit
             }
             val appContext = getApplication<Application>()
-            // The user's account settings (Settings → Playback) decide the starting streams.
+            // The languages last picked for this show win; otherwise the user's account settings
+            // (Settings → Playback) decide the starting streams.
+            val remembered = TrackMemory.languages(appContext, _state.value.session?.accountId, target)
             val plan = pick(
                 { client ->
                     if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client::measureBitrate)
                     client.playback(
                         target,
-                        PlaybackPreferences.AUTOMATIC,
-                        PlaybackPreferences.AUTOMATIC,
+                        remembered.audio,
+                        remembered.subtitle,
                         preferSdh = PlaybackPreferences.preferSdh(appContext),
                     ) { sourceBitrate ->
                         bitrateOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
@@ -1365,8 +1367,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                     client.playback(
                         UUID.fromString(_state.value.session?.userId),
                         target,
-                        PlaybackPreferences.AUTOMATIC,
-                        PlaybackPreferences.AUTOMATIC,
+                        remembered.audio,
+                        remembered.subtitle,
                         preferSdh = PlaybackPreferences.preferSdh(appContext),
                     ) { sourceBitrate ->
                         bitrateOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
@@ -1422,6 +1424,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** Ignores reports from a player that is still on screen after the next episode took over. */
     fun playbackProgress(plan: PlaybackPlan, positionSeconds: Double, paused: Boolean) {
         if (isCurrentPlayback(plan)) playbackProgress(positionSeconds, paused)
+    }
+
+    fun rememberTrack(item: MediaItem, pick: TrackPick) {
+        TrackMemory.remember(getApplication(), _state.value.session?.accountId, item, pick)
     }
 
     fun playbackStopped(plan: PlaybackPlan, positionSeconds: Double) {

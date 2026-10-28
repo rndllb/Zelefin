@@ -421,6 +421,7 @@ private fun ZelefinScreen(
             onClose = model::closePlayer,
             onPlaybackReady = model::syncPlayPlayerReady,
             onUserTransport = model::forwardSyncPlay,
+            onTrackPicked = { pick -> model.rememberTrack(screen.plan.item, pick) },
             directives = model.playerDirectives,
             session = state.session,
             onLoadNext = model::nextEpisode,
