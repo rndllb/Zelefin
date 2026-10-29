@@ -66,7 +66,7 @@ echo "Built and checked:"
 
 if $publish; then
   gh release create "$tag" -R "$REPO" --target main \
-    --title "Zelefin $version for Android" --notes-file "$notes" \
+    --title "Zelefin $version (Build $code)" --notes-file "$notes" \
     "$out"/Zelefin-*.apk "$out/SHA256SUMS.txt"
   echo "Published $tag. Rebuild zelefin.app/android with: python3 ~/Projects/Websites/zelefin-tools/android_page.py"
 fi
