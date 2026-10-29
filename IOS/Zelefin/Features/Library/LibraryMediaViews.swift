@@ -26,7 +26,7 @@ struct PlaylistDetailView: View {
     var body: some View {
         ScrollView {
             if isLoading && entries.isEmpty {
-                ProgressView().tint(.white).padding(.top, 80)
+                PageLoadingIndicator()
             } else if entries.isEmpty {
                 ContentUnavailableView(
                     "Empty Playlist",
@@ -332,7 +332,7 @@ struct RemoteImagePickerView: View {
             .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(kind == option ? Color.accentColor : Color.white.opacity(0.08))
+                    .fill(kind == option ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.white.opacity(0.08)))
             )
         }
         .buttonStyle(.plain)

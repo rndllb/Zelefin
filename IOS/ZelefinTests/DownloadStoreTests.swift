@@ -138,7 +138,7 @@ final class DownloadLayoutTests: XCTestCase {
     func testDownloadCopyAndBannerTitles() {
         XCTAssertEqual(DownloadControlCopy.title(for: .idle), "Download")
         XCTAssertEqual(DownloadControlCopy.title(for: .downloading(0)), "Cancel Download")
-        XCTAssertEqual(DownloadControlCopy.title(for: .downloading(0.42)), "Cancel Download · 42%")
+        XCTAssertEqual(DownloadControlCopy.title(for: .downloading(0.42)), "Pause Download · 42%")
         XCTAssertEqual(DownloadControlCopy.title(for: .downloaded), "Remove Download")
         XCTAssertEqual(DownloadControlCopy.symbol(for: .idle), "arrow.down.to.line")
 

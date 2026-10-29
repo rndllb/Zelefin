@@ -60,10 +60,7 @@ struct CatalogBrowseView: View {
             ZStack {
                 ScrollView {
                     if isLoading && items.isEmpty {
-                        ProgressView()
-                            .tint(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 80)
+                        PageLoadingIndicator()
                     } else if items.isEmpty {
                         ContentUnavailableView(
                             query.isDefault ? "No Titles Yet" : "No Matches",

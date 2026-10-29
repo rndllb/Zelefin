@@ -8,7 +8,7 @@ struct AccentPreset: Identifiable, Equatable, Sendable {
     let hex: String
 
     var color: Color {
-        AccentPreferences.color(fromHex: hex) ?? Color(red: 42 / 255, green: 212 / 255, blue: 252 / 255)
+        AccentPreferences.color(fromHex: hex) ?? Color(red: 153 / 255, green: 150 / 255, blue: 209 / 255)
     }
 }
 
@@ -16,13 +16,15 @@ enum AccentPreferences {
     static let presetIdKey = "zelefin.accent-preset-id"
     static let customHexKey = "zelefin.custom-accent-hex"
     static let customId = "custom"
-    static let defaultId = cyan.id
-    static let defaultCustomHex = cyan.hex
+    static let defaultId = periwinkle.id
+    static let defaultCustomHex = periwinkle.hex
 
-    /// Login-button cyan. This is the default interface accent.
+    /// The sign-in screen's periwinkle, between the icon's lavender and sky. This is the default interface accent.
+    static let periwinkle = AccentPreset(id: "periwinkle", name: "Periwinkle", hex: "#9996D1")
     static let cyan = AccentPreset(id: "cyan", name: "Cyan", hex: "#2AD4FC")
 
     static let presets: [AccentPreset] = [
+        periwinkle,
         cyan,
         AccentPreset(id: "red", name: "Red", hex: "#FA2D48"),
         AccentPreset(id: "pink", name: "Pink", hex: "#FF3778"),
@@ -49,7 +51,7 @@ enum AccentPreferences {
             let hex = normalizedHex(customHex) ?? defaultCustomHex
             return AccentPreset(id: customId, name: "Custom", hex: hex)
         }
-        return presets.first { $0.id == id } ?? cyan
+        return presets.first { $0.id == id } ?? periwinkle
     }
 
     static func color(fromHex hex: String) -> Color? {
@@ -124,12 +126,12 @@ struct ZelefinSurfaces: Equatable, Sendable {
         genreGlow = tone(59, chroma: min(68, accentChroma))
     }
 
-    static let `default` = ZelefinSurfaces(accentHex: AccentPreferences.cyan.hex)
+    static let `default` = ZelefinSurfaces(accentHex: AccentPreferences.periwinkle.hex)
 
     private static let white = (x: 95.047, y: 100.0, z: 108.883)
 
     private static func lab(hex: String) -> (l: Double, a: Double, b: Double) {
-        let rgb = AccentPreferences.rgbComponents(fromHex: hex) ?? (0.165, 0.831, 0.988)
+        let rgb = AccentPreferences.rgbComponents(fromHex: hex) ?? (0.6, 0.588, 0.82)
         func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
         let r = linear(rgb.r), g = linear(rgb.g), bl = linear(rgb.b)
         let x = (0.4124 * r + 0.3576 * g + 0.1805 * bl) * 100
@@ -173,6 +175,20 @@ struct ZelefinAccentTint: ViewModifier {
         content
             .tint(preset.color)
             .environment(\.zelefinSurfaces, ZelefinSurfaces(accentHex: preset.hex))
+            .task(id: preset.hex) {
+                Self.tintWindows(UIColor(preset.color))
+            }
+    }
+
+    /// UIKit controls (switches, menus, back buttons) take the window's tint, which on the Mac is the
+    /// system accent unless it is set.
+    @MainActor
+    private static func tintWindows(_ color: UIColor) {
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows {
+                window.tintColor = color
+            }
+        }
     }
 }
 

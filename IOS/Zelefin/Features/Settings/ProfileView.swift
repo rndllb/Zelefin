@@ -403,7 +403,7 @@ struct ProfileView: View {
             if isCurrent {
                 Image(systemName: "checkmark")
                     .font(.body.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(.tint)
                     .accessibilityHidden(true)
             } else {
                 SettingsChevron()

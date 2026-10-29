@@ -2128,6 +2128,18 @@ final class AppTabTests: XCTestCase {
         XCTAssertEqual(AppTab.hiddenByDefault, [.liveTV, .collections, .favorites])
         XCTAssertFalse(AppTab.hiddenByDefault.contains(.movies))
     }
+
+    func testLibraryIconsFollowTheLibrary() {
+        let youTube = MediaLibrary(id: "y1", name: "YouTube", kind: .unknown, libraryKind: .youTube)
+        let anime = MediaLibrary(id: "a1", name: "Anime Shows", kind: .unknown, libraryKind: .other)
+        let recordings = MediaLibrary(id: "r1", name: "TV Recordings", kind: .unknown, libraryKind: .other)
+        let home = MediaLibrary(id: "h1", name: "Home Videos", kind: .unknown, libraryKind: .homeVideos)
+        XCTAssertEqual(LibraryIcon.asset(for: youTube, raw: ""), LibraryIcon.youTube)
+        XCTAssertEqual(LibraryIcon.asset(for: anime, raw: ""), LibraryIcon.anime)
+        XCTAssertEqual(LibraryIcon.asset(for: anime, raw: "a1=AnimeBoyWithTie"), "AnimeBoyWithTie")
+        XCTAssertEqual(LibraryIcon.asset(for: recordings, raw: ""), LibraryIcon.recording)
+        XCTAssertEqual(LibraryIcon.asset(for: home, raw: ""), LibraryIcon.library)
+    }
 }
 
 final class SearchChromeMetricsTests: XCTestCase {

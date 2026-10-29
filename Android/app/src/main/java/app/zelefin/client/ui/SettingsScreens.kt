@@ -1,5 +1,6 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.plugins.RequestService
 import app.zelefin.client.plugins.PluginPresence
 import app.zelefin.client.plugins.SkipPluginChoice
 import android.Manifest
@@ -211,7 +212,7 @@ fun SettingsScreen(
             listOf(
                 SettingsHubItem("Playback", "Languages, quality, speed, skipping", Icons.Outlined.PlayArrow) { onTopic("playback") },
                 SettingsHubItem("Subtitles", "Size, color, and background", Icons.Outlined.ClosedCaption) { onTopic("subtitles") },
-                SettingsHubItem("Plugins", "Intro Skipper, Seerr, server plugins", Icons.Outlined.Extension) { onTopic("plugins") },
+                SettingsHubItem("Plugins", "Intro Skipper, Seerr, Ombi, server plugins", Icons.Outlined.Extension) { onTopic("plugins") },
                 SettingsHubItem("Metadata", "Ratings and title details", Icons.Outlined.Description) { onTopic("metadata") },
             ),
         )
@@ -703,6 +704,8 @@ fun SettingsTopicScreen(
         else -> when {
             id.startsWith("user:") -> "User"
             id.startsWith("scheduled-task:") -> "Task"
+            id.startsWith(LibraryIconTopicPrefix) ->
+                state.libraries.firstOrNull { it.id == id.removePrefix(LibraryIconTopicPrefix) }?.name ?: "Icon"
             else -> "Settings"
         }
     }
@@ -729,6 +732,7 @@ fun SettingsTopicScreen(
             else -> when {
                 id.startsWith("user:") -> UserEditorTopic(id.removePrefix("user:"), state)
                 id.startsWith("scheduled-task:") -> ScheduledTaskDetailTopic(id.removePrefix("scheduled-task:"))
+                id.startsWith(LibraryIconTopicPrefix) -> LibraryIconPicker(id.removePrefix(LibraryIconTopicPrefix), state)
                 else -> Text("Nothing to change here yet.", color = Secondary, fontFamily = ZelefinFont)
             }
         }
@@ -1431,10 +1435,12 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
         )
     }
 
-    SettingsHeader("Seerr")
+    SettingsHeader("Requests")
     SeerrSignInCard(state, pluginState, plugins)
     SettingsFooter(
-        if (silo) {
+        if (pluginState.requestService == RequestService.Ombi) {
+            "Ombi lets you request movies and shows that are not on the server yet. Use your Ombi username and password, or your Jellyfin or Emby ones if Ombi imported your account. Search for a title, then tap Request."
+        } else if (silo) {
             "Jellyseerr or Seerr lets you request movies and shows that are missing from Silo. Use your Seerr sign-in. Search for a title, then tap Request."
         } else if (emby) {
             "Jellyseerr or Seerr lets you request movies and shows that are missing from Emby. Use your Emby username and password. Search for a title, then tap Request."
@@ -1493,18 +1499,27 @@ private fun SeerrSignInCard(state: ZelefinUiState, pluginState: PluginsUiState, 
     LaunchedEffect(signedIn) { if (signedIn != null) password = "" }
     SettingsCard {
         if (signedIn != null) {
+            InfoLine("Service", pluginState.requestService.title)
+            CardDivider()
             InfoLine("Server", pluginState.seerrUrl)
             CardDivider()
             InfoLine("Signed in as", signedIn)
             SettingsCardDivider()
             SettingsButton("Sign Out", primary = false, destructive = true, enabled = true, busy = false, onClick = plugins::signOutSeerr)
         } else {
+            SettingsMenuPicker(
+                label = "Service",
+                choices = RequestService.entries.map { SettingsChoice(it, it.title) },
+                selected = pluginState.requestService,
+                onSelect = plugins::setRequestService,
+            )
+            CardDivider()
             SettingsTextField(
                 label = "SERVER",
                 value = url,
                 icon = Icons.Outlined.Link,
                 onChange = { url = it },
-                placeholder = "https://seerr.example.com",
+                placeholder = if (pluginState.requestService == RequestService.Ombi) "https://ombi.example.com" else "https://seerr.example.com",
                 keyboard = KeyboardType.Uri,
                 ime = ImeAction.Next,
             )
@@ -1760,7 +1775,7 @@ private fun AboutTopic(state: ZelefinUiState) {
             },
         )
     }
-    SettingsFooter("A native Jellyfin client for Android.")
+    SettingsFooter("A native Jellyfin client for Android. Tab icons are from Iconsax. Anime library icons are from PlainIcon's Anime characters pack, licensed under CC BY 4.0.")
     Spacer(Modifier.height(14.dp))
     SettingsCard {
         LinkRow("Privacy Policy") { open("https://zelefin.app/privacy") }

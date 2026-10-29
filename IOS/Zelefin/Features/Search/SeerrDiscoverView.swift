@@ -5,12 +5,22 @@ struct SeerrDiscoverHomeView: View {
     var isLoading: Bool
     var onSelect: (SeerrTitle) -> Void
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
+    @State private var rowWidth: CGFloat = 0
+
+    /// Eight posters across the Mac's visible width, as on Home; nil keeps the phone sizes.
+    private var fittedPosterSize: CGSize? {
+        DetailRowLayout.cardWidth(fitting: 8, in: rowWidth).map { CGSize(width: $0, height: ($0 * 1.5).rounded()) }
+    }
+
+    /// Five wide cards across the Mac's visible width, as on Home.
+    private var fittedCardWidth: CGFloat? {
+        DetailRowLayout.cardWidth(fitting: 5, in: rowWidth)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             if isLoading && home.isEmpty {
                 ProgressView()
-                    .tint(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 40)
             }
@@ -28,6 +38,7 @@ struct SeerrDiscoverHomeView: View {
         }
         .padding(.top, 8)
         .padding(.bottom, 32)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
     }
 
     @ViewBuilder
@@ -44,9 +55,9 @@ struct SeerrDiscoverHomeView: View {
                 .buttonStyle(.plain)
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                    LazyHStack(spacing: DetailRowLayout.spacing) {
                         ForEach(titles) { item in
-                            SeerrRequestPosterButton(title: item) { item in
+                            SeerrRequestPosterButton(title: item, size: fittedPosterSize) { item in
                                 onSelect(item)
                             }
                         }
@@ -63,17 +74,17 @@ struct SeerrDiscoverHomeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: title, showsChevron: false)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                    LazyHStack(spacing: DetailRowLayout.spacing) {
                         ForEach(GenreOrder.shuffled(genres, name: \.name)) { genre in
                             NavigationLink {
                                 SeerrDiscoverGridView(query: genre.discoverQuery) { title in
                                     home.markRequested(title)
                                 }
                             } label: {
-                                GenrePosterCard(title: genre.name)
+                                GenrePosterCard(title: genre.name, width: fittedPosterSize?.width, height: fittedPosterSize?.height)
                             }
                             .buttonStyle(.plain)
-                            .frame(width: PosterMetrics.portraitSize.width * sidebarLayout.scale, alignment: .leading)
+                            .frame(width: fittedPosterSize?.width ?? PosterMetrics.portraitSize.width * sidebarLayout.scale, alignment: .leading)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -88,14 +99,14 @@ struct SeerrDiscoverHomeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: title, showsChevron: false)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: PosterMetrics.rowSpacing) {
+                    LazyHStack(spacing: DetailRowLayout.spacing) {
                         ForEach(companies) { company in
                             NavigationLink {
                                 SeerrDiscoverGridView(query: company.query) { title in
                                     home.markRequested(title)
                                 }
                             } label: {
-                                SeerrCompanyCard(company: company)
+                                SeerrCompanyCard(company: company, width: fittedCardWidth)
                             }
                             .buttonStyle(.plain)
                         }
@@ -128,7 +139,6 @@ struct SeerrDiscoverGridView: View {
         ScrollView {
             if isLoading && titles.isEmpty {
                 ProgressView()
-                    .tint(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 40)
             } else if let errorMessage, titles.isEmpty {
@@ -185,7 +195,7 @@ struct SeerrDiscoverGridView: View {
         do {
             let payload: SeerrDiscoverPage
             guard let client = PluginSettings.seerrClient else {
-                errorMessage = "Sign in to Seerr in Settings."
+                errorMessage = "Sign in to \(PluginSettings.requestService.name) in Settings."
                 return
             }
             payload = try await client.discover(query, page: nextPage)
@@ -219,6 +229,7 @@ private struct SeerrRequestPosterButton: View {
     @Environment(SessionStore.self) private var session
     let title: SeerrTitle
     var fillsCell = false
+    var size: CGSize? = nil
     var onSelect: (SeerrTitle) -> Void
 
     private var locked: Bool {
@@ -248,7 +259,7 @@ private struct SeerrRequestPosterButton: View {
                 SeerrPoster(title: title, size: size, libraryMarkOnly: locked)
             }
         } else {
-            SeerrPoster(title: title, libraryMarkOnly: locked)
+            SeerrPoster(title: title, size: size, libraryMarkOnly: locked)
         }
     }
 }
@@ -287,11 +298,11 @@ private struct SeerrPoster: View {
                 if !libraryMarkOnly, let requester = title.requestedByName {
                     Text(requester)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(LoginPalette.actionLabel)
                         .lineLimit(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(Color.white, in: Capsule(style: .continuous))
+                        .background(.tint, in: Capsule(style: .continuous))
                         .shadow(color: .black.opacity(0.28), radius: 3, y: 1)
                         .frame(maxWidth: max(0, fittedSize.width - 12), alignment: .leading)
                         .padding(6)
@@ -341,16 +352,19 @@ struct JellyfinLibraryMark: View {
 
 private struct SeerrCompanyCard: View {
     let company: SeerrCompany
+    var width: CGFloat? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
 
     /// Grey used by TMDB’s studio/network duotone (`#2e2e2e`).
     private static let logoBackdrop = Color(red: 46 / 255, green: 46 / 255, blue: 46 / 255)
 
     private var size: CGSize {
-        CGSize(
-            width: PosterMetrics.landscapeSize.width * 0.62 * sidebarLayout.scale,
-            height: PosterMetrics.landscapeSize.height * 0.72 * sidebarLayout.scale
+        let base = CGSize(
+            width: PosterMetrics.landscapeSize.width * 0.62,
+            height: PosterMetrics.landscapeSize.height * 0.72
         )
+        guard let width else { return base.scaled(by: sidebarLayout.scale) }
+        return CGSize(width: width, height: (width * base.height / base.width).rounded())
     }
 
     var body: some View {

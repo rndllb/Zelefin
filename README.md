@@ -18,7 +18,7 @@ Your server. Direct play. No Plus, no subscription, no in-app purchase.
 <img src="https://img.shields.io/badge/HDR%20%2F%20Dolby%20Vision-yes-7c5cff?style=flat-square&labelColor=111111" alt="HDR" />
 <img src="https://img.shields.io/badge/Atmos-yes-ff6b4a?style=flat-square&labelColor=111111" alt="Atmos" />
 <img src="https://img.shields.io/badge/SyncPlay-Jellyfin-00A4DC?style=flat-square&labelColor=111111" alt="SyncPlay" />
-<img src="https://img.shields.io/badge/Seerr-requests-22c55e?style=flat-square&labelColor=111111" alt="Seerr" />
+<img src="https://img.shields.io/badge/Seerr%20%C2%B7%20Ombi-requests-22c55e?style=flat-square&labelColor=111111" alt="Seerr and Ombi" />
 
 [Jump](#what-you-get) · [Servers](#servers) · [Platforms](#who-gets-what) · [Run](#run-it) · [Plugin](https://github.com/rndllb/Zelefin-Plugin) · [Site](https://zelefin.app)
 
@@ -73,14 +73,14 @@ Continue watching, next up, and recently added movies and shows across every lib
 
 ### 📚 Library
 
-Movies, shows, collections, favorites, playlists. Filter by type, genre, year, rating. Sort, randomize, A–Z jump.
+Movies, shows, collections, favorites, playlists. Filter by type, genre, year, rating. Sort, randomize, A–Z jump. Library cards open instantly from the last visit, even on a slow connection. YouTube, Anime, and Recordings libraries get their own icons, and Anime libraries can pick from a set of character icons.
 
 </td>
 <td width="33%" valign="top">
 
 ### 🔎 Search
 
-Search the signed-in server. **Discover** and request missing titles when Seerr is signed in.
+Search the signed-in server. **Discover** and request missing titles through Seerr or Ombi. Titles already requested show their status, and admins approve, decline, or edit requests from the request sheet.
 
 </td>
 </tr>
@@ -158,14 +158,14 @@ Jellyfin and Emby administrators: users, libraries, plugins, scheduled tasks, ac
 
 ### ⚙️ Settings
 
-Appearance, home rows, playback languages, downloads, notifications, which tabs sit in the dock, and the page the app opens to. Theme and poster text.
+Appearance, home rows, playback languages, downloads, notifications, which tabs sit in the dock, and the page the app opens to. Theme and poster text. The accent color defaults to the sign-in screen's periwinkle and tints controls and surfaces throughout.
 
 </td>
 <td width="33%" valign="top">
 
 ### 🔌 Plugins
 
-Intro Skipper or TheIntroDB, Open Subtitles (Jellyfin and Emby), Jellyfin Enhanced, Seerr / Jellyseerr (requests work without Sonarr or Radarr too). Emby gets skip times straight from TheIntroDB. First-run setup can install the Zelefin companion.
+Intro Skipper or TheIntroDB, Open Subtitles (Jellyfin and Emby), Jellyfin Enhanced, Seerr / Jellyseerr (requests work without Sonarr or Radarr too), and Ombi. Emby gets skip times straight from TheIntroDB. First-run setup can install the Zelefin companion.
 
 </td>
 <td width="33%" valign="top">
@@ -193,7 +193,7 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 | Sessions & messages | ✅ | ✅ | ✅ |
 | Lock-screen alerts (plugin or webhooks) | ✅ | Soon | ✅ |
 | Jellyfin admin | ✅ | ✅ | ✅ |
-| Seerr requests | ✅ | ✅ | ✅ |
+| Seerr · Ombi requests | ✅ | ✅ | ✅ |
 | Live TV guide | ✅ | ✅ | — |
 | Picture in Picture · AirPlay | ✅ | — | — |
 | Review Demo | ✅ | ✅ | — |
@@ -246,6 +246,8 @@ Needs Android 8 (API 26)+.
 </table>
 
 **Needs:** iOS 18 (Liquid Glass on iOS 26), macOS 15 on an Intel or Apple silicon Mac, or Android 8+, and a Jellyfin or Emby server, or a Silo server with its Jellyfin-compatible API on, that the device can reach.
+
+Server, Seerr, and Ombi addresses take any capitalization of `http://` or `https://`, LAN IPs and `.local` names, Tailscale addresses, and reverse-proxy paths like `example.com/jellyfin`. Typed without a scheme, they try HTTPS first; LAN and Tailscale addresses fall back to plain HTTP, public addresses never do.
 
 ```bash
 cd IOS

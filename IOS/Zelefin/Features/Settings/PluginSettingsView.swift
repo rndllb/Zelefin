@@ -8,13 +8,18 @@ struct PluginSettingsView: View {
     @AppStorage(PlaybackPreferences.autoSkipPreviewKey) private var autoSkipPreview = false
     @AppStorage(PlaybackPreferences.theIntroDBKey) private var usesTheIntroDB = true
     @AppStorage(PluginSettings.seerrURLKey) private var seerrURL = ""
+    @AppStorage(PluginSettings.requestServiceKey) private var requestServiceRaw = RequestService.seerr.rawValue
     @State private var seerrUsername = ""
     @State private var seerrPassword = ""
-    @State private var seerrDisplayName = PluginSettings.seerrSession?.displayName
+    @State private var seerrDisplayName = PluginSettings.requestDisplayName
     @State private var seerrStatus: String?
     @State private var isSigningInToSeerr = false
 
     private var isSeerrSignedIn: Bool { seerrDisplayName != nil }
+
+    private var requestService: RequestService {
+        RequestService(rawValue: requestServiceRaw) ?? .seerr
+    }
 
     var body: some View {
         Form {
@@ -149,10 +154,16 @@ struct PluginSettingsView: View {
     private var seerrSignInSection: some View {
         Section {
             if isSeerrSignedIn {
+                LabeledContent("Service", value: requestService.name)
                 LabeledContent("Server", value: seerrURL)
                 LabeledContent("Signed in as", value: seerrDisplayName ?? "")
                 Button("Sign Out", role: .destructive, action: signOutSeerr)
             } else {
+                Picker("Service", selection: $requestServiceRaw) {
+                    ForEach(RequestService.allCases) { service in
+                        Text(service.name).tag(service.rawValue)
+                    }
+                }
                 TextField("Server", text: $seerrURL)
                     .textContentType(.URL)
                     .keyboardType(.URL)
@@ -173,9 +184,9 @@ struct PluginSettingsView: View {
                 SettingsStatusText(text: seerrStatus, isError: !seerrStatus.contains("Signed in"))
             }
         } header: {
-            Text("Seerr")
+            Text("Requests")
         } footer: {
-            Text("Jellyseerr or Seerr lets you request movies and shows that are not on Jellyfin yet. Use your Jellyfin username and password. Search for a title, then tap Request.")
+            Text(requestFooter)
         }
         .zelefinRowBackground()
     }
@@ -217,6 +228,15 @@ struct PluginSettingsView: View {
         .accessibilityLabel("\(title), \(installed ? "Installed" : "Not on this server")")
     }
 
+    private var requestFooter: String {
+        switch requestService {
+        case .seerr:
+            "Jellyseerr or Seerr lets you request movies and shows that are not on Jellyfin yet. Use your Jellyfin username and password. Search for a title, then tap Request."
+        case .ombi:
+            "Ombi lets you request movies and shows that are not on the server yet. Use your Ombi username and password, or your Jellyfin or Emby ones if Ombi imported your account. Search for a title, then tap Request."
+        }
+    }
+
     private var canSignInToSeerr: Bool {
         !seerrURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !seerrUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -225,28 +245,22 @@ struct PluginSettingsView: View {
 
     private func signInToSeerr() async {
         PluginSettings.seerrURLString = seerrURL
-        guard let url = PluginSettings.seerrURL else {
-            seerrStatus = "Enter a valid Seerr URL."
+        guard PluginSettings.seerrURL != nil else {
+            seerrStatus = "Enter a valid \(requestService.name) URL."
             return
         }
         isSigningInToSeerr = true
         seerrStatus = nil
         defer { isSigningInToSeerr = false }
         do {
-            let signedIn = try await SeerrClient.signIn(
-                baseURL: url,
-                username: seerrUsername,
-                password: seerrPassword
-            )
-            PluginSettings.rememberSignIn(
-                signedIn,
+            let name = try await PluginSettings.signIn(
                 username: seerrUsername,
                 password: seerrPassword,
                 ownerAccountID: session.session?.accountID
             )
-            seerrDisplayName = signedIn.displayName
+            seerrDisplayName = name
             seerrPassword = ""
-            seerrStatus = "Signed in as \(signedIn.displayName)."
+            seerrStatus = "Signed in as \(name)."
         } catch {
             seerrStatus = error.localizedDescription
         }
@@ -269,11 +283,11 @@ struct PluginSettingsView: View {
             seerrStatus = nil
             return
         }
-        if let saved = PluginSettings.seerrSession {
-            seerrDisplayName = saved.displayName
+        if let name = PluginSettings.requestDisplayName {
+            seerrDisplayName = name
             return
         }
         seerrDisplayName = nil
-        seerrStatus = "Seerr session expired. Sign in again."
+        seerrStatus = "\(requestService.name) session expired. Sign in again."
     }
 }

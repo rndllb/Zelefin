@@ -74,6 +74,7 @@ import app.zelefin.client.plugins.DiscoverBrand
 import app.zelefin.client.plugins.DiscoverBrandKind
 import app.zelefin.client.plugins.DiscoverQuery
 import app.zelefin.client.plugins.DiscoverSection
+import app.zelefin.client.plugins.RequestService
 import app.zelefin.client.plugins.SeerrMediaSeason
 import app.zelefin.client.plugins.SeerrRequestDefaults
 import app.zelefin.client.plugins.SeerrRequestDraft
@@ -280,7 +281,7 @@ private fun SeerrPoster(title: SeerrTitle, modifier: Modifier, onClick: () -> Un
                     .align(Alignment.BottomStart)
                     .padding(6.dp)
                     .shadow(3.dp, CircleShape)
-                    .background(Color.White, CircleShape)
+                    .background(ZelefinCyan, CircleShape)
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             )
         }
@@ -345,7 +346,7 @@ private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, onRequ
                 Modifier
                     .height(28.dp)
                     .clip(CircleShape)
-                    .background(if (canRequest) Color.White else Color.White.copy(alpha = 0.18f))
+                    .background(if (canRequest) ZelefinCyan else Color.White.copy(alpha = 0.18f))
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -442,7 +443,7 @@ internal fun DiscoverGridPage(
     }
 }
 
-/** Seerr request and review options, the same fields iOS shows. */
+/** Seerr or Ombi request and review options, the same fields iOS shows. */
 @Composable
 internal fun SeerrRequestSheet(
     title: SeerrTitle,
@@ -451,7 +452,13 @@ internal fun SeerrRequestSheet(
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val client = remember { plugins.seerr() }
+    val client = remember { plugins.requests() }
+    // The title as the server has it now. A Discover row or search result doesn't carry its request.
+    var current by remember { mutableStateOf(title) }
+    // Seerr's requests pick a Radarr or Sonarr server, quality, and folder. In Ombi only admins and
+    // power users pick the quality and folder, and leaving them on Default keeps Ombi's own.
+    val usesServiceDefaults = client?.service == RequestService.Ombi
+    val choosesServer = (client?.choosesDownloadServer ?: true) && (!usesServiceDefaults || canManage)
     var servers by remember { mutableStateOf<List<SeerrServiceServer>>(emptyList()) }
     var details by remember { mutableStateOf<SeerrServiceDetails?>(null) }
     var seasons by remember { mutableStateOf<List<SeerrSeason>>(emptyList()) }
@@ -468,17 +475,22 @@ internal fun SeerrRequestSheet(
     var editing by remember { mutableStateOf(false) }
     var openPicker by remember { mutableStateOf<String?>(null) }
 
-    val awaitingApproval = title.review == SeerrTitle.Review.PendingApproval && title.requestId != null
+    val awaitingApproval = current.review == SeerrTitle.Review.PendingApproval && current.requestId != null
     val regular = seasons.filterNot { it.isSpecials }
     val specials = seasons.filter { it.isSpecials }
     val occupied = mediaSeasons.filter { it.isOccupied(is4k) }.map { it.seasonNumber }.toSet()
     val requestable = regular.map { it.seasonNumber }.filterNot { it in occupied }.toSet()
     // Seerr with no Sonarr or Radarr still records a request, so admins can see what people want;
     // nothing downloads. Only once the list has loaded empty, not while it is still on its way.
-    val requestsWithoutDownloader = !loading && servers.isEmpty() && error == null
+    val requestsWithoutDownloader = choosesServer && !loading && servers.isEmpty() && error == null
+    // Requested already, with nothing left to ask for: a movie on its way, or a show whose every season is.
+    val alreadyRequested = current.availability != SeerrTitle.Availability.Available && when (title.kind) {
+        SeerrTitle.Kind.Movie -> current.availability.isRequested && !is4k
+        SeerrTitle.Kind.Tv -> regular.isNotEmpty() && requestable.isEmpty()
+    }
     val canSubmit = !submitting &&
-        (requestsWithoutDownloader || (serverId != null && profileId != null && rootFolder.isNotEmpty())) &&
-        !(title.kind == SeerrTitle.Kind.Movie && title.availability == SeerrTitle.Availability.Available && !is4k) &&
+        (!choosesServer || usesServiceDefaults || requestsWithoutDownloader || (serverId != null && profileId != null && rootFolder.isNotEmpty())) &&
+        !(title.kind == SeerrTitle.Kind.Movie && (current.availability == SeerrTitle.Availability.Available || current.availability.isRequested) && !is4k) &&
         (title.kind != SeerrTitle.Kind.Tv || (selected - occupied).isNotEmpty())
 
     fun draft() = SeerrRequestDraft(
@@ -490,6 +502,8 @@ internal fun SeerrRequestSheet(
         profileId = profileId,
         rootFolder = rootFolder,
         languageProfileId = languageId,
+        rootFolderId = details?.rootFolders?.firstOrNull { it.path == rootFolder }?.folderId,
+        parentRequestId = current.parentRequestId,
     )
 
     suspend fun loadDetails() {
@@ -499,6 +513,8 @@ internal fun SeerrRequestSheet(
             if (title.kind == SeerrTitle.Kind.Movie) seerr.radarrDetails(id) else seerr.sonarrDetails(id)
         }.onSuccess { loaded ->
             details = loaded
+            // Ombi starts on its own defaults; an admin picks something else only to override them.
+            if (usesServiceDefaults) return@onSuccess
             val server = loaded.server
             profileId = if (loaded.profiles.any { it.id == server.activeProfileId }) server.activeProfileId else loaded.profiles.firstOrNull()?.id
             rootFolder = if (loaded.rootFolders.any { it.path == server.activeDirectory }) {
@@ -517,26 +533,25 @@ internal fun SeerrRequestSheet(
     LaunchedEffect(Unit) {
         val seerr = client
         if (seerr == null) {
-            error = "Sign in to Seerr in Settings."
+            error = "Sign in to ${plugins.state.value.requestService.title} in Settings."
             loading = false
             return@LaunchedEffect
         }
         runCatching {
-            if (title.kind == SeerrTitle.Kind.Movie) {
-                servers = seerr.radarrServers()
-            } else {
-                val fetched = async { seerr.sonarrServers() }
-                val show = async { seerr.tvDetails(title.tmdbId) }
-                servers = fetched.await()
-                val tv = show.await()
+            runCatching { seerr.requestStatus(title) }.getOrNull()?.let { current = it }
+            if (title.kind == SeerrTitle.Kind.Tv) {
+                val tv = seerr.tvDetails(title.tmdbId)
                 seasons = tv.seasons
                 mediaSeasons = tv.mediaInfo?.seasons.orEmpty()
                 selected = tv.seasons.filterNot { it.isSpecials }.map { it.seasonNumber }
                     .filterNot { number -> mediaSeasons.any { it.seasonNumber == number && it.isOccupied(false) } }.toSet()
             }
-            serverId = SeerrRequestDefaults.preferredServer(servers, is4k)?.id
-            loadDetails()
-            val requestId = title.requestId
+            if (choosesServer) {
+                servers = if (title.kind == SeerrTitle.Kind.Movie) seerr.radarrServers() else seerr.sonarrServers()
+                serverId = SeerrRequestDefaults.preferredServer(servers, is4k)?.id
+                loadDetails()
+            }
+            val requestId = current.requestId
             if (requestId != null && awaitingApproval) {
                 runCatching { seerr.requestDetails(requestId) }.getOrNull()?.let { stored ->
                     if (stored.is4k == true) is4k = true
@@ -574,18 +589,30 @@ internal fun SeerrRequestSheet(
                 .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            RequestHeader(title)
+            RequestHeader(current)
             when {
-                title.availability == SeerrTitle.Availability.Available -> Unit
+                current.availability == SeerrTitle.Availability.Available -> Unit
                 loading -> Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = ZelefinCyan)
                 }
                 awaitingApproval && !canManage -> Text("Waiting for approval.", color = Color.White.copy(alpha = 0.7f), fontFamily = ZelefinFont, fontSize = 15.sp)
+                !awaitingApproval && alreadyRequested -> Text(
+                    if (current.review == SeerrTitle.Review.Approved || current.availability == SeerrTitle.Availability.Processing) {
+                        "Approved. It appears in your library once it downloads."
+                    } else {
+                        "Requested. Waiting for approval."
+                    },
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontFamily = ZelefinFont,
+                    fontSize = 15.sp,
+                )
                 else -> {
                     val showOptions = !awaitingApproval || editing
                     if (showOptions) {
-                        DestinationSection(
+                        if (choosesServer) DestinationSection(
                             kind = title.kind,
+                            serviceName = client?.service?.title ?: "Seerr",
+                            usesDefaults = usesServiceDefaults,
                             servers = servers,
                             details = details,
                             is4k = is4k,
@@ -614,8 +641,9 @@ internal fun SeerrRequestSheet(
                         if (title.kind == SeerrTitle.Kind.Tv) {
                             SeasonSection(regular, specials, occupied, requestable, selected) { selected = it }
                         }
-                    } else {
+                    } else if (choosesServer || title.kind == SeerrTitle.Kind.Tv) {
                         RequestSummary(
+                            choosesServer = choosesServer,
                             server = servers.firstOrNull { it.id == serverId }?.name ?: "Default",
                             quality = details?.profiles?.firstOrNull { it.id == profileId }?.name ?: "Default",
                             drive = rootFolder.ifEmpty { "Default" },
@@ -627,14 +655,22 @@ internal fun SeerrRequestSheet(
                         )
                     }
                     if (awaitingApproval) {
-                        val requestId = title.requestId ?: 0
+                        val requestId = current.requestId ?: 0
                         DecisionButton(if (submitting) "Approving…" else "Approve", filled = true, enabled = !submitting && (!editing || canSubmit)) {
-                            submit { plugins.approveSeerr(requestId, draft()) }
+                            // Unedited, an Ombi request keeps the quality and folder it was made with.
+                            val approved = if (usesServiceDefaults && !editing) {
+                                draft().copy(profileId = null, rootFolderId = null, languageProfileId = null)
+                            } else {
+                                draft()
+                            }
+                            submit { plugins.approveSeerr(requestId, approved) }
                         }
                         DecisionButton("Decline", destructive = true, enabled = !submitting) {
-                            submit { plugins.declineSeerr(requestId) }
+                            submit { plugins.declineSeerr(requestId, title.kind) }
                         }
-                        DecisionButton(if (editing) "Done Editing" else "Edit Request", enabled = !submitting) { editing = !editing }
+                        if (choosesServer) {
+                            DecisionButton(if (editing) "Done Editing" else "Edit Request", enabled = !submitting) { editing = !editing }
+                        }
                     } else {
                         DecisionButton(if (submitting) "Requesting…" else "Request", filled = true, enabled = canSubmit) {
                             submit { plugins.submitSeerr(title, draft()) }
@@ -680,6 +716,8 @@ private fun RequestHeader(title: SeerrTitle) {
 @Composable
 private fun DestinationSection(
     kind: SeerrTitle.Kind,
+    serviceName: String,
+    usesDefaults: Boolean,
     servers: List<SeerrServiceServer>,
     details: SeerrServiceDetails?,
     is4k: Boolean,
@@ -691,19 +729,17 @@ private fun DestinationSection(
     onPicker: (String) -> Unit,
     on4k: (Boolean) -> Unit,
     onServer: (Int) -> Unit,
-    onProfile: (Int) -> Unit,
+    onProfile: (Int?) -> Unit,
     onRootFolder: (String) -> Unit,
-    onLanguage: (Int) -> Unit,
+    onLanguage: (Int?) -> Unit,
 ) {
+    // Ombi's Default leaves the choice to Ombi.
+    val defaultOption = if (usesDefaults) listOf("" to "Default") else emptyList()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Download", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 20.sp)
         if (servers.isEmpty()) {
             Text(
-                if (kind == SeerrTitle.Kind.Movie) {
-                    "No Radarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads."
-                } else {
-                    "No Sonarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads."
-                },
+                "No ${if (kind == SeerrTitle.Kind.Movie) "Radarr" else "Sonarr"} server is set up in $serviceName. The request is still saved for an admin to see, but nothing downloads.",
                 color = Color.White.copy(alpha = 0.7f),
                 fontFamily = ZelefinFont,
                 fontSize = 15.sp,
@@ -711,30 +747,32 @@ private fun DestinationSection(
             return
         }
         val visible = servers.filter { it.uses4K == is4k }.ifEmpty { servers }
-        Column(Modifier.fillMaxWidth().clip(SheetGroupShape).background(SheetGroupFill)) {
+        Column(Modifier.fillMaxWidth().clip(SheetGroupShape).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
             if (servers.any { it.uses4K }) {
                 SheetToggleRow("4K", is4k, enabled = true, onChange = on4k)
                 SheetGroupDivider()
             }
-            SheetPickerRow(
-                label = "Server",
-                value = servers.firstOrNull { it.id == serverId }?.name ?: "Default",
-                open = openPicker == "server",
-                options = visible.map { it.id.toString() to it.name },
-                selected = serverId?.toString(),
-                onToggle = { onPicker("server") },
-                onChoose = { onServer(it.toInt()) },
-            )
+            if (!usesDefaults) {
+                SheetPickerRow(
+                    label = "Server",
+                    value = servers.firstOrNull { it.id == serverId }?.name ?: "Default",
+                    open = openPicker == "server",
+                    options = visible.map { it.id.toString() to it.name },
+                    selected = serverId?.toString(),
+                    onToggle = { onPicker("server") },
+                    onChoose = { onServer(it.toInt()) },
+                )
+            }
             details?.profiles?.takeIf { it.isNotEmpty() }?.let { profiles ->
-                SheetGroupDivider()
+                if (!usesDefaults) SheetGroupDivider()
                 SheetPickerRow(
                     label = "Quality",
                     value = profiles.firstOrNull { it.id == profileId }?.name ?: "Default",
                     open = openPicker == "quality",
-                    options = profiles.map { it.id.toString() to it.name },
-                    selected = profileId?.toString(),
+                    options = defaultOption + profiles.map { it.id.toString() to it.name },
+                    selected = profileId?.toString() ?: "",
                     onToggle = { onPicker("quality") },
-                    onChoose = { onProfile(it.toInt()) },
+                    onChoose = { onProfile(it.toIntOrNull()) },
                 )
             }
             details?.rootFolders?.takeIf { it.isNotEmpty() }?.let { folders ->
@@ -743,7 +781,7 @@ private fun DestinationSection(
                     label = "Drive",
                     value = rootFolder.ifEmpty { "Default" },
                     open = openPicker == "drive",
-                    options = folders.map { it.path to it.pickerTitle },
+                    options = defaultOption + folders.map { it.path to it.pickerTitle },
                     selected = rootFolder,
                     onToggle = { onPicker("drive") },
                     onChoose = onRootFolder,
@@ -755,10 +793,10 @@ private fun DestinationSection(
                     label = "Language",
                     value = languages.firstOrNull { it.id == languageId }?.name ?: "Default",
                     open = openPicker == "language",
-                    options = languages.map { it.id.toString() to it.name },
-                    selected = languageId?.toString(),
+                    options = defaultOption + languages.map { it.id.toString() to it.name },
+                    selected = languageId?.toString() ?: "",
                     onToggle = { onPicker("language") },
-                    onChoose = { onLanguage(it.toInt()) },
+                    onChoose = { onLanguage(it.toIntOrNull()) },
                 )
             }
         }
@@ -781,7 +819,7 @@ private fun SeasonSection(
                 val all = selected.containsAll(requestable)
                 Text(
                     if (all) "Deselect All" else "Select All",
-                    color = Color.White,
+                    color = ZelefinCyan,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
@@ -792,7 +830,7 @@ private fun SeasonSection(
                 )
             }
         }
-        Column(Modifier.fillMaxWidth().clip(SheetGroupShape).background(SheetGroupFill)) {
+        Column(Modifier.fillMaxWidth().clip(SheetGroupShape).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
             (regular + specials).forEachIndexed { index, season ->
                 if (index > 0) SheetGroupDivider()
                 val taken = season.seasonNumber in occupied
@@ -811,11 +849,13 @@ private fun SeasonSection(
 }
 
 @Composable
-private fun RequestSummary(server: String, quality: String, drive: String, seasons: String?) {
-    Column(Modifier.fillMaxWidth().clip(SheetGroupShape).background(SheetGroupFill)) {
-        SummaryRow("Server", server)
-        SummaryRow("Quality", quality)
-        SummaryRow("Drive", drive)
+private fun RequestSummary(choosesServer: Boolean, server: String, quality: String, drive: String, seasons: String?) {
+    Column(Modifier.fillMaxWidth().clip(SheetGroupShape).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        if (choosesServer) {
+            SummaryRow("Server", server)
+            SummaryRow("Quality", quality)
+            SummaryRow("Drive", drive)
+        }
         seasons?.let { SummaryRow("Seasons", it) }
     }
 }
@@ -847,10 +887,11 @@ internal fun SheetToggleRow(label: String, checked: Boolean, enabled: Boolean, o
             enabled = enabled,
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
-                checkedTrackColor = Color.White,
-                checkedThumbColor = Color.Black,
-                disabledCheckedTrackColor = Color.White.copy(alpha = 0.35f),
-                disabledCheckedThumbColor = Color.Black.copy(alpha = 0.6f),
+                checkedTrackColor = ZelefinCyan,
+                checkedThumbColor = Color.White,
+                checkedBorderColor = ZelefinCyan,
+                disabledCheckedTrackColor = ZelefinCyan.copy(alpha = 0.35f),
+                disabledCheckedThumbColor = Color.White.copy(alpha = 0.6f),
             ),
         )
     }
@@ -896,7 +937,7 @@ internal fun SheetPickerRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(name, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    if (id == selected) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    if (id == selected) Icon(Icons.Filled.Check, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -917,7 +958,7 @@ private fun DecisionButton(
     onClick: () -> Unit,
 ) {
     val fill = when {
-        filled -> Color.White
+        filled -> ZelefinCyan
         destructive -> Color(0xFFFF453A).copy(alpha = 0.16f)
         else -> Color.White.copy(alpha = 0.14f)
     }

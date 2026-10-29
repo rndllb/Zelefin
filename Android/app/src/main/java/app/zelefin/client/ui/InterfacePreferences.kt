@@ -14,17 +14,19 @@ import app.zelefin.core.MediaItem
 import kotlin.math.roundToInt
 
 data class AccentPreset(val id: String, val name: String, val hex: String) {
-    val color: Color get() = AccentPreferences.colorFromHex(hex) ?: AccentPreferences.CyanColor
+    val color: Color get() = AccentPreferences.colorFromHex(hex) ?: AccentPreferences.DefaultColor
 }
 
 /** Mirrors iOS `AccentPreferences`. [ZelefinCyan] reads [color], so Compose redraws when it changes. */
 object AccentPreferences {
-    const val DEFAULT_ID = "cyan"
+    /** The sign-in screen's periwinkle, between the icon's lavender and sky. */
+    const val DEFAULT_ID = "periwinkle"
     const val CUSTOM_ID = "custom"
-    const val DEFAULT_CUSTOM_HEX = "#2AD4FC"
-    internal val CyanColor = Color(0xFF2AD4FC)
+    const val DEFAULT_CUSTOM_HEX = "#9996D1"
+    internal val DefaultColor = Color(0xFF9996D1)
 
     val presets = listOf(
+        AccentPreset("periwinkle", "Periwinkle", "#9996D1"),
         AccentPreset("cyan", "Cyan", "#2AD4FC"),
         AccentPreset("red", "Red", "#FA2D48"),
         AccentPreset("pink", "Pink", "#FF3778"),
@@ -45,7 +47,7 @@ object AccentPreferences {
 
     val color: Color get() = preset(presetId, customHex).color
 
-    val customColor: Color get() = colorFromHex(customHex) ?: CyanColor
+    val customColor: Color get() = colorFromHex(customHex) ?: DefaultColor
 
     fun preset(id: String, custom: String = DEFAULT_CUSTOM_HEX): AccentPreset {
         if (id == CUSTOM_ID) return AccentPreset(CUSTOM_ID, "Custom", normalizedHex(custom) ?: DEFAULT_CUSTOM_HEX)
@@ -425,6 +427,7 @@ fun loadInterfacePreferences(context: Context) {
     AccentPreferences.load(context)
     HomeLayoutPreferences.load(context)
     TabPreferences.load(context)
+    LibraryIcons.load(context)
     StartPagePreferences.load(context)
     GlassPreferences.load(context)
 }

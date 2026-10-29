@@ -1,5 +1,6 @@
 package app.zelefin.client.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.History
@@ -69,6 +71,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
@@ -85,6 +88,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.ZelefinModel
 import app.zelefin.client.ZelefinUiState
+import app.zelefin.client.LibraryRoom
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -246,7 +250,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
             pinnable.forEachIndexed { index, room ->
                 if (index > 0) SettingsCardDivider()
                 ReorderRow(
-                    icon = { DockTabIcon(app.zelefin.client.AppTab.Room, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
+                    icon = { DockTabIcon(app.zelefin.client.AppTab.Room, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp), room = room) },
                     title = room.name,
                     checked = room.id in TabPreferences.dockLibraryIds,
                     onCheckedChange = { on ->
@@ -257,6 +261,18 @@ fun InterfaceSettings(state: ZelefinUiState) {
             }
         }
         SettingsFooter("Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 phone spots.")
+    }
+
+    val animeRooms = pinnable.filter(LibraryIcons::canChoose)
+    if (animeRooms.isNotEmpty()) {
+        SettingsHeader("Anime Icons")
+        SettingsCard {
+            animeRooms.forEachIndexed { index, room ->
+                if (index > 0) SettingsCardDivider()
+                LibraryIconRow(room) { model.openSettingsTopic("$LibraryIconTopicPrefix${room.id}") }
+            }
+        }
+        SettingsFooter("Pick the icon a library with Anime in its name shows when it's in the dock.")
     }
 
     Spacer(Modifier.height(22.dp))
@@ -271,6 +287,87 @@ fun InterfaceSettings(state: ZelefinUiState) {
             TabPreferences.reset(context)
             model.pushDisplayPreferences()
         }
+    }
+}
+
+internal const val LibraryIconTopicPrefix = "library-icon:"
+
+@Composable
+private fun LibraryIconRow(room: LibraryRoom, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight).clickable(onClick = onClick).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(LibraryIcons.icon(room, selected = false)), contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(14.dp))
+        Text(room.name, style = SettingsRowText, maxLines = 1, modifier = Modifier.weight(1f))
+        Text(
+            if (LibraryIcons.chosen(room) == null) "Default" else "Custom",
+            color = InterfaceCaption,
+            fontFamily = ZelefinFont,
+            fontSize = 17.sp,
+        )
+        Spacer(Modifier.width(6.dp))
+        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = InterfaceCaption)
+    }
+}
+
+/** Mirrors iOS `LibraryIconPickerView`: Default, then the anime characters. */
+@Composable
+internal fun LibraryIconPicker(roomId: String, state: ZelefinUiState) {
+    val context = LocalContext.current
+    val room = state.libraries.firstOrNull { it.id == roomId } ?: return
+    val chosen = LibraryIcons.chosen(room)
+    val tiles = listOf(null) + LibraryIcons.animeChoices
+    SettingsCard {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+            val columns = (maxWidth / 80.dp).toInt().coerceAtLeast(3)
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                tiles.chunked(columns).forEach { row ->
+                    Row(Modifier.fillMaxWidth()) {
+                        row.forEach { choice ->
+                            LibraryIconTile(
+                                res = choice?.res ?: LibraryIcons.defaultIcon(room, selected = false),
+                                title = choice?.title ?: "Default",
+                                selected = choice?.key == chosen?.key,
+                                modifier = Modifier.weight(1f),
+                            ) { LibraryIcons.setChoice(context, room.id, choice?.key) }
+                        }
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+    }
+    SettingsFooter("Icons by PlainIcon (Anime characters), licensed under CC BY 4.0.")
+}
+
+@Composable
+private fun LibraryIconTile(@DrawableRes res: Int, title: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier.clickable(onClickLabel = title, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(60.dp)
+                .background(Color.White.copy(alpha = if (selected) 0.14f else 0.06f), shape)
+                .then(if (selected) Modifier.border(2.dp, ZelefinCyan, shape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(painterResource(res), contentDescription = null, tint = if (selected) ZelefinCyan else Color.White, modifier = Modifier.size(40.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            title,
+            color = if (selected) Color.White else InterfaceCaption,
+            fontFamily = ZelefinFont,
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            modifier = Modifier.heightIn(min = 28.dp).padding(horizontal = 2.dp),
+        )
     }
 }
 

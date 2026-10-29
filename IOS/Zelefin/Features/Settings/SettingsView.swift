@@ -91,7 +91,7 @@ struct SettingsView: View {
             settingsRow("Subtitles", systemImage: "captions.bubble", subtitle: "Size, color, and background") {
                 SubtitleAppearanceSettingsView()
             }
-            settingsRow("Plugins", systemImage: "puzzlepiece.extension", subtitle: "Intro Skipper, Seerr, server plugins") {
+            settingsRow("Plugins", systemImage: "puzzlepiece.extension", subtitle: "Intro Skipper, Seerr, Ombi, server plugins") {
                 PluginSettingsView()
             }
             settingsRow("Metadata", systemImage: "doc.text", subtitle: "Ratings and title details") {
@@ -137,7 +137,7 @@ struct SettingsView: View {
             settingsRow("Cache", systemImage: "internaldrive", subtitle: cacheSubtitle) {
                 CacheSettingsView()
             }
-            settingsRow("Interface", systemImage: "rectangle.3.group", subtitle: "Home rows and tabs") {
+            settingsRow("Interface", systemImage: "rectangle.3.group", subtitle: interfaceSubtitle) {
                 TabCustomizationView()
             }
             settingsRow("Appearance", systemImage: "paintpalette", subtitle: "Accent color") {
@@ -145,6 +145,14 @@ struct SettingsView: View {
             }
         }
         .zelefinRowBackground()
+    }
+
+    private var interfaceSubtitle: String {
+        #if targetEnvironment(macCatalyst)
+        "Home rows and sidebar"
+        #else
+        "Home rows and tabs"
+        #endif
     }
 
     private var aboutSection: some View {
@@ -200,7 +208,7 @@ struct SettingsView: View {
     private func settingsIcon(_ systemImage: String) -> some View {
         Image(systemName: systemImage)
             .font(.body.weight(.medium))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(.tint)
             .frame(width: 28, alignment: .center)
     }
 
@@ -260,7 +268,7 @@ struct SettingsAboutView: View {
                 LabeledContent("Version", value: DeviceIdentity.version)
                 LabeledContent("Build", value: DeviceIdentity.build)
             } footer: {
-                Text("A native Jellyfin and Silo client for iPhone and iPad. Tab icons are from Iconsax.")
+                Text("A native Jellyfin and Silo client for iPhone and iPad. Tab icons are from Iconsax. Anime library icons are from PlainIcon's Anime characters pack, licensed under CC BY 4.0.")
             }
 
             Section {

@@ -14,10 +14,50 @@ struct SeerrCredentials: Codable, Equatable, Sendable {
 enum PluginSettings {
     static let seerrURLKey = "zelefin.seerr.url"
     static let seerrOwnerKey = "zelefin.seerr.owner"
+    static let requestServiceKey = "zelefin.requests.service"
     private static let seerrSessionAccount = "seerr-session"
+    private static let ombiSessionAccount = "ombi-session"
     private static let seerrCredentialsAccount = "seerr-credentials"
     private static let legacyAPIKeyAccount = "seerr-api-key"
     private static let secrets = SecretStore()
+
+    /// Seerr or Ombi. Both use the server, username, and password fields below.
+    static var requestService: RequestService {
+        get { UserDefaults.standard.string(forKey: requestServiceKey).flatMap(RequestService.init(rawValue:)) ?? .seerr }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: requestServiceKey) }
+    }
+
+    static var ombiSession: OmbiSession? {
+        get {
+            guard let raw = secrets.load(account: ombiSessionAccount),
+                  let data = raw.data(using: .utf8),
+                  let session = try? JSONDecoder().decode(OmbiSession.self, from: data),
+                  !session.token.isEmpty
+            else { return nil }
+            return session
+        }
+        set {
+            if let newValue, let data = try? JSONEncoder().encode(newValue),
+               let raw = String(data: data, encoding: .utf8)
+            {
+                secrets.save(raw, account: ombiSessionAccount)
+            } else {
+                secrets.delete(account: ombiSessionAccount)
+            }
+        }
+    }
+
+    /// The signed-in name on the chosen request server.
+    static var requestDisplayName: String? {
+        switch requestService {
+        case .seerr: seerrSession?.displayName
+        case .ombi: ombiSession?.displayName
+        }
+    }
+
+    static var hasRequestSession: Bool {
+        requestDisplayName != nil
+    }
 
     static var seerrURLString: String {
         get { UserDefaults.standard.string(forKey: seerrURLKey) ?? "" }
@@ -82,7 +122,7 @@ enum PluginSettings {
     }
 
     static var isSeerrConfigured: Bool {
-        seerrURL != nil && seerrSession != nil
+        seerrURL != nil && hasRequestSession
     }
 
     static func rememberSignIn(
@@ -96,26 +136,61 @@ enum PluginSettings {
         seerrOwnerAccountID = ownerAccountID
     }
 
-    static var seerrClient: SeerrClient? {
-        guard let url = seerrURL, let session = seerrSession else { return nil }
-        return SeerrClient(baseURL: url, session: session)
-    }
-
-    static var normalizedSeerrURLString: String {
-        let trimmed = seerrURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-            return String(trimmed.trimmingSuffix(while: { $0 == "/" }))
+    static var seerrClient: (any RequestServiceClient)? {
+        guard let url = seerrURL else { return nil }
+        switch requestService {
+        case .seerr:
+            guard let session = seerrSession else { return nil }
+            return SeerrClient(baseURL: url, session: session)
+        case .ombi:
+            guard let session = ombiSession else { return nil }
+            return OmbiClient(baseURL: url, session: session)
         }
-        return "https://\(trimmed.trimmingSuffix(while: { $0 == "/" }))"
     }
 
+    /// Signs in to the chosen request server and keeps the password for signing in again later.
+    /// Returns the name it signed in as.
+    static func signIn(username: String, password: String, ownerAccountID: String?) async throws -> String {
+        let candidates = ServerURL.candidates(seerrURLString)
+        guard let last = candidates.last else {
+            throw ZelefinError.server("Enter a valid \(requestService.name) URL.")
+        }
+        for url in candidates {
+            do {
+                let name = try await signIn(to: url, username: username, password: password, ownerAccountID: ownerAccountID)
+                seerrURLString = url.absoluteString
+                return name
+            } catch is URLError where url != last {
+                continue
+            }
+        }
+        throw ZelefinError.server("Enter a valid \(requestService.name) URL.")
+    }
+
+    private static func signIn(to url: URL, username: String, password: String, ownerAccountID: String?) async throws -> String {
+        switch requestService {
+        case .seerr:
+            let signedIn = try await SeerrClient.signIn(baseURL: url, username: username, password: password)
+            rememberSignIn(signedIn, username: username, password: password, ownerAccountID: ownerAccountID)
+            return signedIn.displayName
+        case .ombi:
+            let signedIn = try await OmbiClient.signIn(baseURL: url, username: username, password: password)
+            seerrSession = nil
+            ombiSession = signedIn
+            seerrCredentials = SeerrCredentials(username: username, password: password)
+            seerrOwnerAccountID = ownerAccountID
+            return signedIn.displayName
+        }
+    }
+
+    /// The saved address, cleaned the way the sign-in screen cleans a server address.
     static var seerrURL: URL? {
-        URL(string: normalizedSeerrURLString)
+        ServerURL.candidates(seerrURLString).first
     }
 
     static func clearSeerrSession() {
         seerrSession = nil
+        ombiSession = nil
         seerrCredentials = nil
         seerrOwnerAccountID = nil
     }
@@ -131,15 +206,12 @@ enum PluginSettings {
         return false
     }
 
-    /// Confirms the stored cookie, or signs in again with the saved password. Network failures keep the session.
+    /// Confirms the stored session, or signs in again with the saved password. Network failures keep the session.
     static func refreshUser() async -> SeerrUser? {
         guard let client = seerrClient else { return nil }
         do {
             let user = try await client.currentUser()
-            if var saved = seerrSession {
-                saved.displayName = user.displayLabel
-                seerrSession = saved
-            }
+            rename(to: user.displayLabel)
             return user
         } catch {
             guard error.isSeerrUnauthorized else { return nil }
@@ -147,10 +219,35 @@ enum PluginSettings {
         }
     }
 
+    private static func rename(to name: String) {
+        switch requestService {
+        case .seerr:
+            if var saved = seerrSession {
+                saved.displayName = name
+                seerrSession = saved
+            }
+        case .ombi:
+            if var saved = ombiSession {
+                saved.displayName = name
+                ombiSession = saved
+            }
+        }
+    }
+
     private static func reauthenticate() async -> SeerrUser? {
         guard let url = seerrURL, let credentials = seerrCredentials else {
             clearSeerrSession()
             return nil
+        }
+        if requestService == .ombi {
+            do {
+                let signedIn = try await OmbiClient.signIn(baseURL: url, username: credentials.username, password: credentials.password)
+                ombiSession = signedIn
+                return try await OmbiClient(baseURL: url, session: signedIn).currentUser()
+            } catch {
+                if error.isSeerrUnauthorized { clearSeerrSession() }
+                return nil
+            }
         }
         do {
             let signedIn = try await SeerrClient.signIn(
@@ -179,15 +276,5 @@ extension Error {
             return true
         }
         return false
-    }
-}
-
-private extension String {
-    func trimmingSuffix(while predicate: (Character) -> Bool) -> String {
-        var value = self
-        while let last = value.last, predicate(last) {
-            value.removeLast()
-        }
-        return value
     }
 }

@@ -15,14 +15,57 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 /** A request backend the Discover UI can drive. */
+/** The request server Search, Discover, and the request sheet talk to. */
+enum class RequestService(val raw: String, val title: String) {
+    Seerr("seerr", "Seerr"),
+    Ombi("ombi", "Ombi"),
+    ;
+
+    companion object {
+        fun from(raw: String?): RequestService = entries.firstOrNull { it.raw == raw } ?: Seerr
+    }
+}
+
+/**
+ * Mirrors iOS `RequestServiceClient`: what Search, Discover, and the request sheet need from Seerr
+ * or Ombi. Ombi's titles and requests are mapped onto the Seerr types, which the screens already draw.
+ */
 interface RequestCatalog {
+    val service: RequestService
+
+    /** Seerr lets a request pick its Radarr or Sonarr server, quality, and folder. Ombi uses its defaults. */
+    val choosesDownloadServer: Boolean
+
     suspend fun search(term: String): List<SeerrTitle>
+
+    /** The title as it stands now: whether it's on the server, and its open request, if any. */
+    suspend fun requestStatus(title: SeerrTitle): SeerrTitle
 
     suspend fun discoverHome(): List<DiscoverSection>
 
     suspend fun discover(query: DiscoverQuery, page: Int): DiscoverPage
 
     suspend fun request(title: SeerrTitle)
+
+    suspend fun currentUser(): SeerrUser
+
+    suspend fun radarrServers(): List<SeerrServiceServer>
+
+    suspend fun sonarrServers(): List<SeerrServiceServer>
+
+    suspend fun radarrDetails(id: Int): SeerrServiceDetails
+
+    suspend fun sonarrDetails(id: Int): SeerrServiceDetails
+
+    suspend fun tvDetails(id: Int): SeerrTvDetails
+
+    suspend fun requestDetails(id: Int): SeerrStoredRequest
+
+    suspend fun request(draft: SeerrRequestDraft)
+
+    suspend fun approveRequest(id: Int, draft: SeerrRequestDraft)
+
+    suspend fun declineRequest(id: Int, kind: SeerrTitle.Kind)
 }
 
 sealed class DiscoverQuery {
@@ -413,11 +456,36 @@ private suspend fun SeerrClient.title(request: SeerrListedRequest): SeerrTitle {
 
 /** Adapts [SeerrClient] to the shared [RequestCatalog] used by the Discover UI. */
 class SeerrRequestCatalog(val client: SeerrClient) : RequestCatalog {
+    override val service = RequestService.Seerr
+    override val choosesDownloadServer = true
+
     override suspend fun search(term: String): List<SeerrTitle> = client.search(term)
+
+    override suspend fun requestStatus(title: SeerrTitle): SeerrTitle = client.requestStatus(title)
 
     override suspend fun discoverHome(): List<DiscoverSection> = client.discoverHome().sections()
 
     override suspend fun discover(query: DiscoverQuery, page: Int): DiscoverPage = client.discover(query, page)
 
     override suspend fun request(title: SeerrTitle) = client.request(title)
+
+    override suspend fun currentUser(): SeerrUser = client.currentUser()
+
+    override suspend fun radarrServers(): List<SeerrServiceServer> = client.radarrServers()
+
+    override suspend fun sonarrServers(): List<SeerrServiceServer> = client.sonarrServers()
+
+    override suspend fun radarrDetails(id: Int): SeerrServiceDetails = client.radarrDetails(id)
+
+    override suspend fun sonarrDetails(id: Int): SeerrServiceDetails = client.sonarrDetails(id)
+
+    override suspend fun tvDetails(id: Int): SeerrTvDetails = client.tvDetails(id)
+
+    override suspend fun requestDetails(id: Int): SeerrStoredRequest = client.requestDetails(id)
+
+    override suspend fun request(draft: SeerrRequestDraft) = client.request(draft)
+
+    override suspend fun approveRequest(id: Int, draft: SeerrRequestDraft) = client.approveRequest(id, draft)
+
+    override suspend fun declineRequest(id: Int, kind: SeerrTitle.Kind) = client.declineRequest(id)
 }

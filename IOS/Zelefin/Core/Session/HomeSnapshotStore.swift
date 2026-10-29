@@ -10,6 +10,8 @@ struct HomeSnapshot: Codable, Equatable, Sendable {
     var savedAt: Date
     var home: HomeLayout
     var libraries: [MediaLibrary]
+    /// The Library tab's cards, so it opens on them instead of a spinner. Older snapshots have none.
+    var libraryPage: LibraryPageCache? = nil
 }
 
 protocol HomeSnapshotStoring {

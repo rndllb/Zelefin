@@ -59,6 +59,8 @@ final class SessionStore {
     /// Library tab cards, covers, and counts. Kept for the life of the process so revisiting
     /// the tab does not refetch; a force quit or an account switch starts fresh.
     var libraryPage = LibraryPageCache()
+    /// A Library refresh outlives the tab, so a slow one finishes instead of restarting on every visit.
+    @ObservationIgnored var isRefreshingLibraryPage = false
 
     func presentNowPlaying() {
         guard let nowPlayingItem else { return }
@@ -318,7 +320,7 @@ final class SessionStore {
         password: String,
         serverType: SignInServerType = .jellyfin
     ) async throws {
-        let url = try probe.normalizedURL(from: serverAddress)
+        let url = try await probe.resolvedURL(from: serverAddress)
         if serverType == .emby {
             try await connectEmby(url: url, username: username, password: password)
             return
@@ -524,7 +526,7 @@ final class SessionStore {
         serverAddress: String,
         presentCode: @escaping @MainActor @Sendable (String) -> Void
     ) async throws {
-        let url = try probe.normalizedURL(from: serverAddress)
+        let url = try await probe.resolvedURL(from: serverAddress)
         if await SiloAccountClient.isSiloAddress(url) {
             throw ZelefinError.siloNativeAddress
         }
@@ -1091,7 +1093,7 @@ final class SessionStore {
     ) {
         if PluginSettings.shouldClearSession(switchingFrom: session?.accountID, to: saved.accountID) {
             PluginSettings.clearSeerrSession()
-        } else if PluginSettings.seerrSession != nil, PluginSettings.seerrOwnerAccountID == nil {
+        } else if PluginSettings.hasRequestSession, PluginSettings.seerrOwnerAccountID == nil {
             PluginSettings.seerrOwnerAccountID = saved.accountID
         }
         // Landing in a working session clears any stale "session expired" notice.
@@ -1818,8 +1820,18 @@ final class SessionStore {
             sections: snapshot.home.sections.filter { !$0.isRecentlyAddedCollections }
         )
         libraries = snapshot.libraries
+        if var page = snapshot.libraryPage, !page.catalog.isEmpty {
+            // Shown at once, then refreshed once this launch.
+            page.isLoaded = false
+            libraryPage = page
+        }
         homeError = nil
         isLoadingHome = false
+    }
+
+    /// Keeps the Library tab's cards for the next launch.
+    func saveLibraryPage() {
+        persistSnapshot()
     }
 
     private func persistSnapshot() {
@@ -1830,7 +1842,8 @@ final class SessionStore {
             serverHost: HomeSnapshot.host(from: session.serverURL),
             savedAt: Date(),
             home: homeLayout,
-            libraries: libraries
+            libraries: libraries,
+            libraryPage: libraryPage.catalog.isEmpty ? nil : libraryPage
         )
         try? snapshotStore.save(snapshot)
     }
@@ -2057,7 +2070,7 @@ final class SessionStore {
     }
 }
 
-struct LibraryPageCache: Equatable, Sendable {
+struct LibraryPageCache: Equatable, Sendable, Codable {
     var catalog: [MediaLibrary] = []
     var covers: [String: [MediaItem]] = [:]
     var roomCounts: [String: LibraryRoomCounts] = [:]

@@ -200,6 +200,24 @@ struct PosterImage: View {
 
 /// Lives in the scroll content under the header so it stays at the top of the page
 /// and leaves the screen when you scroll.
+/// The spinner a scrolling page shows before its first titles arrive. On the Mac it is the large
+/// system spinner in a fixed-height band: sizing it to the scroll view it sits in fed back into
+/// that scroll view's layout and locked the page up.
+struct PageLoadingIndicator: View {
+    var body: some View {
+        ProgressView()
+            .tint(.white)
+            #if targetEnvironment(macCatalyst)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .frame(height: 360)
+            #else
+            .frame(maxWidth: .infinity)
+            .padding(.top, 80)
+            #endif
+    }
+}
+
 struct CatalogIndexBar: View {
     var progress: CatalogIndexProgress?
 
@@ -1548,11 +1566,20 @@ extension View {
 }
 
 enum ZelefinPillMetrics {
+    #if targetEnvironment(macCatalyst)
+    /// The Mac's search pill height, so back, filter, and search controls share one row size.
+    static let height: CGFloat = 34
+    static let iconSegmentWidth: CGFloat = 38
+    static let dividerHeight: CGFloat = 16
+    static let iconPointSize: CGFloat = 13
+    static let iconFrame: CGFloat = 18
+    #else
     static let height: CGFloat = 45
     static let iconSegmentWidth: CGFloat = 46
     static let dividerHeight: CGFloat = 20
     static let iconPointSize: CGFloat = 17
     static let iconFrame: CGFloat = 22
+    #endif
 }
 
 struct ZelefinGlassPillCluster<Content: View>: View {
@@ -1726,9 +1753,15 @@ final class BottomEdgePinView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// The size the last search ran at. Layout runs constantly, and searching the window each time
+    /// is too slow on a page full of posters.
+    private var searchedSize: CGSize = .zero
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        attachIfNeeded()
+        guard scrollView == nil, bounds.size != searchedSize else { return }
+        searchedSize = bounds.size
+        attachIfNeeded(retriesLeft: 0)
     }
 
     override func didMoveToWindow() {
@@ -1744,12 +1777,25 @@ final class BottomEdgePinView: UIView {
     private func attachIfNeeded(retriesLeft: Int = 6) {
         guard scrollView == nil, let window, bounds.width > 1, bounds.height > 1 else { return }
         let target = convert(bounds, to: window)
+        // Each level only searches the branches the level below didn't, so the window is walked once.
+        var searched: UIView = self
         var ancestor = superview
         while let view = ancestor {
-            if let match = Self.scrollView(in: view, matching: target, window: window) {
-                attach(match)
+            if let scroll = view as? UIScrollView, Self.matches(scroll.convert(scroll.bounds, to: window), target) {
+                attach(scroll)
                 return
             }
+            for subview in view.subviews where subview !== searched {
+                if let scroll = subview as? UIScrollView, Self.matches(scroll.convert(scroll.bounds, to: window), target) {
+                    attach(scroll)
+                    return
+                }
+                if let match = Self.scrollView(in: subview, matching: target, window: window) {
+                    attach(match)
+                    return
+                }
+            }
+            searched = view
             ancestor = view.superview
         }
         // The scroll view can appear after this view does, once a loading state clears.
@@ -2222,7 +2268,7 @@ struct ZelefinPadBackButton: View {
     var body: some View {
         Button(action: dismiss.callAsFunction) {
             Image(systemName: "chevron.backward")
-                .font(.body.weight(.semibold))
+                .font(.system(size: ZelefinPillMetrics.iconPointSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: ZelefinPillMetrics.height, height: ZelefinPillMetrics.height)
                 .contentShape(Circle())
@@ -2286,6 +2332,43 @@ struct ZelefinPadPushedChrome<Trailing: View>: View {
         .modifier(PadTabBarRowAlignment(isActive: centersOnPadTabBar, layoutKey: layoutKey))
     }
 }
+
+#if targetEnvironment(macCatalyst)
+enum MacChromeMetrics {
+    /// Centers a row of controls on the window buttons, 26 pt down from the top of the window.
+    static let topInset: CGFloat = 26 - ZelefinPillMetrics.height / 2
+    /// The row and the gap under it, which page content starts below.
+    static let rowHeight: CGFloat = topInset + ZelefinPillMetrics.height + 16
+}
+
+struct MacPushedChromeRow<Trailing: View>: View {
+    var isVisible: Bool = true
+    @ViewBuilder var trailing: Trailing
+    /// False at the root of a sidebar page, where there's nothing to go back to.
+    @Environment(\.isPresented) private var isPushed
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            if isPushed {
+                ZelefinPadBackButton()
+                    .macTitlebarControl()
+            }
+            Spacer(minLength: 0)
+                .allowsHitTesting(false)
+            trailing
+                .macTitlebarControl()
+        }
+        .frame(height: ZelefinPillMetrics.height)
+        .padding(.horizontal, 16)
+        .padding(.top, MacChromeMetrics.topInset)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
+        .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(isVisible)
+        .accessibilityHidden(!isVisible)
+    }
+}
+#endif
 
 /// Moves a row of 45pt glass controls onto the floating iPad tab bar's centre line: the tab bar
 /// is measured on screen, and so is where the row would sit, so no safe-area constant is assumed.
@@ -2414,6 +2497,11 @@ private struct ZelefinPushedChromeModifier<Trailing: View>: ViewModifier {
     }
 
     func body(content: Content) -> some View {
+        #if targetEnvironment(macCatalyst)
+        macChrome(content)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarBackButtonHidden(true)
+        #else
         // Hero pages hide the system bar. Keep back and trailing pills on the
         // same overlay as iPad so iPhone does not shrink More in the toolbar.
         if RootPageChrome.usesOverlayPushedBar || hidesToolbarBackground {
@@ -2425,7 +2513,32 @@ private struct ZelefinPushedChromeModifier<Trailing: View>: ViewModifier {
         } else {
             iphoneChrome(content)
         }
+        #endif
     }
+
+    #if targetEnvironment(macCatalyst)
+    /// The Mac's row sits in the window's top strip, level with the close, minimize, and zoom
+    /// buttons like the Search pill. Pages that keep the safe area start below the row.
+    @ViewBuilder
+    private func macChrome(_ content: Content) -> some View {
+        if contentIgnoresTopSafeArea {
+            ZStack(alignment: .top) {
+                content
+                MacPushedChromeRow(isVisible: chromeVisible) { trailing }
+            }
+            .ignoresSafeArea(edges: .top)
+        } else {
+            GeometryReader { geo in
+                ZStack(alignment: .top) {
+                    content
+                        .safeAreaPadding(.top, max(0, MacChromeMetrics.rowHeight - geo.safeAreaInsets.top))
+                    MacPushedChromeRow(isVisible: chromeVisible) { trailing }
+                        .ignoresSafeArea(edges: .top)
+                }
+            }
+        }
+    }
+    #endif
 
     @ViewBuilder
     private func padChrome(_ content: Content) -> some View {

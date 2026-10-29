@@ -8,6 +8,7 @@ import android.net.Uri
 import app.zelefin.client.network.HomeNetwork
 import app.zelefin.client.network.HomeNetworkProfile
 import app.zelefin.client.network.HomeNetworkStore
+import app.zelefin.client.network.ServerAddress
 import app.zelefin.client.network.ServerRoute
 import app.zelefin.client.session.AccountPhoto
 import androidx.lifecycle.AndroidViewModel
@@ -420,7 +421,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun testConnection(rawUrl: String) {
         launch("Checking the server…") {
-            val url = ServerUrl.normalize(rawUrl)
+            val url = ServerAddress.resolve(rawUrl)
             if (SiloAccountClient.isSiloAddress(url)) {
                 _state.update { it.copy(busy = false, message = "Silo is reachable.") }
                 return@launch
@@ -442,7 +443,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun signIn(rawUrl: String, username: String, password: String, type: SignInServerType) {
         launch("Signing in…") {
-            val url = ServerUrl.normalize(rawUrl)
+            val url = ServerAddress.resolve(rawUrl)
             val route = SignInRouting.route(
                 type,
                 SiloAccountClient.isSiloAddress(url),
@@ -762,7 +763,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(busy = true, message = null) }
         quickConnectJob = viewModelScope.launch {
             runCatching {
-                val url = ServerUrl.normalize(rawUrl)
+                val url = ServerAddress.resolve(rawUrl)
                 if (isEmbyAddress(url, required = false)) throw ZelefinException.server(SignInRouting.EmbyAddressMessage)
                 val library = JellyfinLibrary(getApplication(), url)
                 if (!library.quickConnectEnabled()) throw ZelefinException.quickConnectDisabled()
@@ -1762,7 +1763,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(addAccount = AddAccountState(busy = true)) }
         viewModelScope.launch {
             runCatching {
-                val url = ServerUrl.normalize(rawUrl)
+                val url = ServerAddress.resolve(rawUrl)
                 val name = username.trim()
                 if (name.isEmpty()) throw ZelefinException.server("Enter a username.")
                 if (isSiloSignIn(url, name)) {

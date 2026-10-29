@@ -525,10 +525,7 @@ struct CatalogGridView: View {
             ZStack {
                 ScrollView {
                     if isLoading {
-                        ProgressView()
-                            .tint(.white)
-                            .padding(.top, 80)
-                            .frame(maxWidth: .infinity)
+                        PageLoadingIndicator()
                     } else if items.isEmpty {
                         ContentUnavailableView(
                             browseQuery.isDefault ? "No Titles" : "No Matches",

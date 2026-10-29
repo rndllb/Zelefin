@@ -254,11 +254,11 @@ struct LiveTVView: View {
     private var recordingsPage: some View {
         Group {
             if recordings.isEmpty {
-                ContentUnavailableView(
-                    "No Recordings",
-                    systemImage: "rectangle.stack",
-                    description: Text("Saved recordings from this server will show up here.")
-                )
+                ContentUnavailableView {
+                    Label("No Recordings", image: LibraryIcon.recording)
+                } description: {
+                    Text("Saved recordings from this server will show up here.")
+                }
             } else {
                 ScrollView {
                     LazyVGrid(columns: PosterGridLayout.landscapeColumns(for: sidebarLayout), spacing: 20) {
@@ -1179,8 +1179,11 @@ private struct LiveTVRecordingCard: View {
     }
 
     private var recordingBadge: some View {
-        Image(systemName: "record.circle.fill")
-            .font(.body.weight(.bold))
+        Image("\(LibraryIcon.recording)Filled")
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 20, height: 20)
             .foregroundStyle(.white)
             .padding(6)
             .background(.red, in: Circle())

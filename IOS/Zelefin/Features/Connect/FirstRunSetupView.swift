@@ -8,6 +8,7 @@ struct FirstRunSetupView: View {
     @State private var audioCode = PlaybackLanguage.deviceCode
     @State private var subtitleCode = PlaybackLanguage.automaticCode
     @State private var seerrURL = PluginSettings.seerrURLString
+    @State private var requestService = PluginSettings.requestService
     @State private var seerrUsername = ""
     @State private var seerrPassword = ""
     @State private var seerrStatus: String?
@@ -65,7 +66,7 @@ struct FirstRunSetupView: View {
                 Button("BACK") { stepIndex -= 1 }
                     .font(.caption.weight(.bold))
                     .tracking(0.8)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(.tint)
                     .buttonStyle(.plain)
                     .accessibilityLabel("Back")
             }
@@ -79,7 +80,7 @@ struct FirstRunSetupView: View {
             }
             .font(.caption.weight(.bold))
             .tracking(0.8)
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(.tint)
             .buttonStyle(.plain)
             .accessibilityLabel(isLastStep ? "Done" : "Skip")
         }
@@ -150,15 +151,22 @@ struct FirstRunSetupView: View {
     private var seerrStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             stepHeading(
-                title: "Seerr",
-                subtitle: "Optional. Request movies and shows that are not on this server yet. Skip if you do not use Jellyseerr or Seerr."
+                title: "Requests",
+                subtitle: "Optional. Request movies and shows that are not on this server yet. Skip if you do not use Seerr or Ombi."
             )
             VStack(alignment: .leading, spacing: 0) {
                 if PluginSettings.isSeerrConfigured {
-                    SettingsInfoRow(label: "Signed in as", value: PluginSettings.seerrSession?.displayName ?? "Seerr")
+                    SettingsInfoRow(label: "Signed in as", value: PluginSettings.requestDisplayName ?? requestService.name)
                 } else {
+                    Picker("Service", selection: $requestService) {
+                        ForEach(RequestService.allCases) { service in
+                            Text(service.name).tag(service)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.bottom, 14)
                     SettingsLabeledField(label: "Server", systemImage: "link") {
-                        TextField("https://seerr.example.com", text: $seerrURL)
+                        TextField(requestService == .ombi ? "https://ombi.example.com" : "https://seerr.example.com", text: $seerrURL)
                             .textContentType(.URL)
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
@@ -253,8 +261,8 @@ struct FirstRunSetupView: View {
 
     private var welcomeCopy: String {
         session.lacksJellyfinOnlyFeatures
-            ? "A few optional choices for this \(session.isEmbyServer ? "Emby" : "Silo") server: languages and Seerr requests."
-            : "A few optional choices for this server: languages, Seerr requests, and the Zelefin plugin for lock-screen alerts."
+            ? "A few optional choices for this \(session.isEmbyServer ? "Emby" : "Silo") server: languages and Seerr or Ombi requests."
+            : "A few optional choices for this server: languages, Seerr or Ombi requests, and the Zelefin plugin for lock-screen alerts."
     }
 
     private var pluginStatusLabel: String {
@@ -268,7 +276,7 @@ struct FirstRunSetupView: View {
             HStack(spacing: 6) {
                 ForEach(steps.indices, id: \.self) { index in
                     Capsule()
-                        .fill(index == stepIndex ? Color.accentColor : Color.white.opacity(0.18))
+                        .fill(index == stepIndex ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.white.opacity(0.18)))
                         .frame(width: index == stepIndex ? 18 : 7, height: 7)
                 }
             }
@@ -328,27 +336,23 @@ struct FirstRunSetupView: View {
 
     private func signInToSeerr() async {
         PluginSettings.seerrURLString = seerrURL
-        guard let url = PluginSettings.seerrURL else {
-            seerrStatus = "Enter a valid Seerr URL."
+        PluginSettings.requestService = requestService
+        guard PluginSettings.seerrURL != nil else {
+            seerrStatus = "Enter a valid \(requestService.name) URL."
             return
         }
         isSigningInToSeerr = true
         seerrStatus = nil
         defer { isSigningInToSeerr = false }
         do {
-            let signedIn = try await SeerrClient.signIn(
-                baseURL: url,
-                username: seerrUsername,
-                password: seerrPassword
-            )
-            PluginSettings.rememberSignIn(
-                signedIn,
+            let name = try await PluginSettings.signIn(
                 username: seerrUsername,
                 password: seerrPassword,
                 ownerAccountID: session.session?.accountID
             )
+            seerrURL = PluginSettings.seerrURLString
             seerrPassword = ""
-            seerrStatus = "Signed in as \(signedIn.displayName)."
+            seerrStatus = "Signed in as \(name)."
         } catch {
             seerrStatus = error.localizedDescription
         }

@@ -156,6 +156,7 @@
 		B91FAF5EA9D56865BA01B63F /* DirectPlayEngineUnavailable.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE8597601878D0A184EC17A7 /* DirectPlayEngineUnavailable.swift */; };
 		B976FE6BCCD46C9C6F12A30F /* PlaybackHTTPHeaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B24E8FADBBBCD16273C11EE /* PlaybackHTTPHeaders.swift */; };
 		BA129C04F5B720941B9B4518 /* ServerProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC3CEF5FD1587F586B9C4F4C /* ServerProbe.swift */; };
+		BA8B0335C925BD2CA9802F93 /* RequestService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 872EB0FAC43AFECD9CBAF7C7 /* RequestService.swift */; };
 		BE1B47F1109A3A44A4D7436D /* ConnectBrandMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90D91D4A7ED63602813594AF /* ConnectBrandMark.swift */; };
 		BF6C2D0C7B43EFDCF842F38A /* ScheduledTaskTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62279349820CAD268B2F4B21 /* ScheduledTaskTests.swift */; };
 		C36FFEE459624B513B9FBE24 /* TitleMoreInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA52DECBDDDA52EFFC4E171 /* TitleMoreInfo.swift */; };
@@ -185,6 +186,7 @@
 		E169D4D9B19CD281C8B11C14 /* EmbyAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E51B47770962C37F9D1389E /* EmbyAlerts.swift */; };
 		E3BD8FD1D84EE88C392E20D5 /* TitleAboutRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E27EF97B5903A36F10AF18 /* TitleAboutRow.swift */; };
 		E4BF757DA701C6AD91C49F7A /* SeerrRequestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8976E4C707E0FA34E637C1 /* SeerrRequestView.swift */; };
+		E5928BC68C69F058770EBFFC /* OmbiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE48717297D985B164AE94F0 /* OmbiClient.swift */; };
 		E6F868838381DB4F1661FADE /* SiloAvatarPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */; };
 		E84E6FF0C59F6AAA0E50B687 /* AccentPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF24D35FA852C0BF61F8F20 /* AccentPreferences.swift */; };
 		ECEDB8B905CCBF53583EEA6B /* CachePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B29699E73366394F845A819 /* CachePreferences.swift */; };
@@ -341,6 +343,7 @@
 		827D07BC596A9C91C877571D /* PluginSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSettings.swift; sourceTree = "<group>"; };
 		82E2AE060FC5F2C11DFE9D1F /* LibraryAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlert.swift; sourceTree = "<group>"; };
 		8716D6D7DB0E6EE84349C3C8 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
+		872EB0FAC43AFECD9CBAF7C7 /* RequestService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestService.swift; sourceTree = "<group>"; };
 		8818B03401204284A31DC036 /* EmbyAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbyAccount.swift; sourceTree = "<group>"; };
 		88D3AD7E1BB3E4C6887F0775 /* RemoteControlHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlHub.swift; sourceTree = "<group>"; };
 		895DB472FEB9A4088EA96244 /* LibraryAlertTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAlertTests.swift; sourceTree = "<group>"; };
@@ -412,6 +415,7 @@
 		D9FBDA36BFE60E688EA23B98 /* LiveTVModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVModels.swift; sourceTree = "<group>"; };
 		DAE3CF5DB0C1D55FAA66726B /* ZelefinCompanion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinCompanion.swift; sourceTree = "<group>"; };
 		DC535123280EBE8E0BC7162F /* SeerrDiscover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeerrDiscover.swift; sourceTree = "<group>"; };
+		DE48717297D985B164AE94F0 /* OmbiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmbiClient.swift; sourceTree = "<group>"; };
 		DE4E2B90C9DECA3639523A79 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		DF605DE82AE378D8A40E1763 /* MediaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaModels.swift; sourceTree = "<group>"; };
 		DFF3B744FC3D25EFA7FBC7C2 /* HomeNetworkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNetworkTests.swift; sourceTree = "<group>"; };
@@ -689,6 +693,8 @@
 				4EFFB00A3412B2338103E08D /* PushNotificationCenter.swift */,
 				B04FDA5715EFC42BDC77D688 /* SeerrClient.swift */,
 				DC535123280EBE8E0BC7162F /* SeerrDiscover.swift */,
+				DE48717297D985B164AE94F0 /* OmbiClient.swift */,
+				872EB0FAC43AFECD9CBAF7C7 /* RequestService.swift */,
 				01253E1D158D0BBE9905263D /* SkipSegment.swift */,
 				DAE3CF5DB0C1D55FAA66726B /* ZelefinCompanion.swift */,
 				925F536FD5F4690C5DB9CBFF /* ZelefinPluginInstaller.swift */,
@@ -1143,6 +1149,8 @@
 				919AEBC2A175D03929FC7435 /* SecretStore.swift in Sources */,
 				904986289BA0F01AF9B3883A /* SeerrClient.swift in Sources */,
 				25F99F407BA393BCDCFF2399 /* SeerrDiscover.swift in Sources */,
+				E5928BC68C69F058770EBFFC /* OmbiClient.swift in Sources */,
+				BA8B0335C925BD2CA9802F93 /* RequestService.swift in Sources */,
 				21EE13145E4831A498FFDEBF /* SeerrDiscoverView.swift in Sources */,
 				E4BF757DA701C6AD91C49F7A /* SeerrRequestView.swift in Sources */,
 				BA129C04F5B720941B9B4518 /* ServerProbe.swift in Sources */,
@@ -1245,12 +1253,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Zelefin;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "Zelefin/Zelefin-Mac.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1421,12 +1429,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Zelefin;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Zelefin/Zelefin.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "Zelefin/Zelefin-Mac.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

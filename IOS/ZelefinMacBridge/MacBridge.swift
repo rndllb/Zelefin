@@ -8,6 +8,11 @@ import AppKit
 final class ZelefinMacBridge: NSObject {
     /// Each sidebar's width when it first opened, which SwiftUI sets; it's kept from then on.
     private var lockedWidths: [ObjectIdentifier: CGFloat] = [:]
+    /// The app's controls in the title bar strip (back, filter, search), in window points from the
+    /// top left. The app sets these as the controls move.
+    @objc var titlebarControls: [NSValue] = []
+    /// The view a click in a title bar control went to, which gets the rest of that click too.
+    private var clickTarget: NSView?
 
     @objc func start() {
         // Windows update after every event, so a sidebar or toolbar item that turns up late is
@@ -26,6 +31,65 @@ final class ZelefinMacBridge: NSObject {
             }
             remaining -= 1
             if remaining <= 0 { timer.invalidate() }
+        }
+        // Opening a page shows the sidebar button again without a window event to catch it on, so
+        // the toolbar is checked when it gains an item and a few times a second. That only reads a
+        // handful of items.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(toolbarWillAddItem(_:)),
+            name: NSToolbar.willAddItemNotification,
+            object: nil
+        )
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                NSApp.windows.forEach { self?.hideSidebarButtons(in: $0) }
+            }
+        }
+        // The title bar strip takes clicks for dragging the window, even over the app's controls
+        // drawn there. Clicks inside those controls go to the app instead.
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            let handled = MainActor.assumeIsolated { self?.route(event) ?? false }
+            return handled ? nil : event
+        }
+    }
+
+    /// True when the click went to the app instead of the title bar.
+    private func route(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseDown:
+            guard let target = titlebarControlTarget(for: event) else { return false }
+            clickTarget = target
+            target.mouseDown(with: event)
+            return true
+        case .leftMouseDragged:
+            guard let target = clickTarget else { return false }
+            target.mouseDragged(with: event)
+            return true
+        case .leftMouseUp:
+            guard let target = clickTarget else { return false }
+            clickTarget = nil
+            target.mouseUp(with: event)
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// The app's view under a click that lands on one of its controls inside the title bar strip.
+    private func titlebarControlTarget(for event: NSEvent) -> NSView? {
+        guard let window = event.window, let content = window.contentView, let frame = content.superview else { return nil }
+        let local = content.convert(event.locationInWindow, from: nil)
+        let fromTop = CGPoint(x: local.x, y: content.isFlipped ? local.y : content.bounds.height - local.y)
+        let titlebarHeight = window.frame.height - window.contentLayoutRect.height
+        guard fromTop.y <= titlebarHeight,
+              titlebarControls.contains(where: { $0.rectValue.contains(fromTop) }) else { return nil }
+        return content.hitTest(frame.convert(event.locationInWindow, from: nil))
+    }
+
+    @objc private func toolbarWillAddItem(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            NSApp.windows.forEach { self?.hideSidebarButtons(in: $0) }
         }
     }
 

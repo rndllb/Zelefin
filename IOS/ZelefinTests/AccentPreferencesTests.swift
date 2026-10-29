@@ -3,10 +3,12 @@ import XCTest
 @testable import Zelefin
 
 final class AccentPreferencesTests: XCTestCase {
-    func testDefaultPresetIsLoginCyan() {
-        XCTAssertEqual(AccentPreferences.defaultId, "cyan")
-        XCTAssertEqual(AccentPreferences.cyan.hex, "#2AD4FC")
-        XCTAssertEqual(AccentPreferences.preset(id: "missing").id, "cyan")
+    func testDefaultPresetIsTheSignInPeriwinkle() {
+        XCTAssertEqual(AccentPreferences.defaultId, "periwinkle")
+        XCTAssertEqual(AccentPreferences.periwinkle.hex, "#9996D1")
+        XCTAssertEqual(AccentPreferences.hex(from: LoginPalette.periwinkle), AccentPreferences.periwinkle.hex)
+        XCTAssertEqual(AccentPreferences.preset(id: "missing").id, "periwinkle")
+        XCTAssertEqual(AccentPreferences.preset(id: "cyan").hex, "#2AD4FC")
     }
 
     func testNormalizedHexAcceptsWithAndWithoutHash() {

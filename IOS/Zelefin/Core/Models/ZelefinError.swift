@@ -45,7 +45,7 @@ enum ZelefinError: LocalizedError, Sendable {
         case .accessGateway:
             "This server is behind an access gateway such as Cloudflare Zero Trust or Pangolin. Add the gateway client ID and token, then try again."
         case .seerrUnauthorized:
-            "Seerr session expired. Sign in again."
+            "\(PluginSettings.requestService.name) session expired. Sign in again."
         case .quickConnectDisabled:
             "Quick Connect is turned off on this server."
         case .quickConnectExpired:

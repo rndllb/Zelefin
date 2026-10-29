@@ -45,6 +45,8 @@ data class SeerrTitle(
     val requestId: Int? = null,
     /** Seerr's own request status, separate from whether the title is on the server. */
     val review: Review? = null,
+    /** Ombi's show request that holds [requestId], which is one batch of its seasons. */
+    val parentRequestId: Int? = null,
 ) {
     enum class Kind(val raw: String, val accessibilityName: String) {
         Movie("movie", "Movie"),
@@ -247,6 +249,27 @@ class SeerrClient(
         SeerrTvDetails.parse(fetchObject("api/v1/tv/$id")) ?: throw unexpected()
 
     suspend fun currentUser(): SeerrUser = SeerrUser.parse(fetchObject("api/v1/auth/me"))
+
+    /** The title as it stands now: whether it's on the server, and its open request, if any. */
+    suspend fun requestStatus(title: SeerrTitle): SeerrTitle {
+        val path = if (title.kind == SeerrTitle.Kind.Movie) "api/v1/movie/${title.tmdbId}" else "api/v1/tv/${title.tmdbId}"
+        val info = SeerrSearchResult.parse(fetchObject(path, listOf("language" to "en")))?.mediaInfo
+        val availability = SeerrTitle.Availability.fromStatus(info?.status)
+        val base = title.copy(availability = availability, review = null, requestId = null, requestedByName = null)
+        if (availability == SeerrTitle.Availability.Available) return base
+        val requests = info?.requests.orEmpty().filter { it.status != 3 }
+        // A request waiting for approval comes first, then the newest approved one.
+        val open = requests.lastOrNull { it.status == 1 } ?: requests.lastOrNull() ?: return base
+        val review = SeerrTitle.Review.fromStatus(open.status)
+        val waiting = review == SeerrTitle.Review.PendingApproval &&
+            (availability == SeerrTitle.Availability.Missing || availability == SeerrTitle.Availability.Unknown)
+        return base.copy(
+            requestId = open.id,
+            review = review,
+            requestedByName = open.requestedBy?.requestLabel,
+            availability = if (waiting) SeerrTitle.Availability.Pending else availability,
+        )
+    }
 
     suspend fun titleDetails(kind: SeerrTitle.Kind, tmdbId: Int): SeerrTitle {
         val path = if (kind == SeerrTitle.Kind.Movie) "api/v1/movie/$tmdbId" else "api/v1/tv/$tmdbId"
@@ -482,6 +505,8 @@ data class SeerrMediaInfo(
     val seasons: List<SeerrMediaSeason>? = null,
     val tmdbId: Int? = null,
     val mediaType: String? = null,
+    /** The title's requests, on a movie or show's own page. */
+    val requests: List<SeerrMediaRequest>? = null,
 ) {
     companion object {
         fun parse(json: JsonObject) = SeerrMediaInfo(
@@ -489,7 +514,17 @@ data class SeerrMediaInfo(
             seasons = json.arr("seasons")?.let { json.objects("seasons").mapNotNull(SeerrMediaSeason::parse) },
             tmdbId = json.int("tmdbId"),
             mediaType = json.str("mediaType"),
+            requests = json.arr("requests")?.let { json.objects("requests").mapNotNull(SeerrMediaRequest::parse) },
         )
+    }
+}
+
+data class SeerrMediaRequest(val id: Int, val status: Int?, val requestedBy: SeerrUser?) {
+    companion object {
+        fun parse(json: JsonObject): SeerrMediaRequest? {
+            val id = json.int("id") ?: return null
+            return SeerrMediaRequest(id, json.int("status"), json.obj("requestedBy")?.let(SeerrUser::parse))
+        }
     }
 }
 
@@ -549,6 +584,10 @@ data class SeerrRequestDraft(
     val profileId: Int? = null,
     val rootFolder: String? = null,
     val languageProfileId: Int? = null,
+    /** Ombi names a folder by its Radarr or Sonarr ID rather than its path. */
+    val rootFolderId: Int? = null,
+    /** Ombi's show request, whose quality and folder an admin changes before approving. */
+    val parentRequestId: Int? = null,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("mediaType", kind.raw)

@@ -3,7 +3,7 @@ import UIKit
 
 struct SearchView: View {
     @State private var term = ""
-    @State private var scope: SearchScope = .library
+    @State private var scope: SearchScope
     @FocusState private var searchFieldFocused: Bool
     @State private var searchChromeHeight: CGFloat = 68
     @Environment(\.tabBarPlacement) private var tabBarPlacement
@@ -34,7 +34,47 @@ struct SearchView: View {
         searchChromeTopInset + searchChromeHeight
     }
 
+    init(scope: SearchScope = .library) {
+        _scope = State(initialValue: scope)
+    }
+
     var body: some View {
+        #if targetEnvironment(macCatalyst)
+        macBody
+        #else
+        phoneAndPadBody
+        #endif
+    }
+
+    #if targetEnvironment(macCatalyst)
+    /// The TV app's search on the Mac: one centered pill over the results. Library and Discover are
+    /// separate sidebar rows there, so there's no switch between them.
+    private var macBody: some View {
+        ZStack(alignment: .top) {
+            SearchPage(
+                term: $term,
+                isSearchPresented: isSearchSessionActive,
+                scope: scope,
+                reservedHeaderHeight: MacSearchPill.rowHeight,
+                headerVisible: $headerVisible,
+                onDismissKeyboard: {
+                    guard searchFieldFocused else { return }
+                    dismissSearchKeyboard()
+                }
+            )
+
+            // In the window's top row, level with the close, minimize and zoom buttons.
+            MacSearchPill(term: $term, prompt: scope.searchPrompt, focused: $searchFieldFocused)
+                .padding(.top, MacSearchPill.topInset)
+                .frame(maxWidth: .infinity)
+        }
+        .background(Color.black.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .ignoresSafeArea(edges: .top)
+    }
+    #endif
+
+    private var phoneAndPadBody: some View {
         ZStack(alignment: .top) {
             SearchPage(
                 term: $term,
@@ -90,6 +130,64 @@ struct SearchView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
+
+#if targetEnvironment(macCatalyst)
+struct MacSearchPill: View {
+    static var height: CGFloat { ZelefinPillMetrics.height }
+    static var topInset: CGFloat { MacChromeMetrics.topInset }
+    static var rowHeight: CGFloat { MacChromeMetrics.rowHeight }
+
+    @Binding var term: String
+    var prompt: String
+    @FocusState.Binding var focused: Bool
+    var width: CGFloat = 360
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+                .allowsHitTesting(false)
+            TextField("", text: $term, prompt: Text(prompt).foregroundStyle(.white.opacity(0.45)))
+                .font(.system(size: 13))
+                // The pill's full height, so a click above or below the text still lands in the field.
+                .frame(maxHeight: .infinity)
+                .focused($focused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .foregroundStyle(.white)
+            if !term.isEmpty {
+                Button {
+                    term = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear")
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(width: width, height: Self.height)
+        // The tap that focuses the field lives on the background only. Over the whole pill it raced
+        // the text field for the click, and the field then sometimes never took the keyboard.
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .contentShape(Capsule(style: .continuous))
+                .onTapGesture { focused = true }
+        }
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(Color.white.opacity(focused ? 0.45 : 0.28), lineWidth: 1.5)
+                .allowsHitTesting(false)
+        }
+        .macTitlebarControl()
+    }
+}
+#endif
 
 private struct SearchTabChrome: View {
     @Binding var term: String
@@ -157,13 +255,15 @@ private struct SearchTabChrome: View {
                     .submitLabel(.search)
                     .background(SearchFieldInputConfigurator())
                     .foregroundStyle(.white)
-                    .tint(.white)
                     if !term.isEmpty {
                         Button {
                             term = ""
+                            // A field that ends editing while it clears writes its old text back.
+                            searchFieldFocused = true
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.white.opacity(0.45))
+                                .contentShape(Rectangle().inset(by: -10))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Clear")
@@ -239,7 +339,7 @@ private struct SearchScopeBar: View {
                 } label: {
                     Text(option.title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(scope == option ? Color.white : Color.white.opacity(0.55))
+                        .foregroundStyle(scope == option ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.white.opacity(0.55)))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
                         .background {
@@ -475,9 +575,9 @@ private struct SearchPage: View {
                             discoverContent
                         } else {
                             ContentUnavailableView(
-                                "Sign In to Seerr",
+                                "Sign In to Seerr or Ombi",
                                 systemImage: "sparkles.rectangle.stack",
-                                description: Text("Add Seerr in Settings to request movies and shows.")
+                                description: Text("Add Seerr or Ombi in Settings → Plugins to request movies and shows.")
                             )
                             .padding(.top, 24)
                         }
@@ -562,7 +662,6 @@ private struct SearchPage: View {
             recentsSection
         } else if isLoadingResults && hits.isEmpty {
             ProgressView()
-                .tint(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 40)
         } else if hits.isEmpty {
@@ -585,7 +684,6 @@ private struct SearchPage: View {
             }
         } else if isLoadingResults && seerrResults.isEmpty {
             ProgressView()
-                .tint(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 40)
         } else if let discoverError {
@@ -920,11 +1018,11 @@ struct SeerrRequestRow: View {
 
                 Text(isFullyOnServer ? "In Library" : (title.review == .pendingApproval ? "Pending" : title.availability.buttonTitle))
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(canRequestNow ? .black : .white.opacity(0.7))
+                    .foregroundStyle(canRequestNow ? LoginPalette.actionLabel : .white.opacity(0.7))
                     .padding(.horizontal, 12)
                     .frame(height: 28)
                     .background(
-                        canRequestNow ? Color.white : Color.white.opacity(0.18),
+                        canRequestNow ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.white.opacity(0.18)),
                         in: Capsule()
                     )
         }

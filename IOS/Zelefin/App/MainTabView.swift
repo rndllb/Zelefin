@@ -14,6 +14,10 @@ struct MainTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var dockSelection: DockSelection = .tab(.home)
     @State private var didResolveStartTab = false
+    @AppStorage(LibraryLayoutPreferences.orderKey) private var macLibraryOrderRaw = ""
+    @AppStorage(LibraryLayoutPreferences.hiddenKey) private var macLibraryHiddenRaw = ""
+    @AppStorage(LibraryLayoutPreferences.pageHiddenKey) private var macLibraryPageHiddenRaw = ""
+    @AppStorage(LibraryIcon.choicesStorageKey) private var libraryIconsRaw = ""
 
     init() {
         // Open on the page the user chose as their launch destination.
@@ -38,14 +42,35 @@ struct MainTabView: View {
             // Drawn by hand: Catalyst's sidebar list has a fixed 46 pt row on the Mac, where the TV
             // and Music apps use 32 pt.
             ScrollView {
+                // The TV app's layout: Search, Home, and Discover, then everything the iPhone's Library
+                // page holds under a Library heading. There's no Library page on the Mac.
                 VStack(spacing: 2) {
-                    ForEach(dockTabs) { tab in
-                        macSidebarRow(tab.title, systemImage: tab.systemImage, assetName: tab.iconAsset, selection: .tab(tab))
-                    }
-                    ForEach(dockLibraries) { library in
-                        macSidebarRow(library.name, systemImage: "square.grid.2x2", assetName: "IconsaxLibrary", selection: .library(library.id))
-                    }
                     macSidebarRow("Search", systemImage: "magnifyingglass", assetName: "IconsaxSearch", selection: .search)
+                    macSidebarRow(AppTab.home.title, systemImage: AppTab.home.systemImage, assetName: AppTab.home.iconAsset, selection: .tab(.home))
+                    macSidebarRow("Discover", systemImage: "sparkles", assetName: nil, selection: .discover)
+
+                    macSidebarHeading("Library")
+                    macSidebarRow("Recently Added", systemImage: "clock", assetName: nil, selection: .recentlyAdded)
+                    ForEach(macLibraries) { library in
+                        let icon = macIcon(for: library)
+                        macSidebarRow(library.name, systemImage: icon.system, assetName: icon.asset, selection: .library(library.id))
+                    }
+                    if !macHiddenBlocks.contains(.collections) {
+                        macSidebarRow(AppTab.collections.title, systemImage: "square.stack", assetName: AppTab.collections.iconAsset, selection: .tab(.collections))
+                    }
+                    if !macHiddenBlocks.contains(.favorites) {
+                        macSidebarRow(AppTab.favorites.title, systemImage: "heart", assetName: nil, selection: .tab(.favorites))
+                    }
+                    // The Watchlist is a Jellyfin playlist, and Silo's Jellyfin-compatible API has none.
+                    if !macHiddenBlocks.contains(.watchlist), !session.isSiloServer {
+                        macSidebarRow(LibraryPageBlock.watchlist.title, systemImage: "text.badge.plus", assetName: nil, selection: .watchlist)
+                    }
+                    if !macHiddenBlocks.contains(.genres) {
+                        macSidebarRow(LibraryPageBlock.genres.title, systemImage: "square.grid.2x2", assetName: nil, selection: .genres)
+                    }
+                    if !macHiddenBlocks.contains(.downloaded) {
+                        macSidebarRow("Downloads", systemImage: "arrow.down.circle", assetName: nil, selection: .downloads)
+                    }
                 }
                 .padding(.horizontal, 10)
                 .padding(.top, 6)
@@ -63,18 +88,89 @@ struct MainTabView: View {
             }
         } detail: {
             NavigationStack {
+                // A page still loading can be narrower than the column; black behind it keeps the
+                // window's gray from showing around it.
                 macDetail(dockSelection)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.ignoresSafeArea())
             }
+            .id(dockSelection)
             .zelefinSidebarLayout()
         }
-        // Picking another page in the sidebar leaves any title or season it had open. The split view
-        // keeps pushed pages in its own detail stack, so it is rebuilt rather than just its root.
-        .id(dockSelection)
+        // Picking another page in the sidebar leaves any title or season it had open. Those pages
+        // live in the split view's own navigation controller, which keeps them through a SwiftUI
+        // rebuild, so it is popped directly. Rebuilding the whole split view instead flashed its
+        // default layout and sidebar button on every switch.
+        .onChange(of: dockSelection) {
+            MacDetailNavigation.popToRoot()
+        }
         .modifier(MiniPlayerDockChrome(isEnabled: session.nowPlayingItem != nil))
         .onAppear {
             applyHiddenTabDefaultsIfNeeded()
             resolveStartSelectionIfNeeded()
+            dockSelection = macSelection(for: dockSelection)
         }
+    }
+
+    /// The server's libraries as the Library page arranges them (its order and hidden list).
+    private var macLibraries: [MediaLibrary] {
+        LibraryLayoutPreferences.displayed(
+            LibraryLayoutPreferences.sidebarLibraries(session.libraries, hidesLiveTV: session.hidesLiveTV),
+            orderRaw: macLibraryOrderRaw,
+            hiddenRaw: macLibraryHiddenRaw
+        )
+    }
+
+    private var macHiddenBlocks: Set<LibraryPageBlock> {
+        LibraryLayoutPreferences.hiddenBlocks(from: macLibraryPageHiddenRaw)
+    }
+
+    private func macIcon(for library: MediaLibrary) -> (system: String, asset: String?) {
+        if LibraryIcon.canChoose(library) {
+            return ("square.grid.2x2", LibraryIcon.asset(for: library, raw: libraryIconsRaw))
+        }
+        return switch library.libraryKind {
+        case .movies: (AppTab.movies.systemImage, AppTab.movies.iconAsset)
+        case .shows: (AppTab.shows.systemImage, AppTab.shows.iconAsset)
+        case .liveTV: (AppTab.liveTV.systemImage, AppTab.liveTV.iconAsset)
+        default: ("square.grid.2x2", LibraryIcon.defaultAsset(for: library))
+        }
+    }
+
+    /// Pages that have no sidebar row on the Mac open on the row that holds the same titles.
+    private func macSelection(for selection: DockSelection) -> DockSelection {
+        switch selection {
+        case .tab(.library):
+            return .tab(.home)
+        case .tab(.movies):
+            return macLibraries.first { $0.libraryKind == .movies }.map { .library($0.id) } ?? .tab(.home)
+        case .tab(.shows):
+            return macLibraries.first { $0.libraryKind == .shows }.map { .library($0.id) } ?? .tab(.home)
+        default:
+            return selection
+        }
+    }
+
+    /// Recently added movies and shows from Home's rows, newest first.
+    private var macRecentlyAdded: HomeSection {
+        var seen = Set<String>()
+        let items = session.homeLayout.sections
+            .filter { $0.id.hasPrefix("library-") }
+            .flatMap(\.items)
+            .filter { seen.insert($0.id).inserted }
+            .sorted { ($0.dateCreated ?? .distantPast) > ($1.dateCreated ?? .distantPast) }
+        return HomeSection(id: "mac-recently-added", title: "Recently Added", style: .portrait, items: items)
+    }
+
+    private func macSidebarHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.4))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 8)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
     }
 
     /// The TV app's sidebar metrics: 13 pt text, 18 pt icons, 30 pt rows 2 pt apart.
@@ -84,14 +180,25 @@ struct MainTabView: View {
             dockSelection = selection
         } label: {
             HStack(spacing: 10) {
-                TabBarIcon(assetName: assetName, systemImage: systemImage, isSelected: isSelected, side: 18)
+                if assetName == nil {
+                    // A symbol's image carries its own margin, so it fits a slightly larger box to match the
+                    // Iconsax glyphs beside it.
+                    Image(systemName: isSelected && UIImage(systemName: "\(systemImage).fill") != nil ? "\(systemImage).fill" : systemImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16.75, height: 16.75)
+                        .frame(width: 18, height: 18)
+                        .accessibilityHidden(true)
+                } else {
+                    TabBarIcon(assetName: assetName, systemImage: systemImage, isSelected: isSelected, side: 18)
+                }
                 Text(title)
                     .font(.system(size: 13))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            // The asset, not `Color.accentColor`: on the Mac that follows the system accent setting.
-            .foregroundStyle(isSelected ? Color("AccentColor") : Color.primary)
+            // The app's tint, not `Color.accentColor`: on the Mac that follows the system accent setting.
+            .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
             .padding(.horizontal, 8)
             .frame(height: 30)
             .background {
@@ -112,11 +219,21 @@ struct MainTabView: View {
         case .tab(let tab):
             tabRoot(tab)
         case .library(let id):
-            if let library = dockLibraries.first(where: { $0.id == id }) {
-                CatalogBrowseView(title: library.name, libraryKind: library.libraryKind, libraryID: library.id)
+            if let library = macLibraries.first(where: { $0.id == id }) {
+                LibraryItemsView(library: library)
             }
         case .search:
             SearchView()
+        case .discover:
+            SearchView(scope: .discover)
+        case .recentlyAdded:
+            SectionGridView(section: macRecentlyAdded)
+        case .watchlist:
+            CatalogBrowseView(title: LibraryPageBlock.watchlist.title, libraryKind: .watchlist)
+        case .genres:
+            LibraryGenresView()
+        case .downloads:
+            DownloadedItemsView()
         }
     }
     #endif
@@ -155,7 +272,7 @@ struct MainTabView: View {
                     dockLabel(
                         library.name,
                         systemImage: "square.grid.2x2",
-                        assetName: "IconsaxLibrary",
+                        assetName: LibraryIcon.asset(for: library, raw: libraryIconsRaw),
                         isSelected: dockSelection == .library(library.id)
                     )
                 }
@@ -194,6 +311,7 @@ struct MainTabView: View {
         .onAppear {
             applyHiddenTabDefaultsIfNeeded()
             resolveStartSelectionIfNeeded()
+            TabBarTitleChrome.libraryIcons = dockLibraryIcons
             TabBarTitleChrome.applyAfterRestore(showsTitles: showsDockTitles)
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(350))
@@ -206,6 +324,10 @@ struct MainTabView: View {
         }
         .onChange(of: showsDockTitles) { _, showsTitles in
             TabBarTitleChrome.apply(showsTitles: showsTitles)
+        }
+        .onChange(of: dockLibraryIcons) { _, icons in
+            TabBarTitleChrome.libraryIcons = icons
+            TabBarTitleChrome.apply(showsTitles: showsDockTitles, selection: dockSelection)
         }
         .onChange(of: dockSelection) { _, selection in
             TabBarTitleChrome.apply(showsTitles: showsDockTitles, selection: selection)
@@ -295,6 +417,18 @@ struct MainTabView: View {
 
     private var dockLibraries: [MediaLibrary] { phoneDock.libraries }
 
+    /// Pinned libraries whose icon isn't Library's: YouTube ones and anime ones with a picked icon.
+    private var dockLibraryIcons: [String: String] {
+        var icons: [String: String] = [:]
+        for library in dockLibraries {
+            let asset = LibraryIcon.asset(for: library, raw: libraryIconsRaw)
+            if asset != LibraryIcon.library {
+                icons[library.id] = asset
+            }
+        }
+        return icons
+    }
+
     @ViewBuilder
     private func tabRoot(_ tab: AppTab) -> some View {
         switch tab {
@@ -316,10 +450,41 @@ struct MainTabView: View {
     }
 }
 
+#if targetEnvironment(macCatalyst)
+private enum MacDetailNavigation {
+    @MainActor
+    static func popToRoot() {
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows {
+                if let root = window.rootViewController {
+                    popToRoot(in: root)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private static func popToRoot(in controller: UIViewController) {
+        if let navigation = controller as? UINavigationController, navigation.viewControllers.count > 1 {
+            navigation.popToRootViewController(animated: false)
+        }
+        for child in controller.children {
+            popToRoot(in: child)
+        }
+    }
+}
+#endif
+
 private enum DockSelection: Hashable {
     case tab(AppTab)
     case library(String)
     case search
+    /// The Mac sidebar's own rows. iPhone and iPad reach Discover from Search and the rest from Library.
+    case discover
+    case recentlyAdded
+    case watchlist
+    case genres
+    case downloads
 
     @MainActor
     init?(tab: UITab) {
@@ -400,6 +565,9 @@ private struct TabBarTitleApplier: UIViewRepresentable {
 
 @MainActor
 private enum TabBarTitleChrome {
+    /// Library ID to icon for pinned libraries that don't use Library's icon.
+    static var libraryIcons: [String: String] = [:]
+
     private static var restoreTask: Task<Void, Never>?
 
     /// SwiftUI puts the 24-point asset back when the app returns. Apply again after that restore.
@@ -461,7 +629,7 @@ private enum TabBarTitleChrome {
         let selected = isSelected(base: base, identifier: tab.identifier, title: tab.title, selectedIdentifier: selectedIdentifier, selection: selection)
         // Every tab (Search included) uses the template image so the bar tints it with the accent,
         // selected or not — Search no longer renders as a flat white icon when unselected.
-        tab.image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
+        tab.image = TabBarIconMetrics.image(named: selected ? TabBarIconMetrics.selectedName(for: base) : base)
     }
 
     /// The search tab keeps showing `selectedImage` after another tab is open. Both images follow the real selection.
@@ -481,7 +649,7 @@ private enum TabBarTitleChrome {
         }
         if let selection {
             switch selection {
-            case .search:
+            case .search, .discover, .recentlyAdded, .watchlist, .genres, .downloads:
                 return false
             case .tab(let tab):
                 return identifier.contains(tab.customizationID) || title == tab.title
@@ -502,7 +670,11 @@ private enum TabBarTitleChrome {
         if identifier.contains("tab.shows") || title == "Shows" { return "IconsaxShows" }
         if identifier.contains("tab.liveTV") || title == "Live TV" { return "IconsaxLiveTV" }
         if identifier.contains("tab.collections") || title == "Collections" { return "IconsaxCollections" }
-        if identifier.contains("library") || title == "Library" { return "IconsaxLibrary" }
+        if let range = identifier.range(of: "app.zelefin.library."),
+           let asset = libraryIcons[String(identifier[range.upperBound...])] {
+            return asset
+        }
+        if identifier.contains("library") || title == "Library" { return LibraryIcon.library }
         if identifier.localizedCaseInsensitiveContains("search") || title == "Search" { return "IconsaxSearch" }
         return nil
     }
@@ -530,7 +702,7 @@ private enum TabBarTitleChrome {
                     selectedIdentifier: nil,
                     selection: selection
                 ) || (selection == nil && item == bar.selectedItem)
-                let image = TabBarIconMetrics.image(named: selected ? "\(base)Filled" : base)
+                let image = TabBarIconMetrics.image(named: selected ? TabBarIconMetrics.selectedName(for: base) : base)
                 item.image = image
                 item.selectedImage = image
             }

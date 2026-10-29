@@ -4,7 +4,17 @@ struct SeerrRequestView: View {
     let title: SeerrTitle
     var onRequested: () -> Void
 
+    init(title: SeerrTitle, onRequested: @escaping () -> Void) {
+        self.title = title
+        self.onRequested = onRequested
+        _current = State(initialValue: title)
+    }
+
+    /// The title as the server has it now. A Discover row or search result doesn't carry its request.
+    @State private var current: SeerrTitle
+
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.zelefinSurfaces) private var surfaces
     @State private var servers: [SeerrServiceServer] = []
     @State private var details: SeerrServiceDetails?
     @State private var seasons: [SeerrSeason] = []
@@ -22,10 +32,28 @@ struct SeerrRequestView: View {
     @State private var canManageRequests = false
     @State private var isEditingRequest = false
 
-    private var client: SeerrClient? { PluginSettings.seerrClient }
+    private var client: (any RequestServiceClient)? { PluginSettings.seerrClient }
+
+    /// Seerr's requests pick a Radarr or Sonarr server, quality, and folder. In Ombi only admins and
+    /// power users pick the quality and folder; everyone else gets Ombi's defaults.
+    private var choosesServer: Bool {
+        guard let client else { return true }
+        return client.choosesDownloadServer && (client.service == .seerr || canManageRequests)
+    }
 
     private var isAwaitingApproval: Bool {
-        title.review == .pendingApproval && title.requestID != nil
+        current.review == .pendingApproval && current.requestID != nil
+    }
+
+    /// Requested already, with nothing left to ask for: a movie on its way, or a show whose every season is.
+    private var isAlreadyRequested: Bool {
+        guard current.availability != .available else { return false }
+        switch title.kind {
+        case .movie:
+            return current.availability.isRequested && !is4k
+        case .tv:
+            return !regularSeasons.isEmpty && requestableSeasonNumbers.isEmpty
+        }
     }
 
     private var regularSeasons: [SeerrSeason] {
@@ -43,15 +71,18 @@ struct SeerrRequestView: View {
     /// Seerr with no Sonarr or Radarr still records a request, so admins can see what people want;
     /// nothing downloads. Only once the list has loaded empty, not while it is still on its way.
     private var requestsWithoutDownloader: Bool {
-        !isLoading && servers.isEmpty && errorMessage == nil
+        choosesServer && !isLoading && servers.isEmpty && errorMessage == nil
     }
+
+    /// Ombi leaves the quality and folder unset to use its own defaults; Seerr needs both.
+    private var usesServiceDefaults: Bool { client?.service == .ombi }
 
     private var canSubmit: Bool {
         guard !isSubmitting else { return false }
-        if !requestsWithoutDownloader {
+        if choosesServer, !usesServiceDefaults, !requestsWithoutDownloader {
             guard serverID != nil, profileID != nil, !rootFolder.isEmpty else { return false }
         }
-        if title.kind == .movie, title.availability == .available, !is4k {
+        if title.kind == .movie, current.availability == .available || current.availability.isRequested, !is4k {
             return false
         }
         if title.kind == .tv {
@@ -64,11 +95,10 @@ struct SeerrRequestView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
-                if title.availability == .available {
+                if current.availability == .available {
                     EmptyView()
                 } else if isLoading {
                     ProgressView()
-                        .tint(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 12)
                 } else if isAwaitingApproval && !canManageRequests {
@@ -79,12 +109,16 @@ struct SeerrRequestView: View {
                         if title.kind == .tv {
                             seasonSection
                         }
-                    } else {
+                    } else if choosesServer || title.kind == .tv {
                         requestSummary
                     }
                     reviewActions
+                } else if isAlreadyRequested {
+                    requestedMessage
                 } else {
-                    destinationSection
+                    if choosesServer {
+                        destinationSection
+                    }
                     if title.kind == .tv {
                         seasonSection
                     }
@@ -101,11 +135,11 @@ struct SeerrRequestView: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(surfaces.canvas.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .navigationTitle(isAwaitingApproval ? "Review" : "Request")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(surfaces.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
@@ -113,6 +147,7 @@ struct SeerrRequestView: View {
                 Button("Close") { dismiss() }
             }
         }
+        .zelefinAccentTint()
         .task { await load() }
         .onChange(of: is4k) { _, _ in
             refreshOccupiedSeasons()
@@ -137,7 +172,7 @@ struct SeerrRequestView: View {
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.55))
-                if let requestedByName = title.requestedByName {
+                if let requestedByName = current.requestedByName {
                     Text("Requested by \(requestedByName)")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.7))
@@ -159,16 +194,26 @@ struct SeerrRequestView: View {
             .foregroundStyle(.white.opacity(0.7))
     }
 
+    private var requestedMessage: some View {
+        Text(current.review == .approved || current.availability == .processing
+             ? "Approved. It appears in your library once it downloads."
+             : "Requested. Waiting for approval.")
+            .font(.subheadline)
+            .foregroundStyle(.white.opacity(0.7))
+    }
+
     private var requestSummary: some View {
         VStack(spacing: 0) {
-            summaryRow("Server", value: selectedServerName)
-            summaryRow("Quality", value: selectedProfileName)
-            summaryRow("Drive", value: rootFolder.isEmpty ? "Default" : rootFolder)
+            if choosesServer {
+                summaryRow("Server", value: selectedServerName)
+                summaryRow("Quality", value: selectedProfileName)
+                summaryRow("Drive", value: rootFolder.isEmpty ? "Default" : rootFolder)
+            }
             if title.kind == .tv {
                 summaryRow("Seasons", value: seasonSummary)
             }
         }
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(surfaces.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func summaryRow(_ title: String, value: String) -> some View {
@@ -215,27 +260,29 @@ struct SeerrRequestView: View {
             }
             .buttonStyle(.plain)
             .disabled(isSubmitting)
-            Button {
-                withAnimation(.smooth(duration: 0.22)) {
-                    isEditingRequest.toggle()
+            if choosesServer {
+                Button {
+                    withAnimation(.smooth(duration: 0.22)) {
+                        isEditingRequest.toggle()
+                    }
+                } label: {
+                    decisionLabel(isEditingRequest ? "Done Editing" : "Edit Request", filled: false)
                 }
-            } label: {
-                decisionLabel(isEditingRequest ? "Done Editing" : "Edit Request", filled: false)
+                .buttonStyle(.plain)
+                .disabled(isSubmitting)
             }
-            .buttonStyle(.plain)
-            .disabled(isSubmitting)
         }
     }
 
     private func decisionLabel(_ title: String, filled: Bool, destructive: Bool = false) -> some View {
         Text(title)
             .font(.body.weight(.semibold))
-            .foregroundStyle(filled ? Color.black : (destructive ? Color.red : Color.white))
+            .foregroundStyle(filled ? LoginPalette.actionLabel : (destructive ? Color.red : Color.white))
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .background {
                 if filled {
-                    Capsule(style: .continuous).fill(Color.white)
+                    Capsule(style: .continuous).fill(.tint)
                 } else {
                     Capsule(style: .continuous).fill(destructive ? Color.red.opacity(0.16) : Color.white.opacity(0.14))
                 }
@@ -248,28 +295,30 @@ struct SeerrRequestView: View {
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.white)
             if servers.isEmpty {
-                Text(title.kind == .movie
-                     ? "No Radarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads."
-                     : "No Sonarr server is set up in Seerr. The request is still saved for an admin to see, but nothing downloads.")
+                Text("No \(title.kind == .movie ? "Radarr" : "Sonarr") server is set up in \(client?.service.name ?? "Seerr"). The request is still saved for an admin to see, but nothing downloads.")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.7))
             } else {
                 VStack(spacing: 0) {
                     if servers.contains(where: \.uses4K) {
                         Toggle("4K", isOn: $is4k)
-                            .tint(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                         divider
                     }
-                    menuRow("Server", value: selectedServerName) {
-                        ForEach(visibleServers) { server in
-                            Button(server.name) { serverID = server.id }
+                    if !usesServiceDefaults {
+                        menuRow("Server", value: selectedServerName) {
+                            ForEach(visibleServers) { server in
+                                Button(server.name) { serverID = server.id }
+                            }
                         }
                     }
                     if let details, !details.profiles.isEmpty {
-                        divider
+                        if !usesServiceDefaults { divider }
                         menuRow("Quality", value: selectedProfileName) {
+                            if usesServiceDefaults {
+                                Button("Default") { profileID = nil }
+                            }
                             ForEach(details.profiles) { profile in
                                 Button(profile.name) { profileID = profile.id }
                             }
@@ -278,6 +327,9 @@ struct SeerrRequestView: View {
                     if let details, !details.rootFolders.isEmpty {
                         divider
                         menuRow("Drive", value: rootFolder.isEmpty ? "Default" : rootFolder) {
+                            if usesServiceDefaults {
+                                Button("Default") { rootFolder = "" }
+                            }
                             ForEach(details.rootFolders) { folder in
                                 Button(folder.pickerTitle) { rootFolder = folder.path }
                             }
@@ -286,14 +338,16 @@ struct SeerrRequestView: View {
                     if let languages = details?.languageProfiles, !languages.isEmpty {
                         divider
                         menuRow("Language", value: languages.first { $0.id == languageProfileID }?.name ?? "Default") {
+                            if usesServiceDefaults {
+                                Button("Default") { languageProfileID = nil }
+                            }
                             ForEach(languages) { profile in
                                 Button(profile.name) { languageProfileID = profile.id }
                             }
                         }
                     }
                 }
-                .tint(.white)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(surfaces.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
     }
@@ -343,7 +397,7 @@ struct SeerrRequestView: View {
                         }
                     }
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.tint)
                     .buttonStyle(.plain)
                 }
             }
@@ -355,7 +409,7 @@ struct SeerrRequestView: View {
                     seasonToggle(season)
                 }
             }
-            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(surfaces.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             Text("Already requested or available seasons stay off. Specials stay off unless you turn them on.")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.45))
@@ -368,10 +422,10 @@ struct SeerrRequestView: View {
         } label: {
             Text(isSubmitting ? "Requesting…" : "Request")
                 .font(.body.weight(.semibold))
-                .foregroundStyle(.black)
+                .foregroundStyle(LoginPalette.actionLabel)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color.white, in: Capsule(style: .continuous))
+                .background(.tint, in: Capsule(style: .continuous))
                 .opacity(canSubmit ? 1 : 0.4)
         }
         .buttonStyle(.plain)
@@ -381,7 +435,6 @@ struct SeerrRequestView: View {
     private func seasonToggle(_ season: SeerrSeason) -> some View {
         let occupied = occupiedSeasonNumbers.contains(season.seasonNumber)
         return Toggle(season.title, isOn: seasonBinding(season.seasonNumber))
-            .tint(.white)
             .disabled(occupied)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -397,7 +450,7 @@ struct SeerrRequestView: View {
         if let year = title.year {
             parts.append("\(year)")
         }
-        parts.append(title.availability.buttonTitle)
+        parts.append(current.availability.buttonTitle)
         return parts.joined(separator: " · ")
     }
 
@@ -417,31 +470,34 @@ struct SeerrRequestView: View {
 
     private func load() async {
         guard let client else {
-            errorMessage = "Sign in to Seerr in Settings."
+            errorMessage = "Sign in to \(PluginSettings.requestService.name) in Settings."
             isLoading = false
             return
         }
         isLoading = true
         defer { isLoading = false }
         do {
-            if let user = try? await client.currentUser() {
+            async let user = try? client.currentUser()
+            async let refreshed = try? client.requestStatus(for: title)
+            if let user = await user {
                 canManageRequests = user.canManageRequests
             }
-            if title.kind == .movie {
-                servers = try await client.radarrServers()
-            } else {
-                async let fetchedServers = client.sonarrServers()
-                async let fetchedShow = client.tvDetails(id: title.tmdbID)
-                servers = try await fetchedServers
-                let show = try await fetchedShow
+            if let refreshed = await refreshed {
+                current = refreshed
+            }
+            if title.kind == .tv {
+                let show = try await client.tvDetails(id: title.tmdbID)
                 seasons = show.seasons
                 mediaSeasons = show.mediaInfo?.seasons ?? []
                 refreshOccupiedSeasons()
                 applySeasonDefaults()
             }
-            applyDefaultServer()
-            await loadDetails()
-            if let requestID = title.requestID, isAwaitingApproval {
+            if choosesServer {
+                servers = title.kind == .movie ? try await client.radarrServers() : try await client.sonarrServers()
+                applyDefaultServer()
+                await loadDetails()
+            }
+            if let requestID = current.requestID, isAwaitingApproval {
                 await applyStoredRequest(id: requestID)
             }
         } catch {
@@ -501,6 +557,8 @@ struct SeerrRequestView: View {
                 loaded = try await client.sonarrDetails(id: serverID)
             }
             details = loaded
+            // Ombi starts on its own defaults; an admin picks something else only to override them.
+            guard !usesServiceDefaults else { return }
             let server = loaded.server
             if loaded.profiles.contains(where: { $0.id == server.activeProfileId }) {
                 profileID = server.activeProfileId
@@ -534,7 +592,8 @@ struct SeerrRequestView: View {
             serverID: serverID,
             profileID: profileID,
             rootFolder: rootFolder,
-            languageProfileID: languageProfileID
+            languageProfileID: languageProfileID,
+            rootFolderID: selectedRootFolderID
         )
         do {
             try await client.request(draft)
@@ -545,8 +604,13 @@ struct SeerrRequestView: View {
         }
     }
 
+    /// Ombi names the folder by ID.
+    private var selectedRootFolderID: Int? {
+        details?.rootFolders.first { $0.path == rootFolder }?.folderID
+    }
+
     private func decide(approve: Bool) async {
-        guard let client, let requestID = title.requestID else { return }
+        guard let client, let requestID = current.requestID else { return }
         isSubmitting = true
         defer { isSubmitting = false }
         do {
@@ -559,11 +623,19 @@ struct SeerrRequestView: View {
                     serverID: serverID,
                     profileID: profileID,
                     rootFolder: rootFolder,
-                    languageProfileID: languageProfileID
+                    languageProfileID: languageProfileID,
+                    rootFolderID: selectedRootFolderID,
+                    parentRequestID: current.parentRequestID
                 )
-                try await client.approveRequest(id: requestID, draft: draft)
+                var approved = draft
+                if usesServiceDefaults, !isEditingRequest {
+                    approved.profileID = nil
+                    approved.rootFolderID = nil
+                    approved.languageProfileID = nil
+                }
+                try await client.approveRequest(id: requestID, draft: approved)
             } else {
-                try await client.declineRequest(id: requestID)
+                try await client.declineRequest(id: requestID, kind: title.kind)
             }
             onRequested()
             dismiss()

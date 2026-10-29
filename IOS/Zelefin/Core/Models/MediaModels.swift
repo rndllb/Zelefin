@@ -464,8 +464,18 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             let left = rank[lhs.seasonIndex ?? Int.min] ?? Int.max
             let right = rank[rhs.seasonIndex ?? Int.min] ?? Int.max
             if left != right { return left < right }
+            // Seasons the list doesn't rank (or no list at all) still keep their own episodes together.
+            let leftSeason = episodeSeasonOrder(lhs.seasonIndex)
+            let rightSeason = episodeSeasonOrder(rhs.seasonIndex)
+            if leftSeason != rightSeason { return leftSeason < rightSeason }
             return (lhs.episodeIndex ?? Int.max) < (rhs.episodeIndex ?? Int.max)
         }
+    }
+
+    /// Numbered seasons in order, then Specials, then episodes with no season.
+    private static func episodeSeasonOrder(_ season: Int?) -> Int {
+        guard let season else { return Int.max }
+        return season == 0 ? Int.max - 1 : season
     }
 
     private var seasonSortKey: Int {

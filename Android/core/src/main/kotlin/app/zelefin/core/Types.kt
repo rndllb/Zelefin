@@ -22,7 +22,7 @@ class ZelefinException(val code: Code, message: String = code.defaultMessage) : 
         fun missingUser() = ZelefinException(Code.MissingUser)
         fun missingStreamUrl() = ZelefinException(Code.MissingStreamUrl)
         fun accessGateway() = ZelefinException(Code.AccessGateway)
-        fun seerrUnauthorized() = ZelefinException(Code.SeerrUnauthorized)
+        fun seerrUnauthorized(service: String = "Seerr") = ZelefinException(Code.SeerrUnauthorized, "$service session expired. Sign in again.")
         fun quickConnectDisabled() = ZelefinException(Code.QuickConnectDisabled)
         fun quickConnectExpired() = ZelefinException(Code.QuickConnectExpired)
         fun quickConnectUnavailable() = ZelefinException(Code.QuickConnectUnavailable)

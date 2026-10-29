@@ -6,6 +6,30 @@ struct ServerProbe: Sendable {
         try ServerURL.normalize(raw)
     }
 
+    /// The address with the scheme the server answers on. Only LAN and Tailscale addresses typed
+    /// without a scheme have a second candidate; anything that connects counts as an answer.
+    func resolvedURL(from raw: String) async throws -> URL {
+        let candidates = ServerURL.candidates(raw)
+        guard let last = candidates.last else { throw ZelefinError.invalidServerURL }
+        for url in candidates.dropLast() {
+            var request = URLRequest(url: url, timeoutInterval: 8)
+            AccessGateway.apply(&request)
+            do {
+                _ = try await Self.session.data(for: request)
+                return url
+            } catch is URLError {
+                continue
+            }
+        }
+        return last
+    }
+
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
+    }()
+
     func publicInfo(at url: URL) async throws -> PublicSystemInfo {
         let client = JellyfinNetworking.client(url: url)
         return try await client.send(Paths.getPublicSystemInfo).value

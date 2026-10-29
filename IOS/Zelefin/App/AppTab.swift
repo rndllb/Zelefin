@@ -115,6 +115,91 @@ extension AppTab {
     }
 }
 
+/// The dock, Mac sidebar, and Interface settings icon for a library. YouTube and recordings libraries get
+/// their own; the rest share Library's. A library with "Anime" in its name can use one of the anime icons instead.
+enum LibraryIcon {
+    static let youTube = "IconsaxYouTube"
+    static let recording = "IconsaxRecording"
+    static let library = "IconsaxLibrary"
+    static let anime = "AnimeLibrary"
+    static let choicesStorageKey = "zelefin.library-icons"
+
+    struct Choice: Identifiable, Hashable {
+        let asset: String
+        let title: String
+        var id: String { asset }
+    }
+
+    /// PlainIcon's Anime characters pack (CC BY 4.0).
+    static let animeChoices: [Choice] = [
+        Choice(asset: "AnimeBoySmiling", title: "Boy Smiling"),
+        Choice(asset: "AnimeBoyWithBigEyes", title: "Boy with Big Eyes"),
+        Choice(asset: "AnimeBoyWithHeadphones", title: "Boy with Headphones"),
+        Choice(asset: "AnimeBoyWithHood", title: "Boy with Hood"),
+        Choice(asset: "AnimeBoyWithShirt", title: "Boy with Shirt"),
+        Choice(asset: "AnimeBoyWithShirtAndBigEyes", title: "Boy with Shirt and Big Eyes"),
+        Choice(asset: "AnimeBoyWithShortTrousers", title: "Boy with Short Trousers"),
+        Choice(asset: "AnimeBoyWithSummerClothes", title: "Boy with Summer Clothes"),
+        Choice(asset: "AnimeBoyWithTShirt", title: "Boy with T-Shirt"),
+        Choice(asset: "AnimeBoyWithTShirt2", title: "Boy with T-Shirt 2"),
+        Choice(asset: "AnimeBoyWithTie", title: "Boy with Tie"),
+        Choice(asset: "AnimeBoyWithTie2", title: "Boy with Tie 2"),
+        Choice(asset: "AnimeBoyWithWildHair", title: "Boy with Wild Hair"),
+        Choice(asset: "AnimeCharacter", title: "Character"),
+        Choice(asset: "AnimeCharacterWithHairUp", title: "Character with Hair Up"),
+        Choice(asset: "AnimeFeminineCharacterSmiling", title: "Character Smiling"),
+        Choice(asset: "AnimeFeminineCharacterWithSkirt", title: "Character with Skirt"),
+        Choice(asset: "AnimeGirlWithLongHair", title: "Girl with Long Hair"),
+        Choice(asset: "AnimeGirlWithLongHair2", title: "Girl with Long Hair 2"),
+        Choice(asset: "AnimeGirlWithPonytail", title: "Girl with Ponytail"),
+        Choice(asset: "AnimeGirlWithSkirt", title: "Girl with Skirt"),
+        Choice(asset: "AnimeGirlWithTwoPonyTails", title: "Girl with Two Ponytails"),
+    ]
+
+    static func canChoose(_ library: MediaLibrary) -> Bool {
+        library.name.localizedCaseInsensitiveContains("anime")
+    }
+
+    /// The picked icon, or nil when the library keeps its default.
+    static func chosen(for library: MediaLibrary, raw: String) -> String? {
+        guard canChoose(library), let asset = choices(from: raw)[library.id],
+              animeChoices.contains(where: { $0.asset == asset }) else { return nil }
+        return asset
+    }
+
+    static func asset(for library: MediaLibrary, raw: String) -> String {
+        chosen(for: library, raw: raw) ?? defaultAsset(for: library)
+    }
+
+    static func defaultAsset(for library: MediaLibrary) -> String {
+        if canChoose(library) { return anime }
+        if MediaLibrary.nameLooksLikeRecordings(library.name) { return recording }
+        return switch library.libraryKind {
+        case .youTube: youTube
+        case .movies: AppTab.movies.iconAsset ?? Self.library
+        case .shows: AppTab.shows.iconAsset ?? Self.library
+        case .liveTV: AppTab.liveTV.iconAsset ?? Self.library
+        default: Self.library
+        }
+    }
+
+    /// `libraryID=asset` pairs separated by commas.
+    static func choices(from raw: String) -> [String: String] {
+        var choices: [String: String] = [:]
+        for pair in raw.split(separator: ",") {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty {
+                choices[parts[0]] = parts[1]
+            }
+        }
+        return choices
+    }
+
+    static func raw(from choices: [String: String]) -> String {
+        choices.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+    }
+}
+
 extension UIUserInterfaceIdiom {
     /// iPad and the Mac share the large-screen layout; the Mac build runs as `.mac`
     /// ("Optimize Interface for Mac").
@@ -197,6 +282,13 @@ enum TabBarIconMetrics {
         cache[name] = image
         return image
     }
+
+    /// The selected-state asset. Icons drawn without a filled version, such as the anime ones, keep their outline.
+    @MainActor
+    static func selectedName(for base: String) -> String {
+        let filled = "\(base)Filled"
+        return UIImage(named: filled) == nil ? base : filled
+    }
 }
 
 struct TabBarIcon: View {
@@ -210,7 +302,7 @@ struct TabBarIcon: View {
             if let assetName {
                 // Template so the tab's tint (accent) applies to every icon, Search included,
                 // whether selected or not — not a flat white Search icon when unselected.
-                Image(isSelected ? "\(assetName)Filled" : assetName)
+                Image(isSelected ? TabBarIconMetrics.selectedName(for: assetName) : assetName)
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()

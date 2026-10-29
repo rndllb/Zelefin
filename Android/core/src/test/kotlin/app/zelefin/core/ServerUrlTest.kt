@@ -147,6 +147,27 @@ class ServerUrlTest {
         assertEquals("http://192.168.1.100:8096", ServerUrl.normalizeLanAddress("192.168.1.100:8096"))
         assertEquals("https://jellyfin.example.com", ServerUrl.normalizeLanAddress("jellyfin.example.com"))
     }
+
+    @Test
+    fun candidatesKeepTypedSchemeAndOtherwiseTryBoth() {
+        assertEquals(listOf("http://zimaos.local:3579"), ServerUrl.candidates("Http://zimaos.local:3579/"))
+        assertEquals(listOf("https://requests.example.com/ombi"), ServerUrl.candidates("HTTPS:/requests.example.com/ombi/"))
+        assertEquals(listOf("http://100.101.102.103:8096"), ServerUrl.candidates("Http://100.101.102.103:8096"))
+        assertEquals(
+            listOf("https://192.168.1.20:5055", "http://192.168.1.20:5055"),
+            ServerUrl.candidates("192.168.1.20:5055"),
+        )
+        assertEquals(listOf("https://zimaos.local:3579", "http://zimaos.local:3579"), ServerUrl.candidates("zimaos.local:3579"))
+        assertEquals(listOf("https://jellyfin:8096", "http://jellyfin:8096"), ServerUrl.candidates("jellyfin:8096"))
+        assertEquals(listOf("https://100.101.102.103:5055", "http://100.101.102.103:5055"), ServerUrl.candidates("100.101.102.103:5055"))
+        assertEquals(
+            listOf("https://seerr.tail1234.ts.net", "http://seerr.tail1234.ts.net"),
+            ServerUrl.candidates("seerr.tail1234.ts.net"),
+        )
+        assertEquals(listOf("https://example.com/seerr"), ServerUrl.candidates("example.com/seerr"))
+        assertEquals(listOf("https://100.200.1.1"), ServerUrl.candidates("100.200.1.1"))
+        assertTrue(ServerUrl.candidates("   ").isEmpty())
+    }
 }
 
 class ServerReachabilityTest {

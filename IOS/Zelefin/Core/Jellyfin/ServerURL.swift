@@ -49,6 +49,34 @@ enum ServerURL {
         return try normalize(trimmed)
     }
 
+    /// Addresses to try for what the user typed, in order. A typed scheme is the only candidate.
+    /// Without one, HTTPS comes first, as `normalize` has always chosen. LAN and Tailscale hosts
+    /// then fall back to plain HTTP, which Jellyfin, Seerr, and Ombi serve unless a proxy fronts
+    /// them. Public hosts never do: a blocked HTTPS would send the password in the clear.
+    static func candidates(_ raw: String) -> [URL] {
+        let trimmed = repairScheme(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !trimmed.isEmpty else { return [] }
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return (try? normalize(trimmed)).map { [$0] } ?? []
+        }
+        guard let secure = try? normalize(trimmed), let host = secure.host else { return [] }
+        guard allowsPlainHTTPFallback(host), let plain = try? normalize("http://\(trimmed)") else { return [secure] }
+        return [secure, plain]
+    }
+
+    /// LAN hosts, and Tailscale hosts, whose traffic the tailnet already encrypts.
+    static func allowsPlainHTTPFallback(_ host: String) -> Bool {
+        let value = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        return isInternalHost(value) || isTailscaleIPv4(value) || value.hasSuffix(".ts.net")
+    }
+
+    /// Tailscale hands out addresses from the carrier-grade NAT range.
+    static func isTailscaleIPv4(_ host: String) -> Bool {
+        let parts = host.split(separator: ".").compactMap { UInt8($0) }
+        guard parts.count == 4, host.split(separator: ".").count == 4 else { return false }
+        return parts[0] == 100 && (64 ... 127).contains(parts[1])
+    }
+
     /// Keyboards capitalize the first letter, and `https:/` or `https//` are easy slips. Left alone,
     /// `Https://host` gained a second `https://` and the device looked up a server named "Https".
     private static func repairScheme(_ value: String) -> String {

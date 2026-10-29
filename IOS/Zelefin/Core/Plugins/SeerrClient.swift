@@ -68,14 +68,16 @@ struct SeerrTitle: Identifiable, Hashable, Sendable {
     let tmdbID: Int
     let kind: Kind
     let name: String
-    let year: Int?
-    let overview: String?
-    let posterURL: URL?
+    var year: Int?
+    var overview: String?
+    var posterURL: URL?
     var availability: Availability
     var requestedByName: String? = nil
     var requestID: Int? = nil
     /// Seerr's own request status, separate from whether the title is on the server.
     var review: Review? = nil
+    /// Ombi's show request that holds `requestID`, which is one batch of its seasons.
+    var parentRequestID: Int? = nil
 
     enum Review: String, Hashable, Sendable {
         case pendingApproval
@@ -461,6 +463,8 @@ struct SeerrMediaInfo: Decodable, Sendable {
     var tmdbId: Int?
     var mediaType: String?
     var seasons: [SeerrMediaSeason]?
+    /// The title's requests, on a movie or show's own page.
+    var requests: [SeerrMediaRequest]?
 
     init(status: Int?, seasons: [SeerrMediaSeason]? = nil, tmdbId: Int? = nil, mediaType: String? = nil) {
         self.status = status
@@ -468,6 +472,13 @@ struct SeerrMediaInfo: Decodable, Sendable {
         self.tmdbId = tmdbId
         self.mediaType = mediaType
     }
+}
+
+struct SeerrMediaRequest: Decodable, Sendable {
+    var id: Int
+    var status: Int?
+    var is4k: Bool?
+    var requestedBy: SeerrUser?
 }
 
 struct SeerrMediaSeason: Decodable, Hashable, Sendable {
@@ -511,6 +522,10 @@ struct SeerrRequestDraft: Equatable, Sendable {
     var profileID: Int?
     var rootFolder: String?
     var languageProfileID: Int?
+    /// Ombi names a folder by its Radarr or Sonarr ID rather than its path.
+    var rootFolderID: Int? = nil
+    /// Ombi's show request, whose quality and folder an admin changes before approving.
+    var parentRequestID: Int? = nil
 
     var jsonObject: [String: Any] {
         var body: [String: Any] = [
@@ -660,6 +675,14 @@ struct SeerrTvDetails: Decodable, Sendable {
     var seasons: [SeerrSeason]
     var mediaInfo: SeerrMediaInfo?
     var relatedVideos: [SeerrRelatedVideo]?
+
+    init(id: Int, name: String?, seasons: [SeerrSeason], mediaInfo: SeerrMediaInfo?, relatedVideos: [SeerrRelatedVideo]? = nil) {
+        self.id = id
+        self.name = name
+        self.seasons = seasons
+        self.mediaInfo = mediaInfo
+        self.relatedVideos = relatedVideos
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)

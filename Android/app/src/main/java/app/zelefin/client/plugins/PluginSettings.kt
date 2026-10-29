@@ -2,7 +2,9 @@ package app.zelefin.client.plugins
 
 import android.content.Context
 import android.content.SharedPreferences
+import app.zelefin.core.ServerUrl
 import app.zelefin.core.ZelefinException
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 
 class PluginSettings(context: Context) {
@@ -30,6 +32,26 @@ class PluginSettings(context: Context) {
             }.apply()
         }
 
+    /** Seerr or Ombi. Both use the address, username, and password above. */
+    var requestService: RequestService
+        get() = RequestService.from(prefs.getString(REQUEST_SERVICE_KEY, null))
+        set(value) = prefs.edit().putString(REQUEST_SERVICE_KEY, value.raw).apply()
+
+    var ombiSession: OmbiSession?
+        get() = OmbiSession.fromJson(secrets.getString(OMBI_SESSION_KEY, null))?.takeIf { it.token.isNotEmpty() }
+        set(value) {
+            secrets.edit().apply {
+                if (value != null) putString(OMBI_SESSION_KEY, value.toJson()) else remove(OMBI_SESSION_KEY)
+            }.apply()
+        }
+
+    /** The signed-in name on the chosen request server. */
+    val requestDisplayName: String?
+        get() = when (requestService) {
+            RequestService.Seerr -> seerrSession?.displayName
+            RequestService.Ombi -> ombiSession?.displayName
+        }
+
     var seerrCredentials: SeerrCredentials?
         get() = SeerrCredentials.fromJson(secrets.getString(SEERR_CREDENTIALS_KEY, null))
         set(value) {
@@ -47,7 +69,7 @@ class PluginSettings(context: Context) {
         }
 
     val isSeerrConfigured: Boolean
-        get() = normalizedSeerrUrl != null && seerrSession != null
+        get() = normalizedSeerrUrl != null && requestDisplayName != null
 
     fun rememberSignIn(session: SeerrSession, username: String, password: String, ownerAccountId: String?) {
         seerrSession = session
@@ -55,18 +77,56 @@ class PluginSettings(context: Context) {
         seerrOwnerAccountId = ownerAccountId
     }
 
+    /** Signs in to the chosen request server and keeps the password for signing in again later. Returns the name it signed in as. */
+    suspend fun signIn(url: String, username: String, password: String, ownerAccountId: String?): String {
+        val candidates = ServerUrl.candidates(url)
+        if (candidates.isEmpty()) throw ZelefinException.server("Enter your ${requestService.title} address.")
+        for ((index, candidate) in candidates.withIndex()) {
+            try {
+                val name = signInAt(candidate, username, password, ownerAccountId)
+                seerrUrl = candidate
+                return name
+            } catch (error: IOException) {
+                if (index == candidates.lastIndex) throw error
+            }
+        }
+        throw ZelefinException.server("Enter your ${requestService.title} address.")
+    }
+
+    private suspend fun signInAt(normalized: String, username: String, password: String, ownerAccountId: String?): String =
+        when (requestService) {
+            RequestService.Seerr -> {
+                val signedIn = SeerrClient.signIn(normalized, username, password)
+                rememberSignIn(signedIn, username, password, ownerAccountId)
+                val user = runCatching { SeerrClient(normalized, signedIn).currentUser() }.getOrNull()
+                user?.displayLabel?.also { seerrSession = signedIn.copy(displayName = it) } ?: signedIn.displayName
+            }
+            RequestService.Ombi -> {
+                val signedIn = OmbiClient.signIn(normalized, username, password)
+                seerrSession = null
+                ombiSession = signedIn
+                seerrCredentials = SeerrCredentials(username, password)
+                seerrOwnerAccountId = ownerAccountId
+                signedIn.displayName
+            }
+        }
+
     fun clearSeerrSession() {
         seerrSession = null
+        ombiSession = null
         seerrCredentials = null
         seerrOwnerAccountId = null
     }
 
-    /** Confirms the stored cookie, or signs in again with the saved password. Network failures keep the session. */
+    /** Confirms the stored session, or signs in again with the saved password. Network failures keep the session. */
     suspend fun refreshUser(): SeerrUser? {
-        val client = seerrClient() ?: return null
+        val client = requestClient() ?: return null
         return try {
             client.currentUser().also { user ->
-                seerrSession = seerrSession?.copy(displayName = user.displayLabel)
+                when (requestService) {
+                    RequestService.Seerr -> seerrSession = seerrSession?.copy(displayName = user.displayLabel)
+                    RequestService.Ombi -> ombiSession = ombiSession?.copy(displayName = user.displayLabel)
+                }
             }
         } catch (cancel: CancellationException) {
             throw cancel
@@ -83,6 +143,18 @@ class PluginSettings(context: Context) {
             clearSeerrSession()
             return null
         }
+        if (requestService == RequestService.Ombi) {
+            return try {
+                val signedIn = OmbiClient.signIn(url, credentials.username, credentials.password)
+                ombiSession = signedIn
+                runCatching { OmbiClient(url, signedIn).currentUser() }.getOrNull()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Throwable) {
+                if (error.isSeerrUnauthorized) clearSeerrSession()
+                null
+            }
+        }
         return try {
             val signedIn = SeerrClient.signIn(url, credentials.username, credentials.password)
             seerrSession = signedIn
@@ -98,9 +170,19 @@ class PluginSettings(context: Context) {
     }
 
     fun seerrClient(): SeerrClient? {
+        if (requestService != RequestService.Seerr) return null
         val url = normalizedSeerrUrl ?: return null
         val session = seerrSession ?: return null
         return SeerrClient(url, session)
+    }
+
+    /** The chosen request server's client, or null when signed out. */
+    fun requestClient(): RequestCatalog? {
+        val url = normalizedSeerrUrl ?: return null
+        return when (requestService) {
+            RequestService.Seerr -> seerrSession?.let { SeerrRequestCatalog(SeerrClient(url, it)) }
+            RequestService.Ombi -> ombiSession?.let { OmbiClient(url, it) }
+        }
     }
 
     var autoSkipIntro: Boolean
@@ -136,14 +218,12 @@ class PluginSettings(context: Context) {
         private const val SEERR_SESSION_KEY = "seerr-session"
         private const val SEERR_CREDENTIALS_KEY = "seerr-credentials"
         private const val SEERR_OWNER_KEY = "zelefin.seerr.owner"
+        private const val REQUEST_SERVICE_KEY = "zelefin.requests.service"
+        private const val OMBI_SESSION_KEY = "ombi-session"
         private const val LEGACY_API_KEY = "seerr-api-key"
 
-        fun normalizeSeerrUrl(raw: String): String? {
-            val trimmed = raw.trim()
-            if (trimmed.isEmpty()) return null
-            val bare = trimmed.trimEnd('/')
-            return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) bare else "https://$bare"
-        }
+        /** The address cleaned the way the sign-in screen cleans a server address. */
+        fun normalizeSeerrUrl(raw: String): String? = ServerUrl.candidates(raw).firstOrNull()
 
         /** Keep Seerr across relaunch and app updates. Drop it only when a different Jellyfin user is applied. */
         fun shouldClearSession(switchingFrom: String?, to: String, ownerAccountId: String? = null): Boolean {

@@ -4,7 +4,7 @@ import JellyfinAPI
 /// Catalog, artwork, and playback that Home, Library, Detail, Search, and Player share.
 /// Live TV, remote sessions, and server administration have their own protocols below;
 /// SyncPlay and backups stay on `JellyfinLibraryClient`.
-struct ServerCatalogCounts: Equatable, Sendable {
+struct ServerCatalogCounts: Equatable, Sendable, Codable {
     var movies: Int
     var shows: Int
     var episodes: Int
@@ -26,7 +26,7 @@ struct ServerCatalogCounts: Equatable, Sendable {
     }
 }
 
-struct LibraryRoomCounts: Equatable, Sendable {
+struct LibraryRoomCounts: Equatable, Sendable, Codable {
     var movies: Int
     var shows: Int
     var episodes: Int

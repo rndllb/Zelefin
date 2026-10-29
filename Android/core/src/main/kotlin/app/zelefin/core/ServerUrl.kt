@@ -27,6 +27,36 @@ object ServerUrl {
         return if (isInternalHost(host)) normalize("http://$trimmed") else normalize(trimmed)
     }
 
+    /**
+     * Addresses to try for what the user typed, in order. A typed scheme is the only candidate.
+     * Without one, HTTPS comes first, as [normalize] has always chosen. LAN and Tailscale hosts
+     * then fall back to plain HTTP, which Jellyfin, Seerr, and Ombi serve unless a proxy fronts
+     * them. Public hosts never do: a blocked HTTPS would send the password in the clear.
+     */
+    fun candidates(raw: String): List<String> {
+        val trimmed = repairScheme(raw.trim())
+        if (trimmed.isEmpty()) return emptyList()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return listOfNotNull(runCatching { normalize(trimmed) }.getOrNull())
+        }
+        val secure = runCatching { normalize(trimmed) }.getOrNull() ?: return emptyList()
+        val host = parse(secure)?.host ?: return emptyList()
+        if (!allowsPlainHttpFallback(host)) return listOf(secure)
+        return listOfNotNull(secure, runCatching { normalize("http://$trimmed") }.getOrNull())
+    }
+
+    /** LAN hosts, and Tailscale hosts, whose traffic the tailnet already encrypts. */
+    fun allowsPlainHttpFallback(host: String): Boolean {
+        val value = host.trim('[', ']').lowercase(Locale.US)
+        return isInternalHost(value) || isTailscaleIPv4(value) || value.endsWith(".ts.net")
+    }
+
+    /** Tailscale hands out addresses from the carrier-grade NAT range. */
+    fun isTailscaleIPv4(host: String): Boolean {
+        val ip = ipv4(host) ?: return false
+        return (ip shr 24) == 100L && ((ip shr 16) and 0xFF) in 64L..127L
+    }
+
     fun resolve(base: String, path: String, token: String? = null): String? {
         val resolved = if (isAbsoluteHttp(path)) {
             rewriteIfNeeded(path, base)

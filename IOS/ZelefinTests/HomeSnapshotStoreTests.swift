@@ -48,6 +48,34 @@ final class HomeSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(loaded?.home.sections.map(\.id), ["continue"])
         XCTAssertEqual(loaded?.home.featured.first?.name, "Dune")
         XCTAssertEqual(loaded?.libraries.map(\.name), ["Movies"])
+        XCTAssertNil(loaded?.libraryPage)
+    }
+
+    func testRoundTripLibraryPageCards() throws {
+        let server = try XCTUnwrap(URL(string: "https://jellyfin.example.com"))
+        let movies = MediaLibrary(id: "movies", name: "Movies", kind: .movie, libraryKind: .movies)
+        var page = LibraryPageCache()
+        page.catalog = [movies]
+        page.covers = ["movies": [sampleMovie()]]
+        page.roomCounts = ["movies": LibraryRoomCounts(movies: 412, shows: 0, episodes: 0)]
+        page.catalogCounts = ServerCatalogCounts(movies: 412, shows: 80, episodes: 3_100)
+        page.detailedLibraryIDs = ["movies"]
+        page.isLoaded = true
+        let snapshot = HomeSnapshot(
+            version: HomeSnapshot.currentVersion,
+            userID: "user-1",
+            serverHost: HomeSnapshot.host(from: server),
+            savedAt: Date(timeIntervalSince1970: 1_720_000_000),
+            home: HomeLayout(featured: [], sections: [
+                HomeSection(id: "continue", title: "Continue Watching", style: .landscape, items: [sampleMovie()])
+            ]),
+            libraries: [movies],
+            libraryPage: page
+        )
+
+        try store.save(snapshot)
+
+        XCTAssertEqual(try store.load(userID: "user-1", serverURL: server)?.libraryPage, page)
     }
 
     func testUnknownUserReturnsNil() throws {

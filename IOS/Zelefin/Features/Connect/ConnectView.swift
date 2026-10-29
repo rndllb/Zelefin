@@ -551,7 +551,7 @@ struct ConnectView: View {
         defer { isCheckingConnection = false }
 
         do {
-            let url = try ServerURL.normalize(address)
+            let url = try await ServerProbe().resolvedURL(from: address)
             if await SiloAccountClient.isSiloAddress(url) {
                 testMessage = "Silo is reachable. Sign in with your Silo account."
                 testDidSucceed = true
@@ -615,7 +615,7 @@ struct ConnectView: View {
         }
         try? await Task.sleep(for: .milliseconds(450))
         guard !Task.isCancelled else { return }
-        guard let url = try? ServerURL.normalize(trimmed) else {
+        guard let url = try? await ServerProbe().resolvedURL(from: trimmed), !Task.isCancelled else {
             loginDisclaimer = nil
             splashscreenURL = nil
             return

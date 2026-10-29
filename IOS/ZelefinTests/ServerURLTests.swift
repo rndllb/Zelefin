@@ -242,6 +242,21 @@ final class ProfileImageTests: XCTestCase {
             "https://jellyfin.example.com"
         )
     }
+
+    func testCandidatesKeepTypedSchemeAndOtherwiseTryBoth() {
+        func strings(_ raw: String) -> [String] { ServerURL.candidates(raw).map(\.absoluteString) }
+        XCTAssertEqual(strings("Http://zimaos.local:3579/"), ["http://zimaos.local:3579"])
+        XCTAssertEqual(strings("HTTPS:/requests.example.com/ombi/"), ["https://requests.example.com/ombi"])
+        XCTAssertEqual(strings("Http://100.101.102.103:8096"), ["http://100.101.102.103:8096"])
+        XCTAssertEqual(strings("192.168.1.20:5055"), ["https://192.168.1.20:5055", "http://192.168.1.20:5055"])
+        XCTAssertEqual(strings("zimaos.local:3579"), ["https://zimaos.local:3579", "http://zimaos.local:3579"])
+        XCTAssertEqual(strings("jellyfin:8096"), ["https://jellyfin:8096", "http://jellyfin:8096"])
+        XCTAssertEqual(strings("100.101.102.103:5055"), ["https://100.101.102.103:5055", "http://100.101.102.103:5055"])
+        XCTAssertEqual(strings("seerr.tail1234.ts.net"), ["https://seerr.tail1234.ts.net", "http://seerr.tail1234.ts.net"])
+        XCTAssertEqual(strings("example.com/seerr"), ["https://example.com/seerr"])
+        XCTAssertEqual(strings("100.200.1.1"), ["https://100.200.1.1"])
+        XCTAssertTrue(strings("   ").isEmpty)
+    }
 }
 
 private extension URL {

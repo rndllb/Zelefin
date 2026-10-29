@@ -218,7 +218,7 @@ fun ZelefinGlassDock(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (entry != null) {
-                            DockTabIcon(entry.tab, selected = true, description = entry.title, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
+                            DockTabIcon(entry.tab, selected = true, description = entry.title, tint = ZelefinCyan, modifier = Modifier.size(22.dp), room = entry.room)
                         }
                     }
                 }
@@ -394,7 +394,7 @@ private fun DockTabItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
     ) {
-        DockTabIcon(entry.tab, selected = highlighted, description = null, tint = tint, modifier = Modifier.size(if (showsNames) 22.dp else 24.dp))
+        DockTabIcon(entry.tab, selected = highlighted, description = null, tint = tint, modifier = Modifier.size(if (showsNames) 22.dp else 24.dp), room = entry.room)
         if (showsNames) {
             Spacer(Modifier.height(1.dp))
             Text(

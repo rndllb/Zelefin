@@ -466,6 +466,11 @@ enum LibraryPageBlock: String, CaseIterable, Identifiable, Hashable, Sendable {
         }
     }
 
+    /// The Mac sidebar's name for the row.
+    var sidebarTitle: String {
+        self == .downloaded ? "Downloads" : title
+    }
+
     var systemImage: String {
         switch self {
         case .favorites: "heart.fill"
@@ -481,6 +486,15 @@ enum LibraryLayoutPreferences {
     static let orderKey = "zelefin.library-order"
     static let hiddenKey = "zelefin.library-hidden"
     static let pageHiddenKey = "zelefin.library-page-hidden"
+
+    /// The libraries the Mac sidebar can list, before the user's order and hidden list.
+    static func sidebarLibraries(_ libraries: [MediaLibrary], hidesLiveTV: Bool) -> [MediaLibrary] {
+        var source = HomeLayoutPreferences.libraryTabLibraries(libraries)
+        if hidesLiveTV {
+            source.removeAll { $0.libraryKind == .liveTV }
+        }
+        return source
+    }
 
     static func arranged(_ libraries: [MediaLibrary], orderRaw: String) -> [MediaLibrary] {
         var remaining = Dictionary(uniqueKeysWithValues: libraries.map { ($0.id, $0) })

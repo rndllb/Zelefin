@@ -7,7 +7,7 @@ struct AccentColorPickerGrid: View {
     var swatchSize: CGFloat = 44
 
     private var customColor: Color {
-        AccentPreferences.color(fromHex: customAccentHex) ?? AccentPreferences.cyan.color
+        AccentPreferences.color(fromHex: customAccentHex) ?? AccentPreferences.periwinkle.color
     }
 
     var body: some View {
@@ -108,7 +108,7 @@ struct CustomAccentColorControls: View {
     private var pickerColor: Binding<Color> {
         Binding(
             get: {
-                AccentPreferences.color(fromHex: customAccentHex) ?? AccentPreferences.cyan.color
+                AccentPreferences.color(fromHex: customAccentHex) ?? AccentPreferences.periwinkle.color
             },
             set: { newColor in
                 customAccentHex = AccentPreferences.hex(from: newColor)

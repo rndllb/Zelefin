@@ -258,7 +258,7 @@ fun SearchTabPage(
             if (sheet.displayed != null) ZelefinSheetScrim(sheet.progress)
         }
         sheet.displayed?.let { title ->
-            ZelefinSheetSurface(sheet.progress, canvas = ZelefinBlack) {
+            ZelefinSheetSurface(sheet.progress, canvas = MaterialTheme.colorScheme.surface) {
                 SeerrRequestSheet(
                     title = title,
                     plugins = plugins,
@@ -829,7 +829,7 @@ private fun DiscoverUnavailable(topInset: Dp) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Sign In to Seerr",
+            "Sign In to Seerr or Ombi",
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
             fontSize = 22.sp,
@@ -837,7 +837,7 @@ private fun DiscoverUnavailable(topInset: Dp) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Add Seerr in Settings to request movies and shows.",
+            "Add Seerr or Ombi in Settings → Plugins to request movies and shows.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 16.sp,
             textAlign = TextAlign.Center,

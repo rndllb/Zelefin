@@ -59,6 +59,38 @@ enum MacBridge {
         instance.perform(NSSelectorFromString("start"))
         bridge = instance
     }
+
+    @MainActor private static var titlebarControls: [UUID: CGRect] = [:]
+
+    /// Records a control drawn in the window's title bar strip, in window points, or forgets it when
+    /// `frame` is nil. The bridge sends clicks inside these to the app rather than to the title bar.
+    @MainActor
+    static func setTitlebarControl(_ id: UUID, frame: CGRect?) {
+        titlebarControls[id] = frame
+        bridge?.setValue(titlebarControls.values.map { NSValue(cgRect: $0) }, forKey: "titlebarControls")
+    }
+}
+
+/// Lets clicks reach a control drawn level with the close, minimize, and zoom buttons, where the
+/// title bar otherwise takes them for dragging the window.
+private struct MacTitlebarControl: ViewModifier {
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                MacBridge.setTitlebarControl(id, frame: frame)
+            }
+            .onDisappear {
+                MacBridge.setTitlebarControl(id, frame: nil)
+            }
+    }
+}
+
+extension View {
+    func macTitlebarControl() -> some View {
+        modifier(MacTitlebarControl())
+    }
 }
 
 /// Apple Music's window on the Mac: no title bar, so the sidebar runs to the top and holds the

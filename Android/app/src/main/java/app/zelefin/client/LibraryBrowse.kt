@@ -51,8 +51,11 @@ val LibraryRoom.libraryCardRank: Int
         else -> 3
     }
 
+/** Live TV recordings saved to a library of their own, named like "Recordings". */
+val LibraryRoom.looksLikeRecordings: Boolean get() = name.contains("recording", ignoreCase = true)
+
 val LibraryRoom.isHiddenOnLibraryByDefault: Boolean
-    get() = kind.isHiddenOnLibraryByDefault || name.contains("recording", ignoreCase = true)
+    get() = kind.isHiddenOnLibraryByDefault || looksLikeRecordings
 
 val LibraryRoom.isLastOnLibrary: Boolean get() = isHiddenOnLibraryByDefault
 

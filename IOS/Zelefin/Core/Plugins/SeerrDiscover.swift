@@ -268,6 +268,29 @@ extension SeerrClient {
         }
     }
 
+    /// The title as it stands now: whether it's on the server, and its open request, if any.
+    func requestStatus(for title: SeerrTitle) async throws -> SeerrTitle {
+        let path = title.kind == .movie ? "api/v1/movie/\(title.tmdbID)" : "api/v1/tv/\(title.tmdbID)"
+        let payload: SeerrSearchResult = try await fetch(path, query: [URLQueryItem(name: "language", value: "en")])
+        var current = title
+        current.availability = SeerrTitle.Availability(status: payload.mediaInfo?.status)
+        current.review = nil
+        current.requestID = nil
+        current.requestedByName = nil
+        guard current.availability != .available else { return current }
+        let requests = (payload.mediaInfo?.requests ?? []).filter { $0.status != 3 }
+        // A request waiting for approval comes first, then the newest approved one.
+        if let open = requests.last(where: { $0.status == 1 }) ?? requests.last {
+            current.requestID = open.id
+            current.review = SeerrTitle.Review(status: open.status)
+            current.requestedByName = open.requestedBy?.requestLabel
+            if current.review == .pendingApproval, current.availability == .missing || current.availability == .unknown {
+                current.availability = .pending
+            }
+        }
+        return current
+    }
+
     func titleDetails(kind: SeerrTitle.Kind, tmdbID: Int) async throws -> SeerrTitle {
         let path = kind == .movie ? "api/v1/movie/\(tmdbID)" : "api/v1/tv/\(tmdbID)"
         let payload: SeerrSearchResult = try await fetch(path, query: [URLQueryItem(name: "language", value: "en")])

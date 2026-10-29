@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import app.zelefin.client.AppTab
+import app.zelefin.client.LibraryRoom
 import app.zelefin.client.R
 
 /** Space scrolling content keeps clear of the floating dock, its mini player, and the navigation bar. */
@@ -498,10 +499,19 @@ fun ZelefinGlassDiscs(hazeState: ZelefinHazeState, host: ZelefinGlassHost, page:
 @Composable
 fun Modifier.zelefinHazeSource(state: ZelefinHazeState): Modifier = this
 
-/** Dock and Interface settings share these glyphs (iOS `TabBarIcon`). */
+/** Dock and Interface settings share these glyphs (iOS `TabBarIcon`). A pinned library passes its `room` for its own icon. */
 @Composable
-internal fun DockTabIcon(tab: AppTab, selected: Boolean, description: String?, tint: Color, modifier: Modifier = Modifier) {
-    if (tab == AppTab.Favorites) {
+internal fun DockTabIcon(
+    tab: AppTab,
+    selected: Boolean,
+    description: String?,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    room: LibraryRoom? = null,
+) {
+    if (tab == AppTab.Room && room != null) {
+        Icon(painter = painterResource(LibraryIcons.icon(room, selected)), contentDescription = description, tint = tint, modifier = modifier)
+    } else if (tab == AppTab.Favorites) {
         Icon(
             if (selected) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
             contentDescription = description,

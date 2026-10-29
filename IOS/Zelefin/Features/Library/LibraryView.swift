@@ -138,7 +138,7 @@ struct LibraryView: View {
             if page.catalog.isEmpty, !session.libraries.isEmpty {
                 applyCatalog(session.libraries)
             }
-            await load()
+            refreshInBackground()
         }
         .onChange(of: session.libraries) { _, next in
             guard !next.isEmpty, next != page.catalog else { return }
@@ -278,6 +278,17 @@ struct LibraryView: View {
         seedCovers(for: libraries)
     }
 
+    /// The cards on screen stay up while this runs. It isn't tied to the tab: on a slow connection,
+    /// leaving the tab cancelled the fetch, and every visit started it over.
+    private func refreshInBackground() {
+        guard !session.isRefreshingLibraryPage else { return }
+        session.isRefreshingLibraryPage = true
+        Task {
+            await load()
+            session.isRefreshingLibraryPage = false
+        }
+    }
+
     /// Full fetch: cold start, or pull to refresh.
     private func load() async {
         guard let client = session.library else {
@@ -286,7 +297,13 @@ struct LibraryView: View {
         }
         async let counts = client.serverCatalogCounts()
         do {
-            applyCatalog(try await client.libraries())
+            let fetched = try await client.libraries()
+            // A refresh that outlived an account switch belongs to the old account.
+            guard session.library === client else {
+                _ = await counts
+                return
+            }
+            applyCatalog(fetched)
             errorMessage = nil
         } catch is CancellationError {
             _ = await counts
@@ -294,10 +311,13 @@ struct LibraryView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
-        session.libraryPage.catalogCounts = await counts
+        let fetchedCounts = await counts
+        guard session.library === client else { return }
+        session.libraryPage.catalogCounts = fetchedCounts
         await loadDetails(for: libraries)
-        if errorMessage == nil {
+        if errorMessage == nil, session.library === client {
             session.libraryPage.isLoaded = true
+            session.saveLibraryPage()
         }
     }
 
@@ -325,7 +345,7 @@ struct LibraryView: View {
                     (library.id, await client.roomCounts(for: library))
                 }
             }
-            for await (id, counts) in group {
+            for await (id, counts) in group where session.library === client {
                 session.libraryPage.roomCounts[id] = counts
             }
         }
@@ -360,7 +380,7 @@ struct LibraryView: View {
                     (library.id, await client.previewItems(in: library, limit: 8))
                 }
             }
-            for await (id, items) in group where !items.isEmpty {
+            for await (id, items) in group where !items.isEmpty && session.library === client {
                 session.libraryPage.covers[id] = items
             }
         }
@@ -849,10 +869,7 @@ struct LibraryGenresView: View {
             ZStack {
                 ScrollView {
                     if isLoading {
-                        ProgressView()
-                            .tint(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 80)
+                        PageLoadingIndicator()
                     } else if genres.isEmpty {
                         ContentUnavailableView(
                             "No Genres",
@@ -922,9 +939,22 @@ struct LibraryItemsView: View {
     @State private var showFilters = false
     @State private var showSort = false
     @State private var indexProgress: CatalogIndexProgress?
+    @State private var searchTerm = ""
+    @FocusState private var searchFocused: Bool
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
+    }
+
+    private var trimmedSearch: String {
+        searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The library's titles, narrowed to the search. The whole library is already loaded, so this
+    /// never reaches outside it.
+    private var shownItems: [MediaItem] {
+        guard !trimmedSearch.isEmpty else { return items }
+        return items.filter { $0.name.localizedStandardContains(trimmedSearch) }
     }
 
     var body: some View {
@@ -940,7 +970,14 @@ struct LibraryItemsView: View {
             ZStack {
                 ScrollView {
                     if isLoading && items.isEmpty {
-                        ProgressView().tint(.white).padding(.top, 80)
+                        PageLoadingIndicator()
+                    } else if !items.isEmpty, shownItems.isEmpty {
+                        ContentUnavailableView(
+                            "No Results",
+                            systemImage: "magnifyingglass",
+                            description: Text("Nothing in \(library.name) matches “\(trimmedSearch)”.")
+                        )
+                        .padding(.top, 40)
                     } else if items.isEmpty {
                         ContentUnavailableView(
                             query.isDefault ? "No Titles Yet" : "No Matches",
@@ -952,7 +989,7 @@ struct LibraryItemsView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             CatalogIndexBar(progress: indexProgress)
                             LazyVGrid(columns: columns, spacing: 20) {
-                                ForEach(items) { item in
+                                ForEach(shownItems) { item in
                                     NavigationLink {
                                         LibraryItemRoute(item: item)
                                     } label: {
@@ -970,8 +1007,8 @@ struct LibraryItemsView: View {
                         }
                     }
                 }
-                if !items.isEmpty {
-                    CatalogAlphabetRail(items: items) { id in
+                if !shownItems.isEmpty {
+                    CatalogAlphabetRail(items: shownItems) { id in
                         var transaction = Transaction()
                         transaction.disablesAnimations = true
                         withTransaction(transaction) {
@@ -984,13 +1021,19 @@ struct LibraryItemsView: View {
         .background(Color.black.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
-        .catalogPushedChrome(
-            title: library.name,
-            filterCount: query.activeFilterCount,
-            sortTitle: query.sort.title,
-            showFilters: $showFilters,
-            showSort: $showSort
-        )
+        .catalogPushedChrome(title: library.name) {
+            HStack(spacing: 8) {
+                CatalogFilterSortButtons(
+                    filterCount: query.activeFilterCount,
+                    sortTitle: query.sort.title,
+                    onSort: { showSort = true },
+                    onFilter: { showFilters = true }
+                )
+                #if targetEnvironment(macCatalyst)
+                MacSearchPill(term: $searchTerm, prompt: "Search \(library.name)", focused: $searchFocused, width: 240)
+                #endif
+            }
+        }
         .catalogFilterSheets(
             query: $query,
             options: options,

@@ -37,8 +37,7 @@ import app.zelefin.client.plugins.PluginSettings
 import app.zelefin.client.plugins.RemoteSubtitle
 import app.zelefin.client.plugins.RemoteSubtitleOffer
 import app.zelefin.client.plugins.RequestCatalog
-import app.zelefin.client.plugins.SeerrClient
-import app.zelefin.client.plugins.SeerrRequestCatalog
+import app.zelefin.client.plugins.RequestService
 import app.zelefin.client.plugins.SeerrRequestDraft
 import app.zelefin.client.plugins.SeerrTitle
 import app.zelefin.client.plugins.SeerrUser
@@ -69,6 +68,7 @@ data class PluginsUiState(
     val isAdmin: Boolean = false,
     val canManageSubtitles: Boolean = false,
     val seerrUrl: String = "",
+    val requestService: RequestService = RequestService.Seerr,
     val seerrName: String? = null,
     val seerrUser: SeerrUser? = null,
     val seerrBusy: Boolean = false,
@@ -169,7 +169,8 @@ class PluginsController(
     private val _state = MutableStateFlow(
         PluginsUiState(
             seerrUrl = settings.seerrUrl,
-            seerrName = settings.seerrSession?.displayName,
+            requestService = settings.requestService,
+            seerrName = settings.requestDisplayName,
             autoSkipRecap = settings.autoSkipRecap,
             autoSkipIntro = settings.autoSkipIntro,
             autoSkipCredits = settings.autoSkipCredits,
@@ -695,14 +696,14 @@ class PluginsController(
     }
 
     private suspend fun refreshSeerrUser() {
-        if (settings.seerrClient() != null) {
+        if (settings.requestClient() != null) {
             val user = settings.refreshUser()
-            val session = settings.seerrSession
+            val name = settings.requestDisplayName
             _state.update {
                 it.copy(
                     seerrUser = user,
-                    seerrName = user?.displayLabel ?: session?.displayName,
-                    seerrMessage = if (session == null) "Seerr session expired. Sign in again." else it.seerrMessage,
+                    seerrName = user?.displayLabel ?: name,
+                    seerrMessage = if (name == null) "${settings.requestService.title} session expired. Sign in again." else it.seerrMessage,
                 )
             }
         }
@@ -710,29 +711,32 @@ class PluginsController(
 
     fun catalog(): RequestCatalog? {
         if (session() == null || !_state.value.discoverAvailable) return null
-        return settings.seerrClient()?.let(::SeerrRequestCatalog)
+        return settings.requestClient()
     }
 
-    fun seerr(): SeerrClient? = settings.seerrClient()
+    /** The request sheet's client: Seerr or Ombi, whichever is signed in. */
+    fun requests(): RequestCatalog? = settings.requestClient()
+
+    /** Seerr or Ombi. Picked while signed out, then used for sign-in. */
+    fun setRequestService(service: RequestService) {
+        settings.requestService = service
+        _state.update { it.copy(requestService = service, seerrMessage = null) }
+    }
 
     fun signInSeerr(url: String, username: String, password: String) {
-        val normalized = PluginSettings.normalizeSeerrUrl(url)
-        if (normalized == null) {
-            _state.update { it.copy(seerrMessage = "Enter your Seerr address.") }
+        if (PluginSettings.normalizeSeerrUrl(url) == null) {
+            _state.update { it.copy(seerrMessage = "Enter your ${settings.requestService.title} address.") }
             return
         }
         _state.update { it.copy(seerrBusy = true, seerrMessage = null) }
         val ownerAccountId = session()?.accountId
         scope.launch {
-            runCatching { SeerrClient.signIn(normalized, username, password) }
-                .onSuccess { signedIn ->
-                    settings.seerrUrl = url.trim()
-                    settings.rememberSignIn(signedIn, username, password, ownerAccountId)
-                    val user = runCatching { SeerrClient(normalized, signedIn).currentUser() }.getOrNull()
-                    val name = user?.displayLabel ?: signedIn.displayName
+            runCatching { settings.signIn(url, username, password, ownerAccountId) }
+                .onSuccess { name ->
+                    val user = runCatching { settings.requestClient()?.currentUser() }.getOrNull()
                     _state.update {
                         it.copy(
-                            seerrUrl = url.trim(),
+                            seerrUrl = settings.seerrUrl,
                             seerrName = name,
                             seerrUser = user,
                             seerrBusy = false,
@@ -743,7 +747,7 @@ class PluginsController(
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
-                    _state.update { it.copy(seerrBusy = false, seerrMessage = error.message ?: "Seerr sign-in failed.") }
+                    _state.update { it.copy(seerrBusy = false, seerrMessage = error.message ?: "${settings.requestService.title} sign-in failed.") }
                 }
         }
     }
@@ -849,20 +853,20 @@ class PluginsController(
     }
 
     suspend fun submitSeerr(title: SeerrTitle, draft: SeerrRequestDraft) {
-        val client = seerr() ?: return
+        val client = requests() ?: return
         client.request(draft)
         markRequested(title)
     }
 
     suspend fun approveSeerr(requestId: Int, draft: SeerrRequestDraft) {
-        val client = seerr() ?: return
+        val client = requests() ?: return
         client.approveRequest(requestId, draft)
         refreshAfterReview()
     }
 
-    suspend fun declineSeerr(requestId: Int) {
-        val client = seerr() ?: return
-        client.declineRequest(requestId)
+    suspend fun declineSeerr(requestId: Int, kind: SeerrTitle.Kind) {
+        val client = requests() ?: return
+        client.declineRequest(requestId, kind)
         refreshAfterReview()
     }
 
