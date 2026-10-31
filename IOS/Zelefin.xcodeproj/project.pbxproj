@@ -128,6 +128,9 @@
 		A1C4E7F02B8D4A1E9C3E0002 /* JellyfinCatalogExtras.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C4E7F02B8D4A1E9C3E0001 /* JellyfinCatalogExtras.swift */; };
 		A1C4E7F02B8D4A1E9C3E0004 /* CatalogAlphabetRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C4E7F02B8D4A1E9C3E0003 /* CatalogAlphabetRail.swift */; };
 		A1C4E7F02B8D4A1E9C3E0006 /* ItemAdminSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C4E7F02B8D4A1E9C3E0005 /* ItemAdminSheets.swift */; };
+		A1D7E0F1C2B3A4958677D001 /* RequestTitleDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D7E0F1C2B3A4958677D002 /* RequestTitleDetails.swift */; };
+		A1D7E0F1C2B3A4958677D003 /* RequestTitleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D7E0F1C2B3A4958677D004 /* RequestTitleDetailView.swift */; };
+		A1D7E0F1C2B3A4958677D005 /* TitleSheetChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D7E0F1C2B3A4958677D006 /* TitleSheetChrome.swift */; };
 		A23CB99A908A54D5F034A158 /* DirectPlayPictureLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CDAA036B77400E155AB566 /* DirectPlayPictureLayout.swift */; };
 		A33B6F2B4825B9130280DF58 /* TitleShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB0AE9BE6FD098B818186F5 /* TitleShare.swift */; };
 		A37C059EA5BFD6DC83AE2062 /* AdaptiveBitrate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74932BAF5A69156D1BDC8D8A /* AdaptiveBitrate.swift */; };
@@ -376,6 +379,9 @@
 		A1C4E7F02B8D4A1E9C3E0001 /* JellyfinCatalogExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinCatalogExtras.swift; sourceTree = "<group>"; };
 		A1C4E7F02B8D4A1E9C3E0003 /* CatalogAlphabetRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogAlphabetRail.swift; sourceTree = "<group>"; };
 		A1C4E7F02B8D4A1E9C3E0005 /* ItemAdminSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemAdminSheets.swift; sourceTree = "<group>"; };
+		A1D7E0F1C2B3A4958677D002 /* RequestTitleDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestTitleDetails.swift; sourceTree = "<group>"; };
+		A1D7E0F1C2B3A4958677D004 /* RequestTitleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestTitleDetailView.swift; sourceTree = "<group>"; };
+		A1D7E0F1C2B3A4958677D006 /* TitleSheetChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleSheetChrome.swift; sourceTree = "<group>"; };
 		A2B969AC0F726C1A82B6E4D9 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
 		A32456D877338D465BE10367 /* HomeNetworkPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNetworkPreferences.swift; sourceTree = "<group>"; };
 		A3C97DFC4470C27B144C91B5 /* SiloProfileAvatars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiloProfileAvatars.swift; sourceTree = "<group>"; };
@@ -695,6 +701,7 @@
 				DC535123280EBE8E0BC7162F /* SeerrDiscover.swift */,
 				DE48717297D985B164AE94F0 /* OmbiClient.swift */,
 				872EB0FAC43AFECD9CBAF7C7 /* RequestService.swift */,
+				A1D7E0F1C2B3A4958677D002 /* RequestTitleDetails.swift */,
 				01253E1D158D0BBE9905263D /* SkipSegment.swift */,
 				DAE3CF5DB0C1D55FAA66726B /* ZelefinCompanion.swift */,
 				925F536FD5F4690C5DB9CBFF /* ZelefinPluginInstaller.swift */,
@@ -737,6 +744,7 @@
 			children = (
 				4CF24D35FA852C0BF61F8F20 /* AccentPreferences.swift */,
 				EA634249D6C166F245B90A45 /* AppleTVChrome.swift */,
+				A1D7E0F1C2B3A4958677D006 /* TitleSheetChrome.swift */,
 				A91D6C4E8B0F2753C6A4D1E7 /* GenreIcon.swift */,
 				66513F2821AF62BDE2DAD9E8 /* LoginChrome.swift */,
 				2270D3618FBCD955D4102210 /* PosterQualityBadgeStack.swift */,
@@ -750,6 +758,7 @@
 				16B2DE224480E8D4210A2A50 /* SearchView.swift */,
 				533892AF69D1B7A279174A72 /* SeerrDiscoverView.swift */,
 				AA8976E4C707E0FA34E637C1 /* SeerrRequestView.swift */,
+				A1D7E0F1C2B3A4958677D004 /* RequestTitleDetailView.swift */,
 			);
 			path = Search;
 			sourceTree = "<group>";
@@ -1035,6 +1044,7 @@
 				DD383B2EC20A0FD7E562E8A7 /* AdminToolsViews.swift in Sources */,
 				323A0B8BCBB2EC06BF99EA7C /* AppTab.swift in Sources */,
 				2F0C24304F71488EAABFE598 /* AppleTVChrome.swift in Sources */,
+				A1D7E0F1C2B3A4958677D005 /* TitleSheetChrome.swift in Sources */,
 				C8E41A07D5B29F6430A17E52 /* GenreIcon.swift in Sources */,
 				5B5D9F463FB3E09EE5E9A695 /* ArtworkCache.swift in Sources */,
 				DB541D3D8049970601FC31CE /* ArtworkURLBuilder.swift in Sources */,
@@ -1151,8 +1161,10 @@
 				25F99F407BA393BCDCFF2399 /* SeerrDiscover.swift in Sources */,
 				E5928BC68C69F058770EBFFC /* OmbiClient.swift in Sources */,
 				BA8B0335C925BD2CA9802F93 /* RequestService.swift in Sources */,
+				A1D7E0F1C2B3A4958677D001 /* RequestTitleDetails.swift in Sources */,
 				21EE13145E4831A498FFDEBF /* SeerrDiscoverView.swift in Sources */,
 				E4BF757DA701C6AD91C49F7A /* SeerrRequestView.swift in Sources */,
+				A1D7E0F1C2B3A4958677D003 /* RequestTitleDetailView.swift in Sources */,
 				BA129C04F5B720941B9B4518 /* ServerProbe.swift in Sources */,
 				65C09316AD058E76072CFA6D /* ServerReachability.swift in Sources */,
 				F252C8750A2613E8DBC7EC72 /* ServerURL.swift in Sources */,
@@ -1258,7 +1270,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "Zelefin/Zelefin-Mac.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1434,7 +1446,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "Zelefin/Zelefin-Mac.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = F7YZT72GUX;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

@@ -26,6 +26,7 @@ import app.zelefin.core.ItemMapper
 import app.zelefin.core.JellyfinItemSnapshot
 import app.zelefin.core.JellyfinStreamSnapshot
 import app.zelefin.core.MediaItem
+import app.zelefin.core.MediaVersion
 import app.zelefin.core.MediaKind
 import app.zelefin.core.PlaybackMethod
 import app.zelefin.core.PlaybackPlan
@@ -93,6 +94,7 @@ import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.MediaStreamProtocol
+import org.jellyfin.sdk.model.api.MediaSourceInfo
 import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.PlayMethod
@@ -566,14 +568,14 @@ class JellyfinLibrary(
                 enableTotalRecordCount = false,
             ),
         ).content.items
-        val movies = mutableSetOf<Int>()
-        val series = mutableSetOf<Int>()
+        val movies = mutableMapOf<Int, String>()
+        val series = mutableMapOf<Int, String>()
         items.forEach { dto ->
             val ids = dto.providerIds?.mapNotNull { (key, value) -> value?.let { key to it } }?.toMap()
             val tmdb = JellyfinTmdbCatalog.tmdbId(ids) ?: return@forEach
-            if (dto.type == BaseItemKind.SERIES) series += tmdb else movies += tmdb
+            (if (dto.type == BaseItemKind.SERIES) series else movies).putIfAbsent(tmdb, dto.id.toString())
         }
-        JellyfinTmdbCatalog(movies, series)
+        JellyfinTmdbCatalog.of(movies, series)
     }
 
     suspend fun searchHints(userId: UUID, term: String): List<SearchHit> = withContext(Dispatchers.IO) {
@@ -908,7 +910,8 @@ class JellyfinLibrary(
                 GetEpisodesRequest(
                     seriesId = itemId,
                     userId = userId,
-                    fields = listFields,
+                    // Media sources give each episode its versions for the page's version picker.
+                    fields = listFields + ItemFields.MEDIA_SOURCES,
                     enableUserData = true,
                     enableImageTypes = imageTypes,
                 ),
@@ -1902,6 +1905,28 @@ internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
         width = width,
         height = height,
         mediaSourceId = mediaSources?.firstOrNull()?.id?.takeIf { it.isNotBlank() },
+        versions = MediaVersion.pickable(MediaVersion.list(mediaSources.orEmpty().map { it.versionSource() })),
+    )
+}
+
+private fun MediaSourceInfo.versionSource(): MediaVersion.Source {
+    val streams = mediaStreams.orEmpty()
+    val video = streams.firstOrNull { it.type == MediaStreamType.VIDEO }
+    val audio = streams.filter { it.type == MediaStreamType.AUDIO }
+    return MediaVersion.Source(
+        id = id,
+        name = name,
+        path = path,
+        container = container,
+        sizeBytes = size,
+        width = video?.width,
+        height = video?.height,
+        videoCodec = video?.codec,
+        videoRange = video?.videoRangeType?.serialName,
+        hasVideo = video != null,
+        atmos = audio.any { stream -> listOf(stream.displayTitle, stream.title, stream.channelLayout).any { it.orEmpty().contains("atmos", true) } },
+        channels = audio.mapNotNull { it.channels }.maxOrNull(),
+        languages = audio.map { it.language },
     )
 }
 

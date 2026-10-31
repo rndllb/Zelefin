@@ -101,6 +101,16 @@ final class ZelefinMacBridge: NSObject {
     private func apply(to window: NSWindow) {
         lockSidebars(in: window)
         hideSidebarButtons(in: window)
+        fitFullScreenToolbar(in: window)
+    }
+
+    /// In full screen AppKit keeps the toolbar showing in a band of its own above the app, which
+    /// pushes the app down. The toolbar holds only the hidden sidebar button, so full screen drops it
+    /// and the app runs to the top of the screen; it's back once the window leaves full screen.
+    private func fitFullScreenToolbar(in window: NSWindow) {
+        guard let toolbar = window.toolbar else { return }
+        let shows = !window.styleMask.contains(.fullScreen)
+        if toolbar.isVisible != shows { toolbar.isVisible = shows }
     }
 
     private func lockSidebars(in window: NSWindow) {

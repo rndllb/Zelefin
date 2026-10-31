@@ -1387,7 +1387,7 @@ struct FeaturedHero: View {
                 )
 
                 LinearGradient(
-                    colors: [.clear, .black.opacity(0.55), .black.opacity(0.96)],
+                    colors: [.clear, Color.zelefinPage.opacity(0.55), Color.zelefinPage.opacity(0.96)],
                     startPoint: .center,
                     endPoint: .bottom
                 )
@@ -1562,6 +1562,30 @@ extension View {
         self
             .listRowBackground(Color.black)
             .listRowSeparatorTint(Color.white.opacity(0.16))
+    }
+}
+
+extension Color {
+    /// Behind every page. The Apple TV app on the Mac sits on a dark gray rather than black; on iPhone
+    /// and iPad it's black.
+    static let zelefinPage: Color = {
+        #if targetEnvironment(macCatalyst)
+        Color(red: 27 / 255, green: 28 / 255, blue: 30 / 255)
+        #else
+        .black
+        #endif
+    }()
+}
+
+/// Closes a sheet or screen: an X, never the word.
+struct CloseButton: View {
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+        }
+        .accessibilityLabel("Close")
     }
 }
 
@@ -2590,7 +2614,7 @@ private struct ZelefinPushedChromeModifier<Trailing: View>: ViewModifier {
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationBarBackButtonHidden(false)
                 .toolbar(.visible, for: .navigationBar)
-                .toolbarBackground(Color.black, for: .navigationBar)
+                .toolbarBackground(Color.zelefinPage, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbarColorScheme(.dark, for: .navigationBar)
                 .toolbar {

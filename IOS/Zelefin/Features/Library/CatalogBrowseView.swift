@@ -107,7 +107,7 @@ struct CatalogBrowseView: View {
         .zelefinPinnedBottomEdge()
         .zelefinHeaderScrollVisibility($headerVisible)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .catalogBrowsePageChrome(
             isPushed: showsBackButton,
             title: title,

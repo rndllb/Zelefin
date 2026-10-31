@@ -24,6 +24,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -530,6 +532,12 @@ object ZelefinDownloads {
             if (!paused) partial.delete()
             throw cancel
         } catch (error: Throwable) {
+            // Cancelling or pausing closes the connection under the read, which arrives as an IOException
+            // rather than a cancellation. That's the person stopping the download, not a failure.
+            if (!currentCoroutineContext().isActive) {
+                if (_state.value.progress[target.id]?.paused != true) partial.delete()
+                throw CancellationException("Download stopped")
+            }
             showNotice(DownloadNotice("Download", (error as? DownloadRefused)?.message ?: FailureMessage))
         } finally {
             staging.deleteRecursively()

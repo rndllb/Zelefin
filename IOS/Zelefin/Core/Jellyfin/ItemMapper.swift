@@ -22,6 +22,28 @@ enum ItemMapper {
         root["Items"] = items
         return try decoder.decode(BaseItemDtoQueryResult.self, from: JSONSerialization.data(withJSONObject: root))
     }
+
+    /// The same for search: Remux marks a show's hint `MediaType: "Other"`, which the SDK rejects,
+    /// and that one hint emptied the whole search. Unknown media and item types are dropped.
+    static func decodeSearchHints(_ data: Data) throws -> SearchHintResult {
+        let decoder = JellyfinJSONDate.decoder
+        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hints = root["SearchHints"] as? [[String: Any]] else {
+            return try decoder.decode(SearchHintResult.self, from: data)
+        }
+        let mediaTypes = Set(MediaType.allCases.map(\.rawValue))
+        let kinds = Set(BaseItemKind.allCases.map(\.rawValue))
+        for index in hints.indices {
+            if let type = hints[index]["MediaType"] as? String, !mediaTypes.contains(type) {
+                hints[index]["MediaType"] = nil
+            }
+            if let type = hints[index]["Type"] as? String, !kinds.contains(type) {
+                hints[index]["Type"] = nil
+            }
+        }
+        root["SearchHints"] = hints
+        return try decoder.decode(SearchHintResult.self, from: JSONSerialization.data(withJSONObject: root))
+    }
     static let listImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo, .banner]
     static let liveTVImageTypes: [ImageType] = [.primary, .thumb, .backdrop, .logo, .screenshot, .banner]
 
@@ -45,7 +67,11 @@ enum ItemMapper {
 
     static let liveTVFields: [ItemFields] = listFields + [.channelInfo, .airTime]
 
+    /// Remux has no source count, and lists only stand-ins for an episode's sources until it's
+    /// fetched on its own, so the sources here only tell whether it has versions at all.
     static let episodeFields: [ItemFields] = [
+        .mediaSourceCount,
+        .mediaSources,
         .overview,
         .primaryImageAspectRatio,
         .mediaStreams,
@@ -174,7 +200,8 @@ enum ItemMapper {
             likes: dto.userData?.isLikes,
             premiereDate: dto.premiereDate,
             bannerImageTag: imageTag(from: dto, named: "Banner"),
-            youTubeID: youTubeID(from: dto.providerIDs)
+            youTubeID: youTubeID(from: dto.providerIDs),
+            mediaSourceCount: dto.mediaSourceCount ?? dto.mediaSources?.count
         )
     }
 
@@ -462,24 +489,112 @@ enum ItemMapper {
         }
     }
 
+    /// Stremio-backed servers (Remux) name every source after its add-on, as "[RD+] Torrentio\n1080p",
+    /// so dozens of rows read the same. Those rows take the release name from the path instead, and
+    /// keep the add-on line in the detail: "[RD download]" means the debrid service hasn't cached it.
     static func versions(from sources: [MediaSourceInfo]?) -> [MediaVersion] {
-        (sources ?? []).compactMap { source in
-            guard let id = source.id, !id.isEmpty else { return nil }
-            return MediaVersion(id: id, title: versionTitle(from: source))
+        let sources = (sources ?? []).filter { !($0.id ?? "").isEmpty }
+        let names = sources.map { versionNameLines(from: $0.name).joined(separator: " · ") }
+        let named = names.filter { !$0.isEmpty }
+        let namesRepeat = Set(named).count < named.count
+        return zip(sources, names).map { source, name in
+            let lines = versionNameLines(from: source.name)
+            let addon = lines.count > 1 ? lines.first : nil
+            let release = releaseName(fromPath: source.path)
+            let title: String
+            var detail: [String] = []
+            if let release, name.isEmpty || namesRepeat || addon != nil {
+                title = release
+                if let addon { detail.append(addon) }
+            } else if !name.isEmpty {
+                title = name
+            } else if let container = source.container, !container.isEmpty {
+                title = container.uppercased()
+            } else {
+                title = "Version"
+            }
+            detail += versionFacts(from: source)
+            return MediaVersion(
+                id: source.id ?? "",
+                title: title,
+                detail: detail.isEmpty ? nil : detail.joined(separator: " · ")
+            )
         }
     }
 
-    static func versionTitle(from source: MediaSourceInfo) -> String {
-        if let name = source.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
-            return name
+    private static func versionNameLines(from name: String?) -> [String] {
+        (name ?? "").split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static let videoFileExtensions: Set<String> = [
+        "mkv", "mp4", "m4v", "mov", "avi", "ts", "m2ts", "webm", "wmv", "iso", "mpg", "mpeg", "strm"
+    ]
+
+    static func releaseName(fromPath path: String?) -> String? {
+        guard let last = path?.split(separator: "/").last.map(String.init) else { return nil }
+        var name = last.trimmingCharacters(in: .whitespaces)
+        if let dot = name.lastIndex(of: "."),
+           videoFileExtensions.contains(name[name.index(after: dot)...].lowercased()) {
+            name = String(name[..<dot])
         }
-        if let path = source.path?.split(separator: "/").last.map(String.init), !path.isEmpty {
-            return path
+        guard !name.isEmpty, UUID(uuidString: name) == nil else { return nil }
+        return name
+    }
+
+    /// "2.5 GB · 1080p HEVC · Dolby Vision · 5.1 · English, Russian"
+    static func versionFacts(from source: MediaSourceInfo) -> [String] {
+        let streams = source.mediaStreams ?? []
+        var facts: [String] = []
+        if let size = source.size, size > 0 {
+            facts.append(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
         }
-        if let container = source.container, !container.isEmpty {
-            return container.uppercased()
+        if let video = streams.first(where: { $0.type == .video }) {
+            let picture = [versionResolution(width: video.width, height: video.height), videoCodecName(video.codec)]
+                .compactMap { $0 }
+                .joined(separator: " ")
+            if !picture.isEmpty { facts.append(picture) }
+            let range = videoRange(from: streams)
+            if range != .sdr { facts.append(range.displayName) }
         }
-        return "Version"
+        let audio = streams.filter { $0.type == .audio }
+        if audioFormat(from: streams) == .atmos {
+            facts.append("Atmos")
+        } else if let channels = audio.compactMap(\.channels).max(), channels >= 6 {
+            facts.append(channels >= 8 ? "7.1" : "5.1")
+        }
+        var languages: [String] = []
+        for stream in audio {
+            let language = TitleMoreInfoMapper.languageName(from: stream.language)
+            if language != "Unknown", !languages.contains(language) { languages.append(language) }
+        }
+        if !languages.isEmpty {
+            facts.append(languages.prefix(3).joined(separator: ", ") + (languages.count > 3 ? " +\(languages.count - 3)" : ""))
+        }
+        return facts
+    }
+
+    private static func versionResolution(width: Int?, height: Int?) -> String? {
+        let width = width ?? 0
+        let height = height ?? 0
+        if width >= 3800 || height >= 2100 { return "4K" }
+        if width >= 1900 || height >= 1000 { return "1080p" }
+        if width >= 1200 || height >= 700 { return "720p" }
+        if width > 0 || height > 0 { return "SD" }
+        return nil
+    }
+
+    private static func videoCodecName(_ codec: String?) -> String? {
+        guard let codec = codec?.lowercased(), !codec.isEmpty else { return nil }
+        switch codec {
+        case "h264", "avc": return "H.264"
+        case "hevc", "h265": return "HEVC"
+        case "av1": return "AV1"
+        case "vp9": return "VP9"
+        case "mpeg4": return "MPEG-4"
+        default: return codec.uppercased()
+        }
     }
 
     static func trickplay(from dto: BaseItemDto, sourceID: String?) -> TrickplayInfo? {

@@ -11,45 +11,49 @@ struct IdentifySheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
+        TitleSheet(title: "Identify", closeDisabled: applying != nil, onClose: onClose) {
             List {
-                if loading {
-                    Text("Searching…").foregroundStyle(.secondary)
-                } else if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
-                } else if hits.isEmpty {
-                    Text("No matches found.").foregroundStyle(.secondary)
-                } else {
-                    ForEach(hits) { hit in
-                        Button {
-                            Task { await apply(hit) }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text([hit.name, hit.year.map(String.init)].compactMap { $0 }.joined(separator: " · "))
-                                    .foregroundStyle(.white)
-                                if let overview = hit.overview, !overview.isEmpty {
-                                    Text(overview).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
-                                }
-                                if applying == hit.name {
-                                    Text("Applying…").font(.footnote).foregroundStyle(AccentPreferences.current)
+                Section {
+                    if loading {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Searching…").foregroundStyle(.secondary)
+                        }
+                    } else if let errorMessage {
+                        SettingsStatusText(text: errorMessage, isError: true)
+                    } else if hits.isEmpty {
+                        Text("No matches found.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(hits) { hit in
+                            Button {
+                                Task { await apply(hit) }
+                            } label: {
+                                HStack(alignment: .center, spacing: 8) {
+                                    TitleSheetRow(
+                                        title: [hit.name, hit.year.map(String.init)].compactMap { $0 }.joined(separator: " · "),
+                                        detail: hit.overview,
+                                        imageURL: hit.imageURL,
+                                        showsImage: true
+                                    )
+                                    if applying == hit.id {
+                                        ProgressView()
+                                    }
                                 }
                             }
+                            .buttonStyle(.plain)
+                            .disabled(applying != nil)
                         }
-                        .disabled(applying != nil)
                     }
+                } header: {
+                    Text("Matches for \(item.name)")
+                } footer: {
+                    Text("Choosing a match replaces this title's metadata and artwork with the provider's.")
+                        .font(TitleSheetFont.note)
                 }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Color.black)
-            .navigationTitle("Identify")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", action: onClose)
-                }
+                .zelefinRowBackground()
             }
             .task { await load() }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func load() async {
@@ -59,7 +63,7 @@ struct IdentifySheet: View {
     }
 
     private func apply(_ hit: RemoteIdentifyHit) async {
-        applying = hit.name
+        applying = hit.id
         do {
             try await session.library?.applyIdentify(itemID: item.id, hit: hit)
             onClose()
@@ -86,35 +90,43 @@ struct EditMetadataSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                TextField("Name", text: $draft.name)
-                TextField("Year", text: $draft.year)
-                TextField("Rating", text: $draft.officialRating)
-                TextField("Genres", text: $draft.genres)
-                TextField("Tags", text: $draft.tags)
-                TextField("Overview", text: $draft.overview, axis: .vertical)
-                    .lineLimit(4...8)
+        TitleSheet(
+            title: "Edit Metadata",
+            closeDisabled: busy,
+            confirmTitle: busy ? "Saving…" : "Save",
+            confirmDisabled: busy,
+            onConfirm: { Task { await save() } },
+            onClose: onClose
+        ) {
+            List {
                 if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Color.black)
-            .navigationTitle("Edit Metadata")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", action: onClose)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(busy ? "Saving…" : "Save") {
-                        Task { await save() }
+                    Section {
+                        SettingsStatusText(text: errorMessage, isError: true)
                     }
-                    .disabled(busy)
+                    .zelefinRowBackground()
                 }
+                Section("Title") {
+                    TitleSheetField(label: "Name", text: $draft.name)
+                    TitleSheetField(label: "Year", text: $draft.year, prompt: "2021")
+                    TitleSheetField(label: "Rating", text: $draft.officialRating, prompt: "PG-13")
+                }
+                .zelefinRowBackground()
+                Section {
+                    TitleSheetField(label: "Genres", text: $draft.genres, prompt: "Drama, Science Fiction")
+                    TitleSheetField(label: "Tags", text: $draft.tags)
+                } header: {
+                    Text("Categories")
+                } footer: {
+                    Text("Separate genres and tags with commas.")
+                        .font(TitleSheetFont.note)
+                }
+                .zelefinRowBackground()
+                Section("Overview") {
+                    TitleSheetField(label: "Description", text: $draft.overview, multiline: true)
+                }
+                .zelefinRowBackground()
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func save() async {

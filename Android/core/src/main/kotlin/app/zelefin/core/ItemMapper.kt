@@ -53,6 +53,7 @@ data class JellyfinItemSnapshot(
     val height: Int? = null,
     val premiereDate: String? = null,
     val mediaSourceId: String? = null,
+    val versions: List<MediaVersion> = emptyList(),
 )
 
 object ItemMapper {
@@ -115,6 +116,7 @@ object ItemMapper {
             likes = snapshot.likes,
             isWatchlisted = snapshot.watchlisted,
             mediaSourceId = snapshot.mediaSourceId,
+            versions = snapshot.versions,
             people = snapshot.people,
             premiereDate = snapshot.premiereDate,
             bannerImageTag = snapshot.imageTags["Banner"],

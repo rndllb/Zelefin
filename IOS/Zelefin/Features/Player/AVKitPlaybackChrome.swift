@@ -11,6 +11,9 @@ struct AVKitPlaybackChrome: View {
     var canAddSubtitles: Bool
     var onClose: () -> Void
     var onQualityChange: (PlaybackQuality) -> Void
+    var versions: [MediaVersion] = []
+    var selectedVersionID: String? = nil
+    var onVersionChange: (String) -> Void = { _ in }
     var onAddSubtitles: () -> Void
     var onAudioChange: (Int) -> Void
     var onSubtitleChange: (Int?) -> Void
@@ -85,6 +88,12 @@ struct AVKitPlaybackChrome: View {
                         onClose: closeSettings,
                         onQualityChange: { value in
                             onQualityChange(value)
+                        },
+                        versions: versions,
+                        selectedVersionID: selectedVersionID,
+                        onVersionChange: { id in
+                            closeSettings()
+                            onVersionChange(id)
                         },
                         onAddSubtitles: {
                             closeSettings()
@@ -363,6 +372,7 @@ struct AVKitPlaybackChrome: View {
 private enum AVKitPlaybackSettingsPage: Equatable {
     case root
     case quality
+    case version
     case speed
     case audio
     case subtitles
@@ -399,6 +409,9 @@ private struct AVKitPlaybackSettingsPanel: View {
     var maxHeight: CGFloat = 420
     var onClose: () -> Void
     var onQualityChange: (PlaybackQuality) -> Void
+    var versions: [MediaVersion] = []
+    var selectedVersionID: String? = nil
+    var onVersionChange: (String) -> Void = { _ in }
     var onAddSubtitles: () -> Void
     var onAudioChange: ((Int) -> Void)? = nil
     var onSubtitleChange: ((Int?) -> Void)? = nil
@@ -417,6 +430,7 @@ private struct AVKitPlaybackSettingsPanel: View {
                     switch page {
                     case .root: rootRows
                     case .quality: qualityRows
+                    case .version: versionRows
                     case .speed: speedRows
                     case .audio: audioRows
                     case .subtitles: subtitleRows
@@ -468,6 +482,7 @@ private struct AVKitPlaybackSettingsPanel: View {
         switch page {
         case .root: "More"
         case .quality: "Quality"
+        case .version: "Version"
         case .speed: "Playback Speed"
         case .audio: "Select Audio"
         case .subtitles: "Select Subtitles"
@@ -486,6 +501,15 @@ private struct AVKitPlaybackSettingsPanel: View {
             systemImage: "slider.horizontal.3"
         ) {
             page = .quality
+        }
+        if versions.count > 1 {
+            settingsRow(
+                title: "Version",
+                value: selectedVersion?.title ?? "Default",
+                systemImage: "square.stack"
+            ) {
+                page = .version
+            }
         }
         settingsRow(
             title: "Playback Speed",
@@ -618,6 +642,42 @@ private struct AVKitPlaybackSettingsPanel: View {
             choiceRow(option.title, selected: option == quality) {
                 onQualityChange(option)
             }
+        }
+    }
+
+    private var selectedVersion: MediaVersion? {
+        versions.first { $0.id == selectedVersionID } ?? versions.first
+    }
+
+    private var versionRows: some View {
+        ForEach(versions) { version in
+            Button {
+                onVersionChange(version.id)
+            } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(version.title)
+                            .font(.body)
+                            .lineLimit(2)
+                        if let detail = version.detail {
+                            Text(detail)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.62))
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if version.id == selectedVersion?.id {
+                        Image(systemName: "checkmark")
+                            .font(.body.weight(.semibold))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(version.id == selectedVersion?.id ? .isSelected : [])
         }
     }
 

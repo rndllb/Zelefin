@@ -135,6 +135,7 @@ import app.zelefin.core.SiloAddressCheck
 import app.zelefin.core.SiloTokens
 import app.zelefin.core.HomeFeed
 import app.zelefin.core.MediaItem
+import app.zelefin.core.MediaVersion
 import app.zelefin.core.MediaKind
 import app.zelefin.core.PlaybackPlan
 import app.zelefin.core.PlaybackResumePolicy
@@ -992,6 +993,14 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * A title's versions, read from the title itself: Remux lists only stand-ins for an episode's
+     * sources in the season's episode list.
+     */
+    suspend fun versions(item: MediaItem): List<MediaVersion> =
+        runCatching { pick({ it.mediaItem(item.id) }, { it.mediaItem(userUuid(), item.id) }) }
+            .getOrNull()?.versions ?: item.versions
+
     suspend fun remoteArtwork(item: MediaItem, kind: RemoteArtworkKind): List<RemoteImageChoice> =
         pick({ it.remoteArtwork(item.id, kind) }, { it.remoteArtwork(item.id, kind) })
 
@@ -1444,6 +1453,13 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun reloadPlayback(current: PlaybackPlan, positionSeconds: Double) {
         playbackStopped(current, positionSeconds)
         play(current.item.copy(playbackPosition = positionSeconds))
+    }
+
+    /** Restarts the title on another of its versions from the current spot, with that file's default tracks. */
+    fun switchVersion(current: PlaybackPlan, positionSeconds: Double, versionId: String) {
+        if (versionId == current.mediaSourceId || localPlan != null) return
+        playbackStopped(current, positionSeconds)
+        play(current.item.copy(playbackPosition = positionSeconds, mediaSourceId = versionId))
     }
 
     /**
@@ -2333,6 +2349,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             LibraryRoute.Genres -> loadGenres()
             LibraryRoute.Downloaded -> Unit
             is LibraryRoute.Discover -> plugins.loadDiscoverGrid(route.query)
+            is LibraryRoute.DiscoverTitle -> Unit
             else -> loadLibraryGrid(route)
         }
     }

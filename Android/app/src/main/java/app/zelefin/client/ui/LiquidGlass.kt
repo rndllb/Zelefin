@@ -81,13 +81,13 @@ val LocalGlassSource = staticCompositionLocalOf<GlassSource?> { null }
 data class GlassStyle(
     val refractionHeight: Dp = 16.dp,
     val refractionOffset: Dp = 44.dp,
-    val blur: Dp = 0.dp,
+    val blur: Dp = 1.dp,
     val dispersion: Float = 0.3f,
     val saturation: Float = 1.2f,
     val tint: Color = Color(0xFF16161A),
-    val tintAlpha: Float = 0.18f,
-    /** Below Android 13 there is no RuntimeShader; a frosted dark fill stands in. */
-    val fallbackFill: Color = Color(0xD91C1C1E),
+    val tintAlpha: Float = 0.5f,
+    /** Below Android 13 there is no RuntimeShader; a frosted dark fill stands in, as opaque as the Darkness slider makes it at 50%. */
+    val fallbackFill: Color = Color(0xEB1C1C1E),
 )
 
 /** iOS 26.1 Settings → Display & Brightness → Liquid Glass, plus Off and the adjuster's Custom. */

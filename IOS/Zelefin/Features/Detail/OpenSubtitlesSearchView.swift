@@ -73,7 +73,7 @@ struct OpenSubtitlesSearchView: View {
         .zelefinSettingsChrome(title: session.isEmbyServer ? "Find Subtitles" : "Add Subtitles")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Close") { dismiss() }
+                CloseButton { dismiss() }
             }
         }
         .task(id: searchKey) { await search() }
@@ -148,10 +148,24 @@ struct OpenSubtitlesSearchView: View {
 
 extension View {
     func openSubtitlesSearch(item: Binding<MediaItem?>, mediaSourceID: String? = nil) -> some View {
-        sheet(item: item) { title in
+        modifier(OpenSubtitlesSheet(item: item, mediaSourceID: mediaSourceID))
+    }
+}
+
+private struct OpenSubtitlesSheet: ViewModifier {
+    @Binding var item: MediaItem?
+    var mediaSourceID: String?
+    @Environment(SessionStore.self) private var session
+    @Environment(DownloadStore.self) private var downloads
+
+    func body(content: Content) -> some View {
+        content.sheet(item: $item) { title in
             NavigationStack {
                 OpenSubtitlesSearchView(item: title, mediaSourceID: mediaSourceID)
+                    .font(TitleSheetFont.row)
             }
+            .zelefinTitleSheetSize()
+            .zelefinSheetStores(session, downloads)
         }
     }
 }

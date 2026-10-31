@@ -147,6 +147,11 @@ sealed interface LibraryRoute {
     data class Discover(val query: app.zelefin.client.plugins.DiscoverQuery) : LibraryRoute {
         override val title get() = query.title
     }
+
+    /** A Discover title's page. */
+    data class DiscoverTitle(val discovered: app.zelefin.client.plugins.SeerrTitle) : LibraryRoute {
+        override val title get() = discovered.name
+    }
 }
 
 data class LibraryGridState(

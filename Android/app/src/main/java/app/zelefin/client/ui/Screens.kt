@@ -38,6 +38,8 @@ import app.zelefin.client.Screen
 import app.zelefin.client.ZelefinUiState
 import kotlinx.coroutines.flow.SharedFlow
 import app.zelefin.core.MediaItem
+import app.zelefin.core.MediaKind
+import app.zelefin.core.MediaVersion
 import app.zelefin.core.PlaybackPlan
 import app.zelefin.core.TitleDetail
 
@@ -259,6 +261,8 @@ fun PlayerScreen(
     onReload: (Double) -> Unit = {},
     onRecover: (Double) -> Unit = {},
     onAdaptiveBitrate: ((Int, Double) -> Unit)? = null,
+    onLoadVersions: suspend (MediaItem) -> List<MediaVersion> = { emptyList() },
+    onChooseVersion: (String, Double) -> Unit = { _, _ -> },
 ) {
     val pluginState by plugins.state.collectAsState()
     var subtitleSearchAt by remember(plan.streamUrl) { mutableStateOf<Double?>(null) }
@@ -280,6 +284,12 @@ fun PlayerScreen(
     val nextArtwork = remember(nextEpisode, session) { nextEpisode?.let { artworkCandidates(it, session, landscape = true) }.orEmpty() }
     var sourceRetries by remember(plan.item.id) { mutableIntStateOf(0) }
     val remote = !plan.streamUrl.startsWith("file:")
+    // A download is one file, so only a stream offers the title's other versions.
+    var versions by remember(plan.item.id) { mutableStateOf(emptyList<MediaVersion>()) }
+    LaunchedEffect(plan.item.id, remote) {
+        val playable = plan.item.kind == MediaKind.Movie || plan.item.kind == MediaKind.Episode
+        if (remote && playable) versions = runCatching { onLoadVersions(plan.item) }.getOrDefault(emptyList())
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         PlayerSurface(
             plan = plan,
@@ -308,6 +318,8 @@ fun PlayerScreen(
             onUserTransport = onUserTransport,
             onTrackPicked = onTrackPicked,
             directives = directives,
+            versions = versions,
+            onChooseVersion = if (remote) onChooseVersion else null,
         )
         if (subtitleSheet.displayed != null) {
             ZelefinSheetScrim(subtitleSheet.progress)

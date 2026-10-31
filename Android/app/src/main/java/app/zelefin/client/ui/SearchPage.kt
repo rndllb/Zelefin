@@ -154,13 +154,16 @@ fun SearchTabPage(
     val pluginState by plugins.state.collectAsState()
     val discoverState by plugins.discover.collectAsState()
     var requestTitle by remember { mutableStateOf<SeerrTitle?>(null) }
+    // Counts closed request sheets, so an open title page asks for its status again.
+    var requestRevision by remember { mutableIntStateOf(0) }
     val sheet = rememberZelefinSheet(requestTitle)
-    val selectTitle: (SeerrTitle) -> Unit = { title ->
-        val resolved = discoverState.resolved(title)
-        when {
-            resolved.availability == SeerrTitle.Availability.Available -> Unit
-            else -> requestTitle = title
-        }
+    val openTitle: (SeerrTitle) -> Unit = { title -> onRoute(LibraryRoute.DiscoverTitle(title)) }
+    val requestTitleNow: (SeerrTitle) -> Unit = { title ->
+        if (discoverState.resolved(title).availability != SeerrTitle.Availability.Available) requestTitle = title
+    }
+    val closeRequest: () -> Unit = {
+        requestTitle = null
+        requestRevision += 1
     }
     val discover = if (pluginState.discoverAvailable) {
         SearchDiscover { term, top, bottom, onDrag, onScrollOffset ->
@@ -174,7 +177,8 @@ fun SearchTabPage(
                 onSearch = plugins::searchDiscover,
                 onLoadHome = { plugins.loadDiscoverHome() },
                 onOpenQuery = { onRoute(LibraryRoute.Discover(it)) },
-                onSelect = selectTitle,
+                onSelect = openTitle,
+                onRequest = requestTitleNow,
                 onDrag = onDrag,
             )
         }
@@ -227,7 +231,18 @@ fun SearchTabPage(
                         bottomInset = bottomInset,
                         onBack = onBack,
                         onLoadMore = { plugins.loadDiscoverGrid(route.query, more = true) },
-                        onSelect = selectTitle,
+                        onSelect = openTitle,
+                    )
+                    is LibraryRoute.DiscoverTitle -> DiscoverTitlePage(
+                        title = route.discovered,
+                        discover = discoverState,
+                        plugins = plugins,
+                        canManage = pluginState.canManageRequests,
+                        requestRevision = requestRevision,
+                        onBack = onBack,
+                        onRequest = { requestTitle = it },
+                        onOpen = openTitle,
+                        onOpenLibraryItem = onOpen,
                     )
                     else -> {
                         val grid = state.libraryGrids[route] ?: LibraryGridState()
@@ -263,12 +278,12 @@ fun SearchTabPage(
                     title = title,
                     plugins = plugins,
                     canManage = pluginState.canManageRequests,
-                    onClose = { requestTitle = null },
+                    onClose = closeRequest,
                 )
             }
         }
     }
-    BackHandler(enabled = sheet.displayed != null) { requestTitle = null }
+    BackHandler(enabled = sheet.displayed != null) { closeRequest() }
 }
 
 @Composable

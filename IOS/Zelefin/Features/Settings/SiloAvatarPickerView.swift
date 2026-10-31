@@ -52,7 +52,7 @@ struct SiloAvatarPickerView: View {
             .zelefinSettingsChrome(title: "Profile Picture")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    CloseButton { dismiss() }
                         .disabled(isSaving)
                 }
             }

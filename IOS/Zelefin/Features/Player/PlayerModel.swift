@@ -22,7 +22,9 @@ final class PlayerModel {
     private(set) var mpv: MPVPlayback?
     private(set) var errorMessage: String?
     private(set) var hasFirstFrame = false
-    private(set) var isPaused = false
+    private(set) var isPaused = false {
+        didSet { updateWakeLock() }
+    }
     private(set) var currentTime: TimeInterval = 0
     private(set) var duration: TimeInterval = 0
     private(set) var isBuffering = false
@@ -59,7 +61,9 @@ final class PlayerModel {
     /// Jellyfin's audio pick, held until the first frame so the switch never reloads mid-startup.
     private var pendingServerAudioID: Int?
     private var startedOnServerSubtitle = false
-    var isFinished = false
+    var isFinished = false {
+        didSet { updateWakeLock() }
+    }
     var skipSegments: [SkipSegment] = []
     var skipPrompt: SkipSegment?
 
@@ -78,7 +82,10 @@ final class PlayerModel {
     private var stallWatchTask: Task<Void, Never>?
     private var engineIsSeeking = false
     private var isSurfaceBound = false
-    private var didStart = false
+    private var didStart = false {
+        didSet { updateWakeLock() }
+    }
+    private let wakeLock = PlaybackWakeLock()
     private var didAttemptDeferredResume = false
     private var isRestoringForeground = false
     private var mpvTracks: [MPVPlayback.Track] = []
@@ -194,6 +201,11 @@ final class PlayerModel {
         stopWhenPictureInPictureEnds = false
         RemoteControlHub.shared.detach(self)
         await reportPlaybackStopped(at: seconds)
+    }
+
+    /// Held while a title plays, so neither the screen nor the Mac sleeps under it.
+    private func updateWakeLock() {
+        wakeLock.hold(didStart && !isPaused && !isFinished)
     }
 
     private func reportPlaybackStarted() async {
@@ -1613,4 +1625,41 @@ struct PlaybackTrackOption: Identifiable, Hashable, Sendable {
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+/// Keeps the screen on, and on the Mac the computer awake, while something plays. mpv and the
+/// direct-play engine draw their own frames, so the system can't tell video is on the way AVPlayer's can.
+final class PlaybackWakeLock {
+    private var activity: NSObjectProtocol?
+    private var isHeld = false
+
+    @MainActor
+    func hold(_ held: Bool) {
+        guard held != isHeld else { return }
+        isHeld = held
+        #if targetEnvironment(macCatalyst)
+        if held {
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .idleDisplaySleepDisabled, .idleSystemSleepDisabled],
+                reason: "Playing video"
+            )
+        } else if let activity {
+            ProcessInfo.processInfo.endActivity(activity)
+            self.activity = nil
+        }
+        #else
+        UIApplication.shared.isIdleTimerDisabled = held
+        #endif
+    }
+
+    deinit {
+        if let activity {
+            ProcessInfo.processInfo.endActivity(activity)
+        }
+        #if !targetEnvironment(macCatalyst)
+        if isHeld {
+            Task { @MainActor in UIApplication.shared.isIdleTimerDisabled = false }
+        }
+        #endif
+    }
 }

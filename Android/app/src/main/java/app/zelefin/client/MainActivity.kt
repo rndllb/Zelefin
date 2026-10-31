@@ -430,6 +430,8 @@ private fun ZelefinScreen(
             onReload = { position -> model.reloadPlayback(screen.plan, position) },
             onRecover = { position -> model.recoverPlayback(screen.plan, position) },
             onAdaptiveBitrate = { bitsPerSecond, position -> model.reloadPlaybackAtBitrate(screen.plan, position, bitsPerSecond) },
+            onLoadVersions = model::versions,
+            onChooseVersion = { versionId, position -> model.switchVersion(screen.plan, position, versionId) },
         )
     }
 }
@@ -453,6 +455,7 @@ private fun detailActions(model: ZelefinModel, state: ZelefinUiState): DetailTit
         applyIdentify = if (tools) model::applyIdentify else null,
         saveMetadata = if (tools) model::saveItemMetadata else null,
         downloadRelated = model::downloadRelated,
+        loadVersions = model::versions,
     )
 }
 

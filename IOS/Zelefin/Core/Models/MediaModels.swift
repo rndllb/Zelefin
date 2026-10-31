@@ -152,8 +152,11 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     var logoURL: URL? = nil
     var bannerImageTag: String? = nil
     var youTubeID: String? = nil
+    /// How many files the title has (Jellyfin's Multiple Versions). More than one gets a version picker.
+    var mediaSourceCount: Int? = nil
 
     var isYouTube: Bool { youTubeID != nil }
+    var hasVersions: Bool { (mediaSourceCount ?? 0) > 1 }
 
     var youTubeURL: URL? {
         guard let youTubeID, !youTubeID.isEmpty else { return nil }
@@ -631,6 +634,9 @@ struct SeasonDownloadChoice: Identifiable, Hashable, Sendable {
     var id: String { seasonIndex.map(String.init) ?? "all" }
     let title: String
     let seasonIndex: Int?
+
+    static let versionNote = "Each episode downloads the version picked for it, or the first one if none is. "
+        + "To get a different version, pick it in the episode's menu first or download that episode on its own."
 
     static func options(seasons: [MediaItem], episodes: [MediaItem]) -> [SeasonDownloadChoice] {
         let numbers = seasonNumbers(seasons: seasons, episodes: episodes)
@@ -1138,6 +1144,7 @@ struct MediaChapter: Identifiable, Hashable, Sendable, Codable {
 struct MediaVersion: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
+    var detail: String? = nil
 }
 
 struct TrickplayInfo: Hashable, Sendable {

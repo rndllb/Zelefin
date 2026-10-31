@@ -43,7 +43,6 @@ struct TitleEnhancedExtras: View {
                     },
                     onClose: { showsEditor = false }
                 )
-                .presentationBackground(TitleMoreInfoView.sheetBackground)
             }
             .alert("Reviews", isPresented: Binding(
                 get: { errorMessage != nil },
@@ -408,8 +407,14 @@ struct TitleReviewEditor: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
+        TitleSheet(
+            title: existing == nil ? "Write a Review" : "Edit Review",
+            confirmTitle: "Save",
+            confirmDisabled: !JellyfinEnhancedReviewPayload.isValid(content: content, rating: rating),
+            onConfirm: { onSave(content, rating) },
+            onClose: onClose
+        ) {
+            List {
                 Section("Rating") {
                     HStack {
                         ForEach(1...5, id: \.self) { star in
@@ -432,35 +437,23 @@ struct TitleReviewEditor: View {
                         }
                     }
                 }
+                .zelefinRowBackground()
                 Section("Review") {
                     TextField("What did you think?", text: $content, axis: .vertical)
-                        .lineLimit(4...10)
+                        .textFieldStyle(.plain)
+                        .lineLimit(4...12)
                 }
+                .zelefinRowBackground()
                 if existing != nil, onDelete != nil {
                     Section {
                         Button("Delete Review", role: .destructive) {
                             onDelete?()
                         }
                     }
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(TitleMoreInfoView.sheetBackground)
-            .navigationTitle(existing == nil ? "Write a Review" : "Edit Review")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onClose)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(content, rating)
-                    }
-                    .disabled(!JellyfinEnhancedReviewPayload.isValid(content: content, rating: rating))
+                    .zelefinRowBackground()
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func tapStar(_ star: Int) {

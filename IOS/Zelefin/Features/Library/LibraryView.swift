@@ -77,7 +77,7 @@ struct LibraryView: View {
                 .refreshable { await load() }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
             FloatingPageHeader(
@@ -650,7 +650,7 @@ private struct LibraryOrganizeView: View {
             .padding(.top, 8)
             .padding(.bottom, 28)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .navigationTitle("Arrange")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -910,7 +910,7 @@ struct LibraryGenresView: View {
                 }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
         .catalogPushedChrome(title: "Genres") { EmptyView() }
@@ -1018,7 +1018,7 @@ struct LibraryItemsView: View {
                 }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
         .catalogPushedChrome(title: library.name) {

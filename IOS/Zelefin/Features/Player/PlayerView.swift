@@ -123,6 +123,10 @@ struct PlayerView: View {
             Task { await advanceOrDismiss() }
         }
         .openSubtitlesSearch(item: $subtitleSearchItem, mediaSourceID: subtitleSearchFileID)
+        .task(id: activeItem.id) {
+            guard activeItem.kind == .movie || activeItem.kind == .episode else { return }
+            await session.loadVersions(for: activeItem.id)
+        }
     }
 
     private var isCinemaBumper: Bool {
@@ -612,6 +616,28 @@ struct PlayerView: View {
         }
     }
 
+    /// Picks up from the same moment on the other file, with the new version's default tracks.
+    private func changeVersion(_ versionID: String) async {
+        guard versionID != model?.plan.mediaSourceID else { return }
+        session.chooseVersion(versionID, for: activeItem.id)
+        guard !isCinemaBumper, model?.plan.streamURL.isFileURL != true else { return }
+        let skip = model?.skipSegments ?? []
+        resumeOverride = model?.currentTime
+        await model?.stop()
+        model = nil
+        didFallBackToRemux = false
+        fallbackError = nil
+        await prepareAndStart()
+        if let created = model, created.skipSegments.isEmpty {
+            created.skipSegments = skip
+        }
+    }
+
+    private var playerVersions: [MediaVersion] {
+        guard !isCinemaBumper else { return [] }
+        return session.mediaVersions[activeItem.id] ?? []
+    }
+
     @ViewBuilder
     private func playerSurface(_ model: PlayerModel) -> some View {
         if let engine = model.engine {
@@ -698,6 +724,11 @@ struct PlayerView: View {
             onQualityChange: { quality in
                 Task { await changeQuality(quality) }
             },
+            versions: playerVersions,
+            selectedVersionID: model.plan.mediaSourceID ?? session.launchOptions(for: activeItem.id).mediaSourceID,
+            onVersionChange: { versionID in
+                Task { await changeVersion(versionID) }
+            },
             onAddSubtitles: {
                 subtitleSearchFileID = model.plan.mediaSourceID
                 subtitleSearchItem = activeItem
@@ -732,10 +763,15 @@ struct PlayerView: View {
                 .font(.body)
                 .foregroundStyle(.white.opacity(0.75))
                 .multilineTextAlignment(.center)
-            Button("Close") { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .tint(.white)
-                .foregroundStyle(.black)
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.black)
+                    .frame(width: 44, height: 44)
+                    .background(.white, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
         }
         .padding(24)
         .frame(maxWidth: 480)

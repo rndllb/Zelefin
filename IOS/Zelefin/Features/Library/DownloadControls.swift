@@ -226,6 +226,7 @@ struct DetailDownloadSharePill: View {
         .popover(isPresented: $showsSeasonPicker) {
             ShowDownloadSeasonsMenu(
                 choices: SeasonDownloadChoice.options(seasons: seasons, episodes: episodes),
+                mentionsVersions: episodes.contains(where: \.hasVersions),
                 onCancel: { showsSeasonPicker = false },
                 onConfirm: { indexes in
                     showsSeasonPicker = false
@@ -336,6 +337,7 @@ struct DetailDownloadSharePill: View {
 
 private struct ShowDownloadSeasonsMenu: View {
     let choices: [SeasonDownloadChoice]
+    var mentionsVersions = false
     var onCancel: () -> Void
     var onConfirm: (Set<Int>) -> Void
     @State private var selected: Set<Int> = []
@@ -371,6 +373,15 @@ private struct ShowDownloadSeasonsMenu: View {
                 }
             }
             .frame(maxHeight: 320)
+            if mentionsVersions {
+                Text(SeasonDownloadChoice.versionNote)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
             Rectangle()
                 .fill(.white.opacity(0.16))
                 .frame(height: 0.5)

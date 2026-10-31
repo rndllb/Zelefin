@@ -362,11 +362,12 @@ final class EmbyLibraryClient: @unchecked Sendable {
     func tmdbCatalog() async -> JellyfinTmdbCatalog {
         async let movies = tmdbIDs(include: .movie)
         async let shows = tmdbIDs(include: .series)
-        return JellyfinTmdbCatalog(movieIDs: await movies, seriesIDs: await shows)
+        return JellyfinTmdbCatalog(movieItems: await movies, seriesItems: await shows)
     }
 
-    private func tmdbIDs(include: BaseItemKind) async -> Set<Int> {
-        var ids = Set<Int>()
+    /// TMDB identifiers mapped to their library items.
+    private func tmdbIDs(include: BaseItemKind) async -> [Int: String] {
+        var ids: [Int: String] = [:]
         var start = 0
         let pageSize = 250
         while start < 5_000 {
@@ -385,8 +386,8 @@ final class EmbyLibraryClient: @unchecked Sendable {
             ) else { break }
             let items = result.items ?? []
             for item in items {
-                if let tmdbID = JellyfinTmdbCatalog.tmdbID(from: item.providerIDs) {
-                    ids.insert(tmdbID)
+                if let tmdbID = JellyfinTmdbCatalog.tmdbID(from: item.providerIDs), let id = item.id {
+                    ids[tmdbID] = ids[tmdbID] ?? id
                 }
             }
             start += items.count
@@ -1029,9 +1030,9 @@ final class EmbyLibraryClient: @unchecked Sendable {
         )
     }
 
-    func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
+    func streamTracks(for itemID: String, mediaSourceID: String?) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
         let dto = try? await itemDTO(id: itemID)
-        let source = dto?.mediaSources?.first
+        let source = dto?.mediaSources?.first { $0.id == mediaSourceID } ?? dto?.mediaSources?.first
         let streams = source?.mediaStreams ?? dto?.mediaStreams
         return (
             ItemMapper.tracks(from: streams, kind: .audio, source: source),
@@ -1040,7 +1041,12 @@ final class EmbyLibraryClient: @unchecked Sendable {
     }
 
     func originalFileDownloadURL(for itemID: String) throws -> URL {
-        guard let url = api.mediaURL("/Items/\(itemID)/Download") else {
+        try originalFileDownloadURL(for: itemID, mediaSourceID: nil)
+    }
+
+    /// Emby's versions are media sources of one item, named on the download request.
+    func originalFileDownloadURL(for itemID: String, mediaSourceID: String?) throws -> URL {
+        guard let url = api.mediaURL("/Items/\(itemID)/Download", query: [("MediaSourceId", mediaSourceID)]) else {
             throw ZelefinError.missingStreamURL
         }
         return url

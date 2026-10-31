@@ -51,7 +51,7 @@ struct PlaylistDetailView: View {
                 .padding(16)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .navigationTitle(playlist.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -79,14 +79,18 @@ struct PlaylistPickerSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
+        TitleSheet(title: "Add to Playlist", onClose: onClose) {
             List {
                 if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
+                    Section {
+                        SettingsStatusText(text: errorMessage, isError: true)
+                    }
+                    .zelefinRowBackground()
                 }
                 Section("New Playlist") {
                     HStack {
                         TextField("Name", text: $newName)
+                            .textFieldStyle(.plain)
                         Button("Create") {
                             Task { await create() }
                         }
@@ -100,23 +104,19 @@ struct PlaylistPickerSheet: View {
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(playlists) { playlist in
-                            Button(playlist.name) {
+                            Button {
                                 Task { await add(to: playlist) }
+                            } label: {
+                                TitleSheetRow(title: playlist.name)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
                 .zelefinRowBackground()
             }
-            .navigationTitle("Add to Playlist")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onClose)
-                }
-            }
             .task { await load() }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func load() async {
@@ -178,18 +178,11 @@ struct RemoteImagePickerView: View {
     @State private var busyID: String?
 
     var body: some View {
-        NavigationStack {
+        TitleSheet(title: "Edit Images", closeDisabled: busyID != nil, onClose: onClose) {
             List {
                 heroSection
                 kindSection
                 artworkSection
-            }
-            .zelefinSettingsChrome(title: "Edit Images")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onClose)
-                        .disabled(busyID != nil)
-                }
             }
             .task(id: kind) { await load() }
         }

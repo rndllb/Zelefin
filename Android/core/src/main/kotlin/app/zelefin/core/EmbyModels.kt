@@ -122,6 +122,7 @@ data class EmbyMediaSource(
     @SerialName("Id") val id: String? = null,
     @SerialName("ItemId") val itemId: String? = null,
     @SerialName("Name") val name: String? = null,
+    @SerialName("Path") val path: String? = null,
     @SerialName("Container") val container: String? = null,
     @SerialName("Size") val size: Long? = null,
     @SerialName("Bitrate") val bitrate: Int? = null,
@@ -136,7 +137,27 @@ data class EmbyMediaSource(
     @SerialName("DefaultSubtitleStreamIndex") val defaultSubtitleStreamIndex: Int? = null,
     @SerialName("MediaStreams") val mediaStreams: List<EmbyMediaStream> = emptyList(),
     @SerialName("Chapters") val chapters: List<EmbyChapter> = emptyList(),
-)
+) {
+    fun versionSource(): MediaVersion.Source {
+        val video = mediaStreams.firstOrNull { it.isVideo }
+        val audio = mediaStreams.filter { it.isAudio }
+        return MediaVersion.Source(
+            id = id,
+            name = name,
+            path = path,
+            container = container,
+            sizeBytes = size,
+            width = video?.width,
+            height = video?.height,
+            videoCodec = video?.codec,
+            videoRange = video?.rangeLabel,
+            hasVideo = video != null,
+            atmos = audio.any { stream -> listOf(stream.displayTitle, stream.title, stream.channelLayout).any { it.orEmpty().contains("atmos", true) } },
+            channels = audio.mapNotNull { it.channels }.maxOrNull(),
+            languages = audio.map { it.language },
+        )
+    }
+}
 
 @Serializable
 data class EmbyItem(
@@ -255,6 +276,7 @@ data class EmbyItem(
         width = width,
         height = height,
         mediaSourceId = mediaSources.firstOrNull()?.id?.takeIf { it.isNotBlank() },
+        versions = MediaVersion.pickable(MediaVersion.list(mediaSources.map { it.versionSource() })),
     )
 }
 

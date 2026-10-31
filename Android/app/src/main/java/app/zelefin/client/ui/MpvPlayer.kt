@@ -71,6 +71,7 @@ import app.zelefin.client.plugins.SkipPrompt
 import app.zelefin.client.plugins.SkipSegment
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
+import app.zelefin.core.MediaVersion
 import app.zelefin.client.PlaybackLanguage
 import app.zelefin.core.PlaybackPlan
 import app.zelefin.core.SavedSession
@@ -267,6 +268,8 @@ fun MpvPlayerHost(
     DisposableEffect(session) {
         onDispose { session.release() }
     }
+    // mpv draws into a bare SurfaceView, so nothing keeps the screen on unless the view asks.
+    var playing by remember(session) { mutableStateOf(false) }
     LaunchedEffect(session) {
         while (true) {
             val controller = session.controller
@@ -280,6 +283,7 @@ fun MpvPlayerHost(
             val position = controller.position()
             val paused = controller.isPaused()
             val ended = controller.eof() || (duration > 1 && position >= duration - 0.4 && !paused)
+            playing = !paused && !ended
             onState(
                 MpvPlaybackState(
                     playing = !paused && duration > 0 && !ended,
@@ -315,6 +319,7 @@ fun MpvPlayerHost(
             }
         },
         update = { view ->
+            view.keepScreenOn = playing
             configuration.orientation
             configuration.screenWidthDp
             configuration.screenHeightDp
@@ -427,6 +432,8 @@ fun MpvPlayerSurface(
     onUserTransport: (PlayerDirective) -> Unit = {},
     onTrackPicked: (TrackPick) -> Unit = {},
     directives: SharedFlow<PlayerDirective>? = null,
+    versions: List<MediaVersion> = emptyList(),
+    onChooseVersion: ((String, Double) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -931,6 +938,14 @@ fun MpvPlayerSurface(
             showStats = showStats,
             onToggleStats = { showStats = !showStats },
             onAppearanceChange = { styleRevision += 1 },
+            versions = versions,
+            playingVersion = plan.mediaSourceId,
+            onVersion = onChooseVersion?.let { choose ->
+                { version ->
+                    menuPage = null
+                    if (version.id != plan.mediaSourceId) choose(version.id, mediaPosition)
+                }
+            },
         )
     }
 }

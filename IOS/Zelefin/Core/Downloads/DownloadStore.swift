@@ -11,6 +11,10 @@ final class DownloadStore {
     private(set) var progress: [String: DownloadProgress] = [:]
     private var tasks: [String: Task<Void, Error>] = [:]
 
+    /// The version picked on a title's page, which a download of that title fetches. Nil keeps the
+    /// server's first version.
+    var chosenVersion: @MainActor (String) -> String? = { _ in nil }
+
     init(directory: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         if let directory {
@@ -250,9 +254,16 @@ final class DownloadStore {
         library: any LibraryServing,
         account: SavedSession
     ) async throws {
-        let plan = try await library.playbackPlan(for: target)
+        let version = chosenVersion(target.id)
+        let plan = try await library.playbackPlan(
+            for: target,
+            allowDirectPlay: true,
+            maxBitrate: nil,
+            startTime: nil,
+            mediaSourceID: version
+        )
         try Task.checkCancellation()
-        let asset = try await library.prepareDownloadAsset(for: target, plan: plan)
+        let asset = try await library.prepareDownloadAsset(for: target, plan: plan, mediaSourceID: version)
         try Task.checkCancellation()
         let downloadURL = asset.url
         let folder = itemDirectory(account: account, itemID: target.id)

@@ -144,7 +144,7 @@ struct SeerrRequestView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Close") { dismiss() }
+                CloseButton { dismiss() }
             }
         }
         .zelefinAccentTint()

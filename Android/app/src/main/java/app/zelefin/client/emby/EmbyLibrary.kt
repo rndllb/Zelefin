@@ -355,13 +355,14 @@ class EmbyLibrary(
             this["EnableImages"] = false
             this["EnableUserData"] = false
         }.items
-        val movies = mutableSetOf<Int>()
-        val series = mutableSetOf<Int>()
+        val movies = mutableMapOf<Int, String>()
+        val series = mutableMapOf<Int, String>()
         items.forEach { dto ->
             val tmdb = JellyfinTmdbCatalog.tmdbId(dto.providerIds) ?: return@forEach
-            if (dto.type.equals("Series", ignoreCase = true)) series += tmdb else movies += tmdb
+            val id = dto.id ?: return@forEach
+            (if (dto.type.equals("Series", ignoreCase = true)) series else movies).putIfAbsent(tmdb, id)
         }
-        JellyfinTmdbCatalog(movies, series)
+        JellyfinTmdbCatalog.of(movies, series)
     }
 
     /** Emby has no search hints, so titles, people, genres, and studios are searched side by side. */
@@ -613,7 +614,8 @@ class EmbyLibrary(
 
     private suspend fun episodes(seriesId: String): List<EmbyItem> = page("/Shows/$seriesId/Episodes") {
         this["UserId"] = user
-        listDefaults()
+        // Media sources give each episode its versions for the page's version picker.
+        listDefaults(ListFields + "MediaSources")
     }.items
 
     suspend fun detail(id: String): TitleDetail = withContext(Dispatchers.IO) {

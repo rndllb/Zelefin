@@ -88,11 +88,11 @@ struct MainTabView: View {
             }
         } detail: {
             NavigationStack {
-                // A page still loading can be narrower than the column; black behind it keeps the
-                // window's gray from showing around it.
+                // A page still loading can be narrower than the column; the page color behind it
+                // keeps the window's own gray from showing around it.
                 macDetail(dockSelection)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.ignoresSafeArea())
+                    .background(Color.zelefinPage.ignoresSafeArea())
             }
             .id(dockSelection)
             .zelefinSidebarLayout()

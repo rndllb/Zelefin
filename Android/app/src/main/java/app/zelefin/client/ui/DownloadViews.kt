@@ -297,6 +297,7 @@ internal fun DownloadSeasonsSheet(
             onSelect = { selected = it },
             onConfirm = onConfirm,
             onDismiss = onDismiss,
+            mentionsVersions = episodes.any { it.versions.size > 1 },
         )
     }
 }
@@ -313,6 +314,7 @@ private fun DownloadSeasonsMenu(
     onSelect: (Set<Int>) -> Unit,
     onConfirm: (Set<Int>) -> Unit,
     onDismiss: () -> Unit,
+    mentionsVersions: Boolean = false,
 ) {
     AnchoredMenuFrame(anchor, alignTrailing = true, onDismiss) {
         val run = LocalMenuAction.current
@@ -334,6 +336,15 @@ private fun DownloadSeasonsMenu(
                         onSelect(if (number in selected) selected - number else selected + number)
                     }
                 }
+            }
+            if (mentionsVersions) {
+                Text(
+                    SeasonDownloadChoice.VERSION_NOTE,
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontFamily = ZelefinFont,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
             Box(
                 Modifier

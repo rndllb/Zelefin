@@ -1,5 +1,6 @@
 package app.zelefin.core
 
+import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
@@ -12,6 +13,166 @@ object TickClock {
     fun seconds(ticks: Long): Double = ticks.toDouble() / TICKS_PER_SECOND.toDouble()
 
     fun ticks(seconds: Double): Long = round(seconds * TICKS_PER_SECOND.toDouble()).toLong()
+}
+
+/**
+ * One of a title's files (Jellyfin's "Multiple Versions": 2160p and 1080p, a director's cut). Jellyfin
+ * lists them highest resolution first and plays the first one unless another is picked.
+ */
+@Serializable
+data class MediaVersion(val id: String, val title: String, val detail: String? = null) {
+    /** A media source as the server lists it, with the facts its detail line is made of. */
+    data class Source(
+        val id: String?,
+        val name: String?,
+        val path: String?,
+        val container: String?,
+        val sizeBytes: Long? = null,
+        val width: Int? = null,
+        val height: Int? = null,
+        val videoCodec: String? = null,
+        val videoRange: String? = null,
+        val hasVideo: Boolean = width != null || height != null || videoCodec != null,
+        val atmos: Boolean = false,
+        val channels: Int? = null,
+        val languages: List<String?> = emptyList(),
+    )
+
+    companion object {
+        /**
+         * Stremio-backed servers (Remux) name every source after its add-on, as "[RD+] Torrentio\n1080p",
+         * so dozens of rows read the same. Those rows take the release name from the path instead, and
+         * keep the add-on line in the detail: "[RD download]" means the debrid service hasn't cached it.
+         */
+        fun list(sources: List<Source>): List<MediaVersion> {
+            val usable = sources.filter { !it.id.isNullOrBlank() }
+            val names = usable.map { nameLines(it.name).joinToString(" · ") }
+            val named = names.filter { it.isNotEmpty() }
+            val namesRepeat = named.toSet().size < named.size
+            return usable.mapIndexed { index, source ->
+                val name = names[index]
+                val lines = nameLines(source.name)
+                val addon = if (lines.size > 1) lines.first() else null
+                val release = releaseName(source.path)
+                val detail = mutableListOf<String>()
+                val title = when {
+                    release != null && (name.isEmpty() || namesRepeat || addon != null) -> {
+                        addon?.let { detail += it }
+                        release
+                    }
+                    name.isNotEmpty() -> name
+                    !source.container.isNullOrBlank() -> source.container.trim().uppercase()
+                    else -> "Version"
+                }
+                detail += facts(source)
+                MediaVersion(source.id.orEmpty(), title, detail.takeIf { it.isNotEmpty() }?.joinToString(" · "))
+            }
+        }
+
+        /** Versions worth a picker: none when the title has a single file. */
+        fun pickable(versions: List<MediaVersion?>): List<MediaVersion> =
+            versions.filterNotNull().takeIf { it.size > 1 }.orEmpty()
+
+        private fun nameLines(name: String?): List<String> =
+            name.orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }
+
+        private val videoFileExtensions = setOf(
+            "mkv", "mp4", "m4v", "mov", "avi", "ts", "m2ts", "webm", "wmv", "iso", "mpg", "mpeg", "strm",
+        )
+
+        private val uuid = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+        fun releaseName(path: String?): String? {
+            var name = path?.substringAfterLast('/')?.substringAfterLast('\\')?.trim().orEmpty()
+            val extension = name.substringAfterLast('.', "")
+            if (extension.lowercase() in videoFileExtensions) name = name.dropLast(extension.length + 1)
+            return name.takeIf { it.isNotEmpty() && !uuid.matches(it) }
+        }
+
+        /** "2.5 GB · 1080p HEVC · Dolby Vision · 5.1 · English, Russian" */
+        private fun facts(source: Source): List<String> {
+            val facts = mutableListOf<String>()
+            source.sizeBytes?.takeIf { it > 0 }?.let { facts += sizeLabel(it) }
+            if (source.hasVideo) {
+                listOfNotNull(resolution(source.width, source.height), codecName(source.videoCodec))
+                    .joinToString(" ")
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { facts += it }
+                rangeName(source.videoRange)?.let { facts += it }
+            }
+            val channels = source.channels ?: 0
+            when {
+                source.atmos -> facts += "Atmos"
+                channels >= 8 -> facts += "7.1"
+                channels >= 6 -> facts += "5.1"
+            }
+            val languages = source.languages.mapNotNull { LanguageNames.name(it) }.distinct()
+            if (languages.isNotEmpty()) {
+                facts += languages.take(3).joinToString(", ") + if (languages.size > 3) " +${languages.size - 3}" else ""
+            }
+            return facts
+        }
+
+        private fun sizeLabel(bytes: Long): String =
+            if (bytes >= 1_000_000_000L) {
+                String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
+            } else {
+                "${bytes / 1_000_000L} MB"
+            }
+
+        private fun resolution(width: Int?, height: Int?): String? {
+            val w = width ?: 0
+            val h = height ?: 0
+            return when {
+                w >= 3800 || h >= 2100 -> "4K"
+                w >= 1900 || h >= 1000 -> "1080p"
+                w >= 1200 || h >= 700 -> "720p"
+                w > 0 || h > 0 -> "SD"
+                else -> null
+            }
+        }
+
+        private fun codecName(codec: String?): String? = when (val raw = codec?.trim()?.lowercase().orEmpty()) {
+            "" -> null
+            "h264", "avc" -> "H.264"
+            "hevc", "h265" -> "HEVC"
+            "av1" -> "AV1"
+            "vp9" -> "VP9"
+            "mpeg4" -> "MPEG-4"
+            else -> raw.uppercase()
+        }
+
+        private fun rangeName(range: String?): String? {
+            val raw = range?.lowercase().orEmpty()
+            return when {
+                raw.contains("dovi") || raw.contains("dolby") -> "Dolby Vision"
+                raw.contains("hdr10plus") || raw.contains("hdr10+") -> "HDR10+"
+                raw.contains("hlg") -> "HLG"
+                raw.contains("hdr") -> "HDR10"
+                else -> null
+            }
+        }
+    }
+}
+
+/** A language's name from the ISO 639 codes servers send ("eng", "fre"), in the device's language. */
+object LanguageNames {
+    fun name(code: String?): String? {
+        val trimmed = code?.trim().orEmpty()
+        if (trimmed.isEmpty() || trimmed.equals("und", true)) return null
+        val mapped = ISO639[trimmed.lowercase()] ?: trimmed
+        val display = Locale.forLanguageTag(mapped).getDisplayLanguage(Locale.getDefault())
+        return if (display.isNotBlank() && !display.equals(mapped, true)) display else trimmed
+    }
+
+    private val ISO639 = mapOf(
+        "eng" to "en", "jpn" to "ja", "kor" to "ko", "fra" to "fr", "fre" to "fr",
+        "spa" to "es", "deu" to "de", "ger" to "de", "ita" to "it", "por" to "pt",
+        "rus" to "ru", "zho" to "zh", "chi" to "zh", "nld" to "nl", "swe" to "sv",
+        "nor" to "no", "dan" to "da", "fin" to "fi", "pol" to "pl", "hun" to "hu",
+        "ces" to "cs", "ara" to "ar", "hin" to "hi", "tha" to "th", "vie" to "vi",
+        "tur" to "tr", "ell" to "el",
+    )
 }
 
 @Serializable
@@ -63,6 +224,8 @@ data class MediaItem(
     val backdropUrl: String? = null,
     val logoUrl: String? = null,
     val mediaSourceId: String? = null,
+    /** Every file the title can play from, in Jellyfin's order, when there's more than one. */
+    val versions: List<MediaVersion> = emptyList(),
     val people: List<CreditPerson> = emptyList(),
     /** ISO-8601 premiere date; TubeArchivist stores the YouTube publish date here. */
     val premiereDate: String? = null,
@@ -226,6 +389,9 @@ data class SeasonDownloadChoice(
     val id: String get() = seasonIndex?.toString() ?: "all"
 
     companion object {
+        const val VERSION_NOTE = "Each episode downloads the version picked for it, or the first one if none is. " +
+            "To get a different version, pick it in the episode's menu first or download that episode on its own."
+
         fun options(seasons: List<MediaItem>, episodes: List<MediaItem>): List<SeasonDownloadChoice> {
             val numbers = seasonNumbers(seasons, episodes)
             if (numbers.isEmpty()) {

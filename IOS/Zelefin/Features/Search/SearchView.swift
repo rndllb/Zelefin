@@ -68,7 +68,7 @@ struct SearchView: View {
                 .padding(.top, MacSearchPill.topInset)
                 .frame(maxWidth: .infinity)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(edges: .top)
     }
@@ -107,7 +107,7 @@ struct SearchView: View {
                     .transition(.opacity)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(edges: .top)
         .animation(ZelefinMotion.sidebarChrome, value: searchChromeTopInset)
@@ -680,7 +680,7 @@ private struct SearchPage: View {
     private var discoverContent: some View {
         if trimmedTerm.isEmpty {
             SeerrDiscoverHomeView(home: $discoverHome, isLoading: isLoadingDiscover) { title in
-                handleRequest(title)
+                markRequested(title)
             }
         } else if isLoadingResults && seerrResults.isEmpty {
             ProgressView()
@@ -699,7 +699,7 @@ private struct SearchPage: View {
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(seerrResults) { title in
-                    SeerrRequestRow(title: title) {
+                    SeerrRequestRow(title: title, onRequested: markRequested) {
                         handleRequest(title)
                     }
                 }
@@ -963,9 +963,11 @@ private struct SearchPage: View {
     }
 }
 
+/// A Discover search result. The row opens the title's page; the pill requests it straight away.
 struct SeerrRequestRow: View {
     @Environment(SessionStore.self) private var session
     let title: SeerrTitle
+    var onRequested: (SeerrTitle) -> Void = { _ in }
     var onRequest: () -> Void
 
     private var isInJellyfin: Bool {
@@ -981,50 +983,17 @@ struct SeerrRequestRow: View {
     }
 
     var body: some View {
-        Group {
-            if isFullyOnServer {
-                row
-            } else {
-                Button(action: onRequest) { row }
-                    .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var row: some View {
         HStack(spacing: 14) {
-                PosterImage(url: title.posterURL)
-                    .frame(width: 52, height: 78)
-                    .overlay(alignment: .topTrailing) {
-                        if isInJellyfin {
-                            JellyfinLibraryMark()
-                                .font(.system(size: 16, weight: .bold))
-                                .padding(3)
-                        }
-                    }
-                    .posterCard(cornerRadius: 6)
+            NavigationLink {
+                RequestTitleDetailView(title: title, onRequested: onRequested)
+            } label: {
+                details
+            }
+            .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title.name)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.45))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(isFullyOnServer ? "In Library" : (title.review == .pendingApproval ? "Pending" : title.availability.buttonTitle))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(canRequestNow ? LoginPalette.actionLabel : .white.opacity(0.7))
-                    .padding(.horizontal, 12)
-                    .frame(height: 28)
-                    .background(
-                        canRequestNow ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.white.opacity(0.18)),
-                        in: Capsule()
-                    )
+            Button(action: onRequest) { pill }
+                .buttonStyle(.plain)
+                .disabled(!canRequestNow)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -1034,6 +1003,46 @@ struct SeerrRequestRow: View {
                 .frame(height: 0.5)
                 .padding(.leading, 82)
         }
+    }
+
+    private var details: some View {
+        HStack(spacing: 14) {
+            PosterImage(url: title.posterURL)
+                .frame(width: 52, height: 78)
+                .overlay(alignment: .topTrailing) {
+                    if isInJellyfin {
+                        JellyfinLibraryMark()
+                            .font(.system(size: 16, weight: .bold))
+                            .padding(3)
+                    }
+                }
+                .posterCard(cornerRadius: 6)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var pill: some View {
+        Text(isFullyOnServer ? "In Library" : (title.review == .pendingApproval ? "Pending" : title.availability.buttonTitle))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(canRequestNow ? LoginPalette.actionLabel : .white.opacity(0.7))
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(
+                canRequestNow ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.white.opacity(0.18)),
+                in: Capsule()
+            )
     }
 
     private var subtitle: String {

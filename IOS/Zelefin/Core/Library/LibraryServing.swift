@@ -140,9 +140,14 @@ protocol LibraryServing: AnyObject, Sendable {
         startTime: TimeInterval?,
         mediaSourceID: String?
     ) async throws -> PlaybackPlan
-    func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack])
+    /// The audio and subtitle streams of one version of a title, or of its first version when `mediaSourceID` is nil.
+    func streamTracks(for itemID: String, mediaSourceID: String?) async -> (audio: [MediaTrack], subtitles: [MediaTrack])
     func originalFileDownloadURL(for itemID: String) throws -> URL
-    func prepareDownloadAsset(for item: MediaItem, plan: PlaybackPlan) async throws -> DownloadAsset
+    /// The file of one version of a title, or of its first version when `mediaSourceID` is nil.
+    func originalFileDownloadURL(for itemID: String, mediaSourceID: String?) throws -> URL
+    /// What a download fetches. `mediaSourceID` is the version picked on the title's page, nil for the
+    /// server's first.
+    func prepareDownloadAsset(for item: MediaItem, plan: PlaybackPlan, mediaSourceID: String?) async throws -> DownloadAsset
     func finalizeServerDownload(id: String) async
     func deleteServerDownload(id: String) async
     func downloadsAvailable() async -> Bool
@@ -428,18 +433,27 @@ struct DownloadAsset: Sendable {
 }
 
 extension LibraryServing {
-    func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
+    func streamTracks(for itemID: String, mediaSourceID: String?) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
         ([], [])
+    }
+
+    func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
+        await streamTracks(for: itemID, mediaSourceID: nil)
     }
 
     func originalFileDownloadURL(for itemID: String) throws -> URL {
         throw LibraryServingDefaults.unavailable
     }
 
+    /// Jellyfin gives each version of a title its own item, whose ID is the version's media source ID.
+    func originalFileDownloadURL(for itemID: String, mediaSourceID: String?) throws -> URL {
+        try originalFileDownloadURL(for: mediaSourceID ?? itemID)
+    }
+
     /// Default: a single direct file download (Jellyfin), fetched straight from
     /// the server's original-file URL with no server-side bookkeeping.
-    func prepareDownloadAsset(for item: MediaItem, plan: PlaybackPlan) async throws -> DownloadAsset {
-        let url = try originalFileDownloadURL(for: item.id)
+    func prepareDownloadAsset(for item: MediaItem, plan: PlaybackPlan, mediaSourceID: String?) async throws -> DownloadAsset {
+        let url = try originalFileDownloadURL(for: item.id, mediaSourceID: mediaSourceID)
         return DownloadAsset(
             url: url,
             headers: PlaybackHTTPHeaders.fields(for: url),

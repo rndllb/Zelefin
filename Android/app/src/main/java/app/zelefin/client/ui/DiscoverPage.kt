@@ -109,6 +109,7 @@ internal fun DiscoverPane(
     onLoadHome: () -> Unit,
     onOpenQuery: (DiscoverQuery) -> Unit,
     onSelect: (SeerrTitle) -> Unit,
+    onRequest: (SeerrTitle) -> Unit,
     onDrag: () -> Unit,
     onScrollOffset: (Int, Int) -> Unit = { _, _ -> },
 ) {
@@ -131,7 +132,7 @@ internal fun DiscoverPane(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(discover.hits, key = { it.id }) { hit ->
-                        SeerrRequestRow(discover.resolved(hit), discover) { onSelect(hit) }
+                        SeerrRequestRow(discover.resolved(hit), discover, onOpen = { onSelect(hit) }, onRequest = { onRequest(hit) })
                     }
                 }
             }
@@ -233,14 +234,15 @@ private fun DiscoverBrandCard(brand: DiscoverBrand, onClick: () -> Unit) {
     }
 }
 
+/** A Discover poster. Every one opens the title's page, including those already in the library. */
 @Composable
-private fun SeerrPoster(title: SeerrTitle, modifier: Modifier, onClick: () -> Unit) {
+internal fun SeerrPoster(title: SeerrTitle, modifier: Modifier, onClick: () -> Unit) {
     val locked = title.availability.isOnServer
     Box(
         modifier
             .posterChrome()
             .background(SheetGroupFill)
-            .then(if (locked) Modifier else Modifier.clickable(onClick = onClick)),
+            .clickable(onClick = onClick),
     ) {
         CachedArtwork(
             urls = listOfNotNull(title.posterUrl),
@@ -295,8 +297,9 @@ private fun LibraryMark(modifier: Modifier, side: Dp) {
     }
 }
 
+/** A Discover search result. The row opens the title's page; the pill requests it straight away. */
 @Composable
-private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, onRequest: () -> Unit) {
+private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, onOpen: () -> Unit, onRequest: () -> Unit) {
     val onServer = title.availability.isOnServer
     val fullyOnServer = title.availability == SeerrTitle.Availability.Available ||
         (title.kind == SeerrTitle.Kind.Movie && onServer)
@@ -308,8 +311,7 @@ private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, onRequ
         title.review == SeerrTitle.Review.PendingApproval -> "Pending"
         else -> title.buttonTitle
     }
-    val tappable = !fullyOnServer && (canRequest || title.requestId != null)
-    Column(Modifier.fillMaxWidth().then(if (tappable) Modifier.clickable(onClick = onRequest) else Modifier)) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -347,6 +349,7 @@ private fun SeerrRequestRow(title: SeerrTitle, discover: DiscoverUiState, onRequ
                     .height(28.dp)
                     .clip(CircleShape)
                     .background(if (canRequest) ZelefinCyan else Color.White.copy(alpha = 0.18f))
+                    .then(if (canRequest) Modifier.clickable(onClick = onRequest) else Modifier)
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {

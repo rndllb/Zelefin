@@ -1050,6 +1050,22 @@ final class UserViewsDecodingTests: XCTestCase {
         let kinds = (result.items ?? []).compactMap(ItemMapper.library(from:)).map(\.libraryKind)
         XCTAssertEqual(kinds, [.movies, .shows, .other])
     }
+
+    func testRemuxShowHintKeepsTheSearch() throws {
+        let json = """
+        {
+          "SearchHints": [
+            {"Id": "m1", "ItemId": "m1", "Name": "Vision Quest", "Type": "Movie", "MediaType": "Video", "ProductionYear": 1985},
+            {"Id": "s1", "ItemId": "s1", "Name": "VisionQuest", "Type": "Series", "MediaType": "Other", "ProductionYear": 2026}
+          ],
+          "TotalRecordCount": 2
+        }
+        """.data(using: .utf8)!
+        XCTAssertThrowsError(try JSONDecoder().decode(SearchHintResult.self, from: json))
+        let hits = try ItemMapper.decodeSearchHints(json).searchHints?.compactMap(ItemMapper.searchHit(from:))
+        XCTAssertEqual(hits?.map(\.name), ["Vision Quest", "VisionQuest"])
+        XCTAssertEqual(hits?.last?.subtitle, "Show · 2026")
+    }
 }
 
 final class SiloAccountTests: XCTestCase {

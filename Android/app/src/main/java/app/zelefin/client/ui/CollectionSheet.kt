@@ -1,6 +1,8 @@
 package app.zelefin.client.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -115,7 +117,7 @@ fun CollectionSheet(
                 .weight(1f)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .background(Color(0xFF202022)),
+                .background(MaterialTheme.colorScheme.surface),
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -140,7 +142,7 @@ fun CollectionSheet(
                         .clickable(onClick = onDismiss),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("✕", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
             }
             Column(

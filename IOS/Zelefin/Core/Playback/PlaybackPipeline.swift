@@ -244,6 +244,15 @@ struct PlaybackLaunchOptions: Hashable, Sendable {
         if subtitlesDisabled { return -1 }
         return subtitleIndex
     }
+
+    /// Plays from another of the title's files. Stream numbers belong to one file, so an audio or
+    /// subtitle pick made on the old version doesn't carry over.
+    mutating func chooseVersion(_ id: String) {
+        guard mediaSourceID != id else { return }
+        mediaSourceID = id
+        audioIndex = nil
+        subtitleIndex = nil
+    }
 }
 
 /// One remembered audio or subtitle pick, by what it is rather than its stream number, so it carries to

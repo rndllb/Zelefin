@@ -24,4 +24,11 @@ class GlassKnobTest {
         val dark = GlassKnob.Darkness.write(GlassStyle(), 0.85f).fallbackFill.alpha
         assert(dark > light)
     }
+
+    @Test
+    fun theDefaultGlassHasALittleFrostAndHalfDarkness() {
+        val clear = GlassMode.Clear.preset!!
+        assertEquals("1", GlassKnob.Frost.label(GlassKnob.Frost.read(clear)))
+        assertEquals("50%", GlassKnob.Darkness.label(GlassKnob.Darkness.read(clear)))
+    }
 }

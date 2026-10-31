@@ -113,6 +113,10 @@ final class SessionStore {
     let adaptiveBitrate = AdaptiveBitrateStore()
     private var pathMonitor: NWPathMonitor?
     private var playbackLaunchOptions: [String: PlaybackLaunchOptions] = [:]
+    /// Each title's versions once read. A menu's rows never load anything themselves, so the
+    /// controls that open them fill this first.
+    private(set) var mediaVersions: [String: [MediaVersion]] = [:]
+    @ObservationIgnored private var mediaVersionLoads: Set<String> = []
 
     private var homeTask: Task<Void, Never>?
 
@@ -155,6 +159,21 @@ final class SessionStore {
         var options = launchOptions(for: itemID)
         mutate(&options)
         playbackLaunchOptions[itemID] = options
+    }
+
+    func chooseVersion(_ mediaSourceID: String, for itemID: String) {
+        updateLaunchOptions(for: itemID) { $0.chooseVersion(mediaSourceID) }
+    }
+
+    @discardableResult
+    func loadVersions(for itemID: String) async -> [MediaVersion] {
+        if let cached = mediaVersions[itemID] { return cached }
+        guard let library, !mediaVersionLoads.contains(itemID) else { return [] }
+        mediaVersionLoads.insert(itemID)
+        defer { mediaVersionLoads.remove(itemID) }
+        let versions = await library.mediaVersions(for: itemID)
+        if !versions.isEmpty { mediaVersions[itemID] = versions }
+        return versions
     }
 
     /// Wait until Home has finished, then warm each library tab from smallest catalog to
@@ -1041,6 +1060,7 @@ final class SessionStore {
         itemDetailMemory = [:]
         libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
+        mediaVersions = [:]
         currentSSID = nil
         activeRoute = .remote
         pathMonitor?.cancel()
@@ -1139,6 +1159,7 @@ final class SessionStore {
         itemDetailMemory = [:]
         libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
+        mediaVersions = [:]
         restoreSnapshot(for: saved)
         Task { await refreshAccount() }
         Task { await refreshSessionCapabilities() }
@@ -1242,6 +1263,7 @@ final class SessionStore {
         itemDetailMemory = [:]
         libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
+        mediaVersions = [:]
         libraries = ReviewDemoCatalog.libraries
         homeLayout = HomeLayout(
             featured: ReviewDemoCatalog.featured,

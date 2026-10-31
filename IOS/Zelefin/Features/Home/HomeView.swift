@@ -84,7 +84,7 @@ struct HomeView: View {
             .onAppear { heroLock.lock(geo.size) }
             .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
         .animation(ZelefinMotion.sidebarChrome, value: tabBarPlacement)
@@ -299,7 +299,7 @@ struct SectionGridView: View {
             }
             .padding(16)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinPushedChrome(title: section.title) { EmptyView() }
     }
 }
@@ -374,7 +374,7 @@ struct ContinueWatchingListView: View {
                 }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinPushedChrome(title: title) { EmptyView() }
         .presentsPlayerFromRoot($playingItem)
         .alert("Playback", isPresented: Binding(
@@ -488,7 +488,7 @@ struct CatalogCardGridView: View {
             }
             .padding(16)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
         .catalogPushedChrome(title: section.title) { EmptyView() }
@@ -566,7 +566,7 @@ struct CatalogGridView: View {
                 }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
         .catalogPushedChrome(

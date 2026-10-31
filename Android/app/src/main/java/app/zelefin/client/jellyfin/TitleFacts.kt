@@ -1,11 +1,11 @@
 package app.zelefin.client.jellyfin
 
 import app.zelefin.core.EmbyItem
+import app.zelefin.core.LanguageNames
 import app.zelefin.core.MediaItem
 import app.zelefin.core.TitleMoreInfo
 import app.zelefin.core.TitleMoreLink
 import app.zelefin.core.TitleMoreRow
-import java.util.Locale
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.MediaStreamType
 
@@ -229,13 +229,7 @@ internal object TitleFacts {
         return year?.toString()
     }
 
-    private fun languageName(code: String?): String {
-        val trimmed = code?.trim().orEmpty()
-        if (trimmed.isEmpty() || trimmed.equals("und", true)) return "Unknown"
-        val mapped = ISO639[trimmed.lowercase()] ?: trimmed
-        val display = Locale.forLanguageTag(mapped).getDisplayLanguage(Locale.getDefault())
-        return if (display.isNotBlank() && !display.equals(mapped, true)) display else trimmed
-    }
+    private fun languageName(code: String?): String = LanguageNames.name(code) ?: "Unknown"
 
     private fun audioFormatName(codec: String?, layout: String?, spatial: String): String {
         if (spatial.contains("atmos", true) || layout.orEmpty().contains("atmos", true)) return "Dolby Atmos"
@@ -284,15 +278,6 @@ internal object TitleFacts {
             else -> "${(bitsPerSecond / 1_000.0).toInt()} kbps"
         }
     }
-
-    private val ISO639 = mapOf(
-        "eng" to "en", "jpn" to "ja", "kor" to "ko", "fra" to "fr", "fre" to "fr",
-        "spa" to "es", "deu" to "de", "ger" to "de", "ita" to "it", "por" to "pt",
-        "rus" to "ru", "zho" to "zh", "chi" to "zh", "nld" to "nl", "swe" to "sv",
-        "nor" to "no", "dan" to "da", "fin" to "fi", "pol" to "pl", "hun" to "hu",
-        "ces" to "cs", "ara" to "ar", "hin" to "hi", "tha" to "th", "vie" to "vi",
-        "tur" to "tr", "ell" to "el",
-    )
 }
 
 internal fun TitleMoreInfo.withMedia(media: TitleMoreInfo): TitleMoreInfo = copy(

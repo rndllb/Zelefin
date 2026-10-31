@@ -243,12 +243,12 @@ struct SessionDetailView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Color.black.ignoresSafeArea())
+            .background(Color.zelefinPage.ignoresSafeArea())
             .navigationTitle("Message")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { isComposingMessage = false }
+                    CloseButton { isComposingMessage = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Send") { Task { await sendMessage() } }

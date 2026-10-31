@@ -368,8 +368,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
         async let movies = tmdbIDs(include: [.movie])
         async let shows = tmdbIDs(include: [.series])
         return JellyfinTmdbCatalog(
-            movieIDs: (try? await movies) ?? [],
-            seriesIDs: (try? await shows) ?? []
+            movieItems: (try? await movies) ?? [:],
+            seriesItems: (try? await shows) ?? [:]
         )
     }
 
@@ -1053,9 +1053,9 @@ class JellyfinLibraryClient: @unchecked Sendable {
         )
     }
 
-    func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
+    func streamTracks(for itemID: String, mediaSourceID: String?) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
         let dto = try? await client.send(Paths.getItem(itemID: itemID, userID: userID)).value
-        let source = dto?.mediaSources?.first
+        let source = dto?.mediaSources?.first { $0.id == mediaSourceID } ?? dto?.mediaSources?.first
         let streams = source?.mediaStreams ?? dto?.mediaStreams
         return (
             ItemMapper.tracks(from: streams, kind: .audio, source: source),
@@ -1670,8 +1670,9 @@ class JellyfinLibraryClient: @unchecked Sendable {
         ).value.compactMap(ItemMapper.mediaItem(from:))
     }
 
-    private func tmdbIDs(include: [BaseItemKind]) async throws -> Set<Int> {
-        var ids = Set<Int>()
+    /// TMDB identifiers mapped to their library items.
+    private func tmdbIDs(include: [BaseItemKind]) async throws -> [Int: String] {
+        var ids: [Int: String] = [:]
         var start = 0
         let pageSize = 250
 
@@ -1692,8 +1693,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
             ).value
             let items = result.items ?? []
             for item in items {
-                if let tmdbID = JellyfinTmdbCatalog.tmdbID(from: item.providerIDs) {
-                    ids.insert(tmdbID)
+                if let tmdbID = JellyfinTmdbCatalog.tmdbID(from: item.providerIDs), let id = item.id {
+                    ids[tmdbID] = ids[tmdbID] ?? id
                 }
             }
             start += items.count
@@ -1930,8 +1931,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
     func searchLibrary(_ term: String) async throws -> [LibrarySearchHit] {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let result = try await client.send(
-            Paths.getSearchHints(
+        let data = try await client.data(
+            for: Paths.getSearchHints(
                 parameters: .init(
                     limit: 24,
                     userID: userID,
@@ -1948,6 +1949,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
                 )
             )
         ).value
+        let result = try ItemMapper.decodeSearchHints(data)
         var seen = Set<String>()
         return (result.searchHints ?? []).compactMap { hint in
             guard let hit = ItemMapper.searchHit(from: hint), seen.insert(hit.id).inserted else { return nil }

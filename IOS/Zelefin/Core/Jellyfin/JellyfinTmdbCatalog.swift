@@ -4,6 +4,29 @@ import Foundation
 struct JellyfinTmdbCatalog: Equatable, Sendable {
     var movieIDs: Set<Int> = []
     var seriesIDs: Set<Int> = []
+    /// The library item for each TMDB identifier, so a Discover title can open its library page.
+    var movieItemIDs: [Int: String] = [:]
+    var seriesItemIDs: [Int: String] = [:]
+
+    init(movieIDs: Set<Int> = [], seriesIDs: Set<Int> = []) {
+        self.movieIDs = movieIDs
+        self.seriesIDs = seriesIDs
+    }
+
+    init(movieItems: [Int: String], seriesItems: [Int: String]) {
+        movieIDs = Set(movieItems.keys)
+        seriesIDs = Set(seriesItems.keys)
+        movieItemIDs = movieItems
+        seriesItemIDs = seriesItems
+    }
+
+    /// The library item that is `title`, when the catalog knows it.
+    func itemID(for title: SeerrTitle) -> String? {
+        switch title.kind {
+        case .movie: movieItemIDs[title.tmdbID]
+        case .tv: seriesItemIDs[title.tmdbID]
+        }
+    }
 
     /// A Boolean value that's true when `title` is already in this library.
     func contains(_ title: SeerrTitle) -> Bool {

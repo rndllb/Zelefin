@@ -66,6 +66,12 @@ interface RequestCatalog {
     suspend fun approveRequest(id: Int, draft: SeerrRequestDraft)
 
     suspend fun declineRequest(id: Int, kind: SeerrTitle.Kind)
+
+    /** The title's page: artwork, credits, trailers, and similar titles. */
+    suspend fun titleDetails(title: SeerrTitle): RequestTitleDetails
+
+    /** The title on the request server's own website. */
+    fun webUrl(title: SeerrTitle): String?
 }
 
 sealed class DiscoverQuery {
@@ -488,4 +494,20 @@ class SeerrRequestCatalog(val client: SeerrClient) : RequestCatalog {
     override suspend fun approveRequest(id: Int, draft: SeerrRequestDraft) = client.approveRequest(id, draft)
 
     override suspend fun declineRequest(id: Int, kind: SeerrTitle.Kind) = client.declineRequest(id)
+
+    override suspend fun titleDetails(title: SeerrTitle): RequestTitleDetails = coroutineScope {
+        val path = "api/v1/${title.kind.raw}/${title.tmdbId}"
+        val related = async {
+            runCatching {
+                val page = client.fetch("$path/recommendations", listOf("page" to "1", "language" to "en")) as? JsonObject
+                page?.let(SeerrSearchResponse::parse)?.results.orEmpty().mapNotNull { SeerrClient.title(it, defaultKind = title.kind) }
+            }.getOrDefault(emptyList())
+        }
+        val json = client.fetch(path, listOf("language" to "en")) as? JsonObject
+            ?: throw ZelefinException.server("Seerr did not return that title.")
+        val details = if (title.kind == SeerrTitle.Kind.Movie) RequestTitleDetails.seerrMovie(json) else RequestTitleDetails.seerrShow(json)
+        details.copy(related = related.await())
+    }
+
+    override fun webUrl(title: SeerrTitle): String = "${client.baseUrl.trimEnd('/')}/${title.kind.raw}/${title.tmdbId}"
 }

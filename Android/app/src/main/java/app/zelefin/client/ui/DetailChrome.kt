@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +42,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.rounded.Check
+import app.zelefin.client.R
+import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.graphics.vector.ImageVector
+import app.zelefin.core.MediaVersion
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
@@ -106,6 +111,7 @@ private sealed interface DetailSheet {
     data class Images(val item: MediaItem) : DetailSheet
     data class Identify(val item: MediaItem) : DetailSheet
     data class Metadata(val item: MediaItem) : DetailSheet
+    data class Versions(val item: MediaItem, val anchor: Rect) : DetailSheet
 }
 
 @Composable
@@ -127,6 +133,11 @@ fun DetailPage(
 ) {
     var sheet by remember { mutableStateOf<DetailSheet?>(null) }
     var note by remember { mutableStateOf<MenuNotice?>(null) }
+    // The version picked for each title on this page. Play uses it; otherwise Jellyfin plays its first.
+    var chosenVersions by remember(detail?.item?.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    fun withVersion(target: MediaItem): MediaItem =
+        chosenVersions[target.id]?.let { target.copy(mediaSourceId = it) } ?: target
+    val playTitle: (MediaItem) -> Unit = { target -> onPlay(withVersion(target)) }
     var downloadRemoval by remember { mutableStateOf<MediaItem?>(null) }
     DownloadRemovalOverlay(downloadRemoval) { downloadRemoval = null }
     val pageSheet: DetailSheet? = when (val current = sheet) {
@@ -236,7 +247,7 @@ fun DetailPage(
                             session = session,
                             sort = videoSort,
                             onSort = { videoSort = it },
-                            onPlay = onPlay,
+                            onPlay = playTitle,
                             onOpenVideo = onOpen,
                             onToggleFavorite = onToggleFavorite,
                             onMore = onVideoMore,
@@ -245,7 +256,7 @@ fun DetailPage(
                         youTubeVideoItems(
                             detail = detail,
                             session = session,
-                            onPlay = onPlay,
+                            onPlay = playTitle,
                             onOpenVideo = onOpen,
                             onOpenChannel = onOpen,
                             onToggleWatched = onToggleWatched,
@@ -260,11 +271,13 @@ fun DetailPage(
                         item = item,
                         episodes = detail.episodes,
                         session = session,
-                        onPlay = onPlay,
+                        onPlay = playTitle,
                         onMore = { sheet = DetailSheet.MoreInfo },
                         moreInfo = detail.moreInfo,
                         theme = theme,
                         collectionItems = detail.collectionItems,
+                        chosenVersions = chosenVersions,
+                        onVersions = { target, anchor -> sheet = DetailSheet.Versions(target, anchor) },
                     )
                 }
                 item(key = "download-status") {
@@ -298,9 +311,9 @@ fun DetailPage(
                             onSeason = { seasonId = it },
                             onJumpConsumed = { seasonJump = null },
                             onOpenSeasons = { sheet = DetailSheet.Seasons },
-                            onPlay = onPlay,
+                            onPlay = playTitle,
                             onMore = { episode, anchor ->
-                                sheet = DetailSheet.More(episode, anchor, TitleMenuContext.Episode)
+                                sheet = DetailSheet.More(withVersion(episode), anchor, TitleMenuContext.Episode)
                             },
                         )
                     }
@@ -313,7 +326,7 @@ fun DetailPage(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(detail.additionalParts, key = { it.id }) { part ->
-                                PortraitHomeCard(part, session) { onPlay(part) }
+                                PortraitHomeCard(part, session) { playTitle(part) }
                             }
                         }
                         Spacer(Modifier.height(20.dp))
@@ -330,7 +343,7 @@ fun DetailPage(
                                 TrailerCard(trailer, item, session) {
                                     val local = trailer.localItem
                                     if (local != null) {
-                                        onPlay(local)
+                                        playTitle(local)
                                     } else {
                                         val url = trailer.watchUrl ?: return@TrailerCard
                                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
@@ -444,8 +457,8 @@ fun DetailPage(
                         )
                     }
                     DownloadSharePill(
-                        item = item,
-                        episodes = detail.episodes,
+                        item = withVersion(item),
+                        episodes = detail.episodes.map(::withVersion),
                         seasons = detail.seasons,
                         onShare = { shareTitle(context, item, session) },
                         onRemove = { downloadRemoval = it },
@@ -554,9 +567,9 @@ fun DetailPage(
         onDismiss = { sheet = null },
         onPlay = { target ->
             if (target.isYouTube && target.kind == MediaKind.Series) {
-                detail?.channelVideos?.firstOrNull()?.let(onPlay)
+                detail?.channelVideos?.firstOrNull()?.let(playTitle)
             } else {
-                onPlay(target)
+                playTitle(target)
             }
         },
         onOpen = onOpen,
@@ -596,6 +609,18 @@ fun DetailPage(
         onDeleteFromLibrary = actions.deleteFromLibrary
             ?.takeIf { pageItem?.kind != MediaKind.Collection }
             ?.let { delete -> { target -> delete(pageItem ?: target) } },
+        onChooseVersion = { target, anchor -> sheet = DetailSheet.Versions(target, anchor) },
+    )
+    val versionMenu = sheet as? DetailSheet.Versions
+    VersionMenu(
+        request = versionMenu,
+        chosen = versionMenu?.let { chosenVersions[it.item.id] },
+        loadVersions = actions.loadVersions,
+        onPick = { target, versionId ->
+            chosenVersions = chosenVersions + (target.id to versionId)
+            sheet = null
+        },
+        onDismiss = { sheet = null },
     )
     val downloadVideos = sheet as? DetailSheet.DownloadVideos
     YouTubeDownloadMenu(
@@ -613,10 +638,11 @@ fun DetailPage(
         onConfirm = { indexes ->
             val page = detail ?: return@DownloadSeasonsSheet
             sheet = null
+            val episodes = page.episodes.map(::withVersion)
             startSeasonDownload(
                 indexes,
-                page.episodes,
-                app.zelefin.client.downloads.DownloadEligibility.playableItem(page.item, page.episodes) ?: page.item,
+                episodes,
+                app.zelefin.client.downloads.DownloadEligibility.playableItem(page.item, episodes) ?: page.item,
             )
         },
         onDismiss = { sheet = null },
@@ -636,6 +662,8 @@ private fun DetailHero(
     moreInfo: app.zelefin.core.TitleMoreInfo,
     theme: ThemeMediaPlayers? = null,
     collectionItems: List<MediaItem> = emptyList(),
+    chosenVersions: Map<String, String> = emptyMap(),
+    onVersions: (MediaItem, Rect) -> Unit = { _, _ -> },
 ) {
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     val heroHeight = (screenHeight * 0.82f).coerceAtLeast(560.dp).coerceAtMost(screenHeight)
@@ -687,7 +715,13 @@ private fun DetailHero(
                 textAlign = TextAlign.Center,
             )
             if (playback.kind != MediaKind.Collection) {
-                DetailPlayButton(playback) { onPlay(playback) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DetailPlayButton(playback) { onPlay(playback) }
+                    // A show picks per episode, from each episode's menu and the player.
+                    if (playback.versions.size > 1 && item.kind != MediaKind.Series && item.kind != MediaKind.Season) {
+                        VersionButton(playback.versions, chosenVersions[playback.id]) { anchor -> onVersions(playback, anchor) }
+                    }
+                }
             }
             val overview = item.overview?.takeIf { it.isNotBlank() }
             val showMore = (overview?.length ?: 0) > 90 || moreInfo.hasDetails
@@ -754,6 +788,82 @@ private fun collectionMetadataLine(collection: MediaItem, members: List<MediaIte
         parts += collection.genres.take(2)
     }
     return parts.joinToString("  ·  ")
+}
+
+/** Which file the title plays from, when the library holds it more than once. */
+@Composable
+private fun VersionButton(versions: List<MediaVersion>, chosen: String?, onOpen: (Rect) -> Unit) {
+    val anchor = remember { mutableStateOf(Rect.Zero) }
+    val title = versions.firstOrNull { it.id == chosen }?.title ?: versions.first().title
+    // Drawn above the page on the dock's liquid glass, like the Home hero's More button.
+    Box(
+        Modifier
+            .size(45.dp)
+            .onGloballyPositioned { coords ->
+                val next = coords.boundsInRoot()
+                if (anchor.value != next) anchor.value = next
+            }
+            .zelefinGlassDisc("detail-version", "Version, $title", ImageVector.vectorResource(R.drawable.iconsax_layer)) {
+                onOpen(anchor.value)
+            },
+    )
+}
+
+/** The versions of a title, from the version button beside Play. */
+@Composable
+private fun VersionMenu(
+    request: DetailSheet.Versions?,
+    chosen: String?,
+    loadVersions: suspend (MediaItem) -> List<MediaVersion>,
+    onPick: (MediaItem, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val haze = LocalZelefinHaze.current
+    PresentZelefinOverlay(visible = request != null && haze != null) {
+        val hazeState = haze ?: return@PresentZelefinOverlay
+        val shown = request ?: return@PresentZelefinOverlay
+        var versions by remember(shown.item.id) { mutableStateOf(shown.item.versions) }
+        LaunchedEffect(shown.item.id) {
+            versions = loadVersions(shown.item).ifEmpty { shown.item.versions }
+        }
+        val selected = chosen?.takeIf { id -> versions.any { it.id == id } } ?: versions.firstOrNull()?.id
+        val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+        AnchoredMenuFrame(shown.anchor, alignTrailing = false, onDismiss = onDismiss, clearBottom = dockContentReserve()) {
+            Column(
+                Modifier
+                    .zelefinGlassChrome(hazeState, ZelefinMenuShape)
+                    .heightIn(max = screenHeight - 24.dp)
+                    .verticalScroll(rememberScrollState())
+                    .zelefinMenuWidth()
+                    .padding(vertical = 4.dp),
+            ) {
+                Text(
+                    versionMenuHeader(shown.item),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = ZelefinFont,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                versions.forEach { version ->
+                    MoreRow(
+                        version.title,
+                        if (version.id == selected) Icons.Rounded.Check else null,
+                        { onPick(shown.item, version.id) },
+                        detail = version.detail,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** On a show's page the button picks for the episode Play starts, so the menu names it. */
+private fun versionMenuHeader(item: MediaItem): String {
+    if (item.kind != MediaKind.Episode) return "Version"
+    return listOfNotNull(item.episodeIndex?.let { "Episode $it" }, item.name.takeIf { it.isNotBlank() }).joinToString(" · ")
 }
 
 @Composable
@@ -907,7 +1017,7 @@ private fun SeasonMenu(
 }
 
 @Composable
-private fun MoreCapsule(modifier: Modifier, onClick: () -> Unit) {
+internal fun MoreCapsule(modifier: Modifier, onClick: () -> Unit) {
     Text(
         "MORE",
         color = Color.White,
@@ -1091,7 +1201,7 @@ private fun AboutRatingCard(value: String, label: String, meaning: String, icon:
 }
 
 @Composable
-private fun FactsBlock(title: String, rows: List<app.zelefin.core.TitleMoreRow>) {
+internal fun FactsBlock(title: String, rows: List<app.zelefin.core.TitleMoreRow>) {
     if (rows.isEmpty()) return
     Text(
         title,
@@ -1439,7 +1549,7 @@ private fun SectionTitle(title: String, onClick: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun GlassMore(modifier: Modifier = Modifier, onMore: (Rect) -> Unit) {
+internal fun GlassMore(modifier: Modifier = Modifier, onMore: (Rect) -> Unit) {
     val anchor = remember { mutableStateOf(Rect.Zero) }
     Box(
         modifier
@@ -1484,7 +1594,7 @@ private fun shareTitle(context: android.content.Context, item: MediaItem, sessio
 }
 
 @Composable
-private fun GlassBack(onBack: () -> Unit, modifier: Modifier = Modifier) {
+internal fun GlassBack(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier
             .statusBarsPadding()

@@ -56,6 +56,7 @@ struct ItemDetailView: View {
     @State private var mediaStreamRevision = 0
     @State private var audioTracks: [MediaTrack]?
     @State private var subtitleTracks: [MediaTrack]?
+    /// The files the hero's title can play from, for its version picker.
 
     init(itemID: String, preview: MediaItem? = nil, focusEpisodeID: String? = nil) {
         self.itemID = itemID
@@ -118,6 +119,7 @@ struct ItemDetailView: View {
                         showsCollectionEditor = false
                         Task { await refreshCollections() }
                     }
+                    .zelefinSheetStores(session, downloads)
                 }
             }
             .sheet(isPresented: $showsPlayOnDevice) {
@@ -125,6 +127,7 @@ struct ItemDetailView: View {
                     PlayOnDeviceSheet(item: item) {
                         showsPlayOnDevice = false
                     }
+                    .zelefinSheetStores(session, downloads)
                 }
             }
             .sheet(isPresented: $showsSyncPlay) {
@@ -132,6 +135,7 @@ struct ItemDetailView: View {
                     SyncPlayPlaySheet(item: item) {
                         showsSyncPlay = false
                     }
+                    .zelefinSheetStores(session, downloads)
                 }
             }
             .sheet(isPresented: $showsRemoteImages, onDismiss: {
@@ -141,6 +145,7 @@ struct ItemDetailView: View {
                     RemoteImagePickerView(item: item) {
                         showsRemoteImages = false
                     }
+                    .zelefinSheetStores(session, downloads)
                 }
             }
             .sheet(isPresented: $showsIdentify, onDismiss: {
@@ -148,6 +153,7 @@ struct ItemDetailView: View {
             }) {
                 if let item {
                     IdentifySheet(item: item) { showsIdentify = false }
+                        .zelefinSheetStores(session, downloads)
                 }
             }
             .sheet(isPresented: $showsEditMetadata, onDismiss: {
@@ -155,6 +161,7 @@ struct ItemDetailView: View {
             }) {
                 if let item {
                     EditMetadataSheet(item: item) { showsEditMetadata = false }
+                        .zelefinSheetStores(session, downloads)
                 }
             }
             .fullScreenCover(item: $viewingPhoto) { photo in
@@ -166,6 +173,7 @@ struct ItemDetailView: View {
                             }
                         }
                 }
+                .zelefinSheetStores(session, downloads)
             }
             .alert(
                 "Delete this title from the library?",
@@ -183,6 +191,7 @@ struct ItemDetailView: View {
                     TitleMoreInfoView(item: item, info: moreInfo) {
                         showsMoreInfo = false
                     }
+                    .zelefinSheetStores(session, downloads)
                     .presentationBackground(TitleMoreInfoView.sheetBackground)
                 }
             }
@@ -191,6 +200,7 @@ struct ItemDetailView: View {
                     TitleAboutPage(item: item) {
                         showsAboutPage = false
                     }
+                    .zelefinSheetStores(session, downloads)
                     .presentationBackground(TitleMoreInfoView.sheetBackground)
                 }
             }
@@ -317,7 +327,7 @@ struct ItemDetailView: View {
             .onAppear { heroLock.lock(geo.size) }
             .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .zelefinPushedChrome(
             contentIgnoresTopSafeArea: true,
@@ -331,6 +341,10 @@ struct ItemDetailView: View {
         .tint(.white)
         .onChange(of: itemID) { _, _ in
             youtubeChromeVisible = true
+        }
+        .onChange(of: item.flatMap { session.launchOptions(for: $0.id).mediaSourceID }) { _, _ in
+            guard let item, item.kind == .movie || item.kind == .episode else { return }
+            Task { await loadStreamTracks(for: item) }
         }
         .task { await load() }
     }
@@ -467,9 +481,9 @@ struct ItemDetailView: View {
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0.28),
-                        .init(color: .black.opacity(0.55), location: 0.58),
-                        .init(color: .black.opacity(0.94), location: 0.86),
-                        .init(color: .black, location: 1)
+                        .init(color: Color.zelefinPage.opacity(0.55), location: 0.58),
+                        .init(color: Color.zelefinPage.opacity(0.94), location: 0.86),
+                        .init(color: Color.zelefinPage, location: 1)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -499,6 +513,9 @@ struct ItemDetailView: View {
 
     private func playProgressRow(for playbackItem: MediaItem) -> some View {
         let title = item ?? playbackItem
+        // A show picks per episode, from each episode's menu and the player.
+        let showsVersionPicker = title.kind != .series && title.kind != .season
+            && (playbackItem.kind == .movie || playbackItem.kind == .episode)
         return VStack(spacing: 10) {
             if title.kind == .book || playbackItem.kind == .collection {
                 EmptyView()
@@ -514,9 +531,18 @@ struct ItemDetailView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                playProgressButton(for: playbackItem, allowRelatedDownload: true)
+                HStack(spacing: 10) {
+                    playProgressButton(for: playbackItem, allowRelatedDownload: true)
+                    if showsVersionPicker {
+                        TitleVersionPicker(item: playbackItem, versions: session.mediaVersions[playbackItem.id] ?? [])
+                    }
+                }
             }
             DownloadStatusBanner(item: title)
+        }
+        .task(id: playbackItem.id) {
+            guard showsVersionPicker else { return }
+            await session.loadVersions(for: playbackItem.id)
         }
     }
 
@@ -581,7 +607,7 @@ struct ItemDetailView: View {
             if showsOverviewMore(overview) {
                 HStack(spacing: 0) {
                     LinearGradient(
-                        colors: [.clear, Color.black.opacity(0.92)],
+                        colors: [.clear, Color.zelefinPage.opacity(0.92)],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
@@ -933,7 +959,8 @@ struct ItemDetailView: View {
     }
 
     private func loadStreamTracks(for item: MediaItem) async {
-        let fetched = await session.library?.streamTracks(for: item.id)
+        let version = session.launchOptions(for: item.id).mediaSourceID
+        let fetched = await session.library?.streamTracks(for: item.id, mediaSourceID: version)
         audioTracks = fetched?.audio ?? []
         subtitleTracks = fetched?.subtitles ?? []
     }
@@ -1384,12 +1411,12 @@ private struct TrailerListView: View {
             }
             .padding(16)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .navigationTitle("Trailers")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
         .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(Color.zelefinPage, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
     }
@@ -1438,17 +1465,17 @@ private struct CastCrewListView: View {
             }
             .padding(16)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .navigationTitle("Cast & Crew")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(Color.zelefinPage, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
-private struct TrailerSafariView: UIViewControllerRepresentable {
+struct TrailerSafariView: UIViewControllerRepresentable {
     let url: URL
 
     func makeUIViewController(context: Context) -> SFSafariViewController {

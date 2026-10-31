@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ConnectedTv
@@ -111,6 +113,8 @@ internal fun TitleMoreOverlay(
     onRefreshMetadata: (suspend (MediaItem) -> Unit)? = null,
     onEditImages: ((MediaItem) -> Unit)? = null,
     onDeleteFromLibrary: (suspend (MediaItem) -> Unit)? = null,
+    /** Opens the title's versions where the menu was, for a title with more than one file. */
+    onChooseVersion: ((MediaItem, Rect) -> Unit)? = null,
 ) {
     val haze = LocalZelefinHaze.current
     PresentZelefinOverlay(visible = (request != null || note != null) && haze != null) {
@@ -312,6 +316,9 @@ internal fun TitleMoreOverlay(
                     }
                 },
                 onDeleteFromLibrary = onDeleteFromLibrary?.let { { confirmDelete = true } },
+                onChooseVersion = onChooseVersion?.takeIf { current.item.versions.size > 1 }?.let { choose ->
+                    { choose(current.item, current.anchor) }
+                },
             )
         }
     }
@@ -344,6 +351,7 @@ private fun TitleMorePanel(
     onEditMetadata: (() -> Unit)? = null,
     onEditImages: (() -> Unit)? = null,
     onDeleteFromLibrary: (() -> Unit)? = null,
+    onChooseVersion: (() -> Unit)? = null,
 ) {
     val item = request.item
     val showGoTo = request.context != TitleMenuContext.Episode
@@ -412,6 +420,9 @@ private fun TitleMorePanel(
                     },
                     onDownload,
                 )
+            }
+            if (onChooseVersion != null) {
+                MoreRow("Version…", Icons.Outlined.Layers, onChooseVersion)
             }
             if (onDownloadSeason != null) {
                 MoreRow(
@@ -606,6 +617,7 @@ internal fun MoreRow(
     onClick: () -> Unit,
     destructive: Boolean = false,
     dismissOnClick: Boolean = true,
+    detail: String? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -615,7 +627,7 @@ internal fun MoreRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .then(if (detail == null) Modifier.height(44.dp) else Modifier.heightIn(min = 44.dp))
             .padding(horizontal = 4.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (pressed) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
@@ -631,14 +643,28 @@ internal fun MoreRow(
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(
-            title,
-            color = textTint,
-            fontFamily = ZelefinFont,
-            fontSize = 17.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        if (detail == null) {
+            Text(
+                title,
+                color = textTint,
+                fontFamily = ZelefinFont,
+                fontSize = 17.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Column(Modifier.weight(1f).padding(vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, color = textTint, fontFamily = ZelefinFont, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    detail,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = ZelefinFont,
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }

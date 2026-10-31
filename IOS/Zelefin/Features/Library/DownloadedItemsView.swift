@@ -70,7 +70,7 @@ struct DownloadedItemsView: View {
                 }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .navigationTitle("Downloaded")
         .navigationBarTitleDisplayMode(.inline)
         .downloadRemovalConfirmation($removalPrompt) {

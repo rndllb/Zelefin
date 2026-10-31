@@ -3,7 +3,7 @@ import SwiftUI
 struct SeerrDiscoverHomeView: View {
     @Binding var home: SeerrDiscoverHome
     var isLoading: Bool
-    var onSelect: (SeerrTitle) -> Void
+    var onRequested: (SeerrTitle) -> Void
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     @State private var rowWidth: CGFloat = 0
 
@@ -47,7 +47,7 @@ struct SeerrDiscoverHomeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 NavigationLink {
                     SeerrDiscoverGridView(query: query) { title in
-                        home.markRequested(title)
+                        onRequested(title)
                     }
                 } label: {
                     SectionHeader(title: title)
@@ -58,7 +58,7 @@ struct SeerrDiscoverHomeView: View {
                     LazyHStack(spacing: DetailRowLayout.spacing) {
                         ForEach(titles) { item in
                             SeerrRequestPosterButton(title: item, size: fittedPosterSize) { item in
-                                onSelect(item)
+                                onRequested(item)
                             }
                         }
                     }
@@ -78,7 +78,7 @@ struct SeerrDiscoverHomeView: View {
                         ForEach(GenreOrder.shuffled(genres, name: \.name)) { genre in
                             NavigationLink {
                                 SeerrDiscoverGridView(query: genre.discoverQuery) { title in
-                                    home.markRequested(title)
+                                    onRequested(title)
                                 }
                             } label: {
                                 GenrePosterCard(title: genre.name, width: fittedPosterSize?.width, height: fittedPosterSize?.height)
@@ -103,7 +103,7 @@ struct SeerrDiscoverHomeView: View {
                         ForEach(companies) { company in
                             NavigationLink {
                                 SeerrDiscoverGridView(query: company.query) { title in
-                                    home.markRequested(title)
+                                    onRequested(title)
                                 }
                             } label: {
                                 SeerrCompanyCard(company: company, width: fittedCardWidth)
@@ -129,7 +129,6 @@ struct SeerrDiscoverGridView: View {
     @State private var totalPages = 1
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var requestTitle: SeerrTitle?
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
@@ -157,25 +156,18 @@ struct SeerrDiscoverGridView: View {
                 .padding(16)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .navigationTitle(query.title)
         .navigationBarTitleDisplayMode(.large)
-        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(Color.zelefinPage, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await load(page: 1, replace: true) }
-        .sheet(item: $requestTitle) { title in
-            NavigationStack {
-                SeerrRequestView(title: title) {
-                    markRequested(title)
-                    onRequested(title)
-                }
-            }
-        }
     }
 
     private func gridCell(_ title: SeerrTitle, index: Int) -> some View {
         SeerrRequestPosterButton(title: title, fillsCell: true) { title in
-            handleRequest(title)
+            markRequested(title)
+            onRequested(title)
         }
         .onAppear {
             if index >= titles.count - 4 {
@@ -213,11 +205,6 @@ struct SeerrDiscoverGridView: View {
         }
     }
 
-    private func handleRequest(_ title: SeerrTitle) {
-        guard !title.isInJellyfin(catalog: session.tmdbCatalog) else { return }
-        requestTitle = title
-    }
-
     private func markRequested(_ title: SeerrTitle) {
         if let index = titles.firstIndex(where: { $0.id == title.id }) {
             titles[index].availability = .pending
@@ -225,31 +212,25 @@ struct SeerrDiscoverGridView: View {
     }
 }
 
+/// A Discover poster that opens the title's page.
 private struct SeerrRequestPosterButton: View {
     @Environment(SessionStore.self) private var session
     let title: SeerrTitle
     var fillsCell = false
     var size: CGSize? = nil
-    var onSelect: (SeerrTitle) -> Void
+    var onRequested: (SeerrTitle) -> Void
 
     private var locked: Bool {
         title.isInJellyfin(catalog: session.tmdbCatalog)
     }
 
     var body: some View {
-        Group {
-            if locked {
-                poster
-                    .allowsHitTesting(false)
-            } else {
-                Button {
-                    onSelect(title)
-                } label: {
-                    poster
-                }
-                .buttonStyle(.plain)
-            }
+        NavigationLink {
+            RequestTitleDetailView(title: title, onRequested: onRequested)
+        } label: {
+            poster
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -264,7 +245,7 @@ private struct SeerrRequestPosterButton: View {
     }
 }
 
-private struct SeerrPoster: View {
+struct SeerrPoster: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: SeerrTitle

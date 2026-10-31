@@ -69,6 +69,7 @@ import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Replay30
 import androidx.compose.material.icons.rounded.Replay5
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.TextFields
@@ -142,6 +143,7 @@ import app.zelefin.client.network.GatewayHttp
 import app.zelefin.client.plugins.SkipPrompt
 import app.zelefin.client.plugins.SkipSegment
 import app.zelefin.core.MediaItem
+import app.zelefin.core.MediaVersion
 import app.zelefin.core.MediaKind
 import app.zelefin.core.PlaybackMethod
 import app.zelefin.core.PlaybackPlan
@@ -160,6 +162,7 @@ private const val UpNextMinimumRuntime = 60.0
 
 internal enum class PlayerMenuPage(val title: String) {
     Root("More"),
+    Version("Version"),
     Speed("Playback Speed"),
     Audio("Select Audio"),
     Subtitles("Select Subtitles"),
@@ -209,6 +212,8 @@ fun PlayerSurface(
     onUserTransport: (PlayerDirective) -> Unit = {},
     onTrackPicked: (TrackPick) -> Unit = {},
     directives: SharedFlow<PlayerDirective>? = null,
+    versions: List<MediaVersion> = emptyList(),
+    onChooseVersion: ((String, Double) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -240,6 +245,8 @@ fun PlayerSurface(
             onUserTransport = onUserTransport,
             onTrackPicked = onTrackPicked,
             directives = directives,
+            versions = versions,
+            onChooseVersion = onChooseVersion,
         )
         return
     }
@@ -649,6 +656,7 @@ fun PlayerSurface(
             },
             update = { view ->
                 if (view.player !== player) view.player = player
+                view.keepScreenOn = isPlaying
                 configuration.orientation
                 configuration.screenWidthDp
                 configuration.screenHeightDp
@@ -898,6 +906,14 @@ fun PlayerSurface(
             showStats = showStats,
             onToggleStats = { showStats = !showStats },
             onAppearanceChange = { styleRevision += 1 },
+            versions = versions,
+            playingVersion = plan.mediaSourceId,
+            onVersion = onChooseVersion?.let { choose ->
+                { version ->
+                    menuPage = null
+                    if (version.id != plan.mediaSourceId) choose(version.id, mediaSeconds())
+                }
+            },
         )
     }
     }
@@ -1375,7 +1391,7 @@ private fun PlaybackErrorCard(message: String, onRetry: () -> Unit, onClose: () 
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "Try Again",
                 color = Color.Black,
@@ -1388,18 +1404,16 @@ private fun PlaybackErrorCard(message: String, onRetry: () -> Unit, onClose: () 
                     .clickable(onClick = onRetry)
                     .padding(horizontal = 18.dp, vertical = 9.dp),
             )
-            Text(
-                "Close",
-                color = Color.White,
-                fontFamily = ZelefinFont,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
+            Box(
+                Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.14f))
-                    .clickable(onClick = onClose)
-                    .padding(horizontal = 18.dp, vertical = 9.dp),
-            )
+                    .clickable(onClick = onClose),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
@@ -1429,9 +1443,13 @@ internal fun PlayerMenuPanel(
     showStats: Boolean,
     onToggleStats: () -> Unit,
     onAppearanceChange: () -> Unit = {},
+    versions: List<MediaVersion> = emptyList(),
+    playingVersion: String? = null,
+    onVersion: ((MediaVersion) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var appearance by remember { mutableStateOf(SubtitleAppearance.current(context)) }
+    val shownVersion = versions.firstOrNull { it.id == playingVersion } ?: versions.firstOrNull()
     fun updateAppearance(change: () -> Unit) {
         change()
         appearance = SubtitleAppearance.current(context)
@@ -1488,6 +1506,9 @@ internal fun PlayerMenuPanel(
             ) {
                 when (page) {
                     PlayerMenuPage.Root -> {
+                        if (onVersion != null && versions.size > 1) {
+                            MenuRow("Version", shownVersion?.title ?: "Default", Icons.Rounded.Layers) { onPage(PlayerMenuPage.Version) }
+                        }
                         MenuRow("Playback Speed", PlaybackPreferences.speedTitle(speed), Icons.Rounded.Speed) { onPage(PlayerMenuPage.Speed) }
                         MenuRow("Select Audio", audio.firstOrNull { it.selected }?.title ?: "Default", Icons.Rounded.GraphicEq) {
                             onPage(PlayerMenuPage.Audio)
@@ -1530,6 +1551,11 @@ internal fun PlayerMenuPanel(
                             ChoiceRow(sleepTitle(SleepTimer.EndOfEpisode), selected = sleep == SleepTimer.EndOfEpisode) {
                                 onSleep(SleepTimer.EndOfEpisode)
                             }
+                        }
+                    }
+                    PlayerMenuPage.Version -> versions.forEach { version ->
+                        ChoiceRow(version.title, selected = version.id == shownVersion?.id, detail = version.detail) {
+                            onVersion?.invoke(version)
                         }
                     }
                     PlayerMenuPage.Speed -> PlaybackPreferences.speeds.forEach { rate ->
@@ -1723,23 +1749,34 @@ private fun ToggleRow(title: String, icon: ImageVector, on: Boolean, onClick: ()
 }
 
 @Composable
-private fun ChoiceRow(title: String, selected: Boolean, onClick: () -> Unit) {
+private fun ChoiceRow(title: String, selected: Boolean, detail: String? = null, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = if (detail == null) 12.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            title,
-            color = Color.White,
-            fontFamily = ZelefinFont,
-            fontSize = 16.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                title,
+                color = Color.White,
+                fontFamily = ZelefinFont,
+                fontSize = 16.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (detail != null) {
+                Text(
+                    detail,
+                    color = Color.White.copy(alpha = 0.62f),
+                    fontFamily = ZelefinFont,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         if (selected) {
             Spacer(Modifier.width(8.dp))
             Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(20.dp))

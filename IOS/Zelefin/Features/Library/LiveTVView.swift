@@ -23,7 +23,7 @@ struct LiveTVView: View {
     var body: some View {
         liveTVBody
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .liveTVPageChrome(
             isPushed: showsBackButton,
             showsFilter: showsProgramFilters,
@@ -502,7 +502,7 @@ private struct LiveTVFilterSheet: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(Color.zelefinPage.ignoresSafeArea())
             .navigationTitle("Filters")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -754,7 +754,7 @@ private struct LiveTVGuideGrid: View {
                     }
                 } header: {
                     timeHeader
-                        .background(Color.black)
+                        .background(Color.zelefinPage)
                 }
             }
             .padding(.leading, 16)
@@ -1279,7 +1279,7 @@ struct LiveTVProgramDetailView: View {
                 .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .zelefinPushedChrome(contentIgnoresTopSafeArea: true, hidesToolbarBackground: true) {
             Menu {
@@ -1382,9 +1382,9 @@ struct LiveTVProgramDetailView: View {
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0.28),
-                        .init(color: .black.opacity(0.55), location: 0.58),
-                        .init(color: .black.opacity(0.94), location: 0.86),
-                        .init(color: .black, location: 1)
+                        .init(color: Color.zelefinPage.opacity(0.55), location: 0.58),
+                        .init(color: Color.zelefinPage.opacity(0.94), location: 0.86),
+                        .init(color: Color.zelefinPage, location: 1)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -1458,7 +1458,7 @@ struct LiveTVProgramDetailView: View {
             if showsOverviewMore(overview) {
                 HStack(spacing: 0) {
                     LinearGradient(
-                        colors: [.clear, Color.black.opacity(0.92)],
+                        colors: [.clear, Color.zelefinPage.opacity(0.92)],
                         startPoint: .leading,
                         endPoint: .trailing
                     )

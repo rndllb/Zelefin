@@ -156,6 +156,11 @@ struct PlaybackQueueMenuContent: View {
             }
             .disabled(downloadState == .unavailable)
         }
+        if item.hasVersions, item.kind == .movie || item.kind == .episode {
+            Menu("Version", systemImage: "square.stack") {
+                TitleVersionMenuItems(item: item)
+            }
+        }
         Button {
             Task { _ = try? await session.toggleFavorite(item) }
         } label: {
@@ -200,7 +205,6 @@ struct TitlePlaybackMenus: View {
     @State private var loadedSubtitles: [MediaTrack] = []
     @State private var didLoadTracks = false
     @State private var localRevision = 0
-    @State private var versions: [MediaVersion] = []
 
     var body: some View {
         let options = session.launchOptions(for: item.id)
@@ -209,14 +213,12 @@ struct TitlePlaybackMenus: View {
             if versions.count > 1 {
                 Menu("Version") {
                     ForEach(versions) { version in
-                        Button {
-                            session.updateLaunchOptions(for: item.id) { $0.mediaSourceID = version.id }
-                        } label: {
-                            if options.mediaSourceID == version.id || (options.mediaSourceID == nil && version.id == versions.first?.id) {
-                                Label(version.title, systemImage: "checkmark")
-                            } else {
-                                Text(version.title)
-                            }
+                        TitleVersionOption(
+                            version: version,
+                            isSelected: options.mediaSourceID == version.id
+                                || (options.mediaSourceID == nil && version.id == versions.first?.id)
+                        ) {
+                            session.chooseVersion(version.id, for: item.id)
                         }
                     }
                 }
@@ -301,9 +303,9 @@ struct TitlePlaybackMenus: View {
                 }
             }
         }
-        .task(id: "\(item.id)-\(streamRevision)-\(localRevision)") {
+        .task(id: "\(item.id)-\(streamRevision)-\(localRevision)-\(options.mediaSourceID ?? "")") {
             await reloadTracks()
-            versions = await session.library?.mediaVersions(for: item.id) ?? []
+            await session.loadVersions(for: item.id)
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinSubtitlesSaved)) { notification in
             guard let savedID = notification.userInfo?[SubtitleCatalogRefresh.itemIDKey] as? String,
@@ -313,13 +315,18 @@ struct TitlePlaybackMenus: View {
         }
     }
 
+    private var versions: [MediaVersion] {
+        session.mediaVersions[item.id] ?? []
+    }
+
     private func reloadTracks() async {
         guard audioTracks == nil || subtitleTracks == nil else {
             didLoadTracks = true
             return
         }
         didLoadTracks = false
-        let fetched = await session.library?.streamTracks(for: item.id) ?? (audio: [], subtitles: [])
+        let version = session.launchOptions(for: item.id).mediaSourceID
+        let fetched = await session.library?.streamTracks(for: item.id, mediaSourceID: version) ?? (audio: [], subtitles: [])
         if audioTracks == nil {
             loadedAudio = fetched.audio
         }
@@ -335,6 +342,108 @@ struct TitlePlaybackMenus: View {
 
     private var subtitles: [MediaTrack] {
         subtitleTracks ?? loadedSubtitles
+    }
+}
+
+/// Which file a title plays from, when the library holds it more than once (2160p and 1080p, a
+/// director's cut). Jellyfin lists versions highest resolution first and plays the first one unless
+/// another is picked. The page loads `versions`: a view that starts out empty never appears, so it
+/// couldn't load them itself.
+struct TitleVersionPicker: View {
+    let item: MediaItem
+    let versions: [MediaVersion]
+
+    @Environment(SessionStore.self) private var session
+
+    var body: some View {
+        Group {
+            if versions.count > 1 {
+                Menu {
+                    Section(header) {
+                        ForEach(versions) { version in
+                            TitleVersionOption(version: version, isSelected: version.id == selectedID) {
+                                session.chooseVersion(version.id, for: item.id)
+                            }
+                        }
+                    }
+                } label: {
+                    Image("IconsaxLayer")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                        .foregroundStyle(.white)
+                        .frame(width: 45, height: 45)
+                        .contentShape(Circle())
+                        .zelefinLiquidGlassCircle()
+                }
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .accessibilityLabel("Version")
+                .accessibilityValue(selectedTitle)
+            }
+        }
+    }
+
+    private var selectedID: String? {
+        let chosen = session.launchOptions(for: item.id).mediaSourceID
+        return versions.contains { $0.id == chosen } ? chosen : versions.first?.id
+    }
+
+    private var selectedTitle: String {
+        versions.first { $0.id == selectedID }?.title ?? "Version"
+    }
+
+    /// On a show's page the button picks for the episode Play starts, so the menu names it.
+    private var header: String {
+        guard item.kind == .episode else { return "Version" }
+        let number = item.episodeIndex.map { "Episode \($0)" }
+        return [number, item.name].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// A version as a menu row: the release, then its size, picture, sound and languages beneath. A
+/// toggle, because a checkmark label drops the second line.
+struct TitleVersionOption: View {
+    let version: MediaVersion
+    let isSelected: Bool
+    var onSelect: () -> Void
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { isSelected }, set: { _ in onSelect() })) {
+            Text(version.title)
+            if let detail = version.detail {
+                Text(detail)
+            }
+        }
+    }
+}
+
+/// The versions of a title as menu rows, from what the control that opens the menu loaded.
+struct TitleVersionMenuItems: View {
+    let item: MediaItem
+
+    @Environment(SessionStore.self) private var session
+
+    var body: some View {
+        if versions.isEmpty {
+            Text("Loading…")
+        } else {
+            ForEach(versions) { version in
+                TitleVersionOption(version: version, isSelected: version.id == selectedID) {
+                    session.chooseVersion(version.id, for: item.id)
+                }
+            }
+        }
+    }
+
+    private var versions: [MediaVersion] {
+        session.mediaVersions[item.id] ?? []
+    }
+
+    private var selectedID: String? {
+        let chosen = session.launchOptions(for: item.id).mediaSourceID
+        return versions.contains { $0.id == chosen } ? chosen : versions.first?.id
     }
 }
 
@@ -389,6 +498,10 @@ struct PlaybackQueueOverflowButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("More")
+        .task(id: item.id) {
+            guard item.hasVersions, item.kind == .movie || item.kind == .episode else { return }
+            await session.loadVersions(for: item.id)
+        }
         .alert("Library", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }

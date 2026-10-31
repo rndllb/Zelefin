@@ -39,6 +39,10 @@ protocol RequestServiceClient: Sendable {
     func request(_ draft: SeerrRequestDraft) async throws
     func approveRequest(id: Int, draft: SeerrRequestDraft) async throws
     func declineRequest(id: Int, kind: SeerrTitle.Kind) async throws
+    /// The title's page: artwork, credits, trailers, and similar titles.
+    func titleDetails(for title: SeerrTitle) async throws -> RequestTitleDetails
+    /// The title on the request server's own website.
+    func webURL(for title: SeerrTitle) -> URL?
 }
 
 extension SeerrClient: RequestServiceClient {

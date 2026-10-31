@@ -157,6 +157,17 @@ class OmbiClient(
         }
     }
 
+    override suspend fun titleDetails(title: SeerrTitle): RequestTitleDetails = when (title.kind) {
+        SeerrTitle.Kind.Movie -> RequestTitleDetails.ombiMovie(send("api/v2/Search/movie/${title.tmdbId}") as? JsonObject ?: throw unexpected())
+        SeerrTitle.Kind.Tv -> RequestTitleDetails.ombiShow(send("api/v2/Search/tv/moviedb/${title.tmdbId}") as? JsonObject ?: throw unexpected())
+    }
+
+    /** Ombi's own page for the title. Its show pages take a TMDB ID once `true` marks it as one. */
+    override fun webUrl(title: SeerrTitle): String {
+        val path = if (title.kind == SeerrTitle.Kind.Movie) "details/movie/${title.tmdbId}" else "details/tv/${title.tmdbId}/true"
+        return "${baseUrl.trimEnd('/')}/$path"
+    }
+
     override suspend fun tvDetails(id: Int): SeerrTvDetails {
         val show = send("api/v2/Search/tv/moviedb/$id") as? JsonObject ?: throw unexpected()
         val seasons = show.objects("seasonRequests").mapNotNull(::season).sortedBy { it.number }

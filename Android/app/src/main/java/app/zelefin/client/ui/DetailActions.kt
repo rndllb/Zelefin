@@ -6,6 +6,7 @@ import app.zelefin.client.jellyfin.RemoteImageChoice
 import app.zelefin.client.jellyfin.RemoteSession
 import app.zelefin.client.jellyfin.SyncPlayGroup
 import app.zelefin.core.MediaItem
+import app.zelefin.core.MediaVersion
 
 /** Title-page navigation and server actions, supplied by the model. Nullable entries hide their menu rows. */
 class DetailTitleActions(
@@ -25,4 +26,5 @@ class DetailTitleActions(
     val applyIdentify: (suspend (MediaItem, app.zelefin.client.jellyfin.RemoteIdentifyHit) -> Unit)? = null,
     val saveMetadata: (suspend (MediaItem, app.zelefin.client.jellyfin.ItemMetadataDraft) -> Unit)? = null,
     val downloadRelated: ((MediaItem) -> Unit)? = null,
+    val loadVersions: suspend (MediaItem) -> List<MediaVersion> = { it.versions },
 )

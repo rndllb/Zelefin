@@ -385,7 +385,7 @@ final class ReviewDemoLibraryClient: JellyfinLibraryClient, @unchecked Sendable 
         )
     }
 
-    override func streamTracks(for itemID: String) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
+    override func streamTracks(for itemID: String, mediaSourceID: String?) async -> (audio: [MediaTrack], subtitles: [MediaTrack]) {
         (
             [
                 MediaTrack(

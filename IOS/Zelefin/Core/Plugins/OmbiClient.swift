@@ -159,6 +159,25 @@ struct OmbiClient: RequestServiceClient {
         return dated.sorted { $0.0 > $1.0 }.prefix(count).map(\.1)
     }
 
+    // MARK: Title pages
+
+    func titleDetails(for title: SeerrTitle) async throws -> RequestTitleDetails {
+        switch title.kind {
+        case .movie:
+            let movie: OmbiMovieFull = try await send("api/v2/Search/movie/\(title.tmdbID)")
+            return movie.details
+        case .tv:
+            let show: OmbiShowFull = try await send("api/v2/Search/tv/moviedb/\(title.tmdbID)")
+            return show.details
+        }
+    }
+
+    /// Ombi's own page for the title. Its show pages take a TMDB ID once `true` marks it as one.
+    func webURL(for title: SeerrTitle) -> URL? {
+        let path = title.kind == .movie ? "details/movie/\(title.tmdbID)" : "details/tv/\(title.tmdbID)/true"
+        return URL(string: path, relativeTo: baseURL.appendingSlash)?.absoluteURL
+    }
+
     // MARK: Requests
 
     func requestStatus(for title: SeerrTitle) async throws -> SeerrTitle {
@@ -587,6 +606,181 @@ private struct OmbiShow: Decodable, OmbiRequestState {
         )
         applyState(to: &result)
         return result
+    }
+}
+
+private struct OmbiNamed: Decodable {
+    var name: String?
+}
+
+private struct OmbiVideo: Decodable {
+    var key: String?
+    var name: String?
+    var site: String?
+    var type: String?
+}
+
+/// A movie's full page, which carries TMDB's credits, videos, and recommendations in snake case.
+private struct OmbiMovieFull: Decodable {
+    struct Credits: Decodable {
+        var cast: [Cast]?
+        var crew: [Crew]?
+    }
+
+    struct Cast: Decodable {
+        var id: Int
+        var name: String?
+        var character: String?
+        var profilePath: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, name, character
+            case profilePath = "profile_path"
+        }
+    }
+
+    struct Crew: Decodable {
+        var name: String?
+        var job: String?
+    }
+
+    struct Videos: Decodable {
+        var results: [OmbiVideo]?
+    }
+
+    struct Recommendations: Decodable {
+        var results: [Recommendation]?
+    }
+
+    struct Recommendation: Decodable {
+        var id: Int
+        var title: String?
+        var overview: String?
+        var posterPath: String?
+        var releaseDate: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, title, overview
+            case posterPath = "poster_path"
+            case releaseDate = "release_date"
+        }
+
+        var seerrTitle: SeerrTitle? {
+            guard let title, !title.isEmpty else { return nil }
+            return SeerrTitle(
+                tmdbID: id,
+                kind: .movie,
+                name: title,
+                year: releaseDate.flatMap { Int($0.prefix(4)) },
+                overview: overview,
+                posterURL: SeerrClient.tmdbImageURL(posterPath),
+                availability: .missing
+            )
+        }
+    }
+
+    struct ExternalIDs: Decodable {
+        var imdbId: String?
+    }
+
+    var backdropPath: String?
+    var posterPath: String?
+    var tagline: String?
+    var overview: String?
+    var genres: [OmbiNamed]?
+    var releaseDate: String?
+    var runtime: Int?
+    var status: String?
+    var voteAverage: Double?
+    var productionCompanies: [OmbiNamed]?
+    var credits: Credits?
+    var videos: Videos?
+    var recommendations: Recommendations?
+    var homepage: String?
+    var imdbId: String?
+    var externalIds: ExternalIDs?
+
+    var details: RequestTitleDetails {
+        RequestTitleDetails(
+            backdropURL: SeerrClient.tmdbImageURL(backdropPath, size: "w1280"),
+            posterURL: SeerrClient.tmdbImageURL(posterPath, size: "w500"),
+            tagline: tagline,
+            overview: overview,
+            genres: (genres ?? []).compactMap(\.name),
+            releaseDate: RequestTitleDetails.date(releaseDate),
+            runtimeMinutes: runtime,
+            studio: productionCompanies?.first?.name,
+            status: status,
+            voteAverage: voteAverage,
+            directors: (credits?.crew ?? []).filter { $0.job == "Director" }.compactMap(\.name),
+            cast: (credits?.cast ?? []).prefix(30).compactMap { person in
+                guard let name = person.name, !name.isEmpty else { return nil }
+                return RequestCastMember(id: person.id, name: name, role: person.character, imageURL: SeerrClient.tmdbImageURL(person.profilePath, size: "w185"))
+            },
+            videos: (videos?.results ?? []).compactMap { RequestVideo(key: $0.key, name: $0.name, type: $0.type, site: $0.site) },
+            related: (recommendations?.results ?? []).compactMap(\.seerrTitle),
+            homepage: homepage.flatMap(URL.init(string:)),
+            imdbID: externalIds?.imdbId ?? imdbId
+        )
+    }
+}
+
+/// A show's full page. Its backdrop is called `banner` and its poster is `images.original`.
+private struct OmbiShowFull: Decodable {
+    struct Images: Decodable {
+        var original: String?
+    }
+
+    struct Cast: Decodable {
+        var id: Int
+        var person: String?
+        var character: String?
+        var image: String?
+    }
+
+    struct ExternalIDs: Decodable {
+        var imdbId: String?
+    }
+
+    var banner: String?
+    var images: Images?
+    var tagline: String?
+    var overview: String?
+    var genres: [OmbiNamed]?
+    var firstAired: String?
+    var runtime: String?
+    var status: String?
+    var rating: String?
+    var network: OmbiNamed?
+    var cast: [Cast]?
+    var trailer: String?
+    var seasonRequests: [OmbiSeason]?
+    var homepage: String?
+    var imdbId: String?
+    var externalIds: ExternalIDs?
+
+    var details: RequestTitleDetails {
+        RequestTitleDetails(
+            backdropURL: SeerrClient.tmdbImageURL(banner, size: "w1280"),
+            posterURL: SeerrClient.tmdbImageURL(images?.original, size: "w500"),
+            tagline: tagline,
+            overview: overview,
+            genres: (genres ?? []).compactMap(\.name),
+            releaseDate: RequestTitleDetails.date(firstAired),
+            runtimeMinutes: runtime.flatMap(Int.init),
+            seasonCount: seasonRequests.map { $0.filter { $0.seasonNumber > 0 }.count },
+            studio: network?.name,
+            studioLabel: "Network",
+            status: status,
+            voteAverage: rating.flatMap(Double.init),
+            cast: (cast ?? []).prefix(30).compactMap { member in
+                guard let name = member.person, !name.isEmpty else { return nil }
+                return RequestCastMember(id: member.id, name: name, role: member.character, imageURL: SeerrClient.tmdbImageURL(member.image, size: "w185"))
+            },
+            videos: [RequestVideo(key: trailer, name: "Trailer", type: "Trailer", site: nil)].compactMap { $0 },
+            homepage: homepage.flatMap(URL.init(string:)),
+            imdbID: externalIds?.imdbId ?? imdbId
+        )
     }
 }
 

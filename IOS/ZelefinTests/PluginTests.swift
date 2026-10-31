@@ -832,3 +832,90 @@ final class FirstRunSetupStoreTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "zelefin.setup.completed." + id)
     }
 }
+
+final class RequestTitleDetailsTests: XCTestCase {
+    func testReleaseDaysReadAsTheSameLocalDay() throws {
+        let date = try XCTUnwrap(RequestTitleDetails.date("2021-09-15T00:00:00Z"))
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        XCTAssertEqual(parts.year, 2021)
+        XCTAssertEqual(parts.month, 9)
+        XCTAssertEqual(parts.day, 15)
+        XCTAssertNil(RequestTitleDetails.date("0001-01-01T00:00:00Z"))
+        XCTAssertNil(RequestTitleDetails.date(nil))
+    }
+
+    func testFactsFollowTheLibraryPageOrder() {
+        let details = RequestTitleDetails(
+            runtimeMinutes: 155,
+            seasonCount: 2,
+            studio: "HBO",
+            studioLabel: "Network",
+            voteAverage: 7.205,
+            creators: ["Diane Ademu-John"]
+        )
+        XCTAssertEqual(details.facts.map(\.label), ["Run Time", "Seasons", "Created By", "Network", "TMDB Rating"])
+        XCTAssertEqual(details.facts.first?.value, "2 hr 35 min")
+        XCTAssertEqual(details.facts.last?.value, "7.2 / 10")
+    }
+
+    func testTrailersComeBeforeOtherVideosAndOnlyFromYouTube() {
+        let videos = [
+            RequestVideo(key: "a", name: "Behind the Scenes", type: "Featurette", site: "YouTube"),
+            RequestVideo(key: "b", name: "Final Trailer", type: "Trailer", site: "YouTube"),
+            RequestVideo(key: "c", name: "Elsewhere", type: "Trailer", site: "Vimeo")
+        ].compactMap { $0 }
+        XCTAssertEqual(RequestTitleDetails(videos: videos).trailers.map(\.key), ["b", "a"])
+        XCTAssertEqual(videos.first?.watchURL?.absoluteString, "https://www.youtube.com/watch?v=a")
+    }
+}
+
+final class JellyfinTmdbCatalogItemTests: XCTestCase {
+    func testDiscoverTitlesFindTheirLibraryItem() {
+        let catalog = JellyfinTmdbCatalog(movieItems: [438631: "dune-movie"], seriesItems: [1399: "got-series"])
+        let dune = SeerrTitle(tmdbID: 438631, kind: .movie, name: "Dune", availability: .available)
+        let got = SeerrTitle(tmdbID: 1399, kind: .tv, name: "Game of Thrones", availability: .available)
+        let sameIDWrongKind = SeerrTitle(tmdbID: 1399, kind: .movie, name: "Other", availability: .missing)
+        XCTAssertEqual(catalog.itemID(for: dune), "dune-movie")
+        XCTAssertEqual(catalog.itemID(for: got), "got-series")
+        XCTAssertNil(catalog.itemID(for: sameIDWrongKind))
+        XCTAssertTrue(catalog.contains(got))
+    }
+}
+
+final class MediaVersionTests: XCTestCase {
+    func testChoosingAnotherVersionForgetsTrackPicks() {
+        var options = PlaybackLaunchOptions(audioIndex: 2, subtitleIndex: 5, subtitlesDisabled: true, mediaSourceID: "a")
+        options.chooseVersion("a")
+        XCTAssertEqual(options.audioIndex, 2)
+        options.chooseVersion("b")
+        XCTAssertEqual(options.mediaSourceID, "b")
+        XCTAssertNil(options.audioIndex)
+        XCTAssertNil(options.subtitleIndex)
+        XCTAssertTrue(options.subtitlesDisabled)
+    }
+
+    func testAddonSourcesAreNamedByRelease() {
+        let streams = [
+            MediaStream(codec: "hevc", height: 2160, type: .video, videoRangeType: .dovi, width: 3840),
+            MediaStream(channels: 6, codec: "eac3", displayTitle: "English - Dolby Digital Plus + Dolby Atmos", language: "eng", type: .audio),
+            MediaStream(channels: 6, codec: "ac3", language: "fre", type: .audio)
+        ]
+        let versions = ItemMapper.versions(from: [
+            MediaSourceInfo(id: "a", mediaStreams: streams, name: "[RD+] Torrentio\n4k", path: "/remux/x/VisionQuest.S01E01.2160p.DV", size: 5_300_000_000),
+            MediaSourceInfo(id: "b", name: "[RD download] Torrentio\n4k", path: "/remux/6c1043dd-54c8-5ab3-b094-86f8dd58b6b0")
+        ])
+        XCTAssertEqual(versions.map(\.title), ["VisionQuest.S01E01.2160p.DV", "[RD download] Torrentio · 4k"])
+        XCTAssertEqual(versions[0].detail, "[RD+] Torrentio · 5.3 GB · 4K HEVC · Dolby Vision · Atmos · English, French")
+        XCTAssertNil(versions[1].detail)
+    }
+
+    func testLibraryVersionsKeepTheirNames() {
+        let versions = ItemMapper.versions(from: [
+            MediaSourceInfo(id: "a", name: "2160p", path: "/movies/Dune - 2160p.mkv"),
+            MediaSourceInfo(id: "b", name: "1080p", path: "/movies/Dune - 1080p.mkv"),
+            MediaSourceInfo(id: "c", path: "/movies/Dune - Directors Cut.mkv"),
+            MediaSourceInfo(container: "mkv", id: "d")
+        ])
+        XCTAssertEqual(versions.map(\.title), ["2160p", "1080p", "Dune - Directors Cut", "MKV"])
+    }
+}

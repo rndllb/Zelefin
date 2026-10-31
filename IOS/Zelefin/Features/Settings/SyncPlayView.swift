@@ -132,7 +132,7 @@ struct SyncPlayPlaySheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
+        TitleSheet(title: "SyncPlay", onClose: onClose) {
             List {
                 if let errorMessage {
                     SettingsStatusText(text: errorMessage, isError: true)
@@ -165,17 +165,10 @@ struct SyncPlayPlaySheet: View {
                 }
                 .zelefinRowBackground()
             }
-            .zelefinSettingsChrome(title: "SyncPlay")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onClose)
-                }
-            }
             .task {
                 groups = (try? await session.library?.syncPlayGroups()) ?? []
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func createAndPlay() async {

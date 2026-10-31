@@ -4,14 +4,26 @@ package app.zelefin.client.plugins
 data class JellyfinTmdbCatalog(
     val movieIds: Set<Int> = emptySet(),
     val seriesIds: Set<Int> = emptySet(),
+    /** The library item for each TMDB identifier, so a Discover title can open its library page. */
+    val movieItemIds: Map<Int, String> = emptyMap(),
+    val seriesItemIds: Map<Int, String> = emptyMap(),
 ) {
     fun contains(title: SeerrTitle): Boolean = when (title.kind) {
         SeerrTitle.Kind.Movie -> title.tmdbId in movieIds
         SeerrTitle.Kind.Tv -> title.tmdbId in seriesIds
     }
 
+    /** The library item that is [title], when the catalog knows it. */
+    fun itemId(title: SeerrTitle): String? = when (title.kind) {
+        SeerrTitle.Kind.Movie -> movieItemIds[title.tmdbId]
+        SeerrTitle.Kind.Tv -> seriesItemIds[title.tmdbId]
+    }
+
     companion object {
         val Empty = JellyfinTmdbCatalog()
+
+        fun of(movies: Map<Int, String>, series: Map<Int, String>) =
+            JellyfinTmdbCatalog(movies.keys, series.keys, movies, series)
 
         /** Returns the TMDB identifier stored in Jellyfin provider IDs. */
         fun tmdbId(providerIds: Map<String, String>?): Int? {

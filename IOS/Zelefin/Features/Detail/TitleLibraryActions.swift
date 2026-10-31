@@ -44,11 +44,11 @@ struct PersonDetailView: View {
             }
             .padding(.bottom, 32)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.zelefinPage.ignoresSafeArea())
         .navigationTitle(profile?.name ?? name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(Color.zelefinPage, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await load() }
@@ -103,22 +103,30 @@ struct CollectionEditSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
+        TitleSheet(title: "Collections", onClose: onClose) {
             List {
                 if let errorMessage {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
+                    Section {
+                        SettingsStatusText(text: errorMessage, isError: true)
+                    }
+                    .zelefinRowBackground()
                 }
                 Section("New Collection") {
                     HStack {
                         TextField("Name", text: $newName)
+                            .textFieldStyle(.plain)
                         Button("Create") {
                             Task { await create() }
                         }
+                        .fontWeight(.semibold)
                         .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                Section("Collections") {
+                .zelefinRowBackground()
+                Section {
+                    if collections.isEmpty {
+                        Text("No collections yet.").foregroundStyle(.secondary)
+                    }
                     ForEach(collections) { collection in
                         Button {
                             Task { await toggle(collection) }
@@ -129,24 +137,24 @@ struct CollectionEditSheet: View {
                                 Spacer()
                                 if membershipIDs.contains(collection.id) {
                                     Image(systemName: "checkmark")
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.tint)
                                 }
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
+                } header: {
+                    Text("Collections")
+                } footer: {
+                    Text("Checked collections include \(item.name).")
+                        .font(TitleSheetFont.note)
                 }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Color.black)
-            .navigationTitle("Collections")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done", action: onClose)
-                }
+                .zelefinRowBackground()
             }
             .task { await load() }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func load() async {
@@ -299,38 +307,35 @@ struct PlayOnDeviceSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        TitleSheet(title: "Play On", onClose: onClose) {
             List {
                 if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
+                    Section {
+                        SettingsStatusText(text: errorMessage, isError: true)
+                    }
+                    .zelefinRowBackground()
                 }
-                if targets.isEmpty {
-                    Text("No other devices are connected right now.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(targets) { target in
-                        Button {
-                            Task { await play(on: target) }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(target.deviceLabel)
-                                Text(target.userLabel)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                Section {
+                    if targets.isEmpty {
+                        Text("No other devices are connected right now.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(targets) { target in
+                            Button {
+                                Task { await play(on: target) }
+                            } label: {
+                                TitleSheetRow(title: target.deviceLabel, detail: target.userLabel)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
+                } header: {
+                    Text("Devices")
                 }
-            }
-            .navigationTitle("Play On")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onClose)
-                }
+                .zelefinRowBackground()
             }
             .task { await load() }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func load() async {

@@ -98,11 +98,83 @@ extension View {
 enum MacWindowChrome {
     @MainActor
     static func apply() {
+        MacFullScreenSidebar.install()
         for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
             guard let titlebar = scene.titlebar else { continue }
             titlebar.titleVisibility = .hidden
             titlebar.toolbar = nil
         }
+    }
+}
+
+/// UIKit floats the Mac sidebar 8 pt in from the window's edges, but in full screen it starts below
+/// the hidden title bar instead, 32 pt down, so there's more room above it than below. A watcher inside
+/// the sidebar moves it back up each time the split view lays it out in full screen.
+@MainActor
+enum MacFullScreenSidebar {
+    static func install(attempts: Int = 20) {
+        var installed = false
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows {
+                guard let column = sidebarColumn(in: window) else { continue }
+                installed = true
+                guard !column.subviews.contains(where: { $0 is SidebarLayoutWatcher }) else { continue }
+                let watcher = SidebarLayoutWatcher(frame: column.bounds)
+                watcher.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                watcher.column = column
+                column.addSubview(watcher)
+                fit(column)
+            }
+        }
+        // The split view is built a moment after the window appears.
+        guard !installed, attempts > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { install(attempts: attempts - 1) }
+    }
+
+    /// The view the split view places for the sidebar: the sidebar's ancestor just inside the
+    /// container that spans the whole split view.
+    private static func sidebarColumn(in window: UIWindow) -> UIView? {
+        guard let split = splitController(in: window.rootViewController),
+              var view = split.viewControllers.first?.viewIfLoaded else { return nil }
+        while let parent = view.superview, parent !== split.view, parent.bounds.size != split.view.bounds.size {
+            view = parent
+        }
+        return view.superview == nil ? nil : view
+    }
+
+    private static func splitController(in controller: UIViewController?) -> UISplitViewController? {
+        guard let controller else { return nil }
+        if let split = controller as? UISplitViewController { return split }
+        for child in controller.children {
+            if let split = splitController(in: child) { return split }
+        }
+        return nil
+    }
+
+    static func fit(_ column: UIView) {
+        guard let window = column.window, let screen = window.windowScene?.screen,
+              window.bounds.size == screen.bounds.size else { return }
+        let inset = column.frame.minX
+        guard inset > 0, column.frame.minY > inset else { return }
+        column.frame = CGRect(x: inset, y: inset, width: column.frame.width, height: column.frame.maxY - inset)
+    }
+}
+
+/// Sits inside the sidebar and resizes with it, so it hears each new layout the split view gives it.
+private final class SidebarLayoutWatcher: UIView {
+    weak var column: UIView?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if let column { MacFullScreenSidebar.fit(column) }
     }
 }
 #endif
@@ -149,11 +221,14 @@ struct ZelefinApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .background(Color.black)
+                .background(Color.zelefinPage)
                 .environment(session)
                 .environment(\.libraryArtworkRevision, session.artworkRevision)
                 .environment(downloads)
                 .environment(deepLinks)
+                .task { [session, downloads] in
+                    downloads.chosenVersion = { session.launchOptions(for: $0).mediaSourceID }
+                }
                 #if targetEnvironment(macCatalyst)
                 .onAppear(perform: MacWindowChrome.apply)
                 .onReceive(NotificationCenter.default.publisher(for: UIScene.didActivateNotification)) { _ in
