@@ -53,6 +53,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -155,43 +156,45 @@ fun CatalogBrowsePage(
     }
 
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().zelefinSheetBackdrop(motion.progress)) {
-            CatalogGrid(
-                title = title,
-                items = shown,
-                query = query,
-                session = session,
-                refreshing = refreshing,
-                loading = loading,
-                headerHeight = headerHeight,
-                bottomInset = bottomInset,
-                onOpen = onOpen,
-                onRefresh = onRefresh,
-                onHeaderVisible = { headerVisible = it },
-                emptyMessage = emptyMessage,
-            )
-            CatalogHeader(
-                title = title,
-                onBack = onBack,
-                visible = headerVisible,
-                pillShown = motion.displayed == null,
-                query = query,
-                session = session,
-                onSort = {
-                    draft = query
-                    sheet = CatalogSheet.Sort
-                },
-                onFilter = {
-                    draft = query
-                    filterRoute = FilterRoute.Root
-                    sheet = CatalogSheet.Filters
-                },
-                onProfile = onProfile,
-                onSessions = onSessions,
-                onSettings = onSettings,
-                onSignOut = onSignOut,
-            )
-            if (motion.displayed != null) ZelefinSheetScrim(motion.progress)
+        CompositionLocalProvider(LocalGlassDiscsCovered provides (motion.displayed != null)) {
+            Box(Modifier.fillMaxSize().zelefinSheetBackdrop(motion.progress)) {
+                CatalogGrid(
+                    title = title,
+                    items = shown,
+                    query = query,
+                    session = session,
+                    refreshing = refreshing,
+                    loading = loading,
+                    headerHeight = headerHeight,
+                    bottomInset = bottomInset,
+                    onOpen = onOpen,
+                    onRefresh = onRefresh,
+                    onHeaderVisible = { headerVisible = it },
+                    emptyMessage = emptyMessage,
+                )
+                CatalogHeader(
+                    title = title,
+                    onBack = onBack,
+                    visible = headerVisible,
+                    pillShown = motion.displayed == null,
+                    query = query,
+                    session = session,
+                    onSort = {
+                        draft = query
+                        sheet = CatalogSheet.Sort
+                    },
+                    onFilter = {
+                        draft = query
+                        filterRoute = FilterRoute.Root
+                        sheet = CatalogSheet.Filters
+                    },
+                    onProfile = onProfile,
+                    onSessions = onSessions,
+                    onSettings = onSettings,
+                    onSignOut = onSignOut,
+                )
+                if (motion.displayed != null) ZelefinSheetScrim(motion.progress)
+            }
         }
         if (motion.displayed != null) {
             ZelefinSheetSurface(motion.progress, canvas = ZelefinBlack) {
@@ -396,7 +399,10 @@ private fun CatalogHeader(
             fontSize = if (onBack != null) 22.sp else 34.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .clearOfTabletTopBar()
+                .then(if (onBack == null) Modifier.tabTitleBesideSidebar() else Modifier),
         )
         CatalogSortFilterPill("catalog-sort-filter-$title", query.activeFilterCount, visible && pillShown, onSort, onFilter)
         if (onBack == null) {

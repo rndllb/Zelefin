@@ -11,6 +11,19 @@ class RequestTitleDetailsTest {
     private fun json(text: String) = LenientJson.parse(text) as JsonObject
 
     @Test
+    fun tmdbLogoPrefersTheBestEnglishOne() {
+        val logos = listOf(
+            TmdbLogos.Logo("/fr.png", "fr", 9.0),
+            TmdbLogos.Logo("/mark.png", null, 8.0),
+            TmdbLogos.Logo("/en-low.png", "en", 3.0),
+            TmdbLogos.Logo("/en-high.png", "en", 5.5),
+        )
+        assertEquals("/en-high.png", TmdbLogos.best(logos)?.filePath)
+        assertEquals("/mark.png", TmdbLogos.best(logos.filter { it.language != "en" })?.filePath)
+        assertNull(TmdbLogos.best(emptyList()))
+    }
+
+    @Test
     fun ombiShowsUseTheBannerAsBackdropAndTheNetworkAsStudio() {
         val details = RequestTitleDetails.ombiShow(
             json(

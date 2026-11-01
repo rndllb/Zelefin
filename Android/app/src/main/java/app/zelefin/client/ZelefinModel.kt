@@ -159,6 +159,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import org.jellyfin.sdk.api.client.exception.InvalidStatusException
 import org.jellyfin.sdk.model.api.PlaystateCommand
 import org.jellyfin.sdk.model.api.SendCommandType
 import app.zelefin.client.downloads.LocalPlayback
@@ -346,6 +347,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         runCatching { application.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(networkCallback) }
         plugins.removeOrphanedWebhookAlerts(vault.accounts().map { it.accountId }.toSet())
         if (saved != null) {
+            ZelefinLog.info("Session", "Opened the saved ${serverKind(saved)} account at ${logHost(saved.serverUrl)} without waiting for the server")
             restore(saved)
             _state.update { it.copy(screen = Screen.Library) }
             applyStartPage()
@@ -443,6 +445,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun signIn(rawUrl: String, username: String, password: String, type: SignInServerType) {
+        ZelefinLog.info("Session", "Signing in to ${logHost(rawUrl)} as ${type.name}")
         launch("Signing in…") {
             val url = ServerAddress.resolve(rawUrl)
             val route = SignInRouting.route(
@@ -1334,7 +1337,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** [bitrateOverride] pins the stream cap (live adaptive steps); null lets Playback settings decide. */
     fun play(item: MediaItem, bitrateOverride: Int? = null, fromSyncPlay: Boolean = false) {
         val returnTo = _state.value.screen.let { if (it is Screen.Player) it.returnTo else it }
-        launch("Starting playback…") {
+        launch("Starting playback…", explain = { missingTitle(it, item) }) {
             val target = resolvePlaybackTarget(item)
             rememberNowPlaying(target)
             if (!fromSyncPlay && _state.value.syncPlayGroupId != null && !_state.value.isSiloServer) {
@@ -1344,6 +1347,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             _state.value.session?.let { HomeQueueHideStore.remove(getApplication(), target.id, it.userId) }
             when (val local = ZelefinDownloads.localPlayback(target)) {
                 is LocalPlayback.Ready -> {
+                    ZelefinLog.info("Playback", "Playing \"${target.name}\" from a download")
                     activePlan = null
                     localPlan = local.plan
                     _state.update { it.copy(busy = false, screen = Screen.Player(local.plan, returnTo), message = null) }
@@ -1386,6 +1390,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 },
             )
             val reported = PlaybackResumePolicy.reportStartPosition(0.0, plan.startTimeSeconds)
+            ZelefinLog.info("Playback", playbackLogLine(plan))
             activePlan = plan
             lastReported = reported
             runCatching { report(plan, reported, paused = false, start = true) }
@@ -1458,6 +1463,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** Restarts the title on another of its versions from the current spot, with that file's default tracks. */
     fun switchVersion(current: PlaybackPlan, positionSeconds: Double, versionId: String) {
         if (versionId == current.mediaSourceId || localPlan != null) return
+        ZelefinLog.info("Playback", "Switching \"${current.item.name}\" to another version at ${positionSeconds.toInt()}s")
         playbackStopped(current, positionSeconds)
         play(current.item.copy(playbackPosition = positionSeconds, mediaSourceId = versionId))
     }
@@ -1467,6 +1473,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
      * then open a new playback session from the same spot. Reusing the dead URL does not.
      */
     fun recoverPlayback(current: PlaybackPlan, positionSeconds: Double) {
+        ZelefinLog.warning("Playback", "The stream for \"${current.item.name}\" was lost at ${positionSeconds.toInt()}s; finding the server again")
         playbackStopped(current, positionSeconds)
         val item = current.item.copy(playbackPosition = positionSeconds)
         routeJob?.cancel()
@@ -1479,6 +1486,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** Live adaptive bitrate: re-requests the same title at [bitsPerSecond] from the current spot. */
     fun reloadPlaybackAtBitrate(current: PlaybackPlan, positionSeconds: Double, bitsPerSecond: Int) {
         if (!isCurrentPlayback(current) || localPlan != null) return
+        ZelefinLog.info("Playback", "Changing quality to ${bitsPerSecond / 1_000_000.0} Mbps for the connection")
         playbackStopped(current, positionSeconds)
         play(current.item.copy(playbackPosition = positionSeconds), bitrateOverride = bitsPerSecond)
     }
@@ -1703,6 +1711,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     /** Signs out the current account only; like iOS, the next saved account takes over. */
     fun signOut() {
+        ZelefinLog.info("Session", "Signed out")
         val current = _state.value.session
         sessionSocket.disconnect()
         embySocket.disconnect()
@@ -2231,11 +2240,14 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     /** Pulls Interface and Library layout choices from Jellyfin display preferences (iOS `pullDisplayPreferences`). */
     fun pullDisplayPreferences() {
         val session = _state.value.session ?: return
+        val revision = displayPreferencesRevision
         viewModelScope.launch {
             val prefs = runCatching {
                 pick({ it.displayPreferenceCustomPrefs() }, { it.displayPreferenceCustomPrefs(userUuid()) })
             }.getOrNull() ?: return@launch
             if (_state.value.session?.accountId != session.accountId) return@launch
+            // Changed here while this was in flight: the server's copy is older, so it mustn't win.
+            if (displayPreferencesRevision != revision) return@launch
             val context = getApplication<Application>()
             val layout = app.zelefin.client.ui.HomeLayoutPreferences
             val before = layout.mergeContinueAndNextUp to layout.heroContent
@@ -2269,8 +2281,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Pushes Interface and Library layout choices to Jellyfin display preferences (iOS `pushDisplayPreferences`). */
+    /** Bumped on every local change, so a pull already in flight knows it's stale. */
+    private var displayPreferencesRevision = 0
+
     fun pushDisplayPreferences() {
         if (_state.value.session == null) return
+        displayPreferencesRevision += 1
         val layout = app.zelefin.client.ui.HomeLayoutPreferences
         val libraryLayout = _state.value.libraryLayout
         val prefs = mapOf(
@@ -2687,13 +2703,43 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun launch(status: String, block: suspend () -> Unit) {
+    /** The address's host for the log, or what was typed when it isn't an address yet. */
+    private fun logHost(url: String): String = runCatching { java.net.URI(url.trim()).host }.getOrNull() ?: url.trim()
+
+    private fun serverKind(saved: SavedSession): String = when {
+        saved.isEmbyServer -> "Emby"
+        saved.isSiloServer -> "Silo"
+        else -> "Jellyfin"
+    }
+
+    /** `Playing "Dune" (Movie) by DirectPlay: mkv, hevc, from host, at 0s` */
+    private fun playbackLogLine(plan: PlaybackPlan): String {
+        val facts = listOfNotNull(plan.container, plan.videoCodec).filter { it.isNotBlank() }.joinToString(", ")
+        val version = if (plan.item.versions.size > 1) ", version ${plan.mediaSourceId ?: "default"} of ${plan.item.versions.size}" else ""
+        return "Playing \"${plan.item.name}\" (${plan.item.kind}) by ${plan.method}: $facts, from ${logHost(plan.streamUrl)}, at ${plan.startTimeSeconds.toInt()}s$version"
+    }
+
+    /** [explain] can put a failure in the user's words; otherwise its own message shows. */
+    private fun launch(status: String, explain: (Throwable) -> String? = { null }, block: suspend () -> Unit) {
         _state.update { it.copy(busy = true, message = status) }
         viewModelScope.launch {
             runCatching { block() }
                 .onFailure { error ->
-                    _state.update { it.copy(busy = false, message = error.message ?: "Something went wrong.") }
+                    if (error !is CancellationException) {
+                        ZelefinLog.error("App", "${status.removeSuffix("…")} failed: ${error.message ?: error::class.java.simpleName}")
+                    }
+                    _state.update { it.copy(busy = false, message = explain(error) ?: error.message ?: "Something went wrong.") }
                 }
         }
+    }
+
+    /**
+     * The server no longer has [item], usually because it was removed or added again under a new ID.
+     * Now Playing still pointing at it is dropped, so it isn't offered again.
+     */
+    private fun missingTitle(error: Throwable, item: MediaItem): String? {
+        if ((error as? InvalidStatusException)?.status != 404) return null
+        if (_state.value.nowPlaying?.id == item.id) clearNowPlaying()
+        return "\"${item.name}\" isn't on the server anymore. It may have been removed, or added again. Find it in your library to play it."
     }
 }

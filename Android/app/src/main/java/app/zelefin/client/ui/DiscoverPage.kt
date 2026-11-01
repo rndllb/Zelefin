@@ -90,7 +90,6 @@ import kotlinx.coroutines.launch
 
 private val PosterWidth = 124.dp
 private val PosterHeight = 186.dp
-private val LogoBackdrop = Color(0xFF2E2E2E)
 internal val SheetGroupFill: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceContainer
 internal val SheetGroupShape = SettingsGroupShape
@@ -220,16 +219,15 @@ private fun DiscoverBrandCard(brand: DiscoverBrand, onClick: () -> Unit) {
             .width(174.dp)
             .height(114.dp)
             .posterChrome()
-            .background(LogoBackdrop)
-            .clickable(onClick = onClick)
-            .padding(18.dp),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
+        GenreCardBackdrop(Modifier.matchParentSize())
         CachedArtwork(
             urls = listOfNotNull(brand.imageUrl),
             contentDescription = brand.name,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(18.dp),
         )
     }
 }
@@ -441,6 +439,7 @@ internal fun DiscoverGridPage(
                 fontSize = 22.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).clearOfTabletTopBar(),
             )
         }
     }

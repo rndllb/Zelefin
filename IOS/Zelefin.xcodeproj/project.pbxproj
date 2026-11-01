@@ -11,6 +11,7 @@
 		07F14431A1CD07EDE33B7ADF /* PosterQualityBadgeStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2270D3618FBCD955D4102210 /* PosterQualityBadgeStack.swift */; };
 		0BC2FD5294C1F48F44B80A36 /* PosterPrefetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA52BE5DA482743457932DF /* PosterPrefetcher.swift */; };
 		0C5002643CF0E644FD7F6697 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A644AA5A3EBA09AB7E7D0C4 /* SessionStore.swift */; };
+		A1D7E0F1C2B3A4958677D009 /* ZelefinLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D7E0F1C2B3A4958677D00A /* ZelefinLog.swift */; };
 		0C9BA7440AD7C0585B83679A /* IntroSkipperClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000E30102DA9E9615FC4E396 /* IntroSkipperClient.swift */; };
 		0DF3A11C372D63C15F3DDBB8 /* DirectPlayPictureInPicture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E48B4EBA9121569599709D87 /* DirectPlayPictureInPicture.swift */; };
 		11429EA0816FD8D4E53B377F /* LoginChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66513F2821AF62BDE2DAD9E8 /* LoginChrome.swift */; };
@@ -137,6 +138,7 @@
 		A3D734001C35051D4079F333 /* PlaybackQueueMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E51F94A5E4B3C0258DAD1BD /* PlaybackQueueMenu.swift */; };
 		A4B53DA3572693B41DDD8996 /* AVDeviceProfileFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC871E63DDA59BBE140DE050 /* AVDeviceProfileFactory.swift */; };
 		A51CA84891F64D4DAE739EB2 /* PluginSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0081398D7523FCE17264C0D7 /* PluginSettingsView.swift */; };
+		A1D7E0F1C2B3A4958677D007 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D7E0F1C2B3A4958677D008 /* LogView.swift */; };
 		A553642E7940D08A172D0FAE /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE8EFC401D03997CC27265A /* NotificationSettingsView.swift */; };
 		A6BF5B2BF5CE91C7B5AA15A8 /* CatalogBrowseQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B9F3D712FB881C88405D128 /* CatalogBrowseQuery.swift */; };
 		A75CA7D7C26CBB2B73D366E7 /* CatalogSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E02F2F27D62E7BEC36C8902 /* CatalogSnapshotStore.swift */; };
@@ -243,6 +245,7 @@
 /* Begin PBXFileReference section */
 		000E30102DA9E9615FC4E396 /* IntroSkipperClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntroSkipperClient.swift; sourceTree = "<group>"; };
 		0081398D7523FCE17264C0D7 /* PluginSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSettingsView.swift; sourceTree = "<group>"; };
+		A1D7E0F1C2B3A4958677D008 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
 		01253E1D158D0BBE9905263D /* SkipSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkipSegment.swift; sourceTree = "<group>"; };
 		031C51CE3CBE5E9195D22124 /* PlaybackStatsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackStatsOverlay.swift; sourceTree = "<group>"; };
 		03B72C645A75F7BB05FF93C8 /* DownloadRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadRecord.swift; sourceTree = "<group>"; };
@@ -312,6 +315,7 @@
 		56158F336C8BCF382D935AE5 /* LiveTVView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTVView.swift; sourceTree = "<group>"; };
 		56AA28FBDD57FE579C318883 /* StreamURLBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamURLBuilder.swift; sourceTree = "<group>"; };
 		5A644AA5A3EBA09AB7E7D0C4 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		A1D7E0F1C2B3A4958677D00A /* ZelefinLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZelefinLog.swift; sourceTree = "<group>"; };
 		5AE8EFC401D03997CC27265A /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		5BF1D880FC511E84A138A487 /* AccessGatewaySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGatewaySection.swift; sourceTree = "<group>"; };
 		5C091BA2331F8DC32D4AABD5 /* ReviewDemoLibraryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewDemoLibraryClient.swift; sourceTree = "<group>"; };
@@ -551,6 +555,7 @@
 				5AE8EFC401D03997CC27265A /* NotificationSettingsView.swift */,
 				1ED05B4032CD2584D621FC60 /* PlaybackSettingsView.swift */,
 				0081398D7523FCE17264C0D7 /* PluginSettingsView.swift */,
+				A1D7E0F1C2B3A4958677D008 /* LogView.swift */,
 				8DF6EB0885813E2A26F24857 /* ProfileView.swift */,
 				8DF43CD66BCFCD5255719588 /* SiloAvatarPickerView.swift */,
 				E2C49FCE1C9A8BE40BEB8FA8 /* ScheduledTasksView.swift */,
@@ -874,6 +879,7 @@
 				3FD723FEAF5DE24252DABD24 /* SearchHistoryStore.swift */,
 				2E245B21B821E5525D4B7472 /* SecretStore.swift */,
 				5A644AA5A3EBA09AB7E7D0C4 /* SessionStore.swift */,
+				A1D7E0F1C2B3A4958677D00A /* ZelefinLog.swift */,
 				AEFEB3E7B67400FFCDE9FAF2 /* SnapshotCoding.swift */,
 				768407D7FEFE84C273C70606 /* WiFiSSID.swift */,
 			);
@@ -1139,6 +1145,7 @@
 				AA16ED4B77238005E27D6B23 /* PlayerView.swift in Sources */,
 				9FBBC0DED11C68C2CF19A2BC /* PluginSettings.swift in Sources */,
 				A51CA84891F64D4DAE739EB2 /* PluginSettingsView.swift in Sources */,
+				A1D7E0F1C2B3A4958677D007 /* LogView.swift in Sources */,
 				0BC2FD5294C1F48F44B80A36 /* PosterPrefetcher.swift in Sources */,
 				07F14431A1CD07EDE33B7ADF /* PosterQualityBadgeStack.swift in Sources */,
 				6F13E7C98A6B0D366847323C /* PosterQualityBadges.swift in Sources */,
@@ -1171,6 +1178,7 @@
 				F11A2B3C4D5E6F708192A3B4 /* SessionDisplayMessage.swift in Sources */,
 				F31A2B3C4D5E6F708192A3B4 /* SessionMessageCenter.swift in Sources */,
 				0C5002643CF0E644FD7F6697 /* SessionStore.swift in Sources */,
+				A1D7E0F1C2B3A4958677D009 /* ZelefinLog.swift in Sources */,
 				59C53F876F9F3256C4A1FAEE /* SessionsView.swift in Sources */,
 				3313E963D44272ED07173A02 /* SettingsView.swift in Sources */,
 				99855C551BBFE4E9718618EA /* SkipSegment.swift in Sources */,

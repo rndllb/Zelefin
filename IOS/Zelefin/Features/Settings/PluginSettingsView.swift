@@ -14,6 +14,10 @@ struct PluginSettingsView: View {
     @State private var seerrDisplayName = PluginSettings.requestDisplayName
     @State private var seerrStatus: String?
     @State private var isSigningInToSeerr = false
+    @State private var tmdbKey = PluginSettings.tmdbAPIKey ?? ""
+    @State private var savedTMDBKey = PluginSettings.tmdbAPIKey ?? ""
+    @State private var tmdbStatus: String?
+    @State private var isCheckingTMDBKey = false
 
     private var isSeerrSignedIn: Bool { seerrDisplayName != nil }
 
@@ -34,6 +38,7 @@ struct PluginSettingsView: View {
                 tubeArchivistSection
             }
             seerrSignInSection
+            tmdbSection
         }
         .zelefinSettingsChrome(title: "Plugins")
         .task {
@@ -189,6 +194,47 @@ struct PluginSettingsView: View {
             Text(requestFooter)
         }
         .zelefinRowBackground()
+    }
+
+    private var tmdbSection: some View {
+        Section {
+            SecureField("API Key or Read Access Token", text: $tmdbKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit { Task { await saveTMDBKey() } }
+            Button(tmdbKey.isEmpty && !savedTMDBKey.isEmpty ? "Remove Key" : "Save Key") {
+                Task { await saveTMDBKey() }
+            }
+            .disabled(isCheckingTMDBKey || tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines) == savedTMDBKey)
+            if let tmdbStatus {
+                SettingsStatusText(text: tmdbStatus, isError: !tmdbStatus.hasPrefix("Saved") && !tmdbStatus.hasPrefix("Removed"))
+            }
+        } header: {
+            Text("TMDB")
+        } footer: {
+            Text("Discover title pages show a title's logo when it's in your library. With a free TMDB key, from Settings → API on themoviedb.org, every other title shows its logo too.")
+        }
+        .zelefinRowBackground()
+    }
+
+    private func saveTMDBKey() async {
+        let key = tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            PluginSettings.tmdbAPIKey = nil
+            savedTMDBKey = ""
+            tmdbStatus = "Removed the TMDB key."
+            return
+        }
+        isCheckingTMDBKey = true
+        defer { isCheckingTMDBKey = false }
+        guard await TMDBLogos.accepts(key) else {
+            tmdbStatus = "TMDB didn't accept that key."
+            return
+        }
+        PluginSettings.tmdbAPIKey = key
+        savedTMDBKey = key
+        tmdbKey = key
+        tmdbStatus = "Saved. Discover titles show their logos."
     }
 
     private func skipPluginRow(

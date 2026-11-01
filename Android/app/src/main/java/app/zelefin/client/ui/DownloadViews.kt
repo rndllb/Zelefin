@@ -752,7 +752,16 @@ internal fun DownloadedPage(
         ) {
             GlassBackDisc("downloaded-back", shown = true, onBack = onBack)
             Spacer(Modifier.width(12.dp))
-            Text("Downloaded", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 22.sp)
+            Text(
+                "Downloaded",
+                color = Color.White,
+                fontFamily = ZelefinFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).clearOfTabletTopBar(),
+            )
         }
     }
 }

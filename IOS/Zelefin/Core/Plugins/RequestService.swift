@@ -21,8 +21,6 @@ protocol RequestServiceClient: Sendable {
     var service: RequestService { get }
     /// Seerr lets a request pick its Radarr or Sonarr server, quality, and folder. Ombi uses its defaults.
     var choosesDownloadServer: Bool { get }
-    /// Seerr's genre, studio, and network rows.
-    var browsesGenresAndCompanies: Bool { get }
 
     func search(term: String) async throws -> [SeerrTitle]
     /// The title as it stands now: whether it's on the server, and its open request, if any.
@@ -48,7 +46,6 @@ protocol RequestServiceClient: Sendable {
 extension SeerrClient: RequestServiceClient {
     var service: RequestService { .seerr }
     var choosesDownloadServer: Bool { true }
-    var browsesGenresAndCompanies: Bool { true }
 
     func declineRequest(id: Int, kind: SeerrTitle.Kind) async throws {
         try await declineRequest(id: id)

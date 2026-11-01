@@ -117,6 +117,8 @@ final class SessionStore {
     /// controls that open them fill this first.
     private(set) var mediaVersions: [String: [MediaVersion]] = [:]
     @ObservationIgnored private var mediaVersionLoads: Set<String> = []
+    /// Counts local layout changes, so a server read that started before one doesn't undo it.
+    @ObservationIgnored private var displayPreferencesRevision = 0
 
     private var homeTask: Task<Void, Never>?
 
@@ -304,16 +306,26 @@ final class SessionStore {
 
     func restore() async {
         defer { isRestoring = false }
+        ZelefinLog.info("App", "Opened Zelefin \(DeviceIdentity.versionAndBuild)")
         removeOrphanedWebhookAlerts()
-        guard let box = try? vault.loadBox() else { return }
+        guard let box = try? vault.loadBox() else {
+            ZelefinLog.info("Session", "No saved account; showing sign-in")
+            return
+        }
         if box.retiredSiloAccounts > 0 {
             try? vault.persist(box)
             authNotice = "Silo now signs in through its Jellyfin-compatible API. Sign in again."
         }
-        guard let saved = box.current else { return }
+        guard let saved = box.current else {
+            ZelefinLog.info("Session", "No saved account; showing sign-in")
+            return
+        }
         accounts = box.accounts
         apply(saved, serverVersion: saved.serverVersion)
-        await refreshSessionCapabilities()
+        ZelefinLog.info("Session", "Opened the saved \(Self.serverKind(saved)) account at \(saved.serverURL.host ?? "?") without waiting for the server")
+        // Opens on the saved account without waiting for the server: an unreachable one held the
+        // logo up for minutes, and downloads play without it.
+        Task { await refreshSessionCapabilities() }
     }
 
     func addUserOnCurrentServer(username: String, password: String) async throws {
@@ -338,6 +350,26 @@ final class SessionStore {
         username: String,
         password: String,
         serverType: SignInServerType = .jellyfin
+    ) async throws {
+        do {
+            try await signIn(serverAddress: serverAddress, username: username, password: password, serverType: serverType)
+            ZelefinLog.info("Session", "Signed in to \(session.map(Self.serverKind) ?? "a server") at \(session?.serverURL.host ?? "?")")
+        } catch {
+            ZelefinLog.error("Session", "Signing in to \(serverAddress) as \(serverType) failed: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    private static func serverKind(_ saved: SavedSession) -> String {
+        let kind = saved.isEmbyServer ? "Emby" : (saved.isSiloServer ? "Silo" : "Jellyfin")
+        return saved.serverVersion.map { "\(kind) \($0)" } ?? kind
+    }
+
+    private func signIn(
+        serverAddress: String,
+        username: String,
+        password: String,
+        serverType: SignInServerType
     ) async throws {
         let url = try await probe.resolvedURL(from: serverAddress)
         if serverType == .emby {
@@ -622,6 +654,7 @@ final class SessionStore {
     }
 
     func signOut() async {
+        ZelefinLog.info("Session", "Signed out")
         homeTask?.cancel()
         let leaving = session
         let silo = siloClient
@@ -883,12 +916,17 @@ final class SessionStore {
 
     func pullDisplayPreferences() async {
         guard let library, !isReviewDemo else { return }
+        let revision = displayPreferencesRevision
         guard let prefs = try? await library.displayPreferenceCustomPrefs() else { return }
+        // A change made here while the server answered is newer than the server's copy. Applying
+        // it put a library dragged in Interface back where it was.
+        guard revision == displayPreferencesRevision else { return }
         DisplayPreferencesSync.apply(prefs)
     }
 
     func pushDisplayPreferences() async {
         guard let library, !isReviewDemo else { return }
+        displayPreferencesRevision += 1
         try? await library.updateDisplayPreferenceCustomPrefs(DisplayPreferencesSync.customPrefs())
     }
 
@@ -2017,6 +2055,7 @@ final class SessionStore {
 
         if homeLayout.sections.isEmpty {
             homeError = "The server did not return any titles."
+            ZelefinLog.warning("Home", "Home came back empty; the Network entries above show which requests failed")
         }
         isLoadingHome = false
         if let session, !ReviewDemo.isSession(session) {

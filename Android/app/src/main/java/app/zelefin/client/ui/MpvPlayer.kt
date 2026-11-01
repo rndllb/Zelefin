@@ -79,8 +79,11 @@ import dev.jdtech.mpv.MPVLib
 import java.util.Locale
 import kotlin.math.min
 import kotlin.math.roundToInt
+import java.util.concurrent.Executors
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.withContext
 
 data class MpvPlaybackState(
     val playing: Boolean = false,
@@ -91,14 +94,31 @@ data class MpvPlaybackState(
     val speed: Float = 1f,
 )
 
+/**
+ * Every mpv call waits for mpv's core thread, which can be busy for seconds (software-decoding a
+ * 10-bit file, a slow network), so the UI never calls mpv itself: commands are queued here and
+ * reads run here through [MpvCalls]. One thread also runs the teardown, so mpv is never destroyed
+ * under a call in flight.
+ */
+private val MpvThread = Executors.newSingleThreadExecutor { Thread(it, "zelefin-mpv") }
+internal val MpvCalls = MpvThread.asCoroutineDispatcher()
+
+/**
+ * Commands return at once and run in order on [MpvThread]. Reads block, so they're only for code
+ * already running on [MpvCalls].
+ */
 class MpvController(private val mpv: MPVLib) {
-    fun play() = mpv.setPropertyBoolean("pause", false)
-    fun pause() = mpv.setPropertyBoolean("pause", true)
-    fun toggle() {
-        mpv.setPropertyBoolean("pause", mpv.getPropertyBoolean("pause") != true)
-    }
-    fun seek(seconds: Double) = mpv.command(arrayOf("seek", seconds.coerceAtLeast(0.0).toString(), "absolute"))
-    fun setSpeed(rate: Float) = mpv.setPropertyDouble("speed", rate.toDouble())
+    /** Set when the session tears mpv down; calls still queued after that skip it. */
+    @Volatile
+    internal var released = false
+
+    private fun post(action: () -> Unit) = MpvThread.execute { if (!released) action() }
+
+    fun play() = post { mpv.setPropertyBoolean("pause", false) }
+    fun pause() = post { mpv.setPropertyBoolean("pause", true) }
+    fun toggle() = post { mpv.setPropertyBoolean("pause", mpv.getPropertyBoolean("pause") != true) }
+    fun seek(seconds: Double) = post { mpv.command(arrayOf("seek", seconds.coerceAtLeast(0.0).toString(), "absolute")) }
+    fun setSpeed(rate: Float) = post { mpv.setPropertyDouble("speed", rate.toDouble()) }
     fun duration(): Double = mpv.getPropertyDouble("duration") ?: 0.0
     fun position(): Double = mpv.getPropertyDouble("time-pos") ?: 0.0
     fun isPaused(): Boolean = mpv.getPropertyBoolean("pause") == true
@@ -111,13 +131,14 @@ class MpvController(private val mpv: MPVLib) {
     private var controlsTop: Float? = null
 
     /** Top of the visible progress bar in view pixels, or null once the controls hide. */
-    fun setControlsTop(top: Float?) {
-        if (controlsTop == top) return
-        controlsTop = top
-        applySubtitlePlacement()
+    fun setControlsTop(top: Float?) = post {
+        if (controlsTop != top) {
+            controlsTop = top
+            applySubtitlePlacement()
+        }
     }
 
-    fun setFillScreen(fill: Boolean) {
+    fun setFillScreen(fill: Boolean) = post {
         fillScreen = fill
         mpv.setPropertyDouble("panscan", if (fill) 1.0 else 0.0)
         applySubtitlePlacement()
@@ -125,13 +146,15 @@ class MpvController(private val mpv: MPVLib) {
 
     fun setViewSize(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
-        viewWidth = width
-        viewHeight = height
-        applySubtitlePlacement()
+        post {
+            viewWidth = width
+            viewHeight = height
+            applySubtitlePlacement()
+        }
     }
 
-    fun selectAudio(id: String) = mpv.setPropertyString("aid", id)
-    fun selectSubtitle(id: String?) = mpv.setPropertyString("sid", id ?: "no")
+    fun selectAudio(id: String) = post { mpv.setPropertyString("aid", id) }
+    fun selectSubtitle(id: String?) = post { mpv.setPropertyString("sid", id ?: "no") }
 
     fun videoWidth(): Float {
         val display = mpv.getPropertyInt("dwidth") ?: 0
@@ -145,7 +168,9 @@ class MpvController(private val mpv: MPVLib) {
         return (if (display > 0) display else raw).toFloat()
     }
 
-    fun applySubtitleAppearance(style: SubtitleAppearance.Snapshot) {
+    fun applySubtitleAppearance(style: SubtitleAppearance.Snapshot) = post { setSubtitleAppearance(style) }
+
+    private fun setSubtitleAppearance(style: SubtitleAppearance.Snapshot) {
         subtitleStyle = style
         mpv.setPropertyString("sub-delay", style.syncSeconds.toString())
         mpv.setPropertyString("sub-color", style.mpvColor())
@@ -162,7 +187,8 @@ class MpvController(private val mpv: MPVLib) {
         applySubtitlePlacement()
     }
 
-    fun applySubtitlePlacement() {
+    /** Re-places subtitles for the current video size. Runs on [MpvCalls]. */
+    internal fun applySubtitlePlacement() {
         val placed = SubtitlePictureLayout.placement(
             viewWidth = viewWidth,
             viewHeight = viewHeight,
@@ -278,13 +304,13 @@ fun MpvPlayerHost(
                 continue
             }
             onReady(controller)
-            controller.applySubtitlePlacement()
-            val duration = controller.duration()
-            val position = controller.position()
-            val paused = controller.isPaused()
-            val ended = controller.eof() || (duration > 1 && position >= duration - 0.4 && !paused)
-            playing = !paused && !ended
-            onState(
+            val (next, running) = withContext(MpvCalls) {
+                if (controller.released) return@withContext MpvPlaybackState() to false
+                controller.applySubtitlePlacement()
+                val duration = controller.duration()
+                val position = controller.position()
+                val paused = controller.isPaused()
+                val ended = controller.eof() || (duration > 1 && position >= duration - 0.4 && !paused)
                 MpvPlaybackState(
                     playing = !paused && duration > 0 && !ended,
                     buffering = duration <= 0 && !ended,
@@ -292,9 +318,11 @@ fun MpvPlayerHost(
                     position = position,
                     duration = duration,
                     speed = controller.speed(),
-                ),
-            )
-            if (ended) {
+                ) to (!paused && !ended)
+            }
+            playing = running
+            onState(next)
+            if (next.ended) {
                 onEnded()
                 break
             }
@@ -376,8 +404,10 @@ private class MpvSession(
 
     fun resize(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
-        mpv?.setPropertyString("android-surface-size", "${width}x${height}")
-        controller?.setViewSize(width, height)
+        val lib = mpv ?: return
+        val engine = controller ?: return
+        MpvThread.execute { if (!engine.released) lib.setPropertyString("android-surface-size", "${width}x${height}") }
+        engine.setViewSize(width, height)
     }
 
     fun attach(holder: SurfaceHolder) {
@@ -407,9 +437,13 @@ private class MpvSession(
     }
 
     fun release() {
-        runCatching { mpv?.detachSurface() }
-        runCatching { mpv?.destroy() }
+        controller?.released = true
         controller = null
+        val lib = mpv ?: return
+        MpvThread.execute {
+            runCatching { lib.detachSurface() }
+            runCatching { lib.destroy() }
+        }
     }
 }
 
@@ -463,9 +497,16 @@ fun MpvPlayerSurface(
     }
     LaunchedEffect(controller, state.duration, state.buffering) {
         val engine = controller ?: return@LaunchedEffect
-        engine.setSpeed(PlaybackPreferences.defaultRate(context))
-        engine.applySubtitleAppearance(SubtitleAppearance.current(context))
-        if (!tracksApplied && engine.applyPlanTracks(plan, PlaybackPreferences.preferSdh(context))) {
+        val rate = PlaybackPreferences.defaultRate(context)
+        val appearance = SubtitleAppearance.current(context)
+        val preferSdh = PlaybackPreferences.preferSdh(context)
+        val applied = withContext(MpvCalls) {
+            if (engine.released) return@withContext false
+            engine.setSpeed(rate)
+            engine.applySubtitleAppearance(appearance)
+            !tracksApplied && engine.applyPlanTracks(plan, preferSdh)
+        }
+        if (applied) {
             tracksApplied = true
             trackTick += 1
         }
@@ -688,8 +729,20 @@ fun MpvPlayerSurface(
         reveal()
     }
 
-    val audioTracks = remember(controller, trackTick, state.duration) { controller?.tracks("audio").orEmpty() }
-    val subtitleTracks = remember(controller, trackTick, state.duration) { controller?.tracks("sub").orEmpty() }
+    var audioTracks by remember { mutableStateOf(emptyList<OverlayTrack>()) }
+    var subtitleTracks by remember { mutableStateOf(emptyList<OverlayTrack>()) }
+    LaunchedEffect(controller, trackTick, state.duration) {
+        val engine = controller
+        val (audio, subs) = if (engine == null) {
+            emptyList<OverlayTrack>() to emptyList()
+        } else {
+            withContext(MpvCalls) {
+                if (engine.released) emptyList<OverlayTrack>() to emptyList() else engine.tracks("audio") to engine.tracks("sub")
+            }
+        }
+        audioTracks = audio
+        subtitleTracks = subs
+    }
     val item = plan.item
     val title = if (item.kind == MediaKind.Episode) item.seriesName ?: item.name else item.name
     val subtitle = if (item.kind == MediaKind.Episode) episodeCaption(item, includeName = item.seriesName != null) else null

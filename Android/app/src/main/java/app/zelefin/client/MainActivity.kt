@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -41,6 +42,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -96,10 +98,25 @@ import app.zelefin.client.ui.rememberZelefinPush
 import app.zelefin.client.ui.rememberZelefinSheet
 import app.zelefin.client.ui.zelefinHazeSource
 import app.zelefin.client.ui.zelefinSheetBackdrop
+import app.zelefin.client.ui.isLargeScreen
 import app.zelefin.core.TitleDetail
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import app.zelefin.client.ui.DockEntry
+import app.zelefin.client.ui.TabletSidebarWidth
+import app.zelefin.client.ui.LocalSidebarInset
+import app.zelefin.client.ui.ZelefinTabletSidebarScrim
+import app.zelefin.client.ui.sidebarNarrowsPage
+import app.zelefin.client.ui.LocalTabletSidebarShown
+import app.zelefin.client.ui.LocalTabletTopBarBounds
+import app.zelefin.client.ui.ZelefinTabletSidebar
+import app.zelefin.client.ui.ZelefinTabletTopBar
+import app.zelefin.client.ui.ZelefinTabletMiniPlayer
 
 class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
@@ -129,7 +146,7 @@ class MainActivity : ComponentActivity() {
             LifecycleEventEffect(Lifecycle.Event.ON_START) { model.refreshLibraryStats() }
             PushEffects(model, state)
             val configuration = LocalConfiguration.current
-            val tablet = configuration.smallestScreenWidthDp >= 600
+            val tablet = configuration.isLargeScreen()
             val context = LocalContext.current
             LaunchedEffect(state.screen, tablet) {
                 val activity = context as? Activity ?: return@LaunchedEffect
@@ -202,8 +219,48 @@ class MainActivity : ComponentActivity() {
                 }
                 val miniVisible = showDock && state.nowPlaying != null
                 SideEffect { dockChrome.hasMiniPlayer = miniVisible }
+                // Tablets lay out like iPad: the tabs float in the page header row, between the back
+                // button and the page's own buttons, and a sidebar narrows the page.
+                var sidebarOpen by rememberSaveable { mutableStateOf(false) }
+                val topBarBounds = remember { mutableStateOf(Rect.Zero) }
+                val sidebarVisible = tablet && sidebarOpen && state.session != null && !playerActive
+                // As on iPad, the sidebar takes over from the tab bar while it's open.
+                val topBarVisible = tablet && showDock && !sidebarVisible
+                val sidebarNarrows = sidebarNarrowsPage(configuration.screenWidthDp)
+                val pageStart by animateDpAsState(if (sidebarVisible && sidebarNarrows) TabletSidebarWidth else 0.dp, label = "sidebarInset")
+                val tabEntries = app.zelefin.client.ui.TabPreferences.tabletEntries(state.libraries)
+                val selectEntry: (DockEntry) -> Unit = { entry -> entry.room?.let(model::selectDockRoom) ?: model.selectTab(entry.tab) }
+                // A covering sidebar closes once it's been used, the way iPad's does in portrait.
+                val leaveSidebar = { if (!sidebarNarrows) sidebarOpen = false }
+                BackHandler(enabled = sidebarVisible && !sidebarNarrows) { sidebarOpen = false }
+                val sidebar: @Composable (Modifier) -> Unit = { modifier ->
+                    ZelefinTabletSidebar(
+                        entries = tabEntries,
+                        currentTab = state.tab,
+                        currentRoomId = state.dockRoomId,
+                        session = state.session,
+                        onSelectEntry = { entry -> leaveSidebar(); selectEntry(entry) },
+                        onClose = { sidebarOpen = false },
+                        onProfile = { leaveSidebar(); model.openProfile() },
+                        onSessions = { leaveSidebar(); model.openSessions() },
+                        onSettings = { leaveSidebar(); model.openSettings() },
+                        onSignOut = { leaveSidebar(); model.signOut() },
+                        onReorder = { next ->
+                            app.zelefin.client.ui.TabPreferences.setShownOrder(this@MainActivity, next)
+                            model.pushDisplayPreferences()
+                        },
+                        onSetShown = { tab, shown ->
+                            app.zelefin.client.ui.TabPreferences.setShown(this@MainActivity, tab, shown)
+                            model.pushDisplayPreferences()
+                            if (!shown && tab.appTab == state.tab) model.selectTab(AppTab.Home)
+                        },
+                        modifier = modifier,
+                    )
+                }
                 LaunchedEffect(state.tab, backdrop.pageKey()) { dockChrome.expand() }
                 CompositionLocalProvider(
+                    LocalTabletTopBarBounds provides topBarBounds.takeIf { tablet },
+                    LocalTabletSidebarShown provides sidebarVisible,
                     LocalZelefinHaze provides hazeState,
                     LocalZelefinGlassHost provides glassHost,
                     LocalCollectionPosters provides model::collectionPosterMembers,
@@ -222,15 +279,29 @@ class MainActivity : ComponentActivity() {
                     // Glass drawn inside the page (discs mid-transition) would record the page into
                     // itself; there it falls back to the frosted fill.
                     CompositionLocalProvider(LocalGlassSource provides null) {
-                        Box(Modifier.fillMaxSize().zelefinSheetBackdrop(sheetMotion.progress)) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .zelefinSheetBackdrop(sheetMotion.progress),
+                        ) {
                             navigation.AnimatedContent(
                                 modifier = Modifier.fillMaxSize(),
                                 transitionSpec = { pageTransition() },
                                 contentKey = { it.pageKey() },
                             ) { screen ->
                                 val page = screen.pageKey()
-                                CompositionLocalProvider(LocalGlassDiscPage provides page) {
-                                    Box(Modifier.fillMaxSize()) {
+                                // As on iPad, Home and title pages run on under the sidebar (their
+                                // shelves scroll beneath it); every other page sits beside it.
+                                val underSidebar = tablet && when (screen) {
+                                    is Screen.Detail -> true
+                                    Screen.Library -> state.tab == AppTab.Home
+                                    else -> false
+                                }
+                                CompositionLocalProvider(
+                                    LocalGlassDiscPage provides page,
+                                    LocalSidebarInset provides if (underSidebar) pageStart else 0.dp,
+                                ) {
+                                    Box(Modifier.fillMaxSize().padding(start = if (underSidebar) 0.dp else pageStart)) {
                                         ZelefinScreen(screen, state, model, knownDetails) { detailCoversDock = it }
                                         // Mid-transition each page carries its own floating buttons (Home's
                                         // avatar and hero ⋯ included) so none blink out while it slides.
@@ -241,6 +312,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             if (sheetUp) ZelefinSheetScrim(sheetMotion.progress)
+                        }
+                        // Under a sheet the sidebar joins the page, so the sheet covers it.
+                        if (sidebarVisible && sidebarNarrows && sheetUp) {
+                            Box(Modifier.align(Alignment.TopStart)) {
+                                sidebar(Modifier)
+                                ZelefinSheetScrim(sheetMotion.progress)
+                            }
                         }
                         if (sheetMotion.displayed != null) {
                             ZelefinSheetSurface(sheetMotion.progress) {
@@ -253,7 +331,32 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     }
-                    if (showDock) {
+                    if (tablet) {
+                        // Above the page, the sidebar's glass shows the page through it.
+                        if (sidebarVisible && sidebarNarrows && !sheetUp) {
+                            sidebar(Modifier.align(Alignment.TopStart))
+                        }
+                        if (topBarVisible) {
+                            ZelefinTabletTopBar(
+                                entries = tabEntries,
+                                currentTab = state.tab,
+                                currentRoomId = state.dockRoomId,
+                                onShowSidebar = { sidebarOpen = true },
+                                onSelectEntry = selectEntry,
+                                onBounds = { topBarBounds.value = it },
+                                modifier = Modifier.align(Alignment.TopStart).padding(start = pageStart),
+                            )
+                        }
+                        state.nowPlaying?.takeIf { showDock }?.let { playing ->
+                            ZelefinTabletMiniPlayer(
+                                nowPlaying = playing,
+                                session = state.session,
+                                onOpen = { model.playNowPlaying() },
+                                onStop = model::clearNowPlaying,
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(start = pageStart),
+                            )
+                        }
+                    } else if (showDock) {
                         ZelefinGlassDock(
                             chrome = dockChrome,
                             currentTab = state.tab,
@@ -271,6 +374,10 @@ class MainActivity : ComponentActivity() {
                     if (!sheetUp && navigation.currentState == navigation.targetState) {
                         ZelefinForeground(glassHost)
                         ZelefinGlassDiscs(hazeState, glassHost)
+                        if (sidebarVisible && !sidebarNarrows) {
+                            ZelefinTabletSidebarScrim(onDismiss = { sidebarOpen = false })
+                            sidebar(Modifier.align(Alignment.TopStart))
+                        }
                         glassHost.content?.invoke()
                     }
                     // Settings pages live in the sheet; their dialogs still use the overlay host.

@@ -101,8 +101,9 @@ struct SeerrCompany: Identifiable, Hashable, Sendable {
         }
     }
 
+    /// White and light grey, as Seerr draws them, so the logos read on the accent card.
     private static func tmdbLogo(_ path: String) -> URL? {
-        URL(string: "https://image.tmdb.org/t/p/w780_filter(duotone,ffffff,2e2e2e)/\(path)")
+        URL(string: "https://image.tmdb.org/t/p/w780_filter(duotone,ffffff,bababa)/\(path)")
     }
 
     static let studios: [SeerrCompany] = [

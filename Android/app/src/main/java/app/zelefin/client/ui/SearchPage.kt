@@ -62,6 +62,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -206,67 +207,69 @@ fun SearchTabPage(
     }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().zelefinSheetBackdrop(sheet.progress)) {
-            ZelefinPush(motion) { path ->
-                when (val route = path.lastOrNull()) {
-                    null -> SearchHome(
-                        state = state,
-                        bottomInset = bottomInset,
-                        onTerm = onTerm,
-                        onHit = onHit,
-                        onOpenItem = onOpenItem,
-                        onPlay = onPlay,
-                        onRemoveRecent = onRemoveRecent,
-                        onClearRecents = onClearRecents,
-                        onGenre = { onRoute(LibraryRoute.Genre(it)) },
-                        onProfile = onProfile,
-                        onSessions = onSessions,
-                        onSettings = onSettings,
-                        onSignOut = onSignOut,
-                        discover = discover,
-                    )
-                    is LibraryRoute.Discover -> DiscoverGridPage(
-                        query = route.query,
-                        grid = discoverState.grids[route.query.key] ?: DiscoverGridState(),
-                        discover = discoverState,
-                        bottomInset = bottomInset,
-                        onBack = onBack,
-                        onLoadMore = { plugins.loadDiscoverGrid(route.query, more = true) },
-                        onSelect = openTitle,
-                    )
-                    is LibraryRoute.DiscoverTitle -> DiscoverTitlePage(
-                        title = route.discovered,
-                        discover = discoverState,
-                        plugins = plugins,
-                        canManage = pluginState.canManageRequests,
-                        requestRevision = requestRevision,
-                        onBack = onBack,
-                        onRequest = { requestTitle = it },
-                        onOpen = openTitle,
-                        onOpenLibraryItem = onOpen,
-                    )
-                    else -> {
-                        val grid = state.libraryGrids[route] ?: LibraryGridState()
-                        CatalogBrowsePage(
-                            title = route.title,
-                            items = grid.items,
-                            query = grid.query,
-                            options = grid.filters,
-                            session = state.session,
-                            refreshing = grid.refreshing,
-                            loading = grid.loading,
+            CompositionLocalProvider(LocalGlassDiscsCovered provides (sheet.displayed != null)) {
+                ZelefinPush(motion) { path ->
+                    when (val route = path.lastOrNull()) {
+                        null -> SearchHome(
+                            state = state,
                             bottomInset = bottomInset,
-                            onOpen = onOpen,
-                            onRefresh = { onRefresh(route) },
-                            onQuery = { onQuery(route, it) },
-                            onLoadFilters = { onFilters(route) },
-                            onCoversDock = onCoversDock,
+                            onTerm = onTerm,
+                            onHit = onHit,
+                            onOpenItem = onOpenItem,
+                            onPlay = onPlay,
+                            onRemoveRecent = onRemoveRecent,
+                            onClearRecents = onClearRecents,
+                            onGenre = { onRoute(LibraryRoute.Genre(it)) },
                             onProfile = onProfile,
                             onSessions = onSessions,
                             onSettings = onSettings,
                             onSignOut = onSignOut,
-                            onBack = onBack,
-                            emptyMessage = "Titles from your library will show up here.",
+                            discover = discover,
                         )
+                        is LibraryRoute.Discover -> DiscoverGridPage(
+                            query = route.query,
+                            grid = discoverState.grids[route.query.key] ?: DiscoverGridState(),
+                            discover = discoverState,
+                            bottomInset = bottomInset,
+                            onBack = onBack,
+                            onLoadMore = { plugins.loadDiscoverGrid(route.query, more = true) },
+                            onSelect = openTitle,
+                        )
+                        is LibraryRoute.DiscoverTitle -> DiscoverTitlePage(
+                            title = route.discovered,
+                            discover = discoverState,
+                            plugins = plugins,
+                            canManage = pluginState.canManageRequests,
+                            requestRevision = requestRevision,
+                            onBack = onBack,
+                            onRequest = { requestTitle = it },
+                            onOpen = openTitle,
+                            onOpenLibraryItem = onOpen,
+                        )
+                        else -> {
+                            val grid = state.libraryGrids[route] ?: LibraryGridState()
+                            CatalogBrowsePage(
+                                title = route.title,
+                                items = grid.items,
+                                query = grid.query,
+                                options = grid.filters,
+                                session = state.session,
+                                refreshing = grid.refreshing,
+                                loading = grid.loading,
+                                bottomInset = bottomInset,
+                                onOpen = onOpen,
+                                onRefresh = { onRefresh(route) },
+                                onQuery = { onQuery(route, it) },
+                                onLoadFilters = { onFilters(route) },
+                                onCoversDock = onCoversDock,
+                                onProfile = onProfile,
+                                onSessions = onSessions,
+                                onSettings = onSettings,
+                                onSignOut = onSignOut,
+                                onBack = onBack,
+                                emptyMessage = "Titles from your library will show up here.",
+                            )
+                        }
                     }
                 }
             }
@@ -442,7 +445,7 @@ private fun SearchChrome(
 ) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(180), label = "searchChrome")
     val shift by animateDpAsState(if (visible) 0.dp else (-160).dp, tween(180), label = "searchChromeShift")
-    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    val tablet = LocalConfiguration.current.isLargeScreen()
     val showsScope = focused || tablet
     val topPad by animateDpAsState(if (active) 8.dp else 4.dp, SearchSessionMotion(), label = "searchTopPad")
     val bottomPad by animateDpAsState(if (showsScope) 4.dp else 12.dp, SearchFocusMotion(), label = "searchBottomPad")
@@ -455,8 +458,9 @@ private fun SearchChrome(
             .padding(horizontal = 16.dp)
             .padding(top = topPad, bottom = bottomPad),
     ) {
+        // On tablets the tab bar shares this row, so the search field stays below it.
         AnimatedVisibility(
-            visible = !active,
+            visible = !active || tablet,
             enter = fadeIn(SearchSessionMotion()) + expandVertically(SearchSessionMotion(), expandFrom = Alignment.Top),
             exit = fadeOut(SearchSessionMotion()) + shrinkVertically(SearchSessionMotion(), shrinkTowards = Alignment.Top),
         ) {
@@ -468,7 +472,8 @@ private fun SearchChrome(
                     fontWeight = FontWeight.Bold,
                     fontSize = 34.sp,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f),
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).clearOfTabletTopBar().tabTitleBesideSidebar(),
                 )
                 AccountAvatarMenu(session, onProfile, onSessions, onSettings, onSignOut)
             }

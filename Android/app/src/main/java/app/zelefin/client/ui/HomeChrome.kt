@@ -150,7 +150,7 @@ fun HomeFeedPage(
         modifier = Modifier.fillMaxSize(),
         indicator = {
             PullToRefreshDefaults.Indicator(
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = statusTop + HomeHeaderHeight - 36.dp),
+                modifier = Modifier.align(Alignment.TopCenter).besideSidebar().padding(top = statusTop + HomeHeaderHeight - 36.dp),
                 isRefreshing = isRefreshing,
                 state = refreshState,
                 containerColor = Color(0xFF1C1C1E),
@@ -291,7 +291,7 @@ internal fun queueKindLabel(item: MediaItem): String =
 @Composable
 private fun HomeRowsHidden() {
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 80.dp),
+        Modifier.fillMaxWidth().besideSidebar().padding(horizontal = 32.dp, vertical = 80.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -326,7 +326,9 @@ private fun HomeTitleBar(
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
             fontSize = 34.sp,
-            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).clearOfTabletTopBar().tabTitleBesideSidebar(),
         )
         AccountAvatarMenu(session, onProfile, onSessions, onSettings, onSignOut)
     }
@@ -372,6 +374,7 @@ private fun FeaturedHero(
         Modifier
             .fillMaxWidth()
             .height(heroHeight)
+            .besideSidebar()
             .pointerInput(slides) {
                 var drag = 0f
                 detectHorizontalDragGestures(
@@ -384,31 +387,33 @@ private fun FeaturedHero(
                 )
             },
     ) {
-        CachedArtwork(
-            urls = heroArtworkCandidates(item, session),
-            contentDescription = item.name,
-            contentScale = ContentScale.Crop,
-            crossfade = true,
-            modifier = Modifier.fillMaxSize().clickable { onOpen(item) },
-        )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(heroHeight / 2)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent))),
-        )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.45f to Color.Transparent,
-                        0.72f to Color.Black.copy(alpha = 0.55f),
-                        1f to Color.Black.copy(alpha = 0.96f),
+        Box(Modifier.matchParentSize().extendsUnderSidebar()) {
+            CachedArtwork(
+                urls = heroArtworkCandidates(item, session),
+                contentDescription = item.name,
+                contentScale = ContentScale.Crop,
+                crossfade = true,
+                modifier = Modifier.fillMaxSize().clickable { onOpen(item) },
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(heroHeight / 2)
+                    .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent))),
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.45f to Color.Transparent,
+                            0.72f to Color.Black.copy(alpha = 0.55f),
+                            1f to Color.Black.copy(alpha = 0.96f),
+                        ),
                     ),
-                ),
-        )
+            )
+        }
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -589,6 +594,7 @@ private fun HomeRow(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             Modifier
+                .besideSidebar()
                 .padding(horizontal = 16.dp)
                 .then(if (onSeeAll != null) Modifier.clickable(onClick = onSeeAll) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
@@ -607,7 +613,7 @@ private fun HomeRow(
         val rowState = rememberLazyListState()
         LazyRow(
             state = rowState,
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            contentPadding = shelfPadding(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(items, key = { title + it.id }) { item ->

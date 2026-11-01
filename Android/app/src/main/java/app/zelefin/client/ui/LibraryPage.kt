@@ -73,6 +73,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -253,145 +254,147 @@ private fun LibraryHome(
     BackHandler(enabled = sheet.displayed != null) { arranging = false }
 
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().zelefinSheetBackdrop(sheet.progress)) {
-            when {
-                state.libraries.isEmpty() && state.librariesLoading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = ZelefinCyan)
-                    }
-                }
-                state.libraries.isEmpty() && state.message != null -> {
-                    Column(
-                        Modifier.fillMaxSize().padding(top = headerHeight + 40.dp, start = 32.dp, end = 32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("Couldn’t Load Library", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text(state.message, color = ZelefinMuted, fontSize = 16.sp)
-                    }
-                }
-                else -> {
-                    val listState = rememberLazyListState()
-                    val refreshState = rememberPullToRefreshState()
-                    var previousOffset by remember { mutableIntStateOf(0) }
-                    val hasStats = overview.counts?.let { it.total > 0 } == true
-                    LaunchedEffect(hasStats) {
-                        if (hasStats && listState.firstVisibleItemIndex == 1 && listState.firstVisibleItemScrollOffset == 0) {
-                            listState.scrollToItem(0)
+        CompositionLocalProvider(LocalGlassDiscsCovered provides (sheet.displayed != null)) {
+            Box(Modifier.fillMaxSize().zelefinSheetBackdrop(sheet.progress)) {
+                when {
+                    state.libraries.isEmpty() && state.librariesLoading -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = ZelefinCyan)
                         }
                     }
-                    LaunchedEffect(listState) {
-                        snapshotFlow { listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }
-                            .collect { offset ->
-                                val delta = offset - previousOffset
-                                previousOffset = offset
-                                headerVisible = when {
-                                    offset <= 40 -> true
-                                    delta > 12 -> false
-                                    delta < -12 -> true
-                                    else -> headerVisible
+                    state.libraries.isEmpty() && state.message != null -> {
+                        Column(
+                            Modifier.fillMaxSize().padding(top = headerHeight + 40.dp, start = 32.dp, end = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text("Couldn’t Load Library", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Text(state.message, color = ZelefinMuted, fontSize = 16.sp)
+                        }
+                    }
+                    else -> {
+                        val listState = rememberLazyListState()
+                        val refreshState = rememberPullToRefreshState()
+                        var previousOffset by remember { mutableIntStateOf(0) }
+                        val hasStats = overview.counts?.let { it.total > 0 } == true
+                        LaunchedEffect(hasStats) {
+                            if (hasStats && listState.firstVisibleItemIndex == 1 && listState.firstVisibleItemScrollOffset == 0) {
+                                listState.scrollToItem(0)
+                            }
+                        }
+                        LaunchedEffect(listState) {
+                            snapshotFlow { listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }
+                                .collect { offset ->
+                                    val delta = offset - previousOffset
+                                    previousOffset = offset
+                                    headerVisible = when {
+                                        offset <= 40 -> true
+                                        delta > 12 -> false
+                                        delta < -12 -> true
+                                        else -> headerVisible
+                                    }
+                                }
+                        }
+                        PullToRefreshBox(
+                            isRefreshing = refreshing,
+                            onRefresh = onRefresh,
+                            state = refreshState,
+                            modifier = Modifier.fillMaxSize(),
+                            indicator = {
+                                PullToRefreshDefaults.Indicator(
+                                    modifier = Modifier.align(Alignment.TopCenter).padding(top = headerHeight - 36.dp),
+                                    isRefreshing = refreshing,
+                                    state = refreshState,
+                                    containerColor = Color(0xFF1C1C1E),
+                                    color = ZelefinCyan,
+                                )
+                            },
+                        ) {
+                        LazyColumn(
+                            state = listState,
+                            contentPadding = PaddingValues(top = headerHeight, bottom = bottomInset + 32.dp),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            overview.counts?.takeIf { it.total > 0 }?.let { counts ->
+                                item(key = "stats") {
+                                    ServerStats(counts)
+                                    Spacer(Modifier.height(16.dp))
                                 }
                             }
-                    }
-                    PullToRefreshBox(
-                        isRefreshing = refreshing,
-                        onRefresh = onRefresh,
-                        state = refreshState,
-                        modifier = Modifier.fillMaxSize(),
-                        indicator = {
-                            PullToRefreshDefaults.Indicator(
-                                modifier = Modifier.align(Alignment.TopCenter).padding(top = headerHeight - 36.dp),
-                                isRefreshing = refreshing,
-                                state = refreshState,
-                                containerColor = Color(0xFF1C1C1E),
-                                color = ZelefinCyan,
-                            )
-                        },
-                    ) {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(top = headerHeight, bottom = bottomInset + 32.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        overview.counts?.takeIf { it.total > 0 }?.let { counts ->
-                            item(key = "stats") {
-                                ServerStats(counts)
-                                Spacer(Modifier.height(16.dp))
+                            items(rooms, key = { "room-${it.id}" }) { room ->
+                                RoomBand(
+                                    room = room,
+                                    covers = overview.covers[room.id].orEmpty(),
+                                    caption = overview.roomCounts[room.id]?.caption,
+                                    session = state.session,
+                                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp),
+                                ) { onRoute(LibraryRoute.Room(room)) }
                             }
-                        }
-                        items(rooms, key = { "room-${it.id}" }) { room ->
-                            RoomBand(
-                                room = room,
-                                covers = overview.covers[room.id].orEmpty(),
-                                caption = overview.roomCounts[room.id]?.caption,
-                                session = state.session,
-                                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp),
-                            ) { onRoute(LibraryRoute.Room(room)) }
-                        }
-                        item(key = "jumps") {
-                            val tiles = jumps + null
-                            val columns = if (tiles.size >= 4) 2 else tiles.size.coerceAtLeast(1)
-                            Column(
-                                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                tiles.chunked(columns).forEach { row ->
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    ) {
-                                        row.forEach { block ->
-                                            val tile = Modifier.weight(1f)
-                                            if (block == null) {
-                                                DownloadedJumpTile(tile) { onRoute(LibraryRoute.Downloaded) }
-                                            } else {
-                                                JumpTile(block, tile) {
-                                                    onRoute(
-                                                        when (block) {
-                                                            LibraryPageBlock.Favorites -> LibraryRoute.Favorites
-                                                            LibraryPageBlock.Watchlist -> LibraryRoute.Watchlist
-                                                            else -> LibraryRoute.Genres
-                                                        },
-                                                    )
+                            item(key = "jumps") {
+                                val tiles = jumps + null
+                                val columns = if (tiles.size >= 4) 2 else tiles.size.coerceAtLeast(1)
+                                Column(
+                                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    tiles.chunked(columns).forEach { row ->
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            row.forEach { block ->
+                                                val tile = Modifier.weight(1f)
+                                                if (block == null) {
+                                                    DownloadedJumpTile(tile) { onRoute(LibraryRoute.Downloaded) }
+                                                } else {
+                                                    JumpTile(block, tile) {
+                                                        onRoute(
+                                                            when (block) {
+                                                                LibraryPageBlock.Favorites -> LibraryRoute.Favorites
+                                                                LibraryPageBlock.Watchlist -> LibraryRoute.Watchlist
+                                                                else -> LibraryRoute.Genres
+                                                            },
+                                                        )
+                                                    }
                                                 }
                                             }
+                                            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                                         }
-                                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                                     }
                                 }
                             }
-                        }
-                        if (collections.isNotEmpty()) {
-                            item(key = "collections-title") {
-                                Text(
-                                    "Collections",
-                                    color = Color.White,
-                                    fontFamily = ZelefinFont,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 20.sp,
-                                    modifier = Modifier.padding(start = 16.dp, top = 32.dp, bottom = 12.dp),
-                                )
+                            if (collections.isNotEmpty()) {
+                                item(key = "collections-title") {
+                                    Text(
+                                        "Collections",
+                                        color = Color.White,
+                                        fontFamily = ZelefinFont,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 20.sp,
+                                        modifier = Modifier.padding(start = 16.dp, top = 32.dp, bottom = 12.dp),
+                                    )
+                                }
+                                item(key = "collections") {
+                                    CollectionGrid(collections, state.session, onOpen)
+                                }
                             }
-                            item(key = "collections") {
-                                CollectionGrid(collections, state.session, onOpen)
-                            }
                         }
-                    }
+                        }
                     }
                 }
+                LibraryHeader(
+                    visible = headerVisible,
+                    arrangeShown = sheet.displayed == null && state.libraryPath.isEmpty(),
+                    session = state.session,
+                    onArrange = { arranging = true },
+                    onRandom = onRandom,
+                    onProfile = onProfile,
+                    onSessions = onSessions,
+                    onSettings = onSettings,
+                    onSignOut = onSignOut,
+                )
+                if (sheet.displayed != null) ZelefinSheetScrim(sheet.progress)
             }
-            LibraryHeader(
-                visible = headerVisible,
-                arrangeShown = sheet.displayed == null && state.libraryPath.isEmpty(),
-                session = state.session,
-                onArrange = { arranging = true },
-                onRandom = onRandom,
-                onProfile = onProfile,
-                onSessions = onSessions,
-                onSettings = onSettings,
-                onSignOut = onSignOut,
-            )
-            if (sheet.displayed != null) ZelefinSheetScrim(sheet.progress)
         }
         if (sheet.displayed != null) {
             ZelefinSheetSurface(sheet.progress, canvas = MaterialTheme.colorScheme.surface) {
@@ -438,7 +441,8 @@ private fun LibraryHeader(
             fontWeight = FontWeight.Bold,
             fontSize = 34.sp,
             maxLines = 1,
-            modifier = Modifier.weight(1f),
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).clearOfTabletTopBar().tabTitleBesideSidebar(),
         )
         Box(
             Modifier

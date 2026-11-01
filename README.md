@@ -80,7 +80,7 @@ Movies, shows, collections, favorites, playlists. Filter by type, genre, year, r
 
 ### 🔎 Search
 
-Search the signed-in server. **Discover** and request missing titles through Seerr or Ombi. Titles already requested show their status, and admins approve, decline, or edit requests from the request sheet.
+Search the signed-in server. **Discover** and request missing titles through Seerr or Ombi, with studio and network rows on Seerr and genre rows on Ombi. Titles already requested show their status, and admins approve, decline, or edit requests from the request sheet. Request pages show the title's logo from your library, or from TMDB with your own key.
 
 </td>
 </tr>
@@ -89,7 +89,7 @@ Search the signed-in server. **Discover** and request missing titles through See
 
 ### 🎞️ Title
 
-Backdrop, overview, seasons, similar, chapters, extras, special features. Play / resume with progress.
+Backdrop, overview, seasons, similar, chapters, extras, special features. Play / resume with progress. Titles with several versions or debrid sources (Remux and similar) pick one per movie or per episode, from the title page or the player's More menu.
 
 </td>
 <td width="33%" valign="top">
@@ -103,7 +103,7 @@ Cast and crew photos from the server. Open a person and browse their titles.
 
 ### ⬇️ Downloads
 
-Movies and episodes for offline play. Downloads tab with storage totals. Progress on posters and detail.
+Movies and episodes for offline play. Downloads tab with storage totals. Progress on posters and detail. Zelefin opens even when the server can't be reached, so downloads still play.
 
 </td>
 </tr>
@@ -158,7 +158,7 @@ Jellyfin and Emby administrators: users, libraries, plugins, scheduled tasks, ac
 
 ### ⚙️ Settings
 
-Appearance, home rows, playback languages, downloads, notifications, which tabs sit in the dock, and the page the app opens to. Theme and poster text. The accent color defaults to the sign-in screen's periwinkle and tints controls and surfaces throughout.
+Appearance, home rows, playback languages, downloads, notifications, which tabs sit in the dock, and the page the app opens to. Theme and poster text. The accent color defaults to the sign-in screen's periwinkle and tints controls and surfaces throughout. A built-in **Log** shows what Zelefin did and what failed, to read, search, or send; passwords and tokens are never written to it.
 
 </td>
 <td width="33%" valign="top">
@@ -194,6 +194,9 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 | Lock-screen alerts (plugin or webhooks) | ✅ | Soon | ✅ |
 | Jellyfin admin | ✅ | ✅ | ✅ |
 | Seerr · Ombi requests | ✅ | ✅ | ✅ |
+| Version and debrid source picking | ✅ | ✅ | ✅ |
+| Built-in log | ✅ | ✅ | ✅ |
+| Tablet sidebar layout | ✅ | — | ✅ |
 | Live TV guide | ✅ | ✅ | — |
 | Picture in Picture · AirPlay | ✅ | — | — |
 | Review Demo | ✅ | ✅ | — |
@@ -206,7 +209,7 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 
 The Mac app is the iPad app built for the Mac (Mac Catalyst) and runs natively on Intel and Apple silicon (M-series) Macs with macOS 15 or later. It has a fixed sidebar like the TV app, with grids and rows sized for a Mac window. AetherEngine isn’t on the Mac until its FFmpeg ships Mac Catalyst builds, so the Mac plays with MPV or Apple’s player.
 
-Android UI is Material 3: edge-to-edge navigation bar, accent-tinted surfaces, settings hub.
+Android UI is Material 3: edge-to-edge navigation bar, accent-tinted surfaces, settings hub. Android tablets get the iPad layout: tabs in a capsule at the top, and a liquid glass sidebar with **Edit** to reorder and hide tabs. Home and title pages run on under the sidebar, their shelves scrolling beneath it.
 
 ---
 

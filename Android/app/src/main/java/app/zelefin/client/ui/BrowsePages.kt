@@ -189,7 +189,7 @@ private fun BrowseHeader(title: String, onBack: () -> Unit) {
             fontSize = 22.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).clearOfTabletTopBar(),
         )
     }
 }

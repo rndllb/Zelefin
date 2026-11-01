@@ -206,6 +206,15 @@ class PluginSettings(context: Context) {
         get() = prefs.getBoolean(THEINTRODB_KEY, true)
         set(value) = prefs.edit().putBoolean(THEINTRODB_KEY, value).apply()
 
+    /** The user's TMDB key, for Discover title logos the library doesn't have. */
+    var tmdbApiKey: String?
+        get() = secrets.getString(TMDB_KEY, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            secrets.edit().apply {
+                if (value.isNullOrBlank()) remove(TMDB_KEY) else putString(TMDB_KEY, value)
+            }.apply()
+        }
+
     companion object {
         const val PREFS_NAME = "zelefin.plugins"
         const val SECRETS_NAME = "zelefin.secrets"
@@ -221,6 +230,7 @@ class PluginSettings(context: Context) {
         private const val REQUEST_SERVICE_KEY = "zelefin.requests.service"
         private const val OMBI_SESSION_KEY = "ombi-session"
         private const val LEGACY_API_KEY = "seerr-api-key"
+        private const val TMDB_KEY = "tmdb-api-key"
 
         /** The address cleaned the way the sign-in screen cleans a server address. */
         fun normalizeSeerrUrl(raw: String): String? = ServerUrl.candidates(raw).firstOrNull()

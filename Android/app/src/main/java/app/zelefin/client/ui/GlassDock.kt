@@ -92,9 +92,9 @@ private val DockIconOnlyHeight = 50.dp
 /** Minimized tab bar, and the inline mini player beside it. */
 private val DockCompactHeight = 48.dp
 /** iOS 26 dark tab bar: the selected tab sits in a darker capsule, not a lighter one. */
-private val DockLensFill = Color.Black.copy(alpha = 0.34f)
+internal val DockLensFill = Color.Black.copy(alpha = 0.34f)
 private val DockLensPressedFill = Color.Black.copy(alpha = 0.46f)
-private val DockIdleTint = Color.White.copy(alpha = 0.94f)
+internal val DockIdleTint = Color.White.copy(alpha = 0.94f)
 
 /** Scroll travel before the dock collapses or comes back. */
 private const val DockMinimizeTravelPx = 36f
@@ -413,7 +413,7 @@ private fun DockTabItem(
 /** iOS mini player row: artwork, title, transport. Long-press for Play / Stop like the iOS context menu. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DockMiniPlayer(
+internal fun DockMiniPlayer(
     item: MediaItem,
     session: SavedSession?,
     collapse: Float,

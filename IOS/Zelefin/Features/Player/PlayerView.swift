@@ -93,6 +93,7 @@ struct PlayerView: View {
         }
         .onChange(of: model?.errorMessage) { _, message in
             guard let message else { return }
+            ZelefinLog.error("Playback", "The player stopped on \"\(activeItem.name)\": \(message)")
             if model?.hasFirstFrame != true, !didRetryStart {
                 didRetryStart = true
                 Task { await retryStart() }
@@ -110,6 +111,11 @@ struct PlayerView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhase(phase)
+        }
+        .onChange(of: fallbackError) { _, message in
+            if let message {
+                ZelefinLog.error("Playback", "Couldn't play \"\(activeItem.name)\": \(message)")
+            }
         }
         .onChange(of: session.adaptiveBitrate.path.transport) { previous, _ in
             guard previous != .other else { return }
@@ -457,6 +463,7 @@ struct PlayerView: View {
         await waitForPresentation()
         // Restarts run in unstructured tasks that outlive the view; never start after close.
         guard !Task.isCancelled, isOnScreen else { return }
+        ZelefinLog.info("Playback", Self.logLine(for: plan))
         let reporter = session.makePlaybackReporter(for: plan)
         let created = PlayerModel(plan: plan, reporter: reporter)
         created.onUserTransport = { action in
@@ -556,7 +563,19 @@ struct PlayerView: View {
     }
 
     /// The first open after a cold start can fail while the server spins up; a reopen works.
+    /// `Playing "Dune" (movie) by directPlay: mkv, hevc, dolbyVision, from a download, at 0:00`
+    private static func logLine(for plan: PlaybackPlan) -> String {
+        let source = plan.streamURL.isFileURL ? "a download" : (plan.streamURL.host ?? "the server")
+        let facts = [plan.container, plan.videoCodec, String(describing: plan.videoRange), String(describing: plan.audioFormat)]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        let version = plan.versions.count > 1 ? ", version \(plan.mediaSourceID ?? "default") of \(plan.versions.count)" : ""
+        return "Playing \"\(plan.item.name)\" (\(plan.item.kind)) by \(plan.method): \(facts), from \(source), at \(PlaybackTimeFormatting.elapsed(plan.startTime))\(version)"
+    }
+
     private func retryStart() async {
+        ZelefinLog.warning("Playback", "Starting again: the first try never showed a picture")
         let skip = model?.skipSegments ?? []
         resumeOverride = model.map(\.currentTime).flatMap { $0 > 0 ? $0 : nil }
         await model?.stop()
@@ -571,6 +590,7 @@ struct PlayerView: View {
     private func fallBackToRemux(from message: String) async {
         guard !didFallBackToRemux else { return }
         didFallBackToRemux = true
+        ZelefinLog.warning("Playback", "Direct Play failed (\(message)); asking the server to remux instead")
         let skip = model?.skipSegments ?? []
         await model?.stop()
         model = nil

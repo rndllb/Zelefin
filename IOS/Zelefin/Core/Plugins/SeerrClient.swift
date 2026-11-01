@@ -255,7 +255,7 @@ struct SeerrClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         AccessGateway.apply(&request)
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await SeerrTransport.session.data(for: request)
+        let (data, response) = try await SeerrTransport.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw ZelefinError.server("Seerr did not respond.")
         }
@@ -278,7 +278,7 @@ struct SeerrClient: Sendable {
     private func get<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         applyHeaders(&request)
-        let (data, response) = try await SeerrTransport.session.data(for: request)
+        let (data, response) = try await SeerrTransport.data(for: request)
         try Self.throwIfNeeded(response, data: data)
         return try JSONDecoder().decode(T.self, from: data)
     }
@@ -289,7 +289,7 @@ struct SeerrClient: Sendable {
         applyHeaders(&request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await SeerrTransport.session.data(for: request)
+        let (data, response) = try await SeerrTransport.data(for: request)
         try Self.throwIfNeeded(response, data: data)
     }
 
@@ -377,6 +377,27 @@ enum SeerrTransport {
         configuration.httpShouldSetCookies = true
         return URLSession(configuration: configuration)
     }()
+
+    /// A Seerr or Ombi call, with failures noted in the log.
+    static func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let service = PluginSettings.requestService.name
+        do {
+            let (data, response) = try await session.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
+                ZelefinLog.shared.write(
+                    http.statusCode >= 500 ? .error : .warning,
+                    "Requests",
+                    "\(service): \(ZelefinLog.describe(request)) → \(http.statusCode)"
+                )
+            }
+            return (data, response)
+        } catch {
+            if (error as? URLError)?.code != .cancelled {
+                ZelefinLog.warning("Requests", "\(service): \(ZelefinLog.describe(request)) failed: \(error.localizedDescription)")
+            }
+            throw error
+        }
+    }
 }
 
 enum SeerrCookie {

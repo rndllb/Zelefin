@@ -64,7 +64,7 @@ struct PersonDetailView: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
                 if let year = profile?.birthYear {
-                    Text("Born \(year)")
+                    Text("Born \(String(year))")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.62))
                 }

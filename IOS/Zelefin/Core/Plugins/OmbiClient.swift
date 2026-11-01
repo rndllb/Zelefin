@@ -14,7 +14,6 @@ struct OmbiClient: RequestServiceClient {
     var service: RequestService { .ombi }
     /// Admins and power users pick the quality and folder from Ombi's Radarr and Sonarr.
     var choosesDownloadServer: Bool { true }
-    var browsesGenresAndCompanies: Bool { false }
 
     /// A page of a Discover row.
     private static let pageSize = 20
@@ -69,8 +68,11 @@ struct OmbiClient: RequestServiceClient {
     func search(term: String) async throws -> [SeerrTitle] {
         let filter: [String: Any] = ["movies": true, "tvShows": true, "music": false, "people": false]
         let results: [OmbiMultiResult] = try await send("api/v2/Search/multi/\(Self.pathComponent(term))", method: "POST", body: filter)
-        let basics = results.prefix(Self.pageSize).compactMap(\.seerrTitle)
-        return await withTaskGroup(of: (Int, SeerrTitle).self) { group in
+        return await withRequestState(results.prefix(Self.pageSize).compactMap(\.seerrTitle))
+    }
+
+    private func withRequestState(_ basics: [SeerrTitle]) async -> [SeerrTitle] {
+        await withTaskGroup(of: (Int, SeerrTitle).self) { group in
             for (index, basic) in basics.enumerated() {
                 group.addTask {
                     let detailed = (try? await self.titleDetails(kind: basic.kind, tmdbID: basic.tmdbID)) ?? basic
@@ -92,19 +94,66 @@ struct OmbiClient: RequestServiceClient {
         async let upcomingMovies = discover(.upcomingMovies, page: 1)
         async let popularTV = discover(.popularTV, page: 1)
         async let upcomingTV = discover(.upcomingTV, page: 1)
+        async let movieGenres = genres("movie")
+        async let tvGenres = genres("tv")
         return SeerrDiscoverHome(
             recentRequests: (try? await requests)?.titles ?? [],
             trending: (try? await trending)?.titles ?? [],
             popularMovies: (try? await popularMovies)?.titles ?? [],
             upcomingMovies: (try? await upcomingMovies)?.titles ?? [],
             popularTV: (try? await popularTV)?.titles ?? [],
-            upcomingTV: (try? await upcomingTV)?.titles ?? []
+            upcomingTV: (try? await upcomingTV)?.titles ?? [],
+            movieGenres: await movieGenres,
+            tvGenres: await tvGenres
         )
+    }
+
+    /// Ombi browses by genre only: its advanced search takes studios and streaming services but
+    /// ignores them, so there are no Studios or Networks rows.
+    private func genres(_ media: String) async -> [SeerrGenreSliderItem] {
+        let genres: [OmbiGenre] = (try? await send("api/v2/Search/Genres/\(media)")) ?? []
+        return genres.map { SeerrGenreSliderItem(id: $0.id, name: $0.name, mediaType: media) }
+    }
+
+    private func genreTitles(_ kind: SeerrTitle.Kind, genreID: Int, position: Int) async throws -> (titles: [SeerrTitle], sent: Int) {
+        let body: [String: Any] = ["type": kind == .tv ? "tv" : "movie", "genreIds": [genreID]]
+        let path = "api/v2/Search/advancedSearch/movie/\(position)/\(Self.pageSize)"
+        guard kind == .tv else {
+            let movies: [OmbiMovie] = try await send(path, method: "POST", body: body)
+            return (movies.compactMap(\.seerrTitle), movies.count)
+        }
+        // Ombi's TV results carry no TMDB ID, so each is found again by name and matched by poster.
+        let shows: [OmbiGenreShow] = try await send(path, method: "POST", body: body)
+        let found = await withTaskGroup(of: (Int, SeerrTitle?).self) { group in
+            for (index, show) in shows.enumerated() {
+                group.addTask { (index, await self.findShow(show)) }
+            }
+            var slots = [SeerrTitle?](repeating: nil, count: shows.count)
+            for await (index, title) in group {
+                slots[index] = title
+            }
+            return slots.compactMap { $0 }
+        }
+        return (await withRequestState(found), shows.count)
+    }
+
+    private func findShow(_ show: OmbiGenreShow) async -> SeerrTitle? {
+        guard let name = show.title, !name.isEmpty else { return nil }
+        let filter: [String: Any] = ["movies": false, "tvShows": true, "music": false, "people": false]
+        guard let results: [OmbiMultiResult] = try? await send(
+            "api/v2/Search/multi/\(Self.pathComponent(name))",
+            method: "POST",
+            body: filter
+        ) else { return nil }
+        let match = results.first { show.posterPath != nil && $0.poster == show.posterPath }
+            ?? results.first { OmbiMultiResult.splitYear($0.title ?? "").0.caseInsensitiveCompare(name) == .orderedSame }
+        return match?.seerrTitle
     }
 
     func discover(_ query: SeerrDiscoverQuery, page: Int) async throws -> SeerrDiscoverPage {
         let position = (page - 1) * Self.pageSize
         let titles: [SeerrTitle]
+        var sent: Int?
         switch query {
         case .requests:
             titles = try await recentRequests(position: position)
@@ -120,10 +169,16 @@ struct OmbiClient: RequestServiceClient {
             titles = try await tvList("popular", position: position)
         case .upcomingTV:
             titles = try await tvList("anticipated", position: position)
-        case .movieGenre, .tvGenre, .studio, .network:
+        case let .movieGenre(id, _):
+            (titles, sent) = try await genreTitles(.movie, genreID: id, position: position)
+        case let .tvGenre(id, _):
+            (titles, sent) = try await genreTitles(.tv, genreID: id, position: position)
+        case .studio, .network:
             titles = []
         }
-        return SeerrDiscoverPage(titles: titles, page: page, totalPages: titles.count >= Self.pageSize ? page + 1 : page)
+        // A genre page can come back short when a show isn't found again; Ombi's count says if more follow.
+        let full = (sent ?? titles.count) >= Self.pageSize
+        return SeerrDiscoverPage(titles: titles, page: page, totalPages: full ? page + 1 : page)
     }
 
     private func movieList(_ list: String, position: Int) async throws -> [SeerrTitle] {
@@ -369,7 +424,7 @@ struct OmbiClient: RequestServiceClient {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
-        let (data, response) = try await SeerrTransport.session.data(for: request)
+        let (data, response) = try await SeerrTransport.data(for: request)
         if let http = response as? HTTPURLResponse {
             if AccessGateway.isChallenge(response: http, data: data) { throw ZelefinError.accessGateway }
             if http.statusCode == 401 || http.statusCode == 403 { throw ZelefinError.seerrUnauthorized }
@@ -451,6 +506,17 @@ private struct OmbiUser: Decodable {
             claim.enabled == true && (claim.value == "Admin" || claim.value == "PowerUser")
         }
     }
+}
+
+private struct OmbiGenre: Decodable {
+    var id: Int
+    var name: String
+}
+
+/// A show from Ombi's advanced search: a name and artwork, with its IDs left at zero.
+private struct OmbiGenreShow: Decodable {
+    var title: String?
+    var posterPath: String?
 }
 
 private struct OmbiMultiResult: Decodable {

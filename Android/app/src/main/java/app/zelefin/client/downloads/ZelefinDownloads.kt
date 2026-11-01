@@ -7,6 +7,7 @@ import android.net.Uri
 import android.text.format.Formatter
 import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.network.GatewayHttp
+import app.zelefin.client.ZelefinLog
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
 import app.zelefin.core.PlaybackMethod
@@ -489,6 +490,7 @@ object ZelefinDownloads {
         var finished = false
         val partial = File(folder, "media.part")
         try {
+            ZelefinLog.info("Downloads", "Downloading \"${target.name}\"")
             val resolved = backend.prepare(target, account)
             coroutineScope { ensureActive() }
             folder.mkdirs()
@@ -527,17 +529,22 @@ object ZelefinDownloads {
                 persist(app)
             }
             finished = true
+            ZelefinLog.info("Downloads", "Downloaded \"${target.name}\": $container, ${record.byteSize / 1_000_000} MB")
         } catch (cancel: CancellationException) {
             val paused = _state.value.progress[target.id]?.paused == true
             if (!paused) partial.delete()
+            ZelefinLog.info("Downloads", "${if (paused) "Paused" else "Stopped"} downloading \"${target.name}\"")
             throw cancel
         } catch (error: Throwable) {
             // Cancelling or pausing closes the connection under the read, which arrives as an IOException
             // rather than a cancellation. That's the person stopping the download, not a failure.
             if (!currentCoroutineContext().isActive) {
-                if (_state.value.progress[target.id]?.paused != true) partial.delete()
+                val paused = _state.value.progress[target.id]?.paused == true
+                if (!paused) partial.delete()
+                ZelefinLog.info("Downloads", "${if (paused) "Paused" else "Stopped"} downloading \"${target.name}\"")
                 throw CancellationException("Download stopped")
             }
+            ZelefinLog.error("Downloads", "Downloading \"${target.name}\" failed: ${error.message ?: error::class.java.simpleName}")
             showNotice(DownloadNotice("Download", (error as? DownloadRefused)?.message ?: FailureMessage))
         } finally {
             staging.deleteRecursively()

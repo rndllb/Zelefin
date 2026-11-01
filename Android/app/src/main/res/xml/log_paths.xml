@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The shared copy of Zelefin's log, written to cache/logs by ZelefinLog.exportFile. -->
+<paths>
+    <cache-path name="logs" path="logs/" />
+</paths>

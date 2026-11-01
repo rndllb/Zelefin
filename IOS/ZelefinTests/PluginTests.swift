@@ -459,15 +459,15 @@ final class SeerrTitleTests: XCTestCase {
     }
 
     func testCookieHeaderUsesSession() {
-        let session = SeerrSession(cookieName: "connect.sid", cookieValue: "s:abc.signature", displayName: "Randall")
+        let session = SeerrSession(cookieName: "connect.sid", cookieValue: "s:abc.signature", displayName: "Avery")
         let header = SeerrCookie.header(session: session, url: URL(string: "https://seerr.example.com")!)
         XCTAssertTrue(header.contains("connect.sid="))
         XCTAssertTrue(header.contains("abc.signature"))
     }
 
     func testJellyfinBodyIsUsernameAndPasswordOnly() {
-        let body = SeerrClient.jellyfinBody(username: "Randall", password: "secret")
-        XCTAssertEqual(body["username"] as? String, "Randall")
+        let body = SeerrClient.jellyfinBody(username: "Avery", password: "secret")
+        XCTAssertEqual(body["username"] as? String, "Avery")
         XCTAssertEqual(body["password"] as? String, "secret")
         XCTAssertNil(body["hostname"])
         XCTAssertNil(body["accessToken"])
@@ -477,12 +477,12 @@ final class SeerrTitleTests: XCTestCase {
         let user = SeerrUser(
             id: 1,
             email: "hey@itsme.com",
-            username: "Randall",
+            username: "Avery",
             displayName: nil,
             jellyfinUsername: "jelly",
             plexUsername: nil
         )
-        XCTAssertEqual(user.displayLabel, "Randall")
+        XCTAssertEqual(user.displayLabel, "Avery")
     }
 
     func testPreferredCookiePicksConnectSid() {
@@ -670,14 +670,14 @@ final class SeerrDiscoverTests: XCTestCase {
             "requestedBy": {
               "id": 1,
               "email": "randall@example.com",
-              "username": "Randall",
-              "jellyfinUsername": "Randall"
+              "username": "Avery",
+              "jellyfinUsername": "Avery"
             }
           }]
         }
         """.data(using: .utf8)!
         let page = try JSONDecoder().decode(SeerrRequestListResponse.self, from: json)
-        XCTAssertEqual(page.results.first?.requestedBy?.requestLabel, "Randall")
+        XCTAssertEqual(page.results.first?.requestedBy?.requestLabel, "Avery")
         XCTAssertEqual(page.results.first?.id, 9)
     }
 
@@ -833,7 +833,43 @@ final class FirstRunSetupStoreTests: XCTestCase {
     }
 }
 
+final class ZelefinLogTests: XCTestCase {
+    func testSecretsNeverReachTheLog() {
+        let line = ZelefinLog.redact(
+            #"GET host/Videos/1/stream?api_key=abc123&Static=true X-Emby-Token=tok9 Authorization: Bearer eyJhbGciOi.x.y MediaBrowser Client="Zelefin", Token="sekret" {"Username":"Avery","Pw":"pw-4471","password":"hunter2"}"#
+        )
+        for secret in ["abc123", "tok9", "eyJhbGciOi", "sekret", "pw-4471", "hunter2"] {
+            XCTAssertFalse(line.contains(secret), "\(secret) leaked: \(line)")
+        }
+        XCTAssertTrue(line.contains("Static=true"))
+        XCTAssertTrue(line.contains("Avery"))
+    }
+
+    func testLinesParseIntoTheirParts() {
+        let line = LogLine(index: 0, raw: "2026-11-01 08:41:03.120 WARN [Network] GET host/Items → 404")
+        XCTAssertEqual(line.level, .warning)
+        XCTAssertEqual(line.category, "Network")
+        XCTAssertEqual(line.message, "GET host/Items → 404")
+        XCTAssertEqual(line.time, "11-01 08:41:03")
+    }
+}
+
 final class RequestTitleDetailsTests: XCTestCase {
+    func testTMDBLogoPrefersTheBestEnglishOne() throws {
+        let json = """
+        {"logos": [
+          {"file_path": "/fr.png", "iso_639_1": "fr", "vote_average": 9},
+          {"file_path": "/mark.png", "iso_639_1": null, "vote_average": 8},
+          {"file_path": "/en-low.png", "iso_639_1": "en", "vote_average": 3},
+          {"file_path": "/en-high.png", "iso_639_1": "en", "vote_average": 5.5}
+        ]}
+        """.data(using: .utf8)!
+        let logos = try JSONDecoder().decode(TMDBImages.self, from: json).logos ?? []
+        XCTAssertEqual(TMDBLogos.best(logos)?.filePath, "/en-high.png")
+        XCTAssertEqual(TMDBLogos.best(logos.filter { $0.language != "en" })?.filePath, "/mark.png")
+        XCTAssertNil(TMDBLogos.best([]))
+    }
+
     func testReleaseDaysReadAsTheSameLocalDay() throws {
         let date = try XCTUnwrap(RequestTitleDetails.date("2021-09-15T00:00:00Z"))
         let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)

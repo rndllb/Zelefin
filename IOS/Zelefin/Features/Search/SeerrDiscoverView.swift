@@ -335,9 +335,7 @@ private struct SeerrCompanyCard: View {
     let company: SeerrCompany
     var width: CGFloat? = nil
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
-
-    /// Grey used by TMDB’s studio/network duotone (`#2e2e2e`).
-    private static let logoBackdrop = Color(red: 46 / 255, green: 46 / 255, blue: 46 / 255)
+    @Environment(\.zelefinSurfaces) private var surfaces
 
     private var size: CGSize {
         let base = CGSize(
@@ -350,13 +348,12 @@ private struct SeerrCompanyCard: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: PosterMetrics.cornerRadius, style: .continuous)
-                .fill(Self.logoBackdrop)
+            GenreCardBackdrop(base: surfaces.genreBase, glow: surfaces.genreGlow)
             PosterImage(
                 url: company.imageURL,
                 aspectRatio: 2.2,
                 contentMode: .fit,
-                fill: Self.logoBackdrop,
+                fill: .clear,
                 progressTint: Color.white.opacity(0.45)
             )
             .padding(18)

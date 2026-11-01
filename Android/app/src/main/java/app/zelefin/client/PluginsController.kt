@@ -40,6 +40,8 @@ import app.zelefin.client.plugins.RequestCatalog
 import app.zelefin.client.plugins.RequestService
 import app.zelefin.client.plugins.SeerrRequestDraft
 import app.zelefin.client.plugins.SeerrTitle
+import app.zelefin.client.plugins.TmdbLogos
+import app.zelefin.core.ArtworkUrls
 import app.zelefin.client.plugins.SeerrUser
 import app.zelefin.client.plugins.SkipSegment
 import app.zelefin.client.plugins.TheIntroDB
@@ -73,6 +75,9 @@ data class PluginsUiState(
     val seerrUser: SeerrUser? = null,
     val seerrBusy: Boolean = false,
     val seerrMessage: String? = null,
+    val hasTmdbKey: Boolean = false,
+    val tmdbBusy: Boolean = false,
+    val tmdbMessage: String? = null,
     val autoSkipRecap: Boolean = false,
     val autoSkipIntro: Boolean = false,
     val autoSkipCredits: Boolean = false,
@@ -171,6 +176,7 @@ class PluginsController(
             seerrUrl = settings.seerrUrl,
             requestService = settings.requestService,
             seerrName = settings.requestDisplayName,
+            hasTmdbKey = settings.tmdbApiKey != null,
             autoSkipRecap = settings.autoSkipRecap,
             autoSkipIntro = settings.autoSkipIntro,
             autoSkipCredits = settings.autoSkipCredits,
@@ -750,6 +756,39 @@ class PluginsController(
                     _state.update { it.copy(seerrBusy = false, seerrMessage = error.message ?: "${settings.requestService.title} sign-in failed.") }
                 }
         }
+    }
+
+    /** Saves the TMDB key once TMDB accepts it; an empty key removes the saved one. */
+    fun saveTmdbKey(key: String) {
+        val trimmed = key.trim()
+        if (trimmed.isEmpty()) {
+            settings.tmdbApiKey = null
+            _state.update { it.copy(hasTmdbKey = false, tmdbMessage = "Removed the TMDB key.") }
+            return
+        }
+        _state.update { it.copy(tmdbBusy = true, tmdbMessage = null) }
+        scope.launch {
+            val accepted = TmdbLogos.accepts(trimmed)
+            if (accepted) settings.tmdbApiKey = trimmed
+            _state.update {
+                it.copy(
+                    tmdbBusy = false,
+                    hasTmdbKey = settings.tmdbApiKey != null,
+                    tmdbMessage = if (accepted) "Saved. Discover titles show their logos." else "TMDB didn't accept that key.",
+                )
+            }
+        }
+    }
+
+    /** Where a Discover title's logo can come from, in order: the library's own, then TMDB's when a key is saved. */
+    suspend fun discoverLogoUrls(title: SeerrTitle, libraryItemId: String?): List<String> {
+        val urls = mutableListOf<String>()
+        val saved = session()
+        if (libraryItemId != null && saved != null) {
+            ArtworkUrls.image(saved.serverUrl, libraryItemId, "Logo", null, saved.accessToken, maxHeight = 240, format = "png")?.let(urls::add)
+        }
+        settings.tmdbApiKey?.let { key -> TmdbLogos.logoUrl(title, key)?.let(urls::add) }
+        return urls
     }
 
     fun signOutSeerr() {

@@ -1,10 +1,10 @@
 package app.zelefin.client.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.offset
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,12 +16,15 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -29,7 +32,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,18 +43,15 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.rounded.Check
-import app.zelefin.client.R
-import androidx.compose.ui.res.vectorResource
-import androidx.compose.ui.graphics.vector.ImageVector
-import app.zelefin.core.MediaVersion
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -61,41 +60,43 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.aspectRatio
-import app.zelefin.client.BrowsePage
-import app.zelefin.client.EnhancedExtras
-import app.zelefin.client.LibraryRoute
-import app.zelefin.client.PluginsController
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.Intent
-import android.net.Uri
+import app.zelefin.client.BrowsePage
+import app.zelefin.client.EnhancedExtras
+import app.zelefin.client.LibraryRoute
+import app.zelefin.client.PluginsController
+import app.zelefin.client.R
 import app.zelefin.client.ZelefinUiState
 import app.zelefin.core.ArtworkUrls
 import app.zelefin.core.AudioFormat
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
+import app.zelefin.core.MediaVersion
 import app.zelefin.core.SavedSession
 import app.zelefin.core.TitleDetail
 import app.zelefin.core.TitleTrailer
 import app.zelefin.core.VideoRange
 import app.zelefin.core.VideoResolution
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 private sealed interface DetailSheet {
     data class More(val item: MediaItem, val anchor: Rect, val context: TitleMenuContext) : DetailSheet
@@ -215,7 +216,7 @@ fun DetailPage(
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Box(Modifier.fillMaxSize().zelefinSheetBackdrop(sheetMotion.progress)) {
         if (detail == null) {
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().besideSidebar()) {
                 GlassBack(onBack)
                 Column(
                     Modifier.align(Alignment.Center).padding(24.dp),
@@ -232,9 +233,12 @@ fun DetailPage(
             val season = detail.seasons.firstOrNull { it.id == seasonId } ?: detail.seasons.firstOrNull()
             var videoSort by remember(item.id) { mutableStateOf(YouTubeVideoSort.Latest) }
             val pageState = rememberLazyListState()
+            // YouTube pages have no hero or shelves to run under the tablet sidebar; they sit beside it.
+            val sidebarInset = LocalSidebarInset.current
+            CompositionLocalProvider(LocalSidebarInset provides if (item.isYouTube) 0.dp else sidebarInset) {
             LazyColumn(
                 state = pageState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(start = if (item.isYouTube) sidebarInset else 0.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = dockContentReserve()),
             ) {
                 if (item.isYouTube) {
@@ -281,14 +285,14 @@ fun DetailPage(
                     )
                 }
                 item(key = "download-status") {
-                    DetailDownloadStatus(item, Modifier.padding(bottom = 20.dp))
+                    DetailDownloadStatus(item, Modifier.besideSidebar().padding(bottom = 20.dp))
                 }
                 if (item.kind == MediaKind.Collection) {
                     collectionGroups(detail.collectionItems).forEach { (title, members) ->
                         item(key = "collection-$title") {
                             SectionTitle(title) { actions.onBrowse(BrowsePage.Library(LibraryRoute.Collection(item.id, item.name))) }
                             LazyRow(
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                                contentPadding = shelfPadding(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 items(members, key = { it.id }) { member ->
@@ -322,7 +326,7 @@ fun DetailPage(
                     item(key = "parts") {
                         SectionTitle("Additional Parts")
                         LazyRow(
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            contentPadding = shelfPadding(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(detail.additionalParts, key = { it.id }) { part ->
@@ -336,7 +340,7 @@ fun DetailPage(
                     item(key = "trailers") {
                         SectionTitle("Trailers") { actions.onBrowse(BrowsePage.Trailers(detail.trailers, item)) }
                         LazyRow(
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            contentPadding = shelfPadding(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(detail.trailers, key = { it.id }) { trailer ->
@@ -358,7 +362,7 @@ fun DetailPage(
                     item(key = "related") {
                         SectionTitle("Related") { actions.onBrowse(BrowsePage.Shelf("Related", detail.related)) }
                         LazyRow(
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            contentPadding = shelfPadding(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(detail.related, key = { it.id }) { related ->
@@ -372,7 +376,7 @@ fun DetailPage(
                     item(key = "cast") {
                         SectionTitle("Cast & Crew") { actions.onBrowse(BrowsePage.Cast(item.people)) }
                         LazyRow(
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            contentPadding = shelfPadding(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(item.people.take(24), key = { it.id + it.roleLabel }) { person ->
@@ -390,7 +394,7 @@ fun DetailPage(
                     val title = if (detail.collections.size > 1) membership.collection.name else "Collection"
                     SectionTitle(title) { onOpen(membership.collection) }
                     LazyRow(
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                        contentPadding = shelfPadding(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(membership.items, key = { member -> membership.collection.id + member.id }) { member ->
@@ -402,21 +406,24 @@ fun DetailPage(
                 item(key = "about") { AboutRow(item) { sheet = DetailSheet.MoreInfo } }
                 extras?.let { loaded ->
                     item(key = "enhanced") {
-                        TitleEnhancedExtras(
-                            extras = loaded,
-                            isAdministrator = pluginState?.isAdmin == true,
-                            isOwn = { plugins?.isOwnReview(it) == true },
-                            onWrite = {
-                                reviewError = null
-                                sheet = DetailSheet.Review(loaded.reviews.firstOrNull { plugins?.isOwnReview(it) == true })
-                            },
-                            onDelete = ::deleteReview,
-                        )
+                        Box(Modifier.besideSidebar()) {
+                            TitleEnhancedExtras(
+                                extras = loaded,
+                                isAdministrator = pluginState?.isAdmin == true,
+                                isOwn = { plugins?.isOwnReview(it) == true },
+                                onWrite = {
+                                    reviewError = null
+                                    sheet = DetailSheet.Review(loaded.reviews.firstOrNull { plugins?.isOwnReview(it) == true })
+                                },
+                                onDelete = ::deleteReview,
+                            )
+                        }
                     }
                 }
-                item(key = "information") { FactsBlock("Information", detail.moreInfo.information) }
-                item(key = "languages") { FactsBlock("Languages", detail.moreInfo.languages) }
-                item(key = "file") { FactsBlock("File", detail.moreInfo.file) }
+                item(key = "information") { Box(Modifier.besideSidebar()) { FactsBlock("Information", detail.moreInfo.information) } }
+                item(key = "languages") { Box(Modifier.besideSidebar()) { FactsBlock("Languages", detail.moreInfo.languages) } }
+                item(key = "file") { Box(Modifier.besideSidebar()) { FactsBlock("File", detail.moreInfo.file) } }
+            }
             }
             var chromeShown by remember(item.id) { mutableStateOf(true) }
             if (item.isYouTube) {
@@ -439,13 +446,13 @@ fun DetailPage(
             }
             val chromeShift by animateDpAsState(if (chromeShown) 0.dp else (-120).dp, tween(180), label = "detailChrome")
             if (!coversChrome) {
-                GlassBack(onBack, Modifier.align(Alignment.TopStart).offset(y = chromeShift))
+                GlassBack(onBack, Modifier.align(Alignment.TopStart).offset(y = chromeShift).besideSidebar())
                 Row(
                     Modifier
                         .align(Alignment.TopEnd)
                         .offset(y = chromeShift)
                         .statusBarsPadding()
-                        .padding(end = 12.dp, top = 8.dp),
+                        .padding(end = 12.dp, top = floatingButtonsTop()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -483,7 +490,8 @@ fun DetailPage(
         }
         if (sheetMotion.displayed != null) ZelefinSheetScrim(sheetMotion.progress)
         }
-        if (detail != null) {
+        // The page runs on under the tablet sidebar; its sheets stay beside it.
+        if (detail != null) Box(Modifier.fillMaxSize().besideSidebar()) {
             when (val shown = sheetMotion.displayed) {
                 DetailSheet.MoreInfo -> Box(Modifier.fillMaxSize().zelefinSheetRise(sheetMotion.progress)) {
                     MoreInfoSheet(detail.item, detail.moreInfo) { sheet = null }
@@ -669,32 +677,34 @@ private fun DetailHero(
     val heroHeight = (screenHeight * 0.82f).coerceAtLeast(560.dp).coerceAtMost(screenHeight)
     val isCollection = item.kind == MediaKind.Collection
     val playback = if (isCollection) collectionPlaybackItem(item, collectionItems) else MediaItem.heroPlaybackItem(item, episodes)
-    Box(Modifier.fillMaxWidth().height(heroHeight)) {
-        CachedArtwork(
-            urls = heroArtworkCandidates(item, session),
-            contentDescription = item.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        theme?.let { ThemeVideoBackdrop(it, Modifier.fillMaxSize()) }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(heroHeight / 2)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent))),
-        )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.28f to Color.Transparent,
-                        0.58f to Color.Black.copy(alpha = 0.55f),
-                        0.86f to Color.Black.copy(alpha = 0.94f),
-                        1f to Color.Black,
+    Box(Modifier.fillMaxWidth().height(heroHeight).besideSidebar()) {
+        Box(Modifier.matchParentSize().extendsUnderSidebar()) {
+            CachedArtwork(
+                urls = heroArtworkCandidates(item, session),
+                contentDescription = item.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            theme?.let { ThemeVideoBackdrop(it, Modifier.fillMaxSize()) }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(heroHeight / 2)
+                    .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent))),
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.28f to Color.Transparent,
+                            0.58f to Color.Black.copy(alpha = 0.55f),
+                            0.86f to Color.Black.copy(alpha = 0.94f),
+                            1f to Color.Black,
+                        ),
                     ),
-                ),
-        )
+            )
+        }
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -965,6 +975,7 @@ private fun SeasonHeader(title: String, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            .besideSidebar()
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1087,10 +1098,10 @@ private fun AboutRow(item: MediaItem, onMore: () -> Unit) {
         fontFamily = ZelefinFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.besideSidebar().padding(horizontal = 16.dp, vertical = 8.dp),
     )
     LazyRow(
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        contentPadding = shelfPadding(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
@@ -1415,7 +1426,7 @@ private fun EpisodeStripSection(
         LazyRow(
             state = listState,
             flingBehavior = rememberSnapFlingBehavior(listState),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+            contentPadding = shelfPadding(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(strip, key = { it.key }) { card ->
@@ -1538,6 +1549,7 @@ internal fun TrailerCard(
 private fun SectionTitle(title: String, onClick: (() -> Unit)? = null) {
     Row(
         Modifier
+            .besideSidebar()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
@@ -1598,7 +1610,7 @@ internal fun GlassBack(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier
             .statusBarsPadding()
-            .padding(start = 12.dp, top = 8.dp)
+            .padding(start = 12.dp, top = floatingButtonsTop())
             .size(44.dp)
             .zelefinGlassDisc("detail-back", "Back", Icons.AutoMirrored.Outlined.ArrowBack, onBack),
     )

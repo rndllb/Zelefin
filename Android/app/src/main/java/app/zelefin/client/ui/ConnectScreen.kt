@@ -112,7 +112,7 @@ fun ConnectScreen(
     val usernameFocus = androidx.compose.runtime.remember { FocusRequester() }
     val passwordFocus = androidx.compose.runtime.remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val wide = context.resources.configuration.smallestScreenWidthDp >= 600
+    val wide = context.resources.configuration.isLargeScreen()
     val markSize = if (wide) 196.dp else 168.dp
     val tileSize = if (wide) 96.dp else 80.dp
     val chooseType = { type: SignInServerType ->

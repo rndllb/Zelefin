@@ -76,7 +76,11 @@ class OmbiClient(
             put("people", false)
         }
         val results = (send("api/v2/Search/multi/${encode(term)}", "POST", filter) as? JsonArray).orEmpty()
-        results.mapNotNull { (it as? JsonObject)?.let(::multiTitle) }.take(PAGE_SIZE).map { basic ->
+        withRequestState(results.mapNotNull { (it as? JsonObject)?.let(::multiTitle) }.take(PAGE_SIZE))
+    }
+
+    private suspend fun withRequestState(basics: List<SeerrTitle>): List<SeerrTitle> = coroutineScope {
+        basics.map { basic ->
             async {
                 val detailed = runCatching { titleDetails(basic.kind, basic.tmdbId) }.getOrNull() ?: basic
                 if (detailed.posterUrl == null) detailed.copy(posterUrl = basic.posterUrl) else detailed
@@ -93,13 +97,58 @@ class OmbiClient(
             DiscoverQuery.PopularTv,
             DiscoverQuery.UpcomingTv,
         )
-        queries.map { query -> query to async { runCatching { discover(query, 1).titles }.getOrDefault(emptyList()) } }
+        val rows = queries.map { query -> query to async { runCatching { discover(query, 1).titles }.getOrDefault(emptyList()) } }
             .map { (query, titles) -> DiscoverSection(query.key, query.title, query, titles = titles.await()) }
-            .filterNot { it.isEmpty }
+        val movieGenres = async { genres("movie") }
+        val tvGenres = async { genres("tv") }
+        val genreRows = mapOf(
+            DiscoverQuery.PopularMovies.key to DiscoverSection("movie-genres", "Movie Genres", null, brands = movieGenres.await().map { it.brand() }),
+            DiscoverQuery.PopularTv.key to DiscoverSection("tv-genres", "TV Genres", null, brands = tvGenres.await().map { it.brand() }),
+        )
+        rows.flatMap { row -> listOfNotNull(row, genreRows[row.id]) }.filterNot { it.isEmpty }
+    }
+
+    /**
+     * Ombi browses by genre only: its advanced search takes studios and streaming services but
+     * ignores them, so there are no Studios or Networks rows.
+     */
+    private suspend fun genres(media: String): List<SeerrGenreSliderItem> =
+        runCatching { (send("api/v2/Search/Genres/$media") as? JsonArray).orEmpty() }.getOrDefault(emptyList())
+            .mapNotNull { (it as? JsonObject)?.let(SeerrGenreSliderItem::parse)?.copy(mediaType = media) }
+
+    /** A genre page, and how many titles Ombi sent for it: a show that isn't found again is dropped. */
+    private suspend fun genreTitles(kind: SeerrTitle.Kind, genreId: Int, position: Int): Pair<List<SeerrTitle>, Int> = coroutineScope {
+        val body = buildJsonObject {
+            put("type", if (kind == SeerrTitle.Kind.Tv) "tv" else "movie")
+            put("genreIds", JsonArray(listOf(JsonPrimitive(genreId))))
+        }
+        val results = (send("api/v2/Search/advancedSearch/movie/$position/$PAGE_SIZE", "POST", body) as? JsonArray).orEmpty()
+            .mapNotNull { it as? JsonObject }
+        if (kind == SeerrTitle.Kind.Movie) return@coroutineScope results.mapNotNull(::movieTitle) to results.size
+        // Ombi's TV results carry no TMDB ID, so each is found again by name and matched by poster.
+        val found = results.map { show -> async { findShow(show) } }.awaitAll().filterNotNull()
+        withRequestState(found) to results.size
+    }
+
+    private suspend fun findShow(show: JsonObject): SeerrTitle? {
+        val name = show.str("title")?.takeIf { it.isNotBlank() } ?: return null
+        val poster = show.str("posterPath")
+        val filter = buildJsonObject {
+            put("movies", false)
+            put("tvShows", true)
+            put("music", false)
+            put("people", false)
+        }
+        val results = runCatching { (send("api/v2/Search/multi/${encode(name)}", "POST", filter) as? JsonArray).orEmpty() }
+            .getOrDefault(emptyList()).mapNotNull { it as? JsonObject }
+        val match = results.firstOrNull { poster != null && it.str("poster") == poster }
+            ?: results.firstOrNull { splitYear(it.str("title").orEmpty()).first.equals(name, ignoreCase = true) }
+        return match?.let(::multiTitle)
     }
 
     override suspend fun discover(query: DiscoverQuery, page: Int): DiscoverPage = coroutineScope {
         val position = (page - 1) * PAGE_SIZE
+        var sent: Int? = null
         val titles = when (query) {
             DiscoverQuery.Requests -> recentRequests(position)
             DiscoverQuery.Trending -> {
@@ -111,9 +160,13 @@ class OmbiClient(
             DiscoverQuery.UpcomingMovies -> movieList("upcoming", position)
             DiscoverQuery.PopularTv -> tvList("popular", position)
             DiscoverQuery.UpcomingTv -> tvList("anticipated", position)
-            is DiscoverQuery.MovieGenre, is DiscoverQuery.TvGenre, is DiscoverQuery.Studio, is DiscoverQuery.Network -> emptyList()
+            is DiscoverQuery.MovieGenre -> genreTitles(SeerrTitle.Kind.Movie, query.id, position).also { sent = it.second }.first
+            is DiscoverQuery.TvGenre -> genreTitles(SeerrTitle.Kind.Tv, query.id, position).also { sent = it.second }.first
+            is DiscoverQuery.Studio, is DiscoverQuery.Network -> emptyList()
         }
-        DiscoverPage(titles, page, if (titles.size >= PAGE_SIZE) page + 1 else page)
+        // A genre page can come back short when a show isn't found again; Ombi's count says if more follow.
+        val full = (sent ?: titles.size) >= PAGE_SIZE
+        DiscoverPage(titles, page, if (full) page + 1 else page)
     }
 
     override suspend fun request(title: SeerrTitle) {

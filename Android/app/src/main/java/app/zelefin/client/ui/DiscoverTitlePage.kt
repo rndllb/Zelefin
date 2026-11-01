@@ -74,6 +74,11 @@ import app.zelefin.core.MediaKind
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.alpha
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 
 /**
  * Mirrors iOS `RequestTitleDetailView`: a Discover title laid out like a library title, with the
@@ -133,6 +138,9 @@ internal fun DiscoverTitlePage(
     }
     val fullyOnServer = shown.availability == SeerrTitle.Availability.Available ||
         (shown.kind == SeerrTitle.Kind.Movie && shown.availability.isOnServer)
+    val logoUrls by produceState(emptyList<String>(), shown.id, libraryItem?.id) {
+        value = plugins.discoverLogoUrls(shown, libraryItem?.id)
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -142,6 +150,7 @@ internal fun DiscoverTitlePage(
                 DiscoverTitleHero(
                     shown,
                     loaded,
+                    logoUrls,
                     canManage,
                     onRequest = { onRequest(shown) },
                     onViewInLibrary = libraryItem?.takeIf { fullyOnServer }?.let { item -> { onOpenLibraryItem(item) } },
@@ -199,7 +208,7 @@ internal fun DiscoverTitlePage(
             Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(end = 12.dp, top = 8.dp),
+                .padding(end = 12.dp, top = floatingButtonsTop()),
         ) { menuAnchor = it }
     }
 
@@ -241,6 +250,7 @@ internal fun DiscoverTitlePage(
 private fun DiscoverTitleHero(
     title: SeerrTitle,
     details: RequestTitleDetails?,
+    logoUrls: List<String>,
     canManage: Boolean,
     onRequest: () -> Unit,
     onViewInLibrary: (() -> Unit)?,
@@ -281,17 +291,7 @@ private fun DiscoverTitleHero(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                title.name,
-                color = Color.White,
-                fontFamily = ZelefinFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 34.sp,
-                lineHeight = 38.sp,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
+            DiscoverTitleLogo(title.name, logoUrls)
             Text(
                 metadataLine(title, details),
                 color = Color.White.copy(alpha = 0.92f),
@@ -467,4 +467,44 @@ private fun android.content.Context.shareTitle(title: SeerrTitle) {
         putExtra(Intent.EXTRA_TEXT, "$headline\n$url")
     }
     startActivity(Intent.createChooser(send, "Share"))
+}
+
+/**
+ * The title's logo, like a library page's: the library's own when it has the title, else TMDB's
+ * when the user saved a TMDB key, else the name in text. Each URL is tried in turn.
+ */
+@Composable
+private fun DiscoverTitleLogo(name: String, urls: List<String>) {
+    val context = LocalContext.current
+    var index by remember(urls) { mutableIntStateOf(0) }
+    var shown by remember(urls) { mutableStateOf(false) }
+    val url = urls.getOrNull(index)
+    Box(contentAlignment = Alignment.Center) {
+        if (!shown) {
+            Text(
+                name,
+                color = Color.White,
+                fontFamily = ZelefinFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 34.sp,
+                lineHeight = 38.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (url != null) {
+            AsyncImage(
+                model = remember(url) { ImageRequest.Builder(context).data(url).build() },
+                contentDescription = name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .height(72.dp)
+                    .alpha(if (shown) 1f else 0f),
+                onSuccess = { shown = true },
+                onError = { index += 1 },
+            )
+        }
+    }
 }

@@ -19,7 +19,20 @@ enum PluginSettings {
     private static let ombiSessionAccount = "ombi-session"
     private static let seerrCredentialsAccount = "seerr-credentials"
     private static let legacyAPIKeyAccount = "seerr-api-key"
+    private static let tmdbKeyAccount = "tmdb-api-key"
     private static let secrets = SecretStore()
+
+    /// The user's TMDB key, for Discover title logos the library doesn't have.
+    static var tmdbAPIKey: String? {
+        get { secrets.load(account: tmdbKeyAccount).flatMap { $0.isEmpty ? nil : $0 } }
+        set {
+            if let newValue, !newValue.isEmpty {
+                secrets.save(newValue, account: tmdbKeyAccount)
+            } else {
+                secrets.delete(account: tmdbKeyAccount)
+            }
+        }
+    }
 
     /// Seerr or Ombi. Both use the server, username, and password fields below.
     static var requestService: RequestService {

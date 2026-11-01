@@ -16,6 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -131,6 +134,23 @@ internal fun MpvPlaybackStatsPanel(
     fillsScreen: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val sections by produceState(emptyList<StatSection>(), controller, plan, position, duration, speed, fillsScreen) {
+        value = withContext(MpvCalls) {
+            if (controller.released) emptyList() else mpvStatSections(controller, plan, position, duration, speed, fillsScreen)
+        }
+    }
+    PlaybackStatsCard(sections = sections, modifier = modifier)
+}
+
+/** Reads mpv's stats, so it runs on [MpvCalls]. */
+private fun mpvStatSections(
+    controller: MpvController,
+    plan: PlaybackPlan,
+    position: Double,
+    duration: Double,
+    speed: Float,
+    fillsScreen: Boolean,
+): List<StatSection> {
     val local = plan.streamUrl.startsWith("file:")
     val host = runCatching { java.net.URI(plan.streamUrl).host }.getOrNull()
     val videoW = controller.int("video-params/w")
@@ -149,69 +169,66 @@ internal fun MpvPlaybackStatsPanel(
     val subtitle = controller.string("current-tracks/sub/title")
         ?: controller.string("current-tracks/sub/lang")
         ?: controller.string("current-tracks/sub/codec")
-    PlaybackStatsCard(
-        sections = listOf(
-            StatSection(
-                "Session",
-                listOfNotNull(
-                    StatLine("Title", plan.item.name),
-                    StatLine("Playhead", "${clockText(position)} / ${clockText(duration)}"),
-                    StatLine("Rate", String.format(Locale.US, "%.2fx", speed)),
-                    StatLine("Stream", streamMethodLabel(plan, local)),
-                    StatLine("Player", "MPV"),
-                    StatLine("Zoom", if (fillsScreen) "Fill" else "Fit"),
-                ),
-            ),
-            StatSection(
-                "Video",
-                listOfNotNull(
-                    StatLine(
-                        "Codec",
-                        prettyVideoCodec(controller.string("video-format") ?: controller.string("video-codec") ?: plan.videoCodec),
-                    ),
-                    if (videoW != null && videoH != null) StatLine("Size", "${videoW}×${videoH}") else null,
-                    if (displayW != null && displayH != null && displayW > 0) StatLine("Display", "${displayW}×${displayH}") else null,
-                    fps?.let { StatLine("Frame rate", String.format(Locale.US, "%.3f fps", it)) },
-                    bitrateBits(controller.double("video-bitrate"))?.let { StatLine("Bitrate", it) },
-                    StatLine("Range", mpvRange(controller)),
-                    StatLine("Decoder", prettyHwdec(controller.string("hwdec-current"))),
-                    StatLine("Pixel", controller.string("video-params/pixelformat") ?: "—"),
-                    StatLine("Container", (controller.string("file-format") ?: plan.container)?.uppercase() ?: "—"),
-                    dropped?.let { StatLine("Dropped", "$it frames") },
-                ),
-            ),
-            StatSection(
-                "Audio",
-                listOfNotNull(
-                    audioTrack?.let { StatLine("Track", it) },
-                    StatLine(
-                        "Codec",
-                        prettyAudioCodec(controller.string("audio-codec-name") ?: controller.string("audio-codec")),
-                    ),
-                    controller.int("audio-params/channel-count")?.takeIf { it > 0 }?.let { StatLine("Layout", layoutName(it)) },
-                    controller.int("audio-params/samplerate")?.takeIf { it > 0 }?.let { StatLine("Sample rate", "${it / 1000.0} kHz") },
-                    bitrateBits(controller.double("audio-bitrate"))?.let { StatLine("Bitrate", it) },
-                    controller.string("audio-params/format")?.let { StatLine("Format", it) },
-                ),
-            ),
-            StatSection(
-                "Subtitles",
-                listOfNotNull(
-                    StatLine("Track", subtitle ?: if (plan.subtitlesOff) "Off" else "—"),
-                    controller.string("current-tracks/sub/codec")?.let { StatLine("Format", it.uppercase()) },
-                ),
-            ),
-            StatSection(
-                "Network",
-                listOfNotNull(
-                    StatLine("Host", if (local) "This device" else host ?: "—"),
-                    cache?.let { StatLine("Buffer", String.format(Locale.US, "%.1f s", it)) },
-                    cacheSpeed?.let { StatLine("Cache", throughputText(it)) },
-                    StatLine("Loading", if (controller.bool("paused-for-cache") == true) "Yes" else "No"),
-                ),
+    return listOf(
+        StatSection(
+            "Session",
+            listOfNotNull(
+                StatLine("Title", plan.item.name),
+                StatLine("Playhead", "${clockText(position)} / ${clockText(duration)}"),
+                StatLine("Rate", String.format(Locale.US, "%.2fx", speed)),
+                StatLine("Stream", streamMethodLabel(plan, local)),
+                StatLine("Player", "MPV"),
+                StatLine("Zoom", if (fillsScreen) "Fill" else "Fit"),
             ),
         ),
-        modifier = modifier,
+        StatSection(
+            "Video",
+            listOfNotNull(
+                StatLine(
+                    "Codec",
+                    prettyVideoCodec(controller.string("video-format") ?: controller.string("video-codec") ?: plan.videoCodec),
+                ),
+                if (videoW != null && videoH != null) StatLine("Size", "${videoW}×${videoH}") else null,
+                if (displayW != null && displayH != null && displayW > 0) StatLine("Display", "${displayW}×${displayH}") else null,
+                fps?.let { StatLine("Frame rate", String.format(Locale.US, "%.3f fps", it)) },
+                bitrateBits(controller.double("video-bitrate"))?.let { StatLine("Bitrate", it) },
+                StatLine("Range", mpvRange(controller)),
+                StatLine("Decoder", prettyHwdec(controller.string("hwdec-current"))),
+                StatLine("Pixel", controller.string("video-params/pixelformat") ?: "—"),
+                StatLine("Container", (controller.string("file-format") ?: plan.container)?.uppercase() ?: "—"),
+                dropped?.let { StatLine("Dropped", "$it frames") },
+            ),
+        ),
+        StatSection(
+            "Audio",
+            listOfNotNull(
+                audioTrack?.let { StatLine("Track", it) },
+                StatLine(
+                    "Codec",
+                    prettyAudioCodec(controller.string("audio-codec-name") ?: controller.string("audio-codec")),
+                ),
+                controller.int("audio-params/channel-count")?.takeIf { it > 0 }?.let { StatLine("Layout", layoutName(it)) },
+                controller.int("audio-params/samplerate")?.takeIf { it > 0 }?.let { StatLine("Sample rate", "${it / 1000.0} kHz") },
+                bitrateBits(controller.double("audio-bitrate"))?.let { StatLine("Bitrate", it) },
+                controller.string("audio-params/format")?.let { StatLine("Format", it) },
+            ),
+        ),
+        StatSection(
+            "Subtitles",
+            listOfNotNull(
+                StatLine("Track", subtitle ?: if (plan.subtitlesOff) "Off" else "—"),
+                controller.string("current-tracks/sub/codec")?.let { StatLine("Format", it.uppercase()) },
+            ),
+        ),
+        StatSection(
+            "Network",
+            listOfNotNull(
+                StatLine("Host", if (local) "This device" else host ?: "—"),
+                cache?.let { StatLine("Buffer", String.format(Locale.US, "%.1f s", it)) },
+                cacheSpeed?.let { StatLine("Cache", throughputText(it)) },
+                StatLine("Loading", if (controller.bool("paused-for-cache") == true) "Yes" else "No"),
+            ),
+        ),
     )
 }
 

@@ -212,6 +212,7 @@ final class DownloadStore {
             try await performDownload(target: target, library: library, account: account)
         }
         tasks[target.id] = work
+        ZelefinLog.info("Downloads", "Downloading \"\(target.name)\"")
         do {
             try await work.value
             tasks[target.id] = nil
@@ -220,8 +221,10 @@ final class DownloadStore {
             tasks[target.id] = nil
             progress[target.id] = nil
             if DownloadFailure.isCancellation(error) {
+                ZelefinLog.info("Downloads", "Stopped downloading \"\(target.name)\"")
                 return
             }
+            ZelefinLog.error("Downloads", "Downloading \"\(target.name)\" failed: \(error.localizedDescription)")
             throw error
         }
     }
@@ -329,6 +332,10 @@ final class DownloadStore {
         }
         records.append(record)
         persist()
+        ZelefinLog.info(
+            "Downloads",
+            "Downloaded \"\(target.name)\": \(record.container), \(ByteCountFormatter.string(fromByteCount: record.byteSize, countStyle: .file))"
+        )
 
         if let serverDownloadID = asset.serverDownloadID {
             await library.finalizeServerDownload(id: serverDownloadID)

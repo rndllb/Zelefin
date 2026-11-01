@@ -326,6 +326,15 @@ object TabPreferences {
         prefs(context).edit().putString(ORDER, DockTab.rawOrder(order)).apply()
     }
 
+    /** Reorders the tabs Android shows, leaving the rest (Live TV) in place so the order still syncs with iOS. */
+    fun setShownOrder(context: Context, next: List<DockTab>) {
+        val result = next.toMutableList()
+        order.filterNot { it.availableOnAndroid }.forEach { missing ->
+            result.add(order.indexOf(missing).coerceAtMost(result.size), missing)
+        }
+        setOrder(context, result)
+    }
+
     fun setShown(context: Context, tab: DockTab, shown: Boolean) {
         if (!tab.canHide) return
         hidden = if (shown) hidden - tab else hidden + tab
@@ -378,6 +387,12 @@ object TabPreferences {
         result += DockEntry(AppTab.Search, "Search")
         return result
     }
+
+    /** Like iPad: every enabled tab and pinned library, with no phone dock limit. */
+    fun tabletEntries(rooms: List<LibraryRoom>): List<DockEntry> =
+        order.filter { it.availableOnAndroid && isShown(it) }.mapNotNull { tab -> tab.appTab?.let { DockEntry(it, tab.title) } } +
+            pinnable(rooms).filter { it.id in dockLibraryIds }.map { DockEntry(AppTab.Room, it.name, it) } +
+            DockEntry(AppTab.Search, "Search")
 
     private const val ORDER = "zelefin.tab-order"
     private const val HIDDEN = "zelefin.tab-hidden"

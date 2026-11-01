@@ -67,7 +67,11 @@ fun AccountAvatarMenu(
     onSessions: () -> Unit,
     onSettings: () -> Unit,
     onSignOut: () -> Unit,
+    floating: Boolean = true,
+    diameter: androidx.compose.ui.unit.Dp = 45.dp,
 ) {
+    // Page headers float the avatar; while the tablet sidebar is open the account lives there.
+    if (floating && LocalTabletSidebarShown.current) return
     val model: ZelefinModel = viewModel()
     val appState by model.state.collectAsState()
     var open by remember { mutableStateOf(false) }
@@ -133,8 +137,9 @@ fun AccountAvatarMenu(
     AccountAvatar(
         session,
         onClick = { open = !open },
+        diameter = diameter,
         modifier = Modifier.onGloballyPositioned { anchor.value = it.boundsInRoot() },
-        floating = true,
+        floating = floating,
     )
 }
 

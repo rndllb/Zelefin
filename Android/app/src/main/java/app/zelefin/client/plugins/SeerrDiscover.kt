@@ -229,8 +229,9 @@ data class SeerrCompany(
     )
 
     companion object {
+        /** White and light grey, as Seerr draws them, so the logos read on the accent card. */
         private fun tmdbLogo(path: String): String =
-            "https://image.tmdb.org/t/p/w780_filter(duotone,ffffff,2e2e2e)/$path"
+            "https://image.tmdb.org/t/p/w780_filter(duotone,ffffff,bababa)/$path"
 
         val studios: List<SeerrCompany> = listOf(
             SeerrCompany(2, "Disney", Kind.Studio, tmdbLogo("wdrCwmRnLFJhEoH8GSfymY85KHT.png")),

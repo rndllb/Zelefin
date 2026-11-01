@@ -143,6 +143,9 @@ struct SettingsView: View {
             settingsRow("Appearance", systemImage: "paintpalette", subtitle: "Accent color") {
                 AppearanceSettingsView()
             }
+            settingsRow("Log", systemImage: "doc.text", subtitle: "What Zelefin did, to read or send") {
+                LogView()
+            }
         }
         .zelefinRowBackground()
     }

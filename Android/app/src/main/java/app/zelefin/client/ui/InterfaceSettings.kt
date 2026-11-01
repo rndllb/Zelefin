@@ -210,12 +210,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
         key = { it.raw },
         enabled = true,
         onCommit = { next ->
-            val full = TabPreferences.order
-            val result = next.toMutableList()
-            full.filterNot { it.availableOnAndroid }.forEach { missing ->
-                result.add(full.indexOf(missing).coerceAtMost(result.size), missing)
-            }
-            TabPreferences.setOrder(context, result)
+            TabPreferences.setShownOrder(context, next)
             model.pushDisplayPreferences()
         },
     ) { tab, handle ->

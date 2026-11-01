@@ -239,6 +239,7 @@ fun SettingsScreen(
                 SettingsHubItem("Cache", cacheSize?.takeIf { it > 0 }?.let(::formatBytes) ?: "Posters and saved home data", Icons.Outlined.Storage) { onTopic("cache") },
                 SettingsHubItem("Interface", "Home rows, tabs, and Liquid Glass", Icons.Outlined.Dashboard) { onTopic("interface") },
                 SettingsHubItem("Appearance", "Accent color", Icons.Outlined.Palette) { onTopic("appearance") },
+                SettingsHubItem("Log", "What Zelefin did, to read or send", Icons.Outlined.Description) { onTopic("log") },
             ),
         )
         SettingsHeader("Zelefin")
@@ -693,6 +694,7 @@ fun SettingsTopicScreen(
         "network" -> "Network"
         "cache" -> "Cache"
         "interface" -> "Interface"
+        "log" -> "Log"
         "about" -> "About"
         "syncplay" -> "SyncPlay"
         "users" -> "Users"
@@ -723,6 +725,7 @@ fun SettingsTopicScreen(
             "plugins" -> PluginsTopic(state, plugins)
             "network" -> NetworkTopic(state)
             "interface" -> InterfaceTopic(state)
+            "log" -> LogTopic(state, plugins)
             "syncplay" -> SyncPlayTopic(state)
             "users" -> UsersTopic()
             "scheduled-tasks" -> ScheduledTasksTopic()
@@ -1448,6 +1451,50 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
             "Jellyseerr or Seerr lets you request movies and shows that are missing from Jellyfin. Use your Jellyfin username and password. Search for a title, then tap Request."
         },
     )
+
+    SettingsHeader("TMDB")
+    TmdbKeyCard(pluginState, plugins)
+    SettingsFooter(
+        "Discover title pages show a title's logo when it's in your library. With a free TMDB key, from Settings → API on themoviedb.org, every other title shows its logo too.",
+    )
+}
+
+@Composable
+private fun TmdbKeyCard(pluginState: PluginsUiState, plugins: PluginsController) {
+    var key by remember { mutableStateOf("") }
+    SettingsCard {
+        SettingsTextField(
+            label = "API KEY OR READ ACCESS TOKEN",
+            value = key,
+            icon = Icons.Outlined.Lock,
+            onChange = { key = it },
+            placeholder = if (pluginState.hasTmdbKey) "Saved" else "TMDB key",
+            password = true,
+            ime = ImeAction.Done,
+            onIme = { if (key.isNotBlank()) plugins.saveTmdbKey(key) },
+        )
+        SettingsCardDivider()
+        if (pluginState.hasTmdbKey && key.isBlank()) {
+            SettingsButton("Remove Key", primary = false, destructive = true, enabled = !pluginState.tmdbBusy, busy = false) {
+                plugins.saveTmdbKey("")
+            }
+        } else {
+            SettingsButton("Save Key", primary = true, destructive = false, enabled = key.isNotBlank(), busy = pluginState.tmdbBusy) {
+                plugins.saveTmdbKey(key)
+            }
+        }
+        pluginState.tmdbMessage?.let { message ->
+            val positive = message.startsWith("Saved") || message.startsWith("Removed")
+            Text(
+                message,
+                color = if (positive) Secondary else IOSColors.red,
+                fontFamily = ZelefinFont,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+    }
+    LaunchedEffect(pluginState.hasTmdbKey) { if (pluginState.hasTmdbKey) key = "" }
 }
 
 @Composable

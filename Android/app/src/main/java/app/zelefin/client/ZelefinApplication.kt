@@ -17,6 +17,8 @@ class ZelefinApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        ZelefinLog.attach(this)
+        ZelefinLog.info("App", "Opened Zelefin ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         ZelefinPush.ensureChannel(this)
         app.zelefin.client.session.SessionMessageCenter.install(this)
         app.zelefin.client.ui.loadInterfacePreferences(this)

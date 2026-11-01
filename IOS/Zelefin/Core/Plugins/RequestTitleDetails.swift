@@ -1,5 +1,65 @@
 import Foundation
 
+/// Title logos from TMDB, for Discover titles the library doesn't have. Seerr and Ombi pass on
+/// posters and backdrops but no logos, so this needs the user's own TMDB key: a v3 API key, or a
+/// v4 read access token (which starts with `eyJ`).
+enum TMDBLogos {
+    static func logoURL(for title: SeerrTitle, key: String) async -> URL? {
+        let media = title.kind == .tv ? "tv" : "movie"
+        guard let request = request("\(media)/\(title.tmdbID)/images", key: key, query: [
+            URLQueryItem(name: "include_image_language", value: "en,null")
+        ]) else { return nil }
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let images = try? JSONDecoder().decode(TMDBImages.self, from: data)
+        else { return nil }
+        return best(images.logos ?? []).flatMap { URL(string: "https://image.tmdb.org/t/p/w500\($0.filePath)") }
+    }
+
+    /// Whether TMDB accepts the key.
+    static func accepts(_ key: String) async -> Bool {
+        guard let request = request("configuration", key: key) else { return false }
+        let response = try? await URLSession.shared.data(for: request).1
+        return (response as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    /// English first, then a logo with no language (a picture-only mark), the best rated of each.
+    static func best(_ logos: [TMDBImages.Logo]) -> TMDBImages.Logo? {
+        let ranked = logos.sorted { ($0.voteAverage ?? 0) > ($1.voteAverage ?? 0) }
+        return ranked.first { $0.language == "en" } ?? ranked.first { $0.language == nil } ?? ranked.first
+    }
+
+    private static func request(_ path: String, key: String, query: [URLQueryItem] = []) -> URLRequest? {
+        let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, var components = URLComponents(string: "https://api.themoviedb.org/3/\(path)") else { return nil }
+        let isReadToken = key.hasPrefix("eyJ")
+        components.queryItems = query + (isReadToken ? [] : [URLQueryItem(name: "api_key", value: key)])
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if isReadToken {
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
+        return request
+    }
+}
+
+struct TMDBImages: Decodable {
+    struct Logo: Decodable {
+        var filePath: String
+        var language: String?
+        var voteAverage: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case filePath = "file_path"
+            case language = "iso_639_1"
+            case voteAverage = "vote_average"
+        }
+    }
+
+    var logos: [Logo]?
+}
+
 /// A Discover title's page: what Seerr or Ombi knows about a movie or show that may not be on Jellyfin yet.
 struct RequestTitleDetails: Sendable {
     var backdropURL: URL?

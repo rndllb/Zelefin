@@ -140,12 +140,8 @@ struct RequestTitleDetailView: View {
 
     private func hero(width: CGFloat, height: CGFloat) -> some View {
         VStack(spacing: 14) {
-            Text(current.name)
-                .font(.largeTitle.bold())
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .minimumScaleFactor(0.6)
+            RequestTitleLogo(title: current, libraryItemID: libraryItemID)
+                .frame(minHeight: 44)
                 .shadow(color: .black.opacity(0.7), radius: 10, y: 1)
 
             Text(metadataLine)
@@ -447,5 +443,57 @@ private struct RequestOverviewSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+}
+
+/// The title's logo, like a library page's: the library's own when it has the title, else TMDB's
+/// when the user saved a TMDB key, else the name in text.
+private struct RequestTitleLogo: View {
+    let title: SeerrTitle
+    let libraryItemID: String?
+
+    @Environment(SessionStore.self) private var session
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 72)
+            } else {
+                Text(title.name)
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.6)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(title.name)
+        .task(id: "\(title.kind)-\(title.tmdbID)-\(libraryItemID ?? "")") { await load() }
+    }
+
+    private func load() async {
+        if let url = await libraryLogoURL(), let loaded = await ArtworkCache.shared.load(from: url) {
+            guard !Task.isCancelled else { return }
+            image = loaded
+            return
+        }
+        guard let key = PluginSettings.tmdbAPIKey,
+              let url = await TMDBLogos.logoURL(for: title, key: key),
+              let loaded = await ArtworkCache.shared.load(from: url),
+              !Task.isCancelled
+        else { return }
+        image = loaded
+    }
+
+    private func libraryLogoURL() async -> URL? {
+        guard let libraryItemID, let library = session.library,
+              let item = try? await library.item(id: libraryItemID)
+        else { return nil }
+        return library.logoURL(for: item)
     }
 }

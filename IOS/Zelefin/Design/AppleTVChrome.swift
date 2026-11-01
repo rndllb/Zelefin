@@ -118,8 +118,13 @@ enum PosterChrome {
     /// Hairline around cover art — same overlay as Vellum’s `AlbumArtworkView`.
     static let outlineWidth: CGFloat = 1
 
+    /// The Mac's rim is about a third white, so it reads on black artwork and on the grey page.
     static func outline(for colorScheme: ColorScheme) -> Color {
+        #if targetEnvironment(macCatalyst)
+        Color.primary.opacity(colorScheme == .dark ? 0.3 : 0.18)
+        #else
         Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.07)
+        #endif
     }
 }
 

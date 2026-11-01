@@ -91,14 +91,20 @@ final class JellyfinGatewayDelegate: APIClientDelegate, @unchecked Sendable {
 
     func client(_ client: APIClient, validateResponse response: HTTPURLResponse, data: Data, task: URLSessionTask) throws {
         if AccessGateway.isChallenge(response: response, data: data) {
+            ZelefinLog.error("Network", "\(ZelefinLog.describe(task.originalRequest)) was stopped by an access gateway (Cloudflare Access or similar)")
             throw ZelefinError.accessGateway
         }
         guard (200 ..< 300).contains(response.statusCode) else {
+            let level: ZelefinLog.Level = response.statusCode >= 500 ? .error : .warning
+            ZelefinLog.shared.write(level, "Network", "\(ZelefinLog.describe(task.originalRequest)) → \(response.statusCode)")
             throw APIError.unacceptableStatusCode(response.statusCode)
         }
     }
 
     func client(_ client: APIClient, shouldRetry task: URLSessionTask, error: Error, attempts: Int) async throws -> Bool {
+        if let urlError = error as? URLError, urlError.code != .cancelled {
+            ZelefinLog.warning("Network", "\(ZelefinLog.describe(task.originalRequest)) failed (try \(attempts)): \(urlError.localizedDescription)")
+        }
         guard attempts < 2 else { return false }
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {

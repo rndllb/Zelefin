@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
@@ -65,10 +67,14 @@ import app.zelefin.client.AppTab
 import app.zelefin.client.LibraryRoom
 import app.zelefin.client.R
 
-/** Space scrolling content keeps clear of the floating dock, its mini player, and the navigation bar. */
+/**
+ * Space scrolling content keeps clear of the floating dock, its mini player, and the navigation
+ * bar. Tablets have no bottom dock (their tabs are at the top), only Now Playing.
+ */
 @Composable
 fun dockContentReserve(): Dp {
     val mini = if (LocalDockChrome.current?.hasMiniPlayer == true) DockMiniPlayerHeight + DockGap else 0.dp
+    if (LocalConfiguration.current.isLargeScreen()) return dockBottomInset() + mini + DockGap
     return dockBottomInset() + dockBarHeight() + mini + DockGap
 }
 
@@ -110,6 +116,9 @@ val LocalZelefinHaze = staticCompositionLocalOf<ZelefinHazeState?> { null }
 
 /** Set per page in the page transition; discs registered under it belong to that page. */
 val LocalGlassDiscPage = staticCompositionLocalOf<Any?> { null }
+
+/** True under a sheet: discs are drawn above everything, so a covered page's discs step aside. */
+val LocalGlassDiscsCovered = compositionLocalOf { false }
 val LocalZelefinGlassHost = staticCompositionLocalOf<ZelefinGlassHost?> { null }
 
 /** Corner radius for alerts and confirms. Action menus use [ZelefinMenuShape]. */
@@ -336,8 +345,13 @@ private fun Modifier.glassDisc(
     val click = rememberUpdatedState(onClick)
     val latestFace = rememberUpdatedState(face)
     val page = LocalGlassDiscPage.current
+    val covered = LocalGlassDiscsCovered.current
     val owned = remember { mutableStateOf<GlassDisc?>(null) }
-    DisposableEffect(host, key, description, icon, face != null, page) {
+    DisposableEffect(host, key, description, icon, face != null, page, covered) {
+        if (covered) {
+            owned.value = null
+            return@DisposableEffect onDispose {}
+        }
         val disc = GlassDisc(
             key,
             description,
@@ -378,8 +392,13 @@ fun Modifier.zelefinGlassSplit(
     val leading = rememberUpdatedState(onLeading)
     val trailing = rememberUpdatedState(onTrailing)
     val page = LocalGlassDiscPage.current
+    val covered = LocalGlassDiscsCovered.current
     val owned = remember { mutableStateOf<GlassDisc?>(null) }
-    DisposableEffect(host, key, leadingIcon, trailingIcon, page) {
+    DisposableEffect(host, key, leadingIcon, trailingIcon, page, covered) {
+        if (covered) {
+            owned.value = null
+            return@DisposableEffect onDispose {}
+        }
         val disc = GlassDisc(
             key = key,
             description = leadingDescription,

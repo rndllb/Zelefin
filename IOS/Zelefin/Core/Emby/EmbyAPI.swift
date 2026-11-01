@@ -92,15 +92,31 @@ final class EmbyAPI: Sendable {
     }
 
     static func perform(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await JellyfinNetworking.apiData(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await JellyfinNetworking.apiData(for: request)
+        } catch {
+            if (error as? URLError)?.code != .cancelled {
+                ZelefinLog.warning("Network", "\(ZelefinLog.describe(request)) failed: \(error.localizedDescription)")
+            }
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else {
             throw ZelefinError.server("Emby did not answer.")
         }
         if AccessGateway.isChallenge(response: http, data: data) {
+            ZelefinLog.error("Network", "\(ZelefinLog.describe(request)) was stopped by an access gateway (Cloudflare Access or similar)")
             throw ZelefinError.accessGateway
         }
         guard (200 ..< 300).contains(http.statusCode) else {
-            throw EmbyAPIError(statusCode: http.statusCode, body: data)
+            let failure = EmbyAPIError(statusCode: http.statusCode, body: data)
+            ZelefinLog.shared.write(
+                http.statusCode >= 500 ? .error : .warning,
+                "Network",
+                "\(ZelefinLog.describe(request)) → \(http.statusCode)\(failure.message.map { ": \($0)" } ?? "")"
+            )
+            throw failure
         }
         return data
     }
