@@ -286,6 +286,15 @@ Not yet.
 
 </td>
 </tr>
+<tr>
+<td width="33%" valign="top">
+
+📺 **Apple TV · Android TV**
+
+Coming. Both are in development now.
+
+</td>
+</tr>
 </table>
 
 ---
