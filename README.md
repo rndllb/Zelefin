@@ -5,7 +5,8 @@
 # Zelefin
 
 **Native Jellyfin, Silo, and Emby for iPhone, iPad, Mac, and Android.**  
-Your server. Direct play. No Plus, no subscription, no in-app purchase.
+Your server. Direct play. No Plus, no subscription, no in-app purchase.  
+Apple TV and Android TV are coming; both are in development now.
 
 <img src="https://img.shields.io/badge/iOS-18+-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 18+" />
 <img src="https://img.shields.io/badge/macOS-15+%20·%20Intel%20%26%20Apple%20silicon-111111?style=for-the-badge&logo=apple&logoColor=white" alt="macOS 15+, Intel and Apple silicon" />
