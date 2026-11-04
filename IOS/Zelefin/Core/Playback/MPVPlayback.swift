@@ -93,6 +93,8 @@ final class MPVPlayback {
     func pause() { core.setFlag("pause", true) }
     func seek(to seconds: TimeInterval) { core.command(["seek", String(format: "%.3f", seconds), "absolute"]) }
     func setRate(_ rate: Float) { core.setString("speed", String(format: "%.3f", rate)) }
+    /// 0–1, as mpv's 0–100 volume.
+    func setVolume(_ level: Float) { core.setString("volume", String(format: "%.0f", level * 100)) }
     func selectAudio(_ id: Int) { core.setString("aid", String(id)) }
     func selectSubtitle(_ id: Int?) { core.setString("sid", id.map(String.init) ?? "no") }
 

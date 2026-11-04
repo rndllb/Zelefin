@@ -546,12 +546,17 @@ struct PlayerView: View {
             dismiss()
             return
         }
+        if await !playNextEpisode() {
+            dismiss()
+        }
+    }
+
+    /// Moves on to the episode after this one. False when there isn't one.
+    @discardableResult
+    private func playNextEpisode() async -> Bool {
         guard let library = session.library,
               let next = await library.nextEpisode(after: activeItem)
-        else {
-            dismiss()
-            return
-        }
+        else { return false }
         await model?.stop()
         model = nil
         didFallBackToRemux = false
@@ -560,6 +565,7 @@ struct PlayerView: View {
         liveBitrateOverride = nil
         appliedBitrate = nil
         await prepareAndStart()
+        return true
     }
 
     /// The first open after a cold start can fail while the server spins up; a reopen works.
@@ -771,7 +777,9 @@ struct PlayerView: View {
                     if let choice = pick?.choice { memory.subtitle = choice }
                 }
             },
-            onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil
+            onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil,
+            onNext: activeItem.kind == .episode && !isCinemaBumper ? { Task { await playNextEpisode() } } : nil,
+            keyboardEnabled: subtitleSearchItem == nil
         )
     }
 

@@ -18,8 +18,15 @@ struct AVKitPlaybackChrome: View {
     var onAudioChange: (Int) -> Void
     var onSubtitleChange: (Int?) -> Void
     var onSkipCinema: (() -> Void)? = nil
+    /// The next episode, for the N key. Nil when there's nothing after this.
+    var onNext: (() -> Void)? = nil
+    /// Off while something else (the subtitle search) has the keyboard.
+    var keyboardEnabled = true
 
     @State private var controlsVisible = true
+    @State private var keyHint: String?
+    @State private var keyHintGeneration = 0
+    @State private var lastSubtitleID: Int?
     @State private var isScrubbing = false
     @State private var scrubTime: TimeInterval = 0
     @State private var hideGeneration = 0
@@ -106,7 +113,26 @@ struct AVKitPlaybackChrome: View {
                     .padding(.top, 58)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
+
+                if let keyHint {
+                    Text(keyHint)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .avkitGlassCapsule()
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
+        }
+        .background { if keyboardEnabled { keyboardControls } }
+        .animation(.easeInOut(duration: 0.2), value: keyHint)
+        .task(id: keyHintGeneration) {
+            guard keyHint != nil else { return }
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            keyHint = nil
         }
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
         .onChange(of: controlsVisible) { _, visible in
@@ -343,6 +369,126 @@ struct AVKitPlaybackChrome: View {
         hideGeneration += 1
     }
 
+    // MARK: Keyboard
+
+    /// Mac (and iPad keyboard) controls, laid out like other players': Space or K plays and
+    /// pauses, the arrows skip and change volume, the number keys jump through the runtime.
+    /// Hidden buttons carry the shortcuts, so they work wherever the player has the window and
+    /// iPad lists them when Command is held. The arrows go to [ArrowKeyCommands] instead.
+    private var keyboardControls: some View {
+        ZStack {
+            ArrowKeyCommands(
+                onLeft: { skip(by: -PlaybackPreferences.skipBackward) },
+                onRight: { skip(by: PlaybackPreferences.skipForward) },
+                onUp: { changeVolume(by: 0.1) },
+                onDown: { changeVolume(by: -0.1) }
+            )
+            keyButton("Play or Pause", .space, action: playPauseFromKeyboard)
+            keyButton("Play or Pause", "k", action: playPauseFromKeyboard)
+            keyButton("Skip Back", "j") { skip(by: -PlaybackPreferences.skipBackward) }
+            keyButton("Skip Forward", "l") { skip(by: PlaybackPreferences.skipForward) }
+            keyButton("Mute", "m", action: toggleMute)
+            keyButton("Subtitles", "c", action: toggleSubtitles)
+            keyButton("Slower", "[") { stepSpeed(by: -1) }
+            keyButton("Faster", "]") { stepSpeed(by: 1) }
+            keyButton("Fill or Fit", "z") {
+                model.toggleFillScreen()
+                showHint(model.fillsScreen ? "Fill Screen" : "Fit to Screen")
+            }
+            keyButton("Playback Info", "i") { model.togglePlaybackStats() }
+            keyButton("Skip Intro", "s", action: skipFromKeyboard)
+            keyButton("Skip Intro", .return, action: skipFromKeyboard)
+            if let onNext {
+                keyButton("Next Episode", "n", action: onNext)
+            }
+            keyButton("Close", .escape, action: escapeFromKeyboard)
+            ForEach(0 ..< 10, id: \.self) { digit in
+                keyButton("Jump to \(digit * 10)%", KeyEquivalent(Character(String(digit)))) {
+                    model.seek(toFraction: Double(digit) / 10)
+                    revealControls()
+                }
+            }
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func keyButton(
+        _ title: String,
+        _ key: KeyEquivalent,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(title, action: action)
+            .keyboardShortcut(key, modifiers: [])
+    }
+
+    private func playPauseFromKeyboard() {
+        model.togglePlayPause()
+        revealControls()
+    }
+
+    private func changeVolume(by delta: Float) {
+        model.adjustVolume(by: delta)
+        showHint(model.isMuted ? "Muted" : "Volume \(Int((model.volume * 100).rounded()))%")
+    }
+
+    private func toggleMute() {
+        model.setMuted(!model.isMuted)
+        showHint(model.isMuted ? "Muted" : "Volume \(Int((model.volume * 100).rounded()))%")
+    }
+
+    /// Off, or back to the last track used (the first one if none was).
+    private func toggleSubtitles() {
+        if let current = model.selectedSubtitleID {
+            lastSubtitleID = current
+            onSubtitleChange(nil)
+            showHint("Subtitles Off")
+            return
+        }
+        let options = model.subtitleOptions
+        guard let pick = options.first(where: { $0.id == lastSubtitleID }) ?? options.first else {
+            showHint("No Subtitles")
+            return
+        }
+        onSubtitleChange(pick.id)
+        showHint(pick.title)
+    }
+
+    private func stepSpeed(by step: Int) {
+        let options = AVKitPlaybackSpeed.options
+        let current = options.firstIndex { abs($0 - model.playbackRate) < 0.01 }
+            ?? options.firstIndex { $0 >= model.playbackRate }
+            ?? options.count - 1
+        let next = options[min(max(current + step, 0), options.count - 1)]
+        model.setPlaybackRate(next)
+        showHint(AVKitPlaybackSpeed.title(next))
+    }
+
+    private func skipFromKeyboard() {
+        if let onSkipCinema {
+            onSkipCinema()
+        } else if model.skipPrompt != nil {
+            model.skipCurrentSegment()
+            revealControls()
+        }
+    }
+
+    /// Esc steps back one level: the settings panel first, then the player itself.
+    private func escapeFromKeyboard() {
+        if settingsOpen {
+            closeSettings()
+        } else {
+            onClose()
+        }
+    }
+
+    private func showHint(_ text: String) {
+        keyHint = text
+        keyHintGeneration += 1
+    }
+
     private func hideControlsIfPlaying() async {
         guard PlaybackChromeIdlePolicy.shouldHide(
             controlsVisible: controlsVisible,
@@ -365,6 +511,64 @@ struct AVKitPlaybackChrome: View {
             isBuffering: isWaiting
         ) else { return }
         controlsVisible = false
+    }
+}
+
+/// The player's arrow keys. UIKit gives arrows to focus and scrolling before any shortcut, so
+/// SwiftUI's `keyboardShortcut` never sees them; a key command that asks for priority does. It
+/// works from the first responder, so this view takes it while the player is on screen.
+private struct ArrowKeyCommands: UIViewRepresentable {
+    var onLeft: () -> Void
+    var onRight: () -> Void
+    var onUp: () -> Void
+    var onDown: () -> Void
+
+    func makeUIView(context: Context) -> ArrowKeyView { ArrowKeyView() }
+
+    func updateUIView(_ view: ArrowKeyView, context: Context) {
+        view.handlers = [
+            UIKeyCommand.inputLeftArrow: onLeft,
+            UIKeyCommand.inputRightArrow: onRight,
+            UIKeyCommand.inputUpArrow: onUp,
+            UIKeyCommand.inputDownArrow: onDown,
+        ]
+        view.claimKeyboard()
+    }
+
+    static func dismantleUIView(_ view: ArrowKeyView, coordinator: ()) {
+        if view.isFirstResponder { view.resignFirstResponder() }
+    }
+}
+
+private final class ArrowKeyView: UIView {
+    var handlers: [String: () -> Void] = [:]
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    override var keyCommands: [UIKeyCommand]? {
+        handlers.keys.map { input in
+            let command = UIKeyCommand(input: input, modifierFlags: [], action: #selector(arrow(_:)))
+            command.wantsPriorityOverSystemBehavior = true
+            return command
+        }
+    }
+
+    @objc private func arrow(_ command: UIKeyCommand) {
+        command.input.flatMap { handlers[$0] }?()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        claimKeyboard()
+    }
+
+    /// Taken back after a menu or sheet had it.
+    func claimKeyboard() {
+        guard window != nil, !isFirstResponder else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil, !self.isFirstResponder else { return }
+            self.becomeFirstResponder()
+        }
     }
 }
 

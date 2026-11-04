@@ -197,6 +197,7 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 | Seerr · Ombi requests | ✅ | ✅ | ✅ |
 | Version and debrid source picking | ✅ | ✅ | ✅ |
 | Built-in log | ✅ | ✅ | ✅ |
+| Keyboard playback controls | iPad | ✅ | — |
 | Tablet sidebar layout | ✅ | — | ✅ |
 | Live TV guide | ✅ | ✅ | — |
 | Picture in Picture · AirPlay | ✅ | — | — |
@@ -209,6 +210,23 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 | AVPlayer / VideoToolbox | ✅ | ✅ | — |
 
 The Mac app is the iPad app built for the Mac (Mac Catalyst) and runs natively on Intel and Apple silicon (M-series) Macs with macOS 15 or later. It has a fixed sidebar like the TV app, with grids and rows sized for a Mac window. AetherEngine isn’t on the Mac until its FFmpeg ships Mac Catalyst builds, so the Mac plays with MPV or Apple’s player.
+
+On the Mac, and on an iPad with a keyboard, the player takes keyboard controls:
+
+| Key | Does |
+| :--- | :--- |
+| Space or K | Play / pause |
+| ← → or J L | Skip back / forward |
+| ↑ ↓ | Volume |
+| M | Mute |
+| C | Subtitles on / off |
+| [ ] | Slower / faster |
+| Z | Fill or fit |
+| I | Playback info |
+| S or Return | Skip intro, recap, or credits |
+| N | Next episode |
+| 0–9 | Jump to 0–90% |
+| Esc | Close the menu, then the player |
 
 Android UI is Material 3: edge-to-edge navigation bar, accent-tinted surfaces, settings hub. Android tablets get the iPad layout: tabs in a capsule at the top, and a liquid glass sidebar with **Edit** to reorder and hide tabs. Home and title pages run on under the sidebar, their shelves scrolling beneath it.
 

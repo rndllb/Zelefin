@@ -156,6 +156,7 @@ final class DirectPlayEngine: ObservableObject {
 
     var ownsVideoNowPlayingSession = false
     var deactivatesAudioSessionOnStop = false
+    var volume: Float = 1
     var pictureInPictureActive = false
     var videoGravity: AVLayerVideoGravity = .resizeAspect
     private(set) var playbackBackend: DirectPlayBackend = .none

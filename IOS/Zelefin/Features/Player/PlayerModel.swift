@@ -373,14 +373,34 @@ final class PlayerModel {
         isPaused = false
     }
 
-    private func setMuted(_ muted: Bool) {
-        player?.isMuted = muted
+    /// The app's own volume (0–1), on top of the device's. It starts full each time.
+    private(set) var volume: Float = 1
+    private(set) var isMuted = false
+
+    func setMuted(_ muted: Bool) {
+        isMuted = muted
+        applyVolume()
     }
 
-    private func adjustVolume(by delta: Float) {
-        guard let player else { return }
-        player.volume = min(1, max(0, player.volume + delta))
-        if delta > 0 { player.isMuted = false }
+    func adjustVolume(by delta: Float) {
+        volume = min(1, max(0, volume + delta))
+        if delta > 0 { isMuted = false }
+        applyVolume()
+    }
+
+    /// AetherEngine has no mute of its own, so muting it is volume 0.
+    private func applyVolume() {
+        let level = isMuted ? 0 : volume
+        engine?.volume = level
+        mpv?.setVolume(level)
+        player?.volume = volume
+        player?.isMuted = isMuted
+    }
+
+    /// Jumps to a share of the runtime, as the number keys do.
+    func seek(toFraction fraction: Double) {
+        guard duration > 0 else { return }
+        seek(to: duration * min(max(fraction, 0), 1))
     }
 
     func skipCurrentSegment() {
