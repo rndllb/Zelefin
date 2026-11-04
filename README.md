@@ -278,42 +278,9 @@ xcodebuild test -scheme Zelefin -destination 'platform=iOS Simulator,name=iPhone
 
 ---
 
-## Not in this build
+## Coming soon
 
-<table>
-<tr>
-<td width="33%" valign="top">
-
-🎵 **Music**
-
-Not yet.
-
-</td>
-<td width="33%" valign="top">
-
-🛒 **Stores**
-
-iPhone and iPad beta on [TestFlight](https://testflight.apple.com/join/hHBVNKTj). Android from [zelefin.app/android](https://zelefin.app/android). Mac from source in Xcode for now. Free.
-
-</td>
-<td width="33%" valign="top">
-
-🟠 **Plex**
-
-Not yet.
-
-</td>
-</tr>
-<tr>
-<td width="33%" valign="top">
-
-📺 **Apple TV · Android TV**
-
-Coming. Both are in development now.
-
-</td>
-</tr>
-</table>
+📺 **Apple TV · Android TV** — in development now.
 
 ---
 
