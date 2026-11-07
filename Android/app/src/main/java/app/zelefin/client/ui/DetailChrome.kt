@@ -1214,23 +1214,43 @@ private fun AboutRatingCard(value: String, label: String, meaning: String, icon:
 @Composable
 internal fun FactsBlock(title: String, rows: List<app.zelefin.core.TitleMoreRow>) {
     if (rows.isEmpty()) return
-    Text(
-        title,
-        color = Color.White,
-        fontFamily = ZelefinFont,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-    )
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        rows.forEach { row ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(row.label, color = Color.White.copy(alpha = 0.48f), fontFamily = ZelefinFont, fontSize = 13.sp)
-                Text(row.value, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp)
+    // One Column: the caller wraps this in a Box, which would otherwise stack the heading, the rows,
+    // and the spacer on top of each other (the "Information" title overlapping the first row).
+    Column {
+        Text(
+            title,
+            color = Color.White,
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 20.sp,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            rows.forEach { row ->
+                // Right-align the row when its value reads right-to-left (e.g. Arabic metadata), so the
+                // label and value hang on the correct edge instead of floating left in the LTR shell.
+                val align = if (isRtlText(row.value)) TextAlign.End else TextAlign.Start
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(row.label, color = Color.White.copy(alpha = 0.48f), fontFamily = ZelefinFont, fontSize = 13.sp, textAlign = align, modifier = Modifier.fillMaxWidth())
+                    Text(row.value, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp, textAlign = align, modifier = Modifier.fillMaxWidth())
+                }
             }
         }
+        Spacer(Modifier.height(20.dp))
     }
-    Spacer(Modifier.height(20.dp))
+}
+
+/// True when the first strongly-directional character is right-to-left (Arabic, Hebrew, …).
+private fun isRtlText(text: String): Boolean {
+    for (ch in text) {
+        when (Character.getDirectionality(ch)) {
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC -> return true
+            Character.DIRECTIONALITY_LEFT_TO_RIGHT -> return false
+            else -> continue
+        }
+    }
+    return false
 }
 
 @Composable
