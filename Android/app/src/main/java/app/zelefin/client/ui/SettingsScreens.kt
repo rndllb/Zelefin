@@ -6,6 +6,7 @@ import app.zelefin.client.plugins.SkipPluginChoice
 import android.Manifest
 import android.app.Activity
 import android.content.ClipData
+import android.content.ContextWrapper
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
@@ -14,6 +15,7 @@ import android.os.PersistableBundle
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -22,6 +24,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -38,9 +41,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import app.zelefin.client.BuildConfig
 import app.zelefin.client.LibraryKind
+import app.zelefin.client.push.NotificationPreferences
 import app.zelefin.client.push.ZelefinPush
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.SubtitleAppearance
 import app.zelefin.client.AdaptiveBitrateStore
@@ -53,6 +62,13 @@ import app.zelefin.client.SubtitlePlaybackModeChoices
 import app.zelefin.client.summary
 import app.zelefin.client.title
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -64,7 +80,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -77,31 +95,55 @@ import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.RemoveCircle
+import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerLayoutType
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -111,6 +153,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import app.zelefin.client.PluginsController
@@ -131,10 +174,25 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.zelefin.client.R
+import app.zelefin.client.ServerInfoSnapshot
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import app.zelefin.client.AccountBiometrics
+import app.zelefin.client.AccountSwitchPin
+import app.zelefin.client.ProfileAccountOverview
 import app.zelefin.client.ZelefinModel
 import app.zelefin.client.network.HomeNetwork
 import app.zelefin.client.network.HomeNetworkProfile
+import app.zelefin.client.session.ArtworkCacheStore
+import app.zelefin.client.session.CachePreferences
 import app.zelefin.core.ArtworkDiskKey
+import app.zelefin.core.ArtworkImageKind
+import app.zelefin.core.CacheBucket
+import app.zelefin.core.CacheInventory
+import app.zelefin.core.MetadataCacheFolder
 import app.zelefin.core.SavedSession
 import coil.imageLoader
 import coil.memory.MemoryCache
@@ -151,6 +209,14 @@ private val Secondary = IOSColors.secondaryLabel
 
 enum class SettingsBarAction { Done, Back, Cancel }
 
+/** Child settings pages (a session, a user, a task) replace the navigation title and back action. */
+internal class SettingsChrome {
+    var title by mutableStateOf<String?>(null)
+    var onBack by mutableStateOf<(() -> Unit)?>(null)
+}
+
+internal val LocalSettingsChrome = compositionLocalOf { SettingsChrome() }
+
 @Composable
 fun SettingsScreen(
     state: ZelefinUiState,
@@ -164,22 +230,21 @@ fun SettingsScreen(
     val pluginState by model.plugins.state.collectAsState()
     val scope = rememberCoroutineScope()
     val jellyfin = state.hasJellyfinExtras
-    val tools = session?.hasServerTools == true
     val serverType = session?.serverTypeName ?: "Jellyfin"
-    val showServer = tools && pluginState.isAdmin
+    val showServer = session?.hasServerTools == true && pluginState.isAdmin
     var confirmScan by remember { mutableStateOf(false) }
     var scanMessage by remember(session?.accountId) { mutableStateOf<String?>(null) }
     if (confirmScan) {
         SettingsAlertDialog(
-            title = "Scan all libraries?",
-            message = "$serverType will look for new files and refresh metadata. This can take a while on a large server.",
-            confirmLabel = "Scan",
+            title = "Scan every library?",
+            message = "Jellyfin will look for new files and refresh metadata. This can take a while on a large server.",
+            confirmLabel = "Scan Libraries",
             onConfirm = {
                 confirmScan = false
                 scope.launch {
                     scanMessage = runCatching { model.scanLibraries() }
-                        .map { "Scan started. $serverType is looking for new files." }
-                        .getOrElse { it.message ?: "$serverType could not start the scan." }
+                        .map { "Scan started" }
+                        .getOrElse { it.message ?: "Jellyfin could not start the scan." }
                 }
             },
             onDismiss = { confirmScan = false },
@@ -189,23 +254,41 @@ fun SettingsScreen(
     val cacheSize by produceState<Long?>(null) {
         value = withContext(Dispatchers.IO) {
             val root = File(context.cacheDir, "Zelefin")
-            (context.imageLoader.diskCache?.size ?: 0L) + folderBytes(File(root, "Artwork")) +
-                SavedDataFolders.sumOf { folderBytes(File(root, it)) }
+            ArtworkCacheStore.usage(context).total.bytes + CacheInventory.metadataUsage(root).total.bytes
         }
     }
     SettingsPage(title = "Settings", onBack = onBack, bar = bar) {
-        SettingsGroup { SettingsProfileRow(session, onClick = onProfile) }
+        SettingsGroup {
+            SettingsProfileRow(session, onClick = onProfile)
+            SettingsGroupDivider()
+            SettingsNavRow(
+                if (state.isSiloServer) "Accounts" else "Users",
+                Icons.Outlined.People,
+                summary = if (state.isSiloServer) {
+                    "Switch or add a login on this device"
+                } else {
+                    "Switch or add a user on this device"
+                },
+                onClick = { onTopic(DeviceAccountsTopicId) },
+            )
+            if (jellyfin) {
+                SettingsGroupDivider()
+                SettingsNavRow(
+                    "SyncPlay",
+                    Icons.Outlined.Groups,
+                    summary = "Watch together in a group",
+                    onClick = { onTopic("syncplay") },
+                )
+            }
+        }
+        if (session != null && !state.isEmbyServer) {
+            QuickConnectAuthorizeSection(session.userName)
+        }
         SettingsHeader("Account")
         SettingsNavGroup(
-            buildList {
-                add(SettingsHubItem("Notifications", "Alerts from your server", Icons.Outlined.Notifications) { onTopic("notifications") })
-                if (tools) {
-                    add(SettingsHubItem("Sessions", "Devices signed in to $serverType", Icons.Outlined.Devices) { onTopic("sessions") })
-                }
-                if (jellyfin) {
-                    add(SettingsHubItem("SyncPlay", "Watch together in a group", Icons.Outlined.Groups) { onTopic("syncplay") })
-                }
-            },
+            listOf(
+                SettingsHubItem("Notifications", "Alerts from your server", Icons.Outlined.Notifications) { onTopic("notifications") },
+            ),
         )
         SettingsHeader("Playback")
         SettingsNavGroup(
@@ -220,13 +303,16 @@ fun SettingsScreen(
             SettingsHeader("Server")
             SettingsNavGroup(
                 buildList {
-                    add(SettingsHubItem("Users", "Permissions, libraries, and parental controls", Icons.Outlined.People) { onTopic("users") })
+                    if (!state.isSiloServer) {
+                        add(SettingsHubItem("Sessions", "Devices signed in to $serverType", Icons.Outlined.Devices) { onTopic("sessions") })
+                    }
+                    add(SettingsHubItem("User Access", "Permissions, libraries, and parental controls", Icons.Outlined.ManageAccounts) { onTopic("users") })
                     add(SettingsHubItem("Scheduled Tasks", "Start, cancel, and watch progress", Icons.Outlined.Schedule) { onTopic("scheduled-tasks") })
                     add(SettingsHubItem("Activity Log", "Sign-ins, scans, and failures", Icons.AutoMirrored.Outlined.List) { onTopic("activity") })
                     if (jellyfin) {
                         add(SettingsHubItem("Backups", "Archive and restore this server", Icons.Outlined.Inventory2) { onTopic("backups") })
-                        add(SettingsHubItem("Branding", "Login disclaimer and splashscreen", Icons.Outlined.Brush) { onTopic("branding") })
                     }
+                    add(SettingsHubItem("Branding", "Login disclaimer and splashscreen", Icons.Outlined.Brush) { onTopic("branding") })
                     add(SettingsHubItem("Scan Libraries", scanMessage ?: "Look for new files and refresh metadata", Icons.Outlined.Refresh) { confirmScan = true })
                 },
             )
@@ -235,10 +321,10 @@ fun SettingsScreen(
         SettingsHeader("This Device")
         SettingsNavGroup(
             listOf(
+                SettingsHubItem("Server Info", "Name, version, OS, and address", Icons.Outlined.Dns) { onTopic("server") },
                 SettingsHubItem("Network", session?.displayServer?.takeIf { it.isNotBlank() } ?: "How this device reaches the server", Icons.Outlined.Wifi) { onTopic("network") },
                 SettingsHubItem("Cache", cacheSize?.takeIf { it > 0 }?.let(::formatBytes) ?: "Posters and saved home data", Icons.Outlined.Storage) { onTopic("cache") },
-                SettingsHubItem("Interface", "Home rows, tabs, and Liquid Glass", Icons.Outlined.Dashboard) { onTopic("interface") },
-                SettingsHubItem("Appearance", "Accent color", Icons.Outlined.Palette) { onTopic("appearance") },
+                SettingsHubItem("Interface", "Home, tabs, accent color", Icons.Outlined.Dashboard) { onTopic("interface") },
                 SettingsHubItem("Log", "What Zelefin did, to read or send", Icons.Outlined.Description) { onTopic("log") },
             ),
         )
@@ -250,6 +336,65 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun QuickConnectAuthorizeSection(userName: String) {
+    val model: ZelefinModel = viewModel()
+    val scope = rememberCoroutineScope()
+    var code by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val digits = code.filter(Char::isDigit)
+    val canAuthorize = digits.length >= 4 && !busy
+    fun authorize() {
+        if (!canAuthorize) return
+        busy = true
+        status = null
+        val submitted = digits
+        scope.launch {
+            runCatching { model.authorizeQuickConnect(submitted) }
+                .onSuccess {
+                    code = ""
+                    status = "Authorized. The other device can finish signing in." to false
+                }
+                .onFailure { error ->
+                    status = (error.message ?: "Quick Connect could not be authorized.") to true
+                }
+            busy = false
+        }
+    }
+    SettingsHeader("Quick Connect")
+    SettingsCard {
+        SettingsTextField(
+            label = "",
+            value = code,
+            icon = Icons.Outlined.Link,
+            onChange = { if (!busy) code = it.filter(Char::isDigit).take(12) },
+            placeholder = "Quick Connect code",
+            keyboard = KeyboardType.Number,
+            ime = ImeAction.Go,
+            onIme = { authorize() },
+        )
+        SettingsCardDivider()
+        SettingsActionRow(
+            title = if (busy) "Authorizing…" else "Authorize Quick Connect",
+            busy = busy,
+            enabled = canAuthorize,
+            onClick = { authorize() },
+        )
+        status?.let { (text, error) ->
+            SettingsCardDivider()
+            Text(
+                text,
+                color = if (error) IOSColors.red else IOSColors.secondaryLabel,
+                fontFamily = ZelefinFont,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
+        }
+    }
+    SettingsFooter("Enter the code shown on another device to sign it in as $userName.")
+}
+
+@Composable
 fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAction = SettingsBarAction.Done) {
     val session = state.session
     val model: ZelefinModel = viewModel()
@@ -258,23 +403,30 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
     val silo = state.isSiloServer
     var uploading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    var removing by remember { mutableStateOf<SavedSession?>(null) }
-    var currentPassword by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    var savingPassword by remember { mutableStateOf(false) }
     var tokenVisible by remember { mutableStateOf(false) }
     var tokenCopied by remember { mutableStateOf(false) }
+    val accountId = session?.accountId
+    var hasPin by remember(accountId) { mutableStateOf(accountId?.let(model::accountHasPin) == true) }
+    var biometricsOn by remember(accountId) { mutableStateOf(accountId?.let(model::accountBiometricsEnabled) == true) }
+    var pinEditor by remember(accountId) { mutableStateOf<AccountPinEditor?>(null) }
+    var pinGate by remember(accountId) { mutableStateOf<AccountPinGate?>(null) }
+    var pinError by remember(accountId) { mutableStateOf<String?>(null) }
+    var pinAttempt by remember(accountId) { mutableStateOf(0) }
+    var overview by remember(accountId) { mutableStateOf<ProfileAccountOverview?>(null) }
+    var overviewError by remember(accountId) { mutableStateOf<String?>(null) }
+    var loadingOverview by remember(accountId) { mutableStateOf(false) }
+    var refreshingOverview by remember(accountId) { mutableStateOf(false) }
     val serverLabel = session?.displayServer?.takeIf { it.isNotBlank() } ?: "this server"
+    val serverAddress = session?.serverUrl?.trim().orEmpty()
     val siloLink = session?.siloLink
     val household = state.household
     val serverType = session?.serverTypeName ?: "Jellyfin"
-    val managesAccount = !silo
-    val canChangePhoto = session != null && (siloLink != null || managesAccount)
-    val canRemovePhoto = siloLink == null && managesAccount && session?.userImageTag != null
-    val canChangePassword = managesAccount
-    val usersTitle = if (silo) "Accounts" else "Users"
-    val addTitle = if (silo) "Add Account" else "Add User"
+    val canChangePhoto = session != null && (!silo || siloLink != null)
+    val canRemovePhoto = !silo && session?.userImageTag != null
+    val biometricsAvailable = AccountBiometrics.canUse(context)
+    val biometricsName = if (biometricsAvailable) AccountBiometrics.name(context) else null
+    val pinUnlockName = biometricsName ?: "Fingerprint or face unlock"
+    val pinFooter = "A 4–6 digit PIN locks this account on this device so others can’t sign into it. $pinUnlockName can unlock it instead of typing the PIN."
     var avatarSheet by remember { mutableStateOf(false) }
     val avatarMotion = rememberZelefinSheet(if (avatarSheet && siloLink != null) Unit else null)
     LaunchedEffect(siloLink?.profileId) { if (siloLink != null) model.refreshHousehold() }
@@ -300,8 +452,20 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             }
         }
     }
-    val passwordMismatch = confirmPassword.isNotEmpty() && newPassword != confirmPassword
     val accessToken = session?.accessToken.orEmpty()
+    LaunchedEffect(accountId, session?.userId) {
+        if (accountId == null) return@LaunchedEffect
+        loadingOverview = overview == null
+        overviewError = null
+        runCatching { model.profileAccountOverview() }
+            .onSuccess { overview = it }
+            .onFailure {
+                overview = null
+                overviewError = it.message ?: "Could not load this account."
+            }
+        loadingOverview = false
+        refreshingOverview = false
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         val current = session ?: return@rememberLauncherForActivityResult
         if (uri == null) return@rememberLauncherForActivityResult
@@ -321,17 +485,53 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             uploading = false
         }
     }
-    removing?.let { account ->
-        SettingsAlertDialog(
-            title = "Remove ${account.userName}?",
-            message = "This user leaves this phone. Sign in again to add them back.",
-            confirmLabel = "Remove",
-            destructive = true,
-            onConfirm = {
-                removing = null
-                model.removeAccount(account)
+    fun finishPinGate(gate: AccountPinGate) {
+        pinError = null
+        pinGate = null
+        when (gate) {
+            AccountPinGate.Change -> pinEditor = AccountPinEditor.Change
+            AccountPinGate.Remove -> {
+                model.removeAccountPin()
+                hasPin = false
+                biometricsOn = false
+                status = "Account PIN removed." to false
+            }
+        }
+    }
+    pinGate?.let { gate ->
+        val unlockLabel = if (biometricsAvailable && biometricsOn) biometricsName else null
+        AccountPinUnlockDialog(
+            name = session?.userName ?: "this account",
+            error = pinError,
+            attempt = pinAttempt,
+            biometricsLabel = unlockLabel,
+            onBiometricUnlocked = { finishPinGate(gate) },
+            onSubmit = { pin ->
+                val id = session?.accountId
+                if (id == null || !model.verifyAccountPin(id, pin)) {
+                    pinAttempt += 1
+                    pinError = "That PIN is incorrect."
+                    return@AccountPinUnlockDialog
+                }
+                finishPinGate(gate)
             },
-            onDismiss = { removing = null },
+            onCancel = {
+                pinGate = null
+                pinError = null
+            },
+        )
+    }
+    pinEditor?.let { editor ->
+        AccountPinEditorDialog(
+            mode = editor,
+            onCancel = { pinEditor = null },
+            onSave = { pin ->
+                model.setAccountPin(pin)
+                hasPin = true
+                biometricsOn = accountId?.let(model::accountBiometricsEnabled) == true
+                pinEditor = null
+                status = "Account PIN saved on this device." to false
+            },
         )
     }
     val removePhoto = {
@@ -363,9 +563,29 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
         tokenCopied = true
         status = "Access token copied." to false
     }
-    SettingsPage(title = "Profile", onBack = onBack, bar = bar) {
+    val identitySubtitle = if (serverAddress.isNotEmpty()) serverAddress else "$serverType · $serverLabel"
+    SettingsPage(
+        title = "Profile",
+        onBack = onBack,
+        bar = bar,
+        refreshing = refreshingOverview,
+        onRefresh = {
+            refreshingOverview = true
+            scope.launch {
+                overviewError = null
+                runCatching { model.profileAccountOverview() }
+                    .onSuccess { overview = it }
+                    .onFailure {
+                        overview = null
+                        overviewError = it.message ?: "Could not load this account."
+                    }
+                refreshingOverview = false
+                loadingOverview = false
+            }
+        },
+    ) {
         SettingsCard {
-            Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 val choosePhoto = {
                     when {
                         uploading -> Unit
@@ -373,10 +593,10 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                         else -> picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     }
                 }
-                Box(Modifier.size(76.dp)) {
-                    AccountAvatar(session, onClick = { if (canChangePhoto) choosePhoto() }, diameter = 72.dp)
+                Box(Modifier.size(64.dp)) {
+                    AccountAvatar(session, onClick = { if (canChangePhoto) choosePhoto() }, diameter = 64.dp)
                     if (uploading) {
-                        Box(Modifier.size(72.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.48f)), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(64.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.48f)), contentAlignment = Alignment.Center) {
                             IOSSpinner(color = Color.White)
                         }
                     }
@@ -394,146 +614,188 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    session?.userName ?: "Account",
-                    color = Color.White,
-                    fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 20.sp,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    "$serverType · $serverLabel",
-                    color = IOSColors.secondaryLabel,
-                    fontFamily = ZelefinFont,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center,
-                )
-                if (canRemovePhoto) {
-                    Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
-                        "Remove Photo",
-                        style = SettingsRowText.copy(color = IOSColors.red),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = !uploading, role = Role.Button, onClick = removePhoto)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        session?.userName?.takeIf { it.isNotBlank() } ?: "Account",
+                        color = Color.White,
+                        fontFamily = ZelefinFont,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 20.sp,
                     )
+                    Text(
+                        identitySubtitle,
+                        color = IOSColors.secondaryLabel,
+                        fontFamily = ZelefinFont,
+                        fontSize = 15.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (canRemovePhoto) {
+                        Text(
+                            "Remove Photo",
+                            style = SettingsRowText.copy(color = IOSColors.red, fontSize = 13.sp),
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !uploading, role = Role.Button, onClick = removePhoto)
+                                .padding(vertical = 2.dp),
+                        )
+                    }
+                    status?.let { (text, error) ->
+                        Text(
+                            text,
+                            color = if (error) IOSColors.red else IOSColors.secondaryLabel,
+                            fontFamily = ZelefinFont,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+            }
+        }
+        if (siloLink != null && household.profiles.isNotEmpty()) {
+            SettingsHeader("Who’s watching")
+            SettingsCard {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    household.profiles.forEach { householdProfile ->
+                        val current = householdProfile.id == siloLink.profileId
+                        HouseholdProfileTile(
+                            profile = householdProfile,
+                            isCurrent = current,
+                            isSelected = household.switchingTo == householdProfile.id,
+                            enabled = !current && household.switchingTo == null,
+                            dimmed = household.switchingTo != null && household.switchingTo != householdProfile.id,
+                            onClick = { model.switchSiloProfile(householdProfile) },
+                        )
+                    }
+                }
+                household.message?.takeIf { state.siloPin == null }?.let { message ->
+                    SettingsCardDivider()
+                    Text(message, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                }
+            }
+            SettingsFooter("Continue Watching, recommendations, and watched flags follow the selected profile.")
+        }
+        if (loadingOverview && overview == null) {
+            SettingsCard {
+                Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IOSSpinner()
+                    Spacer(Modifier.width(12.dp))
+                    Text("Loading account…", color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 16.sp)
+                }
+            }
+        }
+        if (overviewError != null && overview == null) {
+            SettingsCard {
+                Text(overviewError.orEmpty(), color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp))
+            }
+        }
+        if (session != null) {
+            SettingsHeader("Account")
+            SettingsCard {
+                if (hasPin) {
+                    InfoLine("Account PIN", "On")
+                    if (biometricsName != null) {
+                        SettingsCardDivider()
+                        SettingsToggleRow("Unlock with $biometricsName", biometricsOn, { enabled ->
+                            biometricsOn = enabled
+                            model.setAccountBiometrics(enabled)
+                        })
+                    }
+                    SettingsCardDivider()
+                    SettingsActionRow("Change PIN") {
+                        pinError = null
+                        pinGate = AccountPinGate.Change
+                    }
+                    SettingsCardDivider()
+                    SettingsActionRow("Remove PIN", destructive = true) {
+                        pinError = null
+                        pinGate = AccountPinGate.Remove
+                    }
+                } else {
+                    SettingsActionRow("Create Account PIN") { pinEditor = AccountPinEditor.Create }
+                }
+                overview?.let { account ->
+                    SettingsCardDivider()
+                    InfoLine("Name", account.displayName)
+                    SettingsCardDivider()
+                    InfoLine("Role", account.role)
+                    SettingsCardDivider()
+                    InfoLine("Password", if (account.hasPassword) "Set" else "Not set")
+                    SettingsCardDivider()
+                    InfoLine("Last sign-in", account.lastLoginLabel)
+                    SettingsCardDivider()
+                    InfoLine("Last active", account.lastActivityLabel)
                 }
                 status?.let { (text, error) ->
+                    SettingsCardDivider()
                     Text(
                         text,
                         color = if (error) IOSColors.red else IOSColors.secondaryLabel,
                         fontFamily = ZelefinFont,
                         fontSize = 13.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
-                }
-            }
-        }
-        SettingsHeader("Server")
-        SettingsCard {
-            InfoLine("Server", session?.displayServer ?: "—")
-            SettingsCardDivider()
-            InfoLine("Address", session?.serverUrl ?: "—")
-            if (siloLink != null) {
-                SettingsCardDivider()
-                InfoLine("Silo Account", siloLink.accountName)
-            }
-        }
-        if (siloLink != null) {
-            SettingsHeader("Profiles")
-            SettingsCard {
-                val profiles = household.profiles
-                if (profiles.isEmpty()) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight), verticalAlignment = Alignment.CenterVertically) {
-                        if (household.loading) {
-                            IOSSpinner()
-                        } else {
-                            Text(
-                                household.message ?: "No household profiles.",
-                                style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
-                                modifier = Modifier.padding(vertical = 14.dp),
-                            )
-                        }
-                    }
-                }
-                profiles.forEachIndexed { index, profile ->
-                    if (index > 0) SettingsCardDivider()
-                    val current = profile.id == siloLink.profileId
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = SettingsRowHeight)
-                            .clickable(enabled = !current && household.switchingTo == null, role = Role.Button) { model.switchSiloProfile(profile) }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        SiloProfileRowContent(profile, current = current, busy = household.switchingTo == profile.id)
-                    }
-                }
-                if (household.signInExpired) {
-                    SettingsCardDivider()
-                    SettingsActionRow("Sign In Again", onClick = model::signInToSiloAgain)
-                }
-            }
-            SettingsFooter(
-                if (household.signInExpired) household.message ?: "Your Silo sign-in expired. Sign in again."
-                else household.message?.takeIf { household.profiles.isNotEmpty() } ?: "Switch to another profile in this Silo household.",
-            )
-        }
-        SettingsHeader("Password")
-        SettingsCard {
-            if (canChangePassword) {
-                SettingsTextField("Current Password", currentPassword, Icons.Outlined.Lock, { currentPassword = it }, password = true)
-                SettingsCardDivider()
-                SettingsTextField("New Password", newPassword, Icons.Outlined.Lock, { newPassword = it }, password = true)
-                SettingsCardDivider()
-                SettingsTextField("Confirm Password", confirmPassword, Icons.Outlined.Lock, { confirmPassword = it }, password = true)
-                if (passwordMismatch) {
-                    SettingsCardDivider()
-                    Text(
-                        "The new passwords do not match.",
-                        color = IOSColors.red,
-                        fontFamily = ZelefinFont,
-                        fontSize = 13.sp,
                         modifier = Modifier.padding(vertical = 12.dp),
                     )
                 }
-                SettingsCardDivider()
-                SettingsActionRow(
-                    "Update Password",
-                    busy = savingPassword,
-                    enabled = currentPassword.isNotEmpty() && newPassword.isNotEmpty() && !passwordMismatch && confirmPassword.isNotEmpty(),
-                ) {
-                    savingPassword = true
-                    status = null
-                    scope.launch {
-                        runCatching { model.changePassword(currentPassword, newPassword) }
-                            .onSuccess {
-                                currentPassword = ""
-                                newPassword = ""
-                                confirmPassword = ""
-                                status = "Password updated." to false
-                            }
-                            .onFailure { status = (it.message ?: "The server did not accept the new password.") to true }
-                        savingPassword = false
-                    }
-                }
-            } else {
-                Text(
-                    "Change this password in $serverType.",
-                    style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
-                    modifier = Modifier.padding(vertical = 14.dp),
-                )
             }
+            SettingsFooter(pinFooter)
         }
-        SettingsFooter(
-            if (canChangePassword) "Updates the password for this login on $serverLabel."
-            else "$serverType manages the password for this login.",
-        )
+        overview?.let { account ->
+            SettingsHeader("Libraries")
+            SettingsCard { InfoLine("Access", account.librariesSummary) }
+            SettingsHeader("Limits")
+            SettingsCard {
+                InfoLine("Maximum rating", account.maxRatingLabel)
+                SettingsCardDivider()
+                InfoLine("Unrated titles", account.unratedLabel)
+                SettingsCardDivider()
+                InfoLine("Allowed time", account.accessScheduleLabel)
+            }
+            SettingsFooter(account.limitsFooter)
+            SettingsHeader("Capabilities")
+            SettingsCard {
+                account.capabilities.forEachIndexed { index, capability ->
+                    if (index > 0) SettingsCardDivider()
+                    ProfileCapabilityRow(capability.title, capability.isAllowed)
+                }
+            }
+            SettingsFooter("What this login is allowed to do on $serverLabel.")
+            SettingsHeader("Preferences")
+            SettingsCard {
+                InfoLine("Audio language", account.audioLanguageLabel)
+                SettingsCardDivider()
+                ProfileCapabilityRow("Play the default audio track", account.playDefaultAudio)
+                SettingsCardDivider()
+                InfoLine("Subtitle language", account.subtitleLanguageLabel)
+                SettingsCardDivider()
+                InfoLine("Subtitles", account.subtitleModeLabel)
+                SettingsCardDivider()
+                ProfileCapabilityRow("Play next episode automatically", account.autoPlayNextEpisode)
+                SettingsCardDivider()
+                ProfileCapabilityRow("Remember audio choices", account.rememberAudio)
+                SettingsCardDivider()
+                ProfileCapabilityRow("Remember subtitle choices", account.rememberSubtitles)
+                SettingsCardDivider()
+                ProfileCapabilityRow("Hide watched titles in Latest", account.hideWatchedInLatest)
+                SettingsCardDivider()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = SettingsRowHeight)
+                        .clickable { model.openSettingsTopic("playback") }
+                        .padding(vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Edit in Playback", style = SettingsRowText, modifier = Modifier.weight(1f))
+                    Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+                }
+            }
+            SettingsFooter("Language and autoplay defaults live on the server. Caps and library access are changed from the dashboard.")
+        }
         if (accessToken.isNotEmpty()) {
             SettingsHeader("Device Token")
             SettingsCard {
@@ -545,48 +807,64 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             }
             SettingsFooter("This token signs this device into $serverLabel. Copy it only into apps you trust.")
         }
-        SettingsHeader(usersTitle)
-        SettingsCard {
-            session?.let { current ->
-                AccountRow(current, subtitle = "Signed in", current = true, onClick = null, onRemove = null)
-                SettingsCardDivider()
-            }
-            state.accounts.filter { it.accountId != session?.accountId }.forEach { account ->
-                AccountRow(
-                    account,
-                    subtitle = if (account.displayServer == session?.displayServer) "On this device" else account.displayServer,
-                    current = false,
-                    onClick = { model.switchAccount(account) },
-                    onRemove = { removing = account },
-                )
-                SettingsCardDivider()
-            }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = SettingsRowHeight)
-                    .clickable {
-                        model.resetAddAccount()
-                        model.openSettingsTopic(AddAccountTopicId)
-                    }
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
-                Text(addTitle, style = SettingsRowText, modifier = Modifier.weight(1f))
-                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
-            }
-        }
-        SettingsFooter(
-            if (silo) "Add another Silo account on ${session?.displayServer ?: "this server"}. Saved accounts stay on this device."
-            else "Add another person on ${session?.displayServer ?: "this server"}. Saved users stay on this device.",
+    }
+}
+
+@Composable
+private fun ProfileCapabilityRow(title: String, isAllowed: Boolean) {
+    Row(Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = SettingsRowText, modifier = Modifier.weight(1f).padding(end = 12.dp))
+        Icon(
+            if (isAllowed) Icons.Filled.CheckCircle else Icons.Outlined.RemoveCircle,
+            contentDescription = if (isAllowed) "Allowed" else "Not allowed",
+            tint = if (isAllowed) ZelefinCyan else IOSColors.tertiaryLabel,
+            modifier = Modifier.size(22.dp),
         )
     }
 }
 
 @Composable
-private fun AccountRow(account: SavedSession, subtitle: String, current: Boolean, onClick: (() -> Unit)?, onRemove: (() -> Unit)?) {
+private fun DeviceAccountsTopic(state: ZelefinUiState) {
+    val model: ZelefinModel = viewModel()
+    val session = state.session
+    val silo = state.isSiloServer
+    val addTitle = if (silo) "Add Account" else "Add User"
+    SettingsCard {
+        session?.let { current ->
+            DeviceAccountRow(current, subtitle = "Signed in", current = true, onClick = null)
+            SettingsCardDivider()
+        }
+        state.accounts.filter { it.accountId != session?.accountId }.forEach { account ->
+            DeviceAccountRow(
+                account,
+                subtitle = deviceAccountSubtitle(account, session),
+                current = false,
+                onClick = { model.switchAccount(account) },
+            )
+            SettingsCardDivider()
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = SettingsRowHeight)
+                .clickable {
+                    model.resetAddAccount()
+                    model.openSettingsTopic(AddAccountTopicId)
+                }
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
+            Text(addTitle, style = SettingsRowText, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+        }
+    }
+    SettingsFooter(deviceAccountsFooter(state))
+}
+
+@Composable
+private fun DeviceAccountRow(account: SavedSession, subtitle: String, current: Boolean, onClick: (() -> Unit)?) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -597,62 +875,277 @@ private fun AccountRow(account: SavedSession, subtitle: String, current: Boolean
     ) {
         AccountAvatarImage(account, 40.dp)
         Column(Modifier.weight(1f)) {
-            Text(account.userName, style = SettingsRowText)
-            Text(subtitle, color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 13.sp)
+            Text(account.userName, style = SettingsRowText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (current) {
             Icon(Icons.Outlined.Check, contentDescription = "Signed in", tint = ZelefinCyan, modifier = Modifier.size(20.dp))
-        } else if (onRemove != null) {
-            Box(Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onRemove), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Close, contentDescription = "Remove ${account.userName}", tint = IOSColors.tertiaryLabel, modifier = Modifier.size(18.dp))
+        } else {
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+        }
+    }
+}
+
+private fun deviceAccountSubtitle(account: SavedSession, current: SavedSession?): String {
+    val currentHost = current?.serverUrl?.let(::serverHost)
+    val accountHost = serverHost(account.serverUrl)
+    return if (currentHost != null && currentHost == accountHost) "On this device" else account.displayServer
+}
+
+private fun serverHost(url: String): String? = Uri.parse(url).host?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
+private fun deviceAccountsFooter(state: ZelefinUiState): String {
+    val session = state.session
+    if (session?.siloLink != null) return "Household profiles switch under Profile. Saved users stay on this device."
+    if (state.isSiloServer) return "Add another household profile by signing in as username#profile. Saved users stay on this device."
+    val server = session?.displayServer?.takeIf { it.isNotBlank() } ?: "this server"
+    return "Add another person on $server. Saved users stay on this device."
+}
+
+private enum class AccountPinEditor { Create, Change }
+
+private enum class AccountPinGate { Change, Remove }
+
+/** Asks for the device PIN before switching to a locked account, or before changing or removing it. */
+@Composable
+fun AccountPinUnlockDialog(
+    name: String,
+    error: String?,
+    attempt: Int,
+    biometricsLabel: String? = null,
+    onBiometricUnlocked: () -> Unit = {},
+    onSubmit: (String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var pin by rememberSaveable(name, attempt) { mutableStateOf("") }
+    val canSubmit = pin.length in 4..6
+    val unlock = rememberBiometricUnlock()
+    var showPin by remember(name, biometricsLabel) { mutableStateOf(biometricsLabel == null) }
+    LaunchedEffect(name, biometricsLabel) {
+        val label = biometricsLabel
+        if (label == null) {
+            showPin = true
+            return@LaunchedEffect
+        }
+        showPin = false
+        unlock("Unlock $name’s account") { ok ->
+            if (ok) onBiometricUnlocked() else showPin = true
+        }
+    }
+    if (!showPin) return
+    Dialog(onDismissRequest = onCancel) {
+        Column(
+            Modifier
+                .widthIn(max = 320.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(34.dp))
+                .background(IOSColors.alert)
+                .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 18.dp),
+        ) {
+            Text("Account PIN", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Enter the PIN to unlock $name’s account on this device.",
+                color = Color.White.copy(alpha = 0.82f),
+                fontFamily = ZelefinFont,
+                fontSize = 15.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+            AccountPinField(pin, { pin = it }, "PIN")
+            if (!error.isNullOrBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(error, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(20.dp))
+            if (biometricsLabel != null) {
+                IOSCapsuleButton(biometricsLabel, {
+                    unlock("Unlock $name’s account") { ok -> if (ok) onBiometricUnlocked() }
+                }, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(10.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IOSCapsuleButton("Cancel", onCancel, Modifier.weight(1f))
+                IOSCapsuleButton("Unlock", { onSubmit(pin) }, Modifier.weight(1f), prominent = true, enabled = canSubmit)
             }
         }
     }
 }
 
-/** iOS `AddAccountView`: sign in another user. */
+private fun android.content.Context.findFragmentActivity(): FragmentActivity? {
+    var current = this
+    while (current is ContextWrapper) {
+        if (current is FragmentActivity) return current
+        current = current.baseContext
+    }
+    return null
+}
+
+@Composable
+private fun rememberBiometricUnlock(): (String, (Boolean) -> Unit) -> Unit {
+    val activity = LocalContext.current.findFragmentActivity()
+    return remember(activity) {
+        { reason, onResult ->
+            if (activity == null) {
+                onResult(false)
+            } else {
+                var finished = false
+                fun finish(ok: Boolean) {
+                    if (finished) return
+                    finished = true
+                    onResult(ok)
+                }
+                val prompt = BiometricPrompt(
+                    activity,
+                    ContextCompat.getMainExecutor(activity),
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = finish(true)
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) = finish(false)
+                    },
+                )
+                prompt.authenticate(
+                    BiometricPrompt.PromptInfo.Builder()
+                        .setTitle(reason)
+                        .setNegativeButtonText("Enter PIN")
+                        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                        .build(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountPinEditorDialog(
+    mode: AccountPinEditor,
+    onSave: (String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var pin by rememberSaveable(mode) { mutableStateOf("") }
+    var confirm by rememberSaveable(mode) { mutableStateOf("") }
+    var error by rememberSaveable(mode) { mutableStateOf<String?>(null) }
+    val title = when (mode) {
+        AccountPinEditor.Create -> "Create Account PIN"
+        AccountPinEditor.Change -> "Change Account PIN"
+    }
+    val canSave = AccountSwitchPin.isValid(pin) && pin == confirm
+    Dialog(onDismissRequest = onCancel) {
+        Column(
+            Modifier
+                .widthIn(max = 320.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(34.dp))
+                .background(IOSColors.alert)
+                .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 18.dp),
+        ) {
+            Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Use 4 to 6 digits. This PIN stays on this device and is asked before someone can sign into this account.",
+                color = Color.White.copy(alpha = 0.82f),
+                fontFamily = ZelefinFont,
+                fontSize = 15.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+            AccountPinField(pin, { pin = it }, "PIN")
+            Spacer(Modifier.height(10.dp))
+            AccountPinField(confirm, { confirm = it }, "Confirm PIN")
+            val pinError = error
+            if (!pinError.isNullOrBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(pinError, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IOSCapsuleButton("Cancel", onCancel, Modifier.weight(1f))
+                IOSCapsuleButton(
+                    "Save",
+                    {
+                        if (pin != confirm) {
+                            error = "The PINs do not match."
+                            return@IOSCapsuleButton
+                        }
+                        runCatching { onSave(pin) }
+                            .onFailure { error = it.message ?: "Zelefin could not save this PIN on the device." }
+                    },
+                    Modifier.weight(1f),
+                    prominent = true,
+                    enabled = canSave,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountPinField(value: String, onChange: (String) -> Unit, placeholder: String) {
+    BasicTextField(
+        value = value,
+        onValueChange = { onChange(it.filter(Char::isDigit).take(6)) },
+        singleLine = true,
+        textStyle = TextStyle(
+            color = Color.White,
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 22.sp,
+            letterSpacing = 6.sp,
+            textAlign = TextAlign.Center,
+        ),
+        cursorBrush = SolidColor(ZelefinCyan),
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(),
+        decorationBox = { field ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (value.isEmpty()) {
+                    Text(placeholder, color = IOSColors.tertiaryLabel, fontFamily = ZelefinFont, fontSize = 16.sp)
+                }
+                field()
+            }
+        },
+    )
+}
+
+/** iOS `AddAccountView`: sign in another user on the server already in use. */
 @Composable
 private fun AddAccountTopic(state: ZelefinUiState) {
     val model: ZelefinModel = viewModel()
     val add = state.addAccount
-    var url by remember { mutableStateOf(state.session?.serverUrl.orEmpty()) }
+    val serverUrl = state.session?.serverUrl.orEmpty()
+    val serverLabel = state.session?.displayServer?.takeIf { it.isNotBlank() } ?: "Jellyfin"
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     DisposableEffect(Unit) { onDispose { model.resetAddAccount() } }
     SettingsHeader("Server")
     SettingsCard {
-        SettingsTextField(
-            label = "SERVER",
-            value = url,
-            icon = Icons.Outlined.Link,
-            onChange = { url = it },
-            placeholder = "https://media.example.com",
-            keyboard = KeyboardType.Uri,
-            ime = ImeAction.Next,
-        )
+        InfoLine("Server", serverLabel)
     }
     SettingsFooter(
-        when {
-            state.isSiloServer -> "New accounts are added on the server you’re already using. Enter another address to add an account on a different server."
-            state.isEmbyServer -> "New users are added on the server you’re already using. Enter another address to add a user on a different Emby or Jellyfin server."
-            else -> "New users are added on the server you’re already using. Enter another address to add a user on a different Jellyfin server."
-        },
+        if (state.isSiloServer) "Sign in as username#profile to add another household profile on this Silo server."
+        else "New users are added on the server you’re already using.",
     )
     SettingsHeader("Sign In")
-    val canSubmit = url.isNotBlank() && username.isNotBlank() && password.isNotEmpty() && !add.busy
+    val canSubmit = serverUrl.isNotBlank() && username.isNotBlank() && password.isNotEmpty() && !add.busy
     SettingsCard {
         SettingsTextField(
-            label = "USERNAME",
+            label = "",
             value = username,
             icon = Icons.Outlined.Person,
             onChange = { username = it },
-            placeholder = "Username",
+            placeholder = if (state.isSiloServer) "username#profile" else "Username",
             keyboard = KeyboardType.Text,
             ime = ImeAction.Next,
         )
         CardDivider()
         SettingsTextField(
-            label = "PASSWORD",
+            label = "",
             value = password,
             icon = Icons.Outlined.Lock,
             onChange = { password = it },
@@ -660,11 +1153,11 @@ private fun AddAccountTopic(state: ZelefinUiState) {
             password = true,
             keyboard = KeyboardType.Password,
             ime = ImeAction.Go,
-            onIme = { if (canSubmit) model.addAccount(url, username, password) },
+            onIme = { if (canSubmit) model.addAccount(serverUrl, username, password) },
         )
         SettingsCardDivider()
         SettingsButton(if (state.isSiloServer) "Add Account" else "Add User", primary = true, destructive = false, enabled = canSubmit, busy = add.busy) {
-            model.addAccount(url, username, password)
+            model.addAccount(serverUrl, username, password)
         }
         add.message?.let { AddAccountMessage(it) }
     }
@@ -683,8 +1176,10 @@ fun SettingsTopicScreen(
     onBack: () -> Unit,
     bar: SettingsBarAction = SettingsBarAction.Back,
 ) {
-    val title = when (id) {
-        "appearance" -> "Appearance"
+    val topicId = if (id == "appearance") "interface" else id
+    var editingInterface by remember { mutableStateOf(false) }
+    val chrome = remember(id) { SettingsChrome() }
+    val title = chrome.title ?: when (topicId) {
         "notifications" -> "Notifications"
         "sessions" -> "Sessions"
         "playback" -> "Playback"
@@ -694,10 +1189,13 @@ fun SettingsTopicScreen(
         "network" -> "Network"
         "cache" -> "Cache"
         "interface" -> "Interface"
+        "server" -> "Server Info"
         "log" -> "Log"
+        "report" -> "Report Issue"
         "about" -> "About"
         "syncplay" -> "SyncPlay"
         "users" -> "Users"
+        DeviceAccountsTopicId -> if (state.isSiloServer) "Accounts" else "Users"
         "scheduled-tasks" -> "Scheduled Tasks"
         "activity" -> "Activity Log"
         "backups" -> "Backups"
@@ -708,26 +1206,51 @@ fun SettingsTopicScreen(
             id.startsWith("scheduled-task:") -> "Task"
             id.startsWith(LibraryIconTopicPrefix) ->
                 state.libraries.firstOrNull { it.id == id.removePrefix(LibraryIconTopicPrefix) }?.name ?: "Icon"
+            id.startsWith(CustomHomeTopicPrefix) ->
+                app.zelefin.client.CustomHomeRows.row(id.removePrefix(CustomHomeTopicPrefix))?.title ?: "Custom Row"
             else -> "Settings"
         }
     }
-    SettingsPage(title = title, onBack = onBack, bar = bar) {
-        when (id) {
-            "appearance" -> AppearanceSettings()
+    SettingsPage(
+        title = title,
+        onBack = { chrome.onBack?.invoke() ?: onBack() },
+        bar = bar,
+        trailing = if (topicId == "interface") {
+            {
+                val label = if (editingInterface) "Done" else "Edit"
+                SettingsGlassButton(label, { editingInterface = !editingInterface }, circle = false) {
+                    Text(
+                        label,
+                        color = Color.White,
+                        fontFamily = ZelefinFont,
+                        fontWeight = if (editingInterface) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 17.sp,
+                    )
+                }
+            }
+        } else {
+            null
+        },
+    ) {
+        CompositionLocalProvider(LocalSettingsChrome provides chrome) {
+        when (topicId) {
             "playback" -> PlaybackTopic(state)
             "subtitles" -> SubtitleAppearanceTopic()
             "cache" -> CacheTopic()
             "metadata" -> MetadataTopic()
             "sessions" -> SessionsTopic(state)
-            "about" -> AboutTopic(state)
+            "about" -> AboutTopic()
             AddAccountTopicId -> AddAccountTopic(state)
             "notifications" -> NotificationsTopic(state, plugins)
             "plugins" -> PluginsTopic(state, plugins)
             "network" -> NetworkTopic(state)
-            "interface" -> InterfaceTopic(state)
+            "interface" -> InterfaceTopic(state, editingInterface)
+            "server" -> ServerInfoTopic(state)
             "log" -> LogTopic(state, plugins)
+            "report" -> ReportIssueTopic(state, plugins)
             "syncplay" -> SyncPlayTopic(state)
             "users" -> UsersTopic()
+            DeviceAccountsTopicId -> DeviceAccountsTopic(state)
             "scheduled-tasks" -> ScheduledTasksTopic()
             "activity" -> ActivityLogTopic()
             "backups" -> BackupsTopic()
@@ -736,8 +1259,13 @@ fun SettingsTopicScreen(
                 id.startsWith("user:") -> UserEditorTopic(id.removePrefix("user:"), state)
                 id.startsWith("scheduled-task:") -> ScheduledTaskDetailTopic(id.removePrefix("scheduled-task:"))
                 id.startsWith(LibraryIconTopicPrefix) -> LibraryIconPicker(id.removePrefix(LibraryIconTopicPrefix), state)
+                id.startsWith(CustomHomeTopicPrefix) -> CustomHomeRowEditorTopic(
+                    rowId = id.removePrefix(CustomHomeTopicPrefix),
+                    onDeleted = onBack,
+                )
                 else -> Text("Nothing to change here yet.", color = Secondary, fontFamily = ZelefinFont)
             }
+        }
         }
     }
 }
@@ -752,6 +1280,8 @@ private fun PlaybackTopic(state: ZelefinUiState) {
     var quality by remember { mutableStateOf(PlaybackPreferences.selectedQuality(context)) }
     var rate by remember { mutableStateOf(PlaybackPreferences.defaultRate(context)) }
     var autoplay by remember { mutableStateOf(PlaybackPreferences.autoplayNext(context)) }
+    var stillWatching by remember { mutableStateOf(PlaybackPreferences.stillWatchingEnabled(context)) }
+    var autoPip by remember { mutableStateOf(PlaybackPreferences.autoPipOnLeave(context)) }
     var back by remember { mutableStateOf(PlaybackPreferences.skipBackward(context)) }
     var forward by remember { mutableStateOf(PlaybackPreferences.skipForward(context)) }
     var playerEngine by remember { mutableStateOf(PlaybackPreferences.playerEngine(context)) }
@@ -806,6 +1336,18 @@ private fun PlaybackTopic(state: ZelefinUiState) {
             autoplay = it
             PlaybackPreferences.setAutoplayNext(context, it)
         })
+        if (autoplay) {
+            SettingsCardDivider()
+            SettingsToggleRow("Ask If Still Watching", stillWatching, {
+                stillWatching = it
+                PlaybackPreferences.setStillWatchingEnabled(context, it)
+            })
+        }
+        SettingsCardDivider()
+        SettingsToggleRow("Picture in Picture When Leaving", autoPip, {
+            autoPip = it
+            PlaybackPreferences.setAutoPipOnLeave(context, it)
+        })
         SettingsCardDivider()
         SettingsMenuPicker(
             label = "Skip Backward",
@@ -845,7 +1387,17 @@ private fun PlaybackTopic(state: ZelefinUiState) {
             PlaybackPreferences.setDownloadWifiOnly(context, it)
         })
     }
-    SettingsFooter("Speed, skip distance, and whether the next episode starts when this one ends. MPV uses libass for advanced subtitles.")
+    val playerFooter = if (playerEngine == PlaybackPreferences.ENGINE_MPV) {
+        "MPV Direct Plays every stream on this device and lists every audio and subtitle track in the file, including styled subtitles."
+    } else {
+        "ExoPlayer Direct Plays streams this device can open and lists the audio and subtitle tracks it can play."
+    }
+    SettingsFooter(
+        "Speed, skip distance, and whether the next episode starts when this one ends. " +
+            "Ask If Still Watching pauses binge auto-play after ${PlaybackPreferences.STILL_WATCHING_THRESHOLD} episodes. " +
+            "Picture in Picture When Leaving keeps playback going in a small window when you close the player. " +
+            playerFooter,
+    )
 
     SettingsHeader("Theme Media")
     SettingsCard {
@@ -868,11 +1420,12 @@ private fun PlaybackTopic(state: ZelefinUiState) {
             }
         }
     }
+    val serverName = if (state.isEmbyServer) "Emby" else "Jellyfin"
     SettingsFooter(
         if (silo) {
-            "Plays a title's theme song on its page. Silo has no theme videos."
+            "Plays a title's theme song on its page."
         } else {
-            "Plays a title's Jellyfin theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on."
+            "Plays a title's $serverName theme video in place of the backdrop, or its theme song when it has no video. Theme videos are muted unless Theme Video Sound is on."
         },
     )
 }
@@ -884,33 +1437,22 @@ private fun SubtitleAppearanceTopic() {
     fun refresh() {
         style = SubtitleAppearance.current(context)
     }
+    val lift by animateDpAsState(
+        (style.positionLift.coerceIn(0, 100) / 100f * 72f).dp,
+        label = "subtitle-preview-lift",
+    )
     SettingsHeader("Style")
     SettingsCard {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(112.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-            contentAlignment = Alignment.Center,
+                .padding(vertical = 4.dp)
+                .heightIn(min = 140.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.Black.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            val preview = style
-            val color = Color(preview.foregroundArgb())
-            Text(
-                "Sample subtitle text",
-                color = color,
-                fontFamily = ZelefinFont,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = (17 * preview.sizeScale).sp,
-                textAlign = TextAlign.Center,
-                modifier = when (preview.background) {
-                    SubtitleAppearance.BACK_HIGHLIGHT -> Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color(preview.windowArgb()))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                    else -> Modifier
-                },
-            )
+            SubtitleSample(style, Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp + lift))
         }
     }
     SettingsCard {
@@ -964,13 +1506,15 @@ private fun SubtitleAppearanceTopic() {
                 refresh()
             },
         )
+        SettingsCardDivider()
         SettingsSliderRow(
-            label = "",
+            label = "Raise",
             value = style.positionLift.toFloat(),
-            valueText = "",
+            valueText = style.positionLift.toString(),
             range = 0f..100f,
+            steps = 99,
             onChange = {
-                SubtitleAppearance.setPositionLift(context, it.toInt())
+                SubtitleAppearance.setPositionLift(context, (it + 0.5f).toInt().coerceIn(0, 100))
                 refresh()
             },
         )
@@ -986,7 +1530,48 @@ private fun SubtitleAppearanceTopic() {
             },
         )
     }
-    SettingsFooter("Raise captions from the bottom of the picture. Style applies to text subtitles. Positive sync shows captions later; negative shows them earlier. Sync is applied by MPV.")
+    SettingsFooter("Raise captions from the bottom of the picture. Style applies to text subtitles in Zelefin’s player. Positive sync shows captions later; negative shows them earlier.")
+}
+
+/** Preview line with the same drop shadow, outline, and highlight as iOS `SubtitleTextChrome`. */
+@Composable
+private fun SubtitleSample(style: SubtitleAppearance.Snapshot, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
+    val ink = Color(style.foregroundArgb())
+    val textStyle = TextStyle(
+        color = ink,
+        fontFamily = ZelefinFont,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = (17 * style.sizeScale).sp,
+        textAlign = TextAlign.Center,
+    )
+    val label = "Sample subtitle text"
+    when (style.background) {
+        SubtitleAppearance.BACK_HIGHLIGHT -> Text(
+            label,
+            style = textStyle,
+            modifier = modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(style.windowArgb()))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+        SubtitleAppearance.BACK_OUTLINE -> Box(modifier, contentAlignment = Alignment.Center) {
+            listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1).forEach { (x, y) ->
+                Text(label, style = textStyle.copy(color = Color.Black), modifier = Modifier.offset(x.dp, y.dp))
+            }
+            Text(label, style = textStyle)
+        }
+        SubtitleAppearance.BACK_SHADOW -> {
+            val soft = with(density) {
+                Shadow(Color.Black.copy(alpha = 0.95f), Offset(0f, 1.dp.toPx()), 2.dp.toPx())
+            }
+            Box(modifier, contentAlignment = Alignment.Center) {
+                Text(label, style = textStyle.copy(color = Color.Black), modifier = Modifier.offset(y = 1.dp))
+                Text(label, style = textStyle.copy(shadow = soft))
+            }
+        }
+        else -> Text(label, style = textStyle, modifier = modifier)
+    }
 }
 
 /**
@@ -1036,11 +1621,12 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
 
     val ready = preferences != null
     val shown = preferences ?: JellyfinPlaybackPreferences()
-    val dimmed = Modifier.alpha(if (ready) 1f else 0.55f)
+    val context = LocalContext.current
+    var preferSdh by remember { mutableStateOf(PlaybackPreferences.preferSdh(context)) }
 
     SettingsHeader(if (loading) "Audio…" else "Audio")
     SettingsCard {
-        Column(dimmed) {
+        LockedUntilReady(ready) {
             SettingsMenuPicker(
                 label = "Preferred Language",
                 choices = languageChoices(preferences?.audioLanguage),
@@ -1064,7 +1650,7 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
 
     SettingsHeader("Subtitles")
     SettingsCard {
-        Column(dimmed) {
+        LockedUntilReady(ready) {
             SettingsMenuPicker(
                 label = "Preferred Language",
                 choices = languageChoices(preferences?.subtitleLanguage),
@@ -1079,15 +1665,52 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
                 onSelect = { mode -> if (ready) update { it.copy(subtitleMode = mode) } },
             )
             SettingsCardDivider()
-            val context = LocalContext.current
-            var preferSdh by remember { mutableStateOf(PlaybackPreferences.preferSdh(context)) }
-            SettingsToggleRow("Prefer SDH Subtitles", preferSdh, {
-                preferSdh = it
-                PlaybackPreferences.setPreferSdh(context, it)
+            SettingsToggleRow("Prefer SDH Subtitles", preferSdh, { on ->
+                if (!ready) return@SettingsToggleRow
+                preferSdh = on
+                PlaybackPreferences.setPreferSdh(context, on)
             })
+            SettingsCardDivider()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = SettingsRowHeight)
+                    .clickable(enabled = ready) { model.openSettingsTopic("subtitles") }
+                    .padding(vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Style & Sync", style = SettingsRowText, modifier = Modifier.weight(1f))
+                Text(
+                    SubtitleAppearance.current(context).sizeTitle(),
+                    style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
+                    maxLines = 1,
+                )
+                Icon(
+                    Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    tint = IOSColors.tertiaryLabel,
+                    modifier = Modifier.padding(start = 4.dp).size(20.dp),
+                )
+            }
         }
     }
-    SettingsFooter(shown.subtitleMode.summary + " SDH prefers captions that describe music and sound.")
+    SettingsFooter(shown.subtitleMode.summary + " SDH prefers captions that describe music and sound. Style & Sync change how captions look and when they appear.")
+}
+
+/** Greys out and swallows taps until server playback preferences have loaded. */
+@Composable
+private fun LockedUntilReady(ready: Boolean, content: @Composable () -> Unit) {
+    val block = remember { MutableInteractionSource() }
+    Box(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().alpha(if (ready) 1f else 0.55f)) { content() }
+        if (!ready) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .clickable(interactionSource = block, indication = null, onClick = {}),
+            )
+        }
+    }
 }
 
 /** Connection row, measured / recommended results, and the Test Connection button of the Quality card. */
@@ -1172,11 +1795,19 @@ private fun WebhookNotificationsTopic(state: ZelefinUiState, pluginState: Plugin
         }
     }
 
+    if (pluginState.detecting && !pluginState.webhooksAvailable) {
+        SettingsCard {
+            Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
+                IOSSpinner()
+            }
+        }
+        return
+    }
+
     if (!pluginState.webhooksAvailable) {
         SettingsCard { PluginStatusRow(if (silo) "Silo Webhooks" else "Emby Webhooks", false) }
         SettingsFooter(
             when {
-                pluginState.detecting -> "Checking this server for webhooks…"
                 silo && state.session?.siloLink == null ->
                     "Notifications on Silo need your Silo account. Sign out and sign in with your Silo account to turn them on."
                 silo -> "This Silo server has personal webhooks turned off. An administrator can turn them on in Silo's notification settings."
@@ -1213,11 +1844,12 @@ private fun WebhookNotificationsTopic(state: ZelefinUiState, pluginState: Plugin
     }
     SettingsFooter(
         if (silo) {
-            "Silo alerts this phone when a show this profile follows gets a new episode, or a request changes. They arrive through Zelefin's push service, also while Zelefin is closed."
+            "Silo alerts this phone when a show this profile follows gets a new episode, or a request changes. They arrive through Zelefin's push service while Zelefin is closed. Quiet hours and mute options can hold banners back."
         } else {
-            "Emby sends these through Zelefin's push service to this phone, also while Zelefin is closed. It only sends events this account is allowed to see."
+            "Emby sends these through Zelefin's push service to this phone while Zelefin is closed. It only sends events this account is allowed to see. Quiet hours and mute options can hold banners back."
         },
     )
+    if (on) NotificationDeliverySections()
 
     pluginState.alertsAdminAddress?.let { address ->
         SettingsHeader("Ask an Administrator")
@@ -1246,6 +1878,127 @@ private fun WebhookNotificationsTopic(state: ZelefinUiState, pluginState: Plugin
                 SettingsToggle(title, id in pluginState.alertCategories) { next ->
                     if (!pluginState.alertsBusy) plugins.setWebhookAlertCategory(id, next)
                 }
+            }
+        }
+    }
+}
+
+/** Quiet hours and mute, for every signed-in user once the master switch is on. */
+@Composable
+private fun NotificationDeliverySections() {
+    val context = LocalContext.current
+    var muteOpen by remember { mutableStateOf(NotificationPreferences.muteWhileOpen(context)) }
+    var mutePlaying by remember { mutableStateOf(NotificationPreferences.muteWhilePlaying(context)) }
+    var quiet by remember { mutableStateOf(NotificationPreferences.quietHoursEnabled(context)) }
+    var startMinutes by remember { mutableIntStateOf(NotificationPreferences.quietHoursStartMinutes(context)) }
+    var endMinutes by remember { mutableIntStateOf(NotificationPreferences.quietHoursEndMinutes(context)) }
+
+    SettingsHeader("When Not to Notify")
+    SettingsCard {
+        SettingsToggle("Mute while Zelefin is open", muteOpen) { next ->
+            muteOpen = next
+            NotificationPreferences.setMuteWhileOpen(context, next)
+        }
+        SettingsCardDivider()
+        SettingsToggle("Mute while playing", mutePlaying) { next ->
+            mutePlaying = next
+            NotificationPreferences.setMuteWhilePlaying(context, next)
+        }
+    }
+    SettingsFooter(
+        "Hold banners back while you are using Zelefin or watching something in the app. Alerts still arrive when the app is closed, outside quiet hours.",
+    )
+
+    SettingsHeader("Quiet Hours")
+    SettingsCard {
+        SettingsToggle("Quiet Hours", quiet) { next ->
+            quiet = next
+            NotificationPreferences.setQuietHoursEnabled(context, next)
+        }
+        if (quiet) {
+            SettingsCardDivider()
+            QuietHourRow("Start", startMinutes) { picked ->
+                startMinutes = picked
+                NotificationPreferences.setQuietHoursStartMinutes(context, picked)
+            }
+            SettingsCardDivider()
+            QuietHourRow("End", endMinutes) { picked ->
+                endMinutes = picked
+                NotificationPreferences.setQuietHoursEndMinutes(context, picked)
+            }
+        }
+    }
+    SettingsFooter("No lock-screen alerts during this window. Overnight ranges are fine (for example 10:00 PM to 7:00 AM).")
+}
+
+@Composable
+private fun QuietHourRow(label: String, minutes: Int, onPick: (Int) -> Unit) {
+    val context = LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = SettingsRowHeight)
+            .clickable(role = Role.Button) { open = true }
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = SettingsRowText, modifier = Modifier.weight(1f))
+        Text(
+            NotificationPreferences.timeLabel(context, minutes),
+            style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
+        )
+    }
+    if (open) {
+        QuietHourPickerDialog(
+            title = label,
+            minutes = minutes,
+            onConfirm = { picked ->
+                open = false
+                onPick(picked)
+            },
+            onDismiss = { open = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QuietHourPickerDialog(
+    title: String,
+    minutes: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val state = rememberTimePickerState(
+        initialHour = minutes / 60,
+        initialMinute = minutes % 60,
+        is24Hour = android.text.format.DateFormat.is24HourFormat(context),
+    )
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .widthIn(max = 360.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(IOSColors.alert)
+                .padding(top = 20.dp, bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+            TimePicker(state = state, layoutType = TimePickerLayoutType.Vertical)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                IOSCapsuleButton("Cancel", onDismiss, Modifier.weight(1f))
+                IOSCapsuleButton(
+                    "Done",
+                    { onConfirm(state.hour * 60 + state.minute) },
+                    Modifier.weight(1f),
+                    prominent = true,
+                )
             }
         }
     }
@@ -1302,12 +2055,11 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
             Text(
                 when {
                     silo ->
-                        "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Silo does not run Jellyfin plugins, so notifications are not available here."
+                        "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. This Silo server cannot install that plugin, so notifications are not available here."
                     emby ->
-                        "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Emby does not run Jellyfin plugins, so notifications are not available here."
-                    pluginState.detecting -> "Checking this server for the Zelefin plugin…"
+                        "Lock-screen alerts need the Zelefin plugin on a Jellyfin server. Emby cannot run that plugin, so notifications are not available here."
                     else ->
-                        "Install the Zelefin plugin on this Jellyfin server to get lock-screen alerts. The plugin watches the library and can notify this phone when titles are added, a stream starts, someone comes online, a scheduled task begins, or a Seerr request comes in — including while Zelefin is closed."
+                        "Install the Zelefin plugin on this Jellyfin server to get lock-screen alerts. The plugin watches the library and can notify this phone when titles are added, a stream starts, someone comes online, a scheduled task begins, or a Seerr request comes in — including while Zelefin is closed. This app no longer checks the server itself."
                 },
                 color = Secondary,
                 fontFamily = ZelefinFont,
@@ -1352,8 +2104,7 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
         SettingsFooter(
             when {
                 silo || emby -> "Connect a Jellyfin server with the Zelefin plugin to receive notifications."
-                canInstall -> "After install, restart Jellyfin so the plugin can load. You do not set up Firebase or paste a key on the server."
-                else -> "In Jellyfin, open Dashboard → Plugins → Catalog, install Zelefin, then restart Jellyfin. You do not set up Firebase or paste a key on the server."
+                else -> "After install, restart Jellyfin so the plugin can load. You do not paste a Firebase key on the server."
             },
         )
         return
@@ -1388,13 +2139,14 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
             !ZelefinPush.isConfigured ->
                 "This build of Zelefin was made without push setup, so the server cannot reach this phone yet."
             pluginState.pushEnabled && !granted && asked ->
-                "Notifications are off in Android Settings. Turn them on for Zelefin so the plugin can deliver alerts for new titles, streams, users online, scheduled tasks, and Seerr requests."
+                "Notifications are off in Android Settings. Turn them on for Zelefin so the plugin can deliver banners for new titles, streams, users online, scheduled tasks, and Seerr requests."
             !granted ->
                 "Zelefin asks Android for permission when you turn this on. The plugin then pushes new titles, streams, users online, scheduled tasks, and Seerr requests."
             else ->
-                "The Zelefin plugin pushes lock-screen alerts for new titles, streams, users online, scheduled tasks, and Seerr requests while the app is open or closed. Restart Jellyfin after you install or remove the plugin."
+                "The Zelefin plugin pushes lock-screen alerts for new titles, streams, users online, scheduled tasks, and Seerr requests. Quiet hours and mute options hold banners back while Zelefin is open, while something is playing, or during the hours you choose. Restart Jellyfin after you install or remove the plugin."
         },
     )
+    if (on) NotificationDeliverySections()
 }
 
 @Composable
@@ -1425,8 +2177,8 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
     SettingsFooter(
         when {
             silo -> "Skip buttons appear when Silo has found a recap, intro, credits or preview, including from its built-in TheIntroDB support. For titles with none, Zelefin can ask TheIntroDB directly."
-            emby -> "Skip buttons appear when Emby has marked an intro or credits. Emby has no TheIntroDB plugin, so for everything else Zelefin can ask TheIntroDB directly."
-            else -> "Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly. Plugins only show as installed to an administrator."
+            emby -> "Skip buttons appear when Emby has marked an intro or credits, or the file has chapters named Intro or Credits. Emby has no TheIntroDB plugin, so for everything else Zelefin can ask TheIntroDB directly."
+            else -> "Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly."
         },
     )
     if (!silo && !emby) JellyfinServerPlugins(state, jellyfin)
@@ -1443,12 +2195,8 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
     SettingsFooter(
         if (pluginState.requestService == RequestService.Ombi) {
             "Ombi lets you request movies and shows that are not on the server yet. Use your Ombi username and password, or your Jellyfin or Emby ones if Ombi imported your account. Search for a title, then tap Request."
-        } else if (silo) {
-            "Jellyseerr or Seerr lets you request movies and shows that are missing from Silo. Use your Seerr sign-in. Search for a title, then tap Request."
-        } else if (emby) {
-            "Jellyseerr or Seerr lets you request movies and shows that are missing from Emby. Use your Emby username and password. Search for a title, then tap Request."
         } else {
-            "Jellyseerr or Seerr lets you request movies and shows that are missing from Jellyfin. Use your Jellyfin username and password. Search for a title, then tap Request."
+            "Jellyseerr or Seerr lets you request movies and shows that are not on Jellyfin yet. Use your Jellyfin username and password. Search for a title, then tap Request."
         },
     )
 
@@ -1503,16 +2251,16 @@ private fun JellyfinServerPlugins(state: ZelefinUiState, jellyfin: JellyfinPlugi
     SettingsHeader("Jellyfin Enhanced")
     SettingsCard { PluginStatusRow("Jellyfin Enhanced", jellyfin.enhanced) }
     SettingsFooter(
-        "When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and see reviews or awards on the title page.",
+        "When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and write reviews or see awards on the title page.",
     )
 
     SettingsHeader("Notifications plugin")
     SettingsCard { PluginStatusRow("Zelefin", jellyfin.companion) }
     SettingsFooter(
         if (jellyfin.companion) {
-            "This server has the Zelefin plugin. Lock-screen alerts from it reach this phone. Turn them on or off in Notifications."
+            "This server can push lock-screen alerts. Quiet hours and mute options in Notifications hold banners back while Zelefin is open, while something is playing, or during the hours you choose. Restart Jellyfin after you install or remove the plugin."
         } else {
-            "Notifications need the Zelefin plugin. Add the Zelefin catalog in Jellyfin, install it, then restart Jellyfin."
+            "Notifications need this plugin. Open Settings → Notifications to install it on this server, or add the Zelefin catalog in Jellyfin. Restart Jellyfin after install."
         },
     )
 
@@ -1525,7 +2273,9 @@ private fun JellyfinServerPlugins(state: ZelefinUiState, jellyfin: JellyfinPlugi
     SettingsCard {
         PluginStatusRow(
             "TubeArchivist Metadata",
-            youTubeRooms.isNotEmpty() || jellyfin.names.any { it.contains("TubeArchivist", ignoreCase = true) },
+            youTubeRooms.isNotEmpty() ||
+                state.libraries.any { it.name.contains("TubeArchivist", ignoreCase = true) } ||
+                jellyfin.names.any { it.contains("TubeArchivist", ignoreCase = true) },
         )
     }
     SettingsFooter(
@@ -1696,45 +2446,70 @@ internal fun SettingsFooter(text: String) {
     )
 }
 
-private val SavedDataFolders = listOf("HomeSnapshots", "CatalogSnapshots", "ItemDetailSnapshots")
-
 @Composable
 private fun CacheTopic() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val root = remember { File(context.cacheDir, "Zelefin") }
-    var artwork by remember { mutableStateOf(0L) }
+    var usage by remember { mutableStateOf(app.zelefin.core.ArtworkCacheUsage()) }
     var revision by remember { mutableStateOf(0) }
-    var confirm by remember { mutableStateOf(false) }
+    var confirmKind by remember { mutableStateOf<ArtworkImageKind?>(null) }
+    var confirmAll by remember { mutableStateOf(false) }
+    var autoRefresh by remember { mutableStateOf(CachePreferences.autoRefreshMissingImages(context)) }
     LaunchedEffect(revision) {
-        artwork = withContext(Dispatchers.IO) {
-            (context.imageLoader.diskCache?.size ?: 0L) + folderBytes(File(root, "Artwork"))
-        }
+        usage = withContext(Dispatchers.IO) { ArtworkCacheStore.usage(context) }
     }
-    if (confirm) {
+    confirmKind?.let { kind ->
         SettingsAlertDialog(
-            title = "Clear Artwork?",
-            message = "Posters and backdrops download again as you browse.",
+            title = "Clear this image cache?",
+            message = "",
             confirmLabel = "Clear",
             destructive = true,
             onConfirm = {
-                confirm = false
+                confirmKind = null
                 scope.launch {
-                    withContext(Dispatchers.IO) { context.imageLoader.diskCache?.clear() }
-                    context.imageLoader.memoryCache?.clear()
+                    withContext(Dispatchers.IO) { ArtworkCacheStore.clear(context, kind) }
                     revision += 1
                 }
             },
-            onDismiss = { confirm = false },
+            onDismiss = { confirmKind = null },
+        )
+    }
+    if (confirmAll) {
+        SettingsAlertDialog(
+            title = "Clear every cached image?",
+            message = "",
+            confirmLabel = "Clear All Images",
+            destructive = true,
+            onConfirm = {
+                confirmAll = false
+                scope.launch {
+                    withContext(Dispatchers.IO) { ArtworkCacheStore.clear(context, null) }
+                    revision += 1
+                }
+            },
+            onDismiss = { confirmAll = false },
         )
     }
     SettingsHeader("Images")
     SettingsCard {
-        InfoLine("Artwork", formatBytes(artwork))
+        InfoLine("Total", formatBytes(usage.total.bytes))
+        ArtworkImageKind.entries.forEach { kind ->
+            SettingsCardDivider()
+            CacheBucketRow(kind.title, usage.bucket(kind)) { confirmKind = kind }
+        }
         SettingsCardDivider()
-        SettingsButton("Clear Artwork", primary = false, destructive = true, enabled = artwork > 0, busy = false) { confirm = true }
+        SettingsActionRow(
+            "Clear All Images",
+            destructive = true,
+            enabled = !usage.total.isEmpty,
+        ) { confirmAll = true }
+        SettingsCardDivider()
+        SettingsToggleRow("Auto-refresh missing images", autoRefresh, { enabled ->
+            autoRefresh = enabled
+            CachePreferences.setAutoRefreshMissingImages(context, enabled)
+        })
     }
-    SettingsFooter("Posters, backdrops, logos, and profile pictures saved on this phone.")
+    SettingsFooter("Posters, backdrops, and logos stay on this device. Auto-refresh retries artwork this server previously returned as missing.")
 }
 
 @Composable
@@ -1743,41 +2518,100 @@ private fun MetadataTopic() {
     val model: ZelefinModel = viewModel()
     val scope = rememberCoroutineScope()
     val root = remember { File(context.cacheDir, "Zelefin") }
-    var sizes by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var usage by remember { mutableStateOf(app.zelefin.core.MetadataCacheUsage()) }
     var revision by remember { mutableStateOf(0) }
-    var confirm by remember { mutableStateOf(false) }
+    var confirmFolder by remember { mutableStateOf<MetadataCacheFolder?>(null) }
+    var confirmAll by remember { mutableStateOf(false) }
+    var autoRefresh by remember { mutableStateOf(CachePreferences.autoRefreshMissingMetadata(context)) }
+    var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(revision) {
-        sizes = withContext(Dispatchers.IO) {
-            SavedDataFolders.associateWith { folderBytes(File(root, it)) }
+        usage = withContext(Dispatchers.IO) { CacheInventory.metadataUsage(root) }
+    }
+    fun refresh() {
+        if (refreshing) return
+        refreshing = true
+        scope.launch {
+            runCatching { model.refreshMissingMetadata() }
+            revision += 1
+            refreshing = false
         }
     }
-    if (confirm) {
+    confirmFolder?.let { folder ->
         SettingsAlertDialog(
-            title = "Clear Saved Home Data?",
-            message = "Home, Movies, Shows, and title pages reload from the server.",
+            title = "Clear this metadata cache?",
+            message = "",
             confirmLabel = "Clear",
             destructive = true,
             onConfirm = {
-                confirm = false
+                confirmFolder = null
                 scope.launch {
-                    withContext(Dispatchers.IO) { SavedDataFolders.forEach { File(root, it).deleteRecursively() } }
-                    model.refreshLibrary()
+                    withContext(Dispatchers.IO) { model.clearMetadataCache(folder.directoryName) }
                     revision += 1
                 }
             },
-            onDismiss = { confirm = false },
+            onDismiss = { confirmFolder = null },
         )
     }
-    val saved = SavedDataFolders.sumOf { sizes[it] ?: 0L }
+    if (confirmAll) {
+        SettingsAlertDialog(
+            title = "Clear every metadata cache?",
+            message = "",
+            confirmLabel = "Clear All Metadata",
+            destructive = true,
+            onConfirm = {
+                confirmAll = false
+                scope.launch {
+                    withContext(Dispatchers.IO) { model.clearMetadataCache(null) }
+                    revision += 1
+                }
+            },
+            onDismiss = { confirmAll = false },
+        )
+    }
     SettingsHeader("Saved Home Data")
     SettingsCard {
-        InfoLine("Home", formatBytes(sizes["HomeSnapshots"] ?: 0L))
-        InfoLine("Catalogs", formatBytes(sizes["CatalogSnapshots"] ?: 0L))
-        InfoLine("Title Pages", formatBytes(sizes["ItemDetailSnapshots"] ?: 0L))
+        InfoLine("Total", formatBytes(usage.total.bytes))
+        MetadataCacheFolder.entries.forEach { folder ->
+            SettingsCardDivider()
+            CacheBucketRow(folder.title, usage.bucket(folder)) { confirmFolder = folder }
+        }
         SettingsCardDivider()
-        SettingsButton("Clear Saved Home Data", primary = false, destructive = true, enabled = saved > 0, busy = false) { confirm = true }
+        SettingsActionRow(
+            "Clear All Metadata",
+            destructive = true,
+            enabled = !usage.total.isEmpty,
+        ) { confirmAll = true }
+        SettingsCardDivider()
+        SettingsToggleRow("Auto-refresh missing metadata", autoRefresh, { enabled ->
+            autoRefresh = enabled
+            CachePreferences.setAutoRefreshMissingMetadata(context, enabled)
+            if (enabled) refresh()
+        })
+        SettingsCardDivider()
+        SettingsActionRow("Refresh Missing Metadata", busy = refreshing, enabled = !refreshing) { refresh() }
     }
-    SettingsFooter("Home rows, library catalogs, and title pages saved so Zelefin opens right away.")
+    SettingsFooter("Home rows, library catalogs, and title pages. Auto-refresh pulls anything this device has not cached yet.")
+}
+
+@Composable
+private fun CacheBucketRow(title: String, bucket: CacheBucket, onClear: () -> Unit) {
+    val enabled = !bucket.isEmpty
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = SettingsRowText)
+            Text(formatBytes(bucket.bytes), color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 15.sp)
+        }
+        Text(
+            "Clear",
+            color = if (enabled) IOSColors.red else IOSColors.tertiaryLabel,
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clickable(enabled = enabled, onClick = onClear)
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+        )
+    }
 }
 
 @Composable
@@ -1802,42 +2636,213 @@ private fun SessionsTopic(state: ZelefinUiState) {
     )
 }
 
+/** Mirrors iOS `ServerInfoView`: public system info, plus the signed-in OS display name on Jellyfin. */
 @Composable
-private fun AboutTopic(state: ZelefinUiState) {
+private fun ServerInfoTopic(state: ZelefinUiState) {
+    val model: ZelefinModel = viewModel()
+    val session = state.session
+    var snapshot by remember(session?.accountId, state.localServerUrl) {
+        mutableStateOf(
+            ServerInfoSnapshot(
+                serverName = session?.serverName?.trim()?.ifEmpty { null },
+                product = session?.serverTypeName,
+                version = session?.serverVersion?.trim()?.ifEmpty { null },
+                activeUrl = state.localServerUrl ?: session?.serverUrl,
+            ),
+        )
+    }
+    var loading by remember(session?.accountId, state.localServerUrl) { mutableStateOf(true) }
+    var loadError by remember(session?.accountId, state.localServerUrl) { mutableStateOf<String?>(null) }
+    LaunchedEffect(session?.accountId, state.localServerUrl) {
+        if (session == null) {
+            loadError = "Not signed in to a server."
+            loading = false
+            return@LaunchedEffect
+        }
+        loadError = null
+        snapshot = model.loadServerInfo()
+        loading = false
+    }
+    val waiting = loading && snapshot.serverName.isNullOrBlank() && snapshot.activeUrl.isNullOrBlank() && snapshot.version.isNullOrBlank()
+    if (waiting) {
+        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            IOSSpinner(Modifier.size(24.dp))
+        }
+        return
+    }
+    SettingsCard {
+        InfoLine("Server name", snapshot.serverName.orDash())
+        InfoLine("Product", snapshot.product.orDash())
+        InfoLine("Version", snapshot.version.orDash())
+        InfoLine("Operating system", snapshot.operatingSystem.orDash())
+        InfoLine("Active URL", snapshot.activeUrl.orDash())
+        InfoLine("Local address", snapshot.localAddress.orDash())
+    }
+    SettingsFooter("Pulled from this device’s connection and the server’s public system info. Some servers hide OS or local address.")
+    loadError?.let { message ->
+        Spacer(Modifier.height(14.dp))
+        SettingsCard {
+            Text(message, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp))
+        }
+    }
+}
+
+private fun String?.orDash(): String = this?.trim()?.ifEmpty { null } ?: "—"
+
+/** Mirrors iOS `SettingsAboutView`: hero mark, version and build, support, and accent-tinted links. */
+@Composable
+private fun AboutTopic() {
     val context = LocalContext.current
     fun open(url: String) {
         runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
-    SettingsCard {
-        InfoLine("Version", AppVersionLabel)
-        InfoLine("Server", state.session?.displayServer ?: "—")
-        InfoLine(
-            "Server Type",
-            when {
-                state.isSiloServer -> "Silo (Jellyfin API)"
-                state.isEmbyServer -> "Emby"
-                else -> "Jellyfin"
-            },
-        )
-    }
-    SettingsFooter("A native Jellyfin client for Android. Tab icons are from Iconsax. Anime library icons are from PlainIcon's Anime characters pack, licensed under CC BY 4.0.")
-    Spacer(Modifier.height(14.dp))
-    SettingsCard {
-        LinkRow("Privacy Policy") { open("https://zelefin.app/privacy") }
-        CardDivider()
-        LinkRow("Terms of Use") { open("https://zelefin.app/terms") }
-        CardDivider()
-        LinkRow("zelefin.app") { open("https://zelefin.app") }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AboutHero()
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AboutStat("Version", BuildConfig.VERSION_NAME, Modifier.weight(1f))
+            AboutStat("Build", BuildConfig.VERSION_CODE.toString(), Modifier.weight(1f))
+        }
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            AboutLinkRow("zelefin.app", Icons.Outlined.Language) { open("https://zelefin.app") }
+            AboutLinkRow("Support", Icons.Outlined.HelpOutline) { open("https://zelefin.app/support") }
+            AboutLinkRow("Privacy Policy", Icons.Outlined.PrivacyTip) { open("https://zelefin.app/privacy") }
+            AboutLinkRow("Terms of Use", Icons.Outlined.Description) { open("https://zelefin.app/terms") }
+        }
+        AboutCredits()
     }
 }
 
 @Composable
-private fun LinkRow(title: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = SettingsRowText, modifier = Modifier.weight(1f))
-        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Caption)
+private fun AboutHero() {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(140.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(140.dp)
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(LoginPalette.Lavender.copy(alpha = 0.35f), Color.Transparent),
+                                center = Offset(size.width / 2f, size.height / 2f + 10.dp.toPx()),
+                                radius = size.minDimension * 0.48f,
+                            ),
+                        )
+                    },
+            )
+            Image(
+                painter = painterResource(R.drawable.zelefin_mark),
+                contentDescription = null,
+                modifier = Modifier.size(112.dp),
+                contentScale = ContentScale.Fit,
+            )
+        }
+        Text("Zelefin", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 34.sp)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = Color.White)) { append("Your library, ") }
+                withStyle(SpanStyle(brush = Brush.horizontalGradient(listOf(LoginPalette.Lavender, LoginPalette.Sky)))) {
+                    append("beautifully native.")
+                }
+            },
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 20.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "A native client for Jellyfin, Silo, and Emby — free, with no subscription and no ads.",
+            color = IOSColors.secondaryLabel,
+            fontFamily = ZelefinFont,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun AboutStat(title: String, value: String, modifier: Modifier) {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), shape)
+            .padding(vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            title.uppercase(),
+            color = IOSColors.tertiaryLabel,
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            letterSpacing = 1.1.sp,
+        )
+        Text(value, color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+    }
+}
+
+@Composable
+private fun AboutLinkRow(title: String, icon: ImageVector, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, ZelefinCyan.copy(alpha = 0.28f), shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
+        Text(
+            title,
+            color = Color.White,
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 17.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            Modifier.size(28.dp).clip(CircleShape).background(ZelefinCyan.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.OpenInNew, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
+@Composable
+private fun AboutCredits() {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), shape)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Credits", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text(
+            "Tab icons are from Iconsax. Anime library icons are from PlainIcon’s Anime characters pack, licensed under CC BY 4.0.",
+            color = IOSColors.tertiaryLabel,
+            fontFamily = ZelefinFont,
+            fontSize = 13.sp,
+        )
     }
 }
 
@@ -1875,13 +2880,18 @@ private fun NetworkTopic(state: ZelefinUiState) {
         delay(600)
         if (localText.trim() != profile.localUrl) save(profile.copy(localUrl = localText.trim()))
     }
+    LaunchedEffect(gatewayId, gatewaySecret) {
+        if (gatewayId != state.gatewayId || gatewaySecret != state.gatewaySecret) {
+            model.saveGateway(gatewayId, gatewaySecret)
+        }
+    }
 
     SettingsHeader("This Connection")
     SettingsCard {
         InfoLine("Remote URL", session?.serverUrl ?: "—")
         InfoLine("Active URL", state.localServerUrl ?: session?.serverUrl ?: "—")
-        InfoLine("Wi-Fi", ssid ?: if (located) "Unavailable" else "Allow location to show the network name")
-        InfoLine("Using", if (state.localServerUrl != null) "Local address" else "Remote address")
+        InfoLine("Wi-Fi", ssid ?: "Unavailable")
+        InfoLine("Using", if (state.localServerUrl != null) "Local URL" else "Remote URL")
     }
 
     SettingsHeader("Home Network")
@@ -1900,19 +2910,13 @@ private fun NetworkTopic(state: ZelefinUiState) {
             keyboard = KeyboardType.Uri,
             ime = ImeAction.Done,
         )
-        if (localText.isNotBlank() && HomeNetwork.normalizedLocal(localText) == null) {
-            Text("Enter an address like http://192.168.1.100:8096.", color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 13.sp)
-        }
     }
-    SettingsFooter(
-        "On a saved home network, Zelefin uses the local URL when it answers and the remote one everywhere else. With no saved networks, any Wi-Fi where the local URL answers counts as home.",
-    )
+    SettingsFooter("When you join a saved home network, Zelefin uses the local URL instead of the remote one.")
 
     SettingsHeader("Home Wi-Fi")
     SettingsCard {
         if (profile.homeSsids.isEmpty()) {
-            Text("No networks saved", style = SettingsRowText)
-            Text("Add a network so auto-switch knows when you’re home.", color = Caption, fontFamily = ZelefinFont, fontSize = 13.sp)
+            Text("No networks configured", style = SettingsRowText)
         } else {
             profile.homeSsids.forEachIndexed { index, name ->
                 if (index > 0) CardDivider()
@@ -1951,13 +2955,9 @@ private fun NetworkTopic(state: ZelefinUiState) {
                 save(profile.copy(homeSsids = HomeNetwork.adding(manual, profile.homeSsids)))
                 manual = ""
             }
-            if (!located) {
-                SettingsCardDivider()
-                SettingsButton("Use Current Network", primary = false, destructive = false, enabled = true, busy = false, onClick = ::askLocation)
-            }
         }
     }
-    SettingsFooter("Android shares the Wi-Fi name with Zelefin only with location access and Location turned on.")
+    SettingsFooter("Add the networks that should use the local URL.")
 
     SettingsHeader("Access Gateway")
     SettingsCard {
@@ -1978,19 +2978,14 @@ private fun NetworkTopic(state: ZelefinUiState) {
             placeholder = "Client secret or access token",
             password = true,
         )
-        val changed = gatewayId.trim() != state.gatewayId || gatewaySecret.trim() != state.gatewaySecret
-        SettingsCardDivider()
-        SettingsButton(if (changed) "Save" else "Saved", primary = changed, destructive = false, enabled = changed, busy = false) {
-            model.saveGateway(gatewayId, gatewaySecret)
-        }
     }
-    SettingsFooter("Needed when the server sits behind Cloudflare Zero Trust or Pangolin. Zelefin sends these with every request.")
+    SettingsFooter("Needed when this server sits behind Cloudflare Zero Trust or Pangolin. Use a Cloudflare Access service token, or a Pangolin share-link token ID and token. Zelefin sends these on every request, including artwork and playback.")
 }
 
 /** Mirrors iOS `TabCustomizationView`. */
 @Composable
-private fun InterfaceTopic(state: ZelefinUiState) {
-    InterfaceSettings(state)
+private fun InterfaceTopic(state: ZelefinUiState, editing: Boolean) {
+    InterfaceSettings(state, editing)
 }
 
 private val SettingsBarHeight = 56.dp
@@ -1999,30 +2994,56 @@ private val SettingsBarHeight = 56.dp
  * iOS 26 navigation bar: the page scrolls under a centered title, with a liquid glass back
  * circle, or a glass Done / Cancel capsule on pages that close the sheet.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsPage(
     title: String,
     onBack: () -> Unit,
     bar: SettingsBarAction,
     large: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     // iOS 26 sheets inset their bar buttons about 16pt from the rounded top edge.
     val topInset = if (LocalZelefinInSheet.current) Modifier.padding(top = 10.dp) else Modifier.statusBarsPadding()
     val canvas = MaterialTheme.colorScheme.surface
     val pageGlass = remember { GlassSource() }
+    val refreshState = rememberPullToRefreshState()
     Box(Modifier.fillMaxSize().background(canvas)) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .glassSource(pageGlass)
-                .background(canvas)
-                .verticalScroll(rememberScrollState())
-                .then(topInset)
-                .navigationBarsPadding()
-                .padding(top = SettingsBarHeight, bottom = 28.dp),
-        ) {
-            content()
+        val scroller: @Composable () -> Unit = {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .glassSource(pageGlass)
+                    .background(canvas)
+                    .verticalScroll(rememberScrollState())
+                    .then(topInset)
+                    .navigationBarsPadding()
+                    .padding(top = SettingsBarHeight, bottom = 28.dp),
+            ) {
+                content()
+            }
+        }
+        if (onRefresh != null) {
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = onRefresh,
+                state = refreshState,
+                modifier = Modifier.fillMaxSize(),
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        modifier = Modifier.align(Alignment.TopCenter).then(topInset).padding(top = SettingsBarHeight),
+                        isRefreshing = refreshing,
+                        state = refreshState,
+                        containerColor = Color(0xFF1C1C1E),
+                        color = ZelefinCyan,
+                    )
+                },
+            ) { scroller() }
+        } else {
+            scroller()
         }
         Box(
             Modifier
@@ -2060,6 +3081,9 @@ private fun SettingsPage(
                     SettingsBarAction.Done -> SettingsGlassButton("Done", onBack, circle = false, modifier = Modifier.align(Alignment.CenterEnd)) {
                         Text("Done", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     }
+                }
+                if (trailing != null) {
+                    Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
                 }
             }
         }
@@ -2139,13 +3163,4 @@ private fun InfoLine(label: String, value: String) {
     SettingsInfoRow(label, value)
 }
 
-private fun folderBytes(directory: File): Long {
-    if (!directory.exists()) return 0L
-    return directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-}
-
-private fun formatBytes(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-    else -> "${bytes / (1024 * 1024)} MB"
-}
+private fun formatBytes(bytes: Long): String = CacheInventory.formatBytes(bytes)

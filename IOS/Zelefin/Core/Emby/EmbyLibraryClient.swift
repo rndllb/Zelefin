@@ -61,7 +61,7 @@ final class EmbyLibraryClient: @unchecked Sendable {
     }
 
     func personImageURL(id: String, tag: String?, maxHeight: Int) -> URL? {
-        artwork.image(itemID: id, type: "Primary", tag: tag, maxHeight: maxHeight)
+        artwork.image(itemID: id, type: "Primary", tag: tag, maxHeight: maxHeight, format: "jpg")
     }
 
     func searchHitImageURL(_ hit: LibrarySearchHit) -> URL? {
@@ -198,12 +198,22 @@ final class EmbyLibraryClient: @unchecked Sendable {
 
     /// One row per kind across every library, newest first. `Items/Latest` brings a show back to the front
     /// when it gets new episodes; Emby mixes movies into a `Series` answer, so each row keeps only its own kind.
+    /// Movies prefer DateCreated (same as Jellyfin 12+); shows keep Latest then DateCreated.
     private func recentlyAdded(_ kind: BaseItemKind) async -> HomeSection? {
         let wanted: MediaKind = kind == .movie ? .movie : .series
-        let latest = (try? await latestMedia(include: [kind], parentID: nil, fields: EmbyFields.home, limit: 36)) ?? []
-        var items = Array(latest.filter { $0.kind == wanted }.prefix(24))
-        if items.isEmpty, kind == .series {
-            items = (try? await recentlyAddedShows(parentID: nil))?.items ?? []
+        var items: [MediaItem] = []
+        if kind == .movie {
+            items = (try? await itemsByDateCreated(include: kind, wanted: wanted, parentID: nil, limit: 24)) ?? []
+            if items.isEmpty {
+                let latest = (try? await latestMedia(include: [kind], parentID: nil, fields: EmbyFields.home, limit: 36)) ?? []
+                items = Array(latest.filter { $0.kind == wanted }.prefix(24))
+            }
+        } else {
+            let latest = (try? await latestMedia(include: [kind], parentID: nil, fields: EmbyFields.home, limit: 36)) ?? []
+            items = Array(latest.filter { $0.kind == wanted }.prefix(24))
+            if items.isEmpty {
+                items = (try? await itemsByDateCreated(include: kind, wanted: wanted, parentID: nil, limit: 24)) ?? []
+            }
         }
         guard !items.isEmpty else { return nil }
         return kind == .movie
@@ -322,17 +332,29 @@ final class EmbyLibraryClient: @unchecked Sendable {
     }
 
     private func recentlyAddedShows(parentID: String?) async throws -> HomeSection? {
+        let items = try await itemsByDateCreated(include: .series, wanted: .series, parentID: parentID, limit: 12)
+        guard !items.isEmpty else { return nil }
+        return HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+    }
+
+    /// Date-added catalog when `Items/Latest` returns nothing. Matches Android `latestByDateAdded`.
+    private func itemsByDateCreated(
+        include: BaseItemKind,
+        wanted: MediaKind,
+        parentID: String?,
+        limit: Int
+    ) async throws -> [MediaItem] {
+        let type = include == .movie ? "Movie" : "Series"
         let items = try await userItems([
-            ("Limit", "12"),
+            ("Limit", String(limit)),
             ("Recursive", "true"),
             ("SortBy", "DateCreated"),
             ("SortOrder", "Descending"),
             ("ParentId", parentID),
             ("Fields", EmbyFields.home),
-            ("IncludeItemTypes", "Series")
+            ("IncludeItemTypes", type)
         ])
-        guard !items.isEmpty else { return nil }
-        return HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+        return Array(items.filter { $0.kind == wanted }.prefix(limit))
     }
 
     private func latestMedia(include: [BaseItemKind], parentID: String?, fields: String, limit: Int) async throws -> [MediaItem] {
@@ -637,6 +659,27 @@ final class EmbyLibraryClient: @unchecked Sendable {
         try await catalogItems(parentID: nil, include: [.boxSet], query: query, onPage: onPage)
     }
 
+    /// Children that can fill a collection card. Untagged box sets otherwise show a blank cover.
+    func collectionPosterMembers(parentID: String) async -> [MediaItem] {
+        let direct = (try? await catalogItems(
+            parentID: parentID,
+            include: [.movie, .series, .video],
+            recursive: false,
+            query: .default,
+            onPage: nil
+        )) ?? []
+        let members = direct.isEmpty
+            ? ((try? await catalogItems(
+                parentID: parentID,
+                include: [.movie, .series, .video],
+                recursive: true,
+                query: .default,
+                onPage: nil
+            )) ?? [])
+            : direct
+        return Array(members.filter { $0.primaryImageTag != nil }.prefix(4))
+    }
+
     func boxSets() async -> [MediaItem] {
         await boxSets(limit: 80)
     }
@@ -895,7 +938,8 @@ final class EmbyLibraryClient: @unchecked Sendable {
             id: dto.id ?? id,
             name: name,
             roleLabel: "Cast & Crew",
-            imageTag: dto.imageTags?["Primary"],
+            imageTag: dto.imageTags?["Primary"]
+                ?? dto.imageBlurHashes?.primary?.keys.first,
             rank: 0,
             overview: dto.overview,
             birthYear: dto.productionYear ?? dto.premiereDate.flatMap {

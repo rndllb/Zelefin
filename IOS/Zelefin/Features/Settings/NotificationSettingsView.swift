@@ -21,6 +21,7 @@ struct NotificationSettingsView: View {
                 WebhookAlertSections(setup: .silo(session))
             } else if session.companionAvailable {
                 configuredSection
+                AlertSuppressionSections()
             } else {
                 pluginRequiredSection
             }
@@ -141,7 +142,7 @@ struct NotificationSettingsView: View {
         case .notDetermined:
             return "Zelefin asks iOS for permission when you turn this on. The plugin then pushes new titles, streams, users online, scheduled tasks, and Seerr requests."
         default:
-            return "The Zelefin plugin pushes lock-screen alerts for new titles, streams, users online, scheduled tasks, and Seerr requests while the app is open or closed. Restart Jellyfin after you install or remove the plugin."
+            return "The Zelefin plugin pushes lock-screen alerts for new titles, streams, users online, scheduled tasks, and Seerr requests while the app is open or closed. Mute while Zelefin is open, mute while playing, and quiet hours can hold banners back. Restart Jellyfin after you install or remove the plugin."
         }
     }
 
@@ -194,6 +195,46 @@ struct NotificationSettingsView: View {
     }
 }
 
+/// Mute and quiet hours for every signed-in user, on Jellyfin and on webhook servers.
+private struct AlertSuppressionSections: View {
+    @AppStorage(LibraryAlertSettings.muteWhileOpenKey) private var muteWhileOpen = true
+    @AppStorage(LibraryAlertSettings.muteWhilePlayingKey) private var muteWhilePlaying = true
+    @AppStorage(LibraryAlertSettings.quietHoursEnabledKey) private var quietHoursEnabled = false
+
+    var body: some View {
+        Section {
+            Toggle("Mute while Zelefin is open", isOn: $muteWhileOpen)
+            Toggle("Mute while playing", isOn: $muteWhilePlaying)
+        } header: {
+            Text("When Not to Notify")
+        } footer: {
+            Text("Hold banners back while you are using Zelefin or watching something in the app. Alerts still arrive when the app is closed, outside quiet hours.")
+        }
+        .zelefinRowBackground()
+
+        Section {
+            Toggle("Quiet Hours", isOn: $quietHoursEnabled)
+            if quietHoursEnabled {
+                DatePicker(
+                    "Start",
+                    selection: LibraryAlertSettings.quietHoursStartBinding,
+                    displayedComponents: .hourAndMinute
+                )
+                DatePicker(
+                    "End",
+                    selection: LibraryAlertSettings.quietHoursEndBinding,
+                    displayedComponents: .hourAndMinute
+                )
+            }
+        } header: {
+            Text("Quiet Hours")
+        } footer: {
+            Text("No lock-screen alerts during this window. Overnight ranges are fine (for example 10:00 PM to 7:00 AM).")
+        }
+        .zelefinRowBackground()
+    }
+}
+
 /// What one server type tells the shared webhook alert screen.
 struct WebhookAlertSetup {
     struct Category: Identifiable, Hashable {
@@ -233,7 +274,7 @@ extension WebhookAlertSetup {
         WebhookAlertSetup(
             unavailableTitle: "Emby Webhooks",
             unavailableFooter: "Lock-screen alerts on Emby use its Webhooks notifier, which comes with Emby Premiere. When this server has it, turn on Notifications here and Zelefin sets it up.",
-            footer: "Emby sends these through Zelefin's push service to this iPhone, also while Zelefin is closed. It only sends events this account is allowed to see.",
+            footer: "Emby sends these through Zelefin's push service to this iPhone, also while Zelefin is closed. Mute while Zelefin is open, mute while playing, and quiet hours can hold banners back. It only sends events this account is allowed to see.",
             adminFooter: "This server only lets administrators add notifications. In Emby, an admin opens your user's Settings → Notifications, adds Webhooks, pastes this address, and picks the events.",
             defaultCategories: EmbyAlertCategory.defaultIDs,
             isAvailable: { session.embyWebhooksAvailable },
@@ -270,7 +311,7 @@ extension WebhookAlertSetup {
             unavailableFooter: session.hasSiloLink
                 ? "This Silo server has personal webhooks turned off. An administrator can turn them on in Silo's notification settings."
                 : "Notifications on Silo need your Silo account. Sign out and sign in with your Silo account to turn them on.",
-            footer: "Silo alerts this iPhone when a show this profile follows gets a new episode, or a request changes. They arrive through Zelefin's push service, also while Zelefin is closed.",
+            footer: "Silo alerts this iPhone when a show this profile follows gets a new episode, or a request changes. They arrive through Zelefin's push service, also while Zelefin is closed. Mute while Zelefin is open, mute while playing, and quiet hours can hold banners back.",
             defaultCategories: SiloAlertCategory.defaultIDs,
             isAvailable: { await session.siloPersonalWebhooksAvailable() },
             categories: { SiloAlertCategory.all.map { Category(id: $0.id, title: $0.title) } },
@@ -363,6 +404,10 @@ private struct WebhookAlertSections: View {
                 Text("Alert Me About")
             }
             .zelefinRowBackground()
+        }
+
+        if isOn {
+            AlertSuppressionSections()
         }
     }
 

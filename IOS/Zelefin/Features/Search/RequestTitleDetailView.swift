@@ -100,6 +100,7 @@ struct RequestTitleDetailView: View {
             NavigationStack {
                 SeerrRequestView(title: current) {
                     current.availability = .pending
+                    RequestLiveActivityBridge.noteSubmitted(current)
                     onRequested(current)
                     Task { await refreshStatus() }
                 }
@@ -408,6 +409,9 @@ struct RequestTitleDetailView: View {
         copy.posterURL = refreshed.posterURL ?? title.posterURL
         copy.year = refreshed.year ?? title.year
         current = copy
+        if copy.availability.isRequested || copy.availability == .available || copy.review == .declined {
+            RequestLiveActivityBridge.sync(copy)
+        }
     }
 }
 

@@ -104,7 +104,10 @@ enum ItemMapper {
                 id: id,
                 name: name,
                 roleLabel: creditRoleLabel(type: person.type, role: person.role),
-                imageTag: person.primaryImageTag,
+                // Jellyfin sometimes omits PrimaryImageTag on the People array but still
+                // ships the tag as the ImageBlurHashes.Primary key.
+                imageTag: person.primaryImageTag
+                    ?? person.imageBlurHashes?.primary?.keys.first,
                 rank: creditRank(person.type)
             )
         }

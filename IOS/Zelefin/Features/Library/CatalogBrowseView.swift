@@ -6,8 +6,11 @@ struct CatalogBrowseView: View {
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let title: String
     let libraryKind: LibraryKind
+    var catalogKinds: [LibraryKind]? = nil
     var libraryID: String? = nil
     var showsBackButton = false
+    var queryStorageKey: String? = nil
+    var seededQuery: CatalogBrowseQuery? = nil
 
     @State private var items: [MediaItem] = []
     @State private var isLoading = true
@@ -20,6 +23,14 @@ struct CatalogBrowseView: View {
 
     private var columns: [GridItem] {
         PosterGridLayout.columns(for: sidebarLayout)
+    }
+
+    private var effectiveKinds: [LibraryKind] {
+        catalogKinds ?? [libraryKind]
+    }
+
+    private var storedQueryKey: String {
+        queryStorageKey ?? CatalogQueryStore.key(kind: libraryKind, libraryID: libraryID)
     }
 
     private var emptyMessage: String {
@@ -76,10 +87,22 @@ struct CatalogBrowseView: View {
                                     NavigationLink {
                                         LibraryItemRoute(item: item)
                                     } label: {
-                                        FillingPortraitPoster(
-                                            item: item,
-                                            imageURL: session.library?.primaryURL(for: item)
-                                        )
+                                        if item.kind == .collection || libraryKind == .collections {
+                                            FillingPosterCell { size in
+                                                LabeledPortraitCard(
+                                                    title: item.browsingCardTitle,
+                                                    imageURL: session.library?.artworkURL(for: item, style: .labeledPortrait),
+                                                    collection: item,
+                                                    width: size.width,
+                                                    height: size.height
+                                                )
+                                            }
+                                        } else {
+                                            FillingPortraitPoster(
+                                                item: item,
+                                                imageURL: session.library?.primaryURL(for: item)
+                                            )
+                                        }
                                     }
                                     .buttonStyle(.plain)
                                     .id(item.id)
@@ -126,11 +149,11 @@ struct CatalogBrowseView: View {
         )
         .task { await loadOptions() }
         .task {
-            query = CatalogQueryStore.load(key: CatalogQueryStore.key(kind: libraryKind, libraryID: libraryID))
+            query = seededQuery ?? CatalogQueryStore.load(key: storedQueryKey)
             await load()
         }
         .onChange(of: query) { _, next in
-            CatalogQueryStore.save(key: CatalogQueryStore.key(kind: libraryKind, libraryID: libraryID), query: next)
+            CatalogQueryStore.save(key: storedQueryKey, query: next)
             guard !showFilters, !showSort else { return }
             Task { await load() }
         }
@@ -149,13 +172,16 @@ struct CatalogBrowseView: View {
         guard let library = session.library else { return }
         if let libraryID, let match = session.libraries.first(where: { $0.id == libraryID }) {
             options = await library.catalogFilterOptions(for: match)
+        } else if effectiveKinds.count == 1 {
+            options = await library.catalogFilterOptions(for: effectiveKinds[0])
         } else {
-            options = await library.catalogFilterOptions(for: libraryKind)
+            options = await library.mixedCatalogFilterOptions()
         }
     }
 
     private func load() async {
-        if libraryID == nil, query.isDefault, items.isEmpty, let cached = session.cachedCatalog(kind: libraryKind), !cached.isEmpty {
+        if queryStorageKey == nil, libraryID == nil, query.isDefault, items.isEmpty,
+           let cached = session.cachedCatalog(kind: libraryKind), !cached.isEmpty {
             items = cached
             isLoading = false
         }
@@ -172,17 +198,28 @@ struct CatalogBrowseView: View {
             catalog = catalog.filter { $0.id == libraryID }
         }
         let showingCachedDefault = query.isDefault && !items.isEmpty
-        let fresh = await library.browseCatalog(
-            kind: libraryKind,
-            libraries: catalog,
-            query: query
-        ) { update in
-            applyListing(update, protectingCachedDefault: showingCachedDefault)
+        let fresh: [MediaItem]
+        if effectiveKinds.count == 1 {
+            fresh = await library.browseCatalog(
+                kind: effectiveKinds[0],
+                libraries: catalog,
+                query: query
+            ) { update in
+                applyListing(update, protectingCachedDefault: showingCachedDefault)
+            }
+        } else {
+            fresh = await library.browseCatalogKinds(
+                kinds: effectiveKinds,
+                libraries: catalog,
+                query: query
+            ) { update in
+                applyListing(update, protectingCachedDefault: showingCachedDefault)
+            }
         }
         if !fresh.isEmpty || !query.isDefault {
             items = fresh
-            if libraryID == nil, query.isDefault {
-                session.saveCatalog(fresh, kind: libraryKind)
+            if queryStorageKey == nil, libraryID == nil, query.isDefault, effectiveKinds.count == 1 {
+                session.saveCatalog(fresh, kind: effectiveKinds[0])
             }
         }
         isLoading = false
@@ -191,6 +228,7 @@ struct CatalogBrowseView: View {
 
     private func applyListing(_ update: CatalogPageUpdate, protectingCachedDefault: Bool) {
         indexProgress = .listing(loaded: update.items.count, total: update.totalCount)
+        CatalogIndexLiveActivity.sync(indexProgress)
         guard !update.items.isEmpty else { return }
         if protectingCachedDefault, update.items.count < items.count { return }
         items = update.items
@@ -200,6 +238,7 @@ struct CatalogBrowseView: View {
     private func finishArtwork(for items: [MediaItem], library: any LibraryServing) async {
         guard PosterPrefetcher.prefetchesPosters(for: libraryKind), !items.isEmpty else {
             indexProgress = nil
+            CatalogIndexLiveActivity.sync(nil)
             return
         }
         let urls = PosterPrefetcher.posterURLs(for: items, library: library)
@@ -209,8 +248,10 @@ struct CatalogBrowseView: View {
             } else {
                 indexProgress = .artwork(cached: cached, total: total)
             }
+            CatalogIndexLiveActivity.sync(indexProgress)
         }
         indexProgress = nil
+        CatalogIndexLiveActivity.sync(nil)
     }
 }
 

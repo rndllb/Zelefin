@@ -9,6 +9,7 @@ struct LogView: View {
     @State private var search = ""
     @State private var exportURL: URL?
     @State private var confirmsClear = false
+    @State private var showsReportIssue = false
 
     enum Filter: String, CaseIterable, Identifiable {
         case all = "All"
@@ -43,7 +44,16 @@ struct LogView: View {
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Text("Zelefin notes what it does and what goes wrong: sign-ins, playback, downloads, and requests that fail. Passwords, tokens, and API keys are never written down. Send the log with the share button when you report a problem.")
+                Text("Zelefin notes what it does and what goes wrong: sign-ins, playback, downloads, and requests that fail. Passwords, tokens, and API keys are never written down. Report a problem to email help@randll.com or open a GitHub issue with the log attached.")
+            }
+            .zelefinRowBackground()
+
+            Section {
+                Button {
+                    showsReportIssue = true
+                } label: {
+                    Label("Report Issue", systemImage: "exclamationmark.bubble")
+                }
             }
             .zelefinRowBackground()
 
@@ -63,7 +73,18 @@ struct LogView: View {
         .zelefinSettingsChrome(title: "Log")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showsReportIssue = true
+                } label: {
+                    Image(systemName: "exclamationmark.bubble")
+                }
+                .accessibilityLabel("Report Issue")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button("Report Issue", systemImage: "exclamationmark.bubble") {
+                        showsReportIssue = true
+                    }
                     if let exportURL {
                         ShareLink(item: exportURL) {
                             Label("Send Log", systemImage: "square.and.arrow.up")
@@ -91,6 +112,9 @@ struct LogView: View {
             }
         } message: {
             Text("Everything Zelefin has noted so far is removed from this device.")
+        }
+        .sheet(isPresented: $showsReportIssue) {
+            ReportIssueView()
         }
         .task { reload() }
         .refreshable { reload() }

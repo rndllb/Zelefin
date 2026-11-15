@@ -5,6 +5,7 @@ import app.zelefin.client.emby.EmbyLibrary
 import app.zelefin.client.emby.accountRights
 import app.zelefin.client.push.PushHookRelay
 import app.zelefin.core.MediaItem
+import app.zelefin.core.MediaKind
 import app.zelefin.core.ZelefinException
 import app.zelefin.client.silo.SiloAccountClient
 import app.zelefin.client.silo.SiloAlertCategory
@@ -158,6 +159,23 @@ data class DiscoverUiState(
         title.id in requested || "${title.kind.raw}-${title.tmdbId}" in requested ->
             title.copy(availability = SeerrTitle.Availability.Pending)
         else -> title
+    }
+
+    /**
+     * When Discover marks a title available (or a movie already on the server), open the library
+     * detail page instead of the Seerr/Ombi request page.
+     */
+    fun libraryItemIfAvailable(title: SeerrTitle): MediaItem? {
+        val current = resolved(title)
+        val fullyOnServer = current.availability == SeerrTitle.Availability.Available ||
+            (current.kind == SeerrTitle.Kind.Movie && current.availability.isOnServer)
+        if (!fullyOnServer) return null
+        val id = catalog.itemId(current) ?: return null
+        return MediaItem(
+            id = id,
+            name = current.name,
+            kind = if (current.kind == SeerrTitle.Kind.Movie) MediaKind.Movie else MediaKind.Series,
+        )
     }
 }
 

@@ -35,6 +35,18 @@ struct RootView: View {
                 .environment(downloads)
                 .environment(\.playsInLocalCover, true)
             }
+            #if targetEnvironment(macCatalyst)
+            // fullScreenCover keeps the size it was presented at, so expanding the Mac window
+            // left the picture in the top-left. An overlay is part of the window and resizes with it.
+            .overlay {
+                if let item = session.pendingPlayerItem {
+                    PlayerView(item: item)
+                        .environment(session)
+                        .environment(downloads)
+                        .ignoresSafeArea()
+                }
+            }
+            #else
             .fullScreenCover(item: Binding(
                 get: { session.pendingPlayerItem },
                 set: { session.pendingPlayerItem = $0 }
@@ -44,6 +56,7 @@ struct RootView: View {
                     .environment(downloads)
                     .nowPlayingZoom(in: nowPlayingTransition)
             }
+            #endif
             .alert(
                 "Can't Open Title",
                 isPresented: Binding(
@@ -89,8 +102,20 @@ struct RootView: View {
             .zelefinAccentTint()
             .task {
                 await session.restore()
+                #if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
+                ZelefinLiveActivityController.shared.endLegacyPlaybackActivities()
+                #endif
+                RemoteSessionsLiveActivityMonitor.startIfEnabled()
                 consumePendingNotificationDestination()
                 await deepLinks.flushPending(session: session)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zelefinPlaybackSessions)) { notification in
+                guard RemoteSessionsLiveActivityMonitor.isEnabled else { return }
+                let sessions = notification.object as? [PlaybackSession] ?? []
+                RemoteSessionsLiveActivityMonitor.handle(
+                    sessions,
+                    localDeviceID: session.session?.deviceID
+                )
             }
     }
 
@@ -165,6 +190,9 @@ private struct RootNotificationModifier: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .zelefinSyncPlayQueueItem)) { notification in
                 session.noteSyncPlayPlaylistItem(notificationString(notification.object))
+                if let name = session.syncPlayGroupName {
+                    SyncPlayActivityPresenter.update(statusLine: "Queue updated", groupName: name)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .zelefinPushTokenReady)) { notification in
                 guard let token = notification.object as? String else { return }

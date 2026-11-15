@@ -886,7 +886,10 @@ struct ProfileMenu: View {
                     onSettings: { ProfilePresentation.show(.settings) },
                     onSignOut: { Task { await session.signOut() } },
                     onSwitchTo: { account in
-                        Task { await session.switchTo(account) }
+                        Task {
+                            guard await AccountSwitchUnlock.unlockIfNeeded(account: account) else { return }
+                            await session.switchTo(account)
+                        }
                     },
                     onSwitchToProfile: { profile in
                         Task { await switchSiloProfile(profile) }
@@ -914,13 +917,17 @@ struct ProfileMenu: View {
 
     @ViewBuilder
     private var avatarBadge: some View {
+        // Remount when the signed-in account changes so the toolbar face never sticks.
+        let accountID = session.session?.accountID ?? ""
         if showsGlassRing {
             UserAvatarView(url: session.avatarURL, diameter: photoDiameter)
+                .id(accountID)
                 .padding(glassInset)
                 .zelefinLiquidGlassCircle(interactive: false)
                 .contentShape(Circle())
         } else {
             UserAvatarView(url: session.avatarURL, diameter: photoDiameter)
+                .id(accountID)
                 .contentShape(Circle())
         }
     }

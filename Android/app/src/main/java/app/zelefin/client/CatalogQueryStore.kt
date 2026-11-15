@@ -29,6 +29,7 @@ class CatalogQueryStore(context: Context) {
             is LibraryRoute.Studio -> "studio:${route.id}"
             is LibraryRoute.Discover -> "discover:${route.query.title}"
             is LibraryRoute.DiscoverTitle -> "discover-title:${route.discovered.id}"
+            is LibraryRoute.CustomHome -> "custom-home:${route.id}"
         }
 
         fun encode(query: CatalogBrowseQuery): String = listOf(

@@ -28,6 +28,7 @@ import app.zelefin.client.emby.applyIdentify
 import app.zelefin.client.emby.collectionEditor
 import app.zelefin.client.emby.createCollection
 import app.zelefin.client.emby.currentAccount
+import app.zelefin.client.emby.signedInUser
 import app.zelefin.client.emby.deleteLibraryItem
 import app.zelefin.client.emby.deleteUserImage
 import app.zelefin.client.emby.displayPreferenceCustomPrefs
@@ -42,6 +43,7 @@ import app.zelefin.client.emby.renameUser
 import app.zelefin.client.emby.resetUserPassword
 import app.zelefin.client.emby.scanLibraries
 import app.zelefin.client.emby.scheduledTasks
+import app.zelefin.client.emby.serverBranding
 import app.zelefin.client.emby.searchIdentify
 import app.zelefin.client.emby.sendSessionControl
 import app.zelefin.client.emby.sendSessionMessage
@@ -134,6 +136,8 @@ import app.zelefin.core.SiloProfile
 import app.zelefin.core.SiloAddressCheck
 import app.zelefin.core.SiloTokens
 import app.zelefin.core.HomeFeed
+import app.zelefin.core.HomeRowStyle
+import app.zelefin.core.HomeSection
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaVersion
 import app.zelefin.core.MediaKind
@@ -182,6 +186,7 @@ private const val SyncHero = "featuredHeroContent"
 private const val SyncLibraryOrder = "libraryOrder"
 private const val SyncLibraryHidden = "libraryHidden"
 private const val SyncLibraryPageHidden = "libraryPageHidden"
+private const val SyncCustomHomeRows = CustomHomeRows.SYNC_KEY
 
 private const val EmbyUnsupported = "Zelefin doesn't support this on Emby yet."
 
@@ -225,6 +230,9 @@ data class ZelefinUiState(
     val libraryRefreshing: Boolean = false,
     val detail: TitleDetail? = null,
     val quickConnect: QuickConnectHandshake? = null,
+    /** Bumped when the signed-in account changes so avatars reload instead of keeping the previous photo. */
+    val avatarRevision: Int = 0,
+    val accountPin: AccountPinPrompt? = null,
     val homeRefreshing: Boolean = false,
     val moviesRefreshing: Boolean = false,
     val showsRefreshing: Boolean = false,
@@ -258,6 +266,16 @@ data class ZelefinUiState(
     val hasJellyfinExtras: Boolean get() = session?.hasJellyfinExtras == true
 }
 
+/** Settings → Server Info. Empty fields stay null so the page can show an em dash. */
+data class ServerInfoSnapshot(
+    val serverName: String? = null,
+    val product: String? = null,
+    val version: String? = null,
+    val operatingSystem: String? = null,
+    val activeUrl: String? = null,
+    val localAddress: String? = null,
+)
+
 sealed interface PlayerDirective {
     data object Play : PlayerDirective
     data object Pause : PlayerDirective
@@ -279,11 +297,14 @@ private class PendingSiloSignIn(
 
 class ZelefinModel(application: Application) : AndroidViewModel(application) {
     private val vault = SessionVault(application)
+    private val accountPins = AccountSwitchPin(application)
     private val snapshots = SnapshotStore(application)
     private val layoutStore = LibraryLayoutStore(application)
     private val queryStore = CatalogQueryStore(application)
     private val searchHistory = SearchHistoryStore(application)
     private val nowPlayingStore = NowPlayingStore(application)
+    /** Per-title detail More picks (Quality / audio / subtitles / version / skip intros). */
+    private val playbackLaunchOptions = mutableMapOf<String, PlaybackLaunchOptions>()
     private val _state = MutableStateFlow(
         ZelefinUiState(libraryLayout = layoutStore.load(), search = LibrarySearchState(recents = searchHistory.load())),
     )
@@ -501,7 +522,6 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             val info = client.connectInfo()
             val jellyfinUrl = info.requireJellyfinUrl()
             val profiles = client.profiles().items
-            if (profiles.isEmpty()) throw ZelefinException.server("This Silo account has no profiles yet. Add one in Silo, then sign in again.")
             siloPending?.client?.let(::logOutSiloQuietly)
             siloPending = PendingSiloSignIn(client, signIn.account, jellyfinUrl, info.serverName)
             _state.update {
@@ -799,6 +819,17 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         quickConnectJob?.cancel()
         quickConnectJob = null
         _state.update { it.copy(quickConnect = null, busy = false, message = null) }
+    }
+
+    /** Approves a Quick Connect code from another device for the signed-in account. */
+    suspend fun authorizeQuickConnect(code: String) {
+        val session = _state.value.session ?: throw ZelefinException.missingUser()
+        if (session.isEmbyServer) throw ZelefinException.server("Quick Connect is a Jellyfin feature.")
+        val digits = code.filter { it.isDigit() }
+        if (digits.length < 4) throw ZelefinException.server("Enter the Quick Connect code.")
+        val library = jellyfinClient()
+        if (!library.quickConnectEnabled()) throw ZelefinException.quickConnectDisabled()
+        library.authorizeQuickConnect(digits, session.userId)
     }
 
     /** On cold launch, open the page the user chose as their start page (Home by default). */
@@ -1233,16 +1264,44 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Like, then clear: the same single toggle as iOS. Silo rejects ratings, and Emby 4.10 accepts them but stores nothing. */
+    /** Like, then clear. Silo rejects ratings; Emby 4.10 accepts them but stores nothing. */
     fun toggleLike(item: MediaItem) {
         if (!_state.value.hasJellyfinExtras) return
-        val likes = if (item.likes == true) null else true
+        setLikes(item, if (item.likes == true) null else true)
+    }
+
+    /** Dislike, then clear — same pair of actions as iOS TitleUserActions. */
+    fun toggleDislike(item: MediaItem) {
+        if (!_state.value.hasJellyfinExtras) return
+        setLikes(item, if (item.likes == false) null else false)
+    }
+
+    private fun setLikes(item: MediaItem, likes: Boolean?) {
         viewModelScope.launch {
             runCatching { jellyfinClient().setLikes(userUuid(), item.id, likes) }
                 .onSuccess { _state.update { state -> state.withItem(item.id) { copy(likes = likes) } } }
                 .onFailure { error -> _state.update { it.copy(message = error.message) } }
         }
     }
+
+    fun launchOptions(itemId: String): PlaybackLaunchOptions =
+        playbackLaunchOptions[itemId] ?: PlaybackLaunchOptions()
+
+    fun updateLaunchOptions(itemId: String, mutate: (PlaybackLaunchOptions) -> PlaybackLaunchOptions) {
+        playbackLaunchOptions[itemId] = mutate(launchOptions(itemId))
+    }
+
+    fun chooseVersion(itemId: String, mediaSourceId: String) {
+        updateLaunchOptions(itemId) { it.chooseVersion(mediaSourceId) }
+    }
+
+    suspend fun streamTracks(item: MediaItem, mediaSourceId: String?): Pair<List<LanguageTrack>, List<LanguageTrack>> =
+        runCatching {
+            pick(
+                { it.streamTracks(item.id, mediaSourceId) },
+                { it.streamTracks(userUuid(), item.id, mediaSourceId) },
+            )
+        }.getOrElse { emptyList<LanguageTrack>() to emptyList() }
 
     fun toggleWatchlist(item: MediaItem) {
         if (_state.value.isSiloServer) return
@@ -1361,31 +1420,39 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 LocalPlayback.None -> Unit
             }
             val appContext = getApplication<Application>()
-            // The languages last picked for this show win; otherwise the user's account settings
-            // (Settings → Playback) decide the starting streams.
-            val remembered = TrackMemory.languages(appContext, _state.value.session?.accountId, target)
+            // Detail More picks win; otherwise the languages last picked for this show, then
+            // Settings → Playback, decide the starting streams and quality.
+            val launch = launchOptions(target.id)
+            val playing = launch.mediaSourceId?.let { target.copy(mediaSourceId = it) } ?: target
+            val remembered = TrackMemory.languages(appContext, _state.value.session?.accountId, playing)
+            val qualityOverride = bitrateOverride
+                ?: launch.quality?.takeIf { it != PlaybackQuality.Auto }?.bitsPerSecond
             val plan = pick(
                 { client ->
-                    if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client::measureBitrate)
+                    if (qualityOverride == null) measureConnectionIfUnknown(appContext, client::measureBitrate)
                     client.playback(
-                        target,
+                        playing,
                         remembered.audio,
                         remembered.subtitle,
                         preferSdh = PlaybackPreferences.preferSdh(appContext),
+                        audioStreamIndex = launch.audioIndex,
+                        subtitleStreamIndex = launch.subtitleStreamIndex,
                     ) { sourceBitrate ->
-                        bitrateOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
+                        qualityOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
                     }
                 },
                 { client ->
-                    if (bitrateOverride == null) measureConnectionIfUnknown(appContext, client::measureBitrate)
+                    if (qualityOverride == null) measureConnectionIfUnknown(appContext, client::measureBitrate)
                     client.playback(
                         UUID.fromString(_state.value.session?.userId),
-                        target,
+                        playing,
                         remembered.audio,
                         remembered.subtitle,
                         preferSdh = PlaybackPreferences.preferSdh(appContext),
+                        audioStreamIndex = launch.audioIndex,
+                        subtitleStreamIndex = launch.subtitleStreamIndex,
                     ) { sourceBitrate ->
-                        bitrateOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
+                        qualityOverride ?: streamingCap(appContext, client::measureBitrate, sourceBitrate)
                     }
                 },
             )
@@ -1491,6 +1558,23 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         play(current.item.copy(playbackPosition = positionSeconds), bitrateOverride = bitsPerSecond)
     }
 
+    /** Player More → Quality. Persists the pick and restarts the stream at the current spot (same as iOS). */
+    fun changePlaybackQuality(current: PlaybackPlan, positionSeconds: Double, quality: PlaybackQuality) {
+        val context = getApplication<Application>()
+        val previous = PlaybackPreferences.selectedQuality(context)
+        PlaybackPreferences.setSelectedQuality(context, quality)
+        if (quality == previous || current.streamUrl.startsWith("file:") || localPlan != null) return
+        if (!isCurrentPlayback(current)) return
+        ZelefinLog.info("Playback", "Changing quality to ${quality.title} at ${positionSeconds.toInt()}s")
+        playbackStopped(current, positionSeconds)
+        val item = current.item.copy(playbackPosition = positionSeconds)
+        if (quality == PlaybackQuality.Auto) {
+            play(item)
+        } else {
+            play(item, bitrateOverride = quality.bitsPerSecond)
+        }
+    }
+
     /**
      * Theme song and video for a title page, when the user turned them on in Settings → Playback
      * and the server has them. Silo serves theme songs only.
@@ -1553,7 +1637,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     suspend fun serverBackups() = jellyfinClient().serverBackups()
     suspend fun createServerBackup() = jellyfinClient().createServerBackup()
     suspend fun restoreServerBackup(backup: app.zelefin.client.jellyfin.ServerBackup) = jellyfinClient().restoreServerBackup(backup)
-    suspend fun serverBranding() = jellyfinClient().serverBranding()
+    suspend fun serverBranding() = pick({ it.serverBranding() }, { it.serverBranding() })
     suspend fun updateServerBranding(branding: app.zelefin.client.jellyfin.ServerBranding) = jellyfinClient().updateServerBranding(branding)
     suspend fun uploadSplashscreen(jpeg: ByteArray) = jellyfinClient().uploadSplashscreen(jpeg)
     suspend fun deleteSplashscreen() = jellyfinClient().deleteSplashscreen()
@@ -1685,28 +1769,41 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshLibrary() {
         plugins.ensureDetected()
-        viewModelScope.launch {
-            val session = _state.value.session
-            val cached = if (_state.value.home == HomeFeed()) {
-                session?.let { withContext(Dispatchers.IO) { snapshots.loadHome(it) } }
-            } else {
-                null
-            }
-            _state.update {
-                it.copy(
-                    homeRefreshing = true,
-                    home = cached?.first?.let(::visibleHome) ?: it.home,
-                    libraries = if (cached != null && it.libraries.isEmpty()) cached.second else it.libraries,
-                )
-            }
-            runCatching { currentHome() }
-                .onSuccess { feed ->
-                    _state.update { it.copy(home = feed, homeRefreshing = false, message = null) }
-                    _state.value.session?.let { snapshots.saveHome(it, feed, _state.value.libraries) }
-                    refreshLibraryStats()
-                }
-                .onFailure { error -> _state.update { it.copy(homeRefreshing = false, message = error.message) } }
+        viewModelScope.launch { reloadHome() }
+    }
+
+    /** iOS `refreshMissingMetadata`: pull home again so anything not saved on this device is filled in. */
+    suspend fun refreshMissingMetadata() {
+        plugins.ensureDetected()
+        reloadHome()
+    }
+
+    /** `folder` is a snapshot directory name, or null to drop home, catalogs, and title details. */
+    fun clearMetadataCache(folder: String?) {
+        snapshots.clear(folder)
+    }
+
+    private suspend fun reloadHome() {
+        val session = _state.value.session
+        val cached = if (_state.value.home == HomeFeed()) {
+            session?.let { withContext(Dispatchers.IO) { snapshots.loadHome(it) } }
+        } else {
+            null
         }
+        _state.update {
+            it.copy(
+                homeRefreshing = true,
+                home = cached?.first?.let(::visibleHome) ?: it.home,
+                libraries = if (cached != null && it.libraries.isEmpty()) cached.second else it.libraries,
+            )
+        }
+        runCatching { currentHome() }
+            .onSuccess { feed ->
+                _state.update { it.copy(home = feed, homeRefreshing = false, message = null) }
+                _state.value.session?.let { snapshots.saveHome(it, feed, _state.value.libraries) }
+                refreshLibraryStats()
+            }
+            .onFailure { error -> _state.update { it.copy(homeRefreshing = false, message = error.message) } }
     }
 
     /** Signs out the current account only; like iOS, the next saved account takes over. */
@@ -1716,6 +1813,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         sessionSocket.disconnect()
         embySocket.disconnect()
         current?.let(::endAccountSession)
+        current?.let { accountPins.remove(it.accountId) }
         val remaining = if (current != null) vault.remove(current.accountId) else null
         if (current == null) vault.clear()
         if (remaining != null) {
@@ -1741,9 +1839,86 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
     fun switchAccount(account: SavedSession) {
         if (_state.value.session?.accountId == account.accountId) return
         val saved = vault.accounts().firstOrNull { it.accountId == account.accountId } ?: account
+        if (accountPins.hasPin(saved.accountId)) {
+            val open = _state.value.accountPin
+            if (open?.account?.accountId == saved.accountId) return
+            _state.update { it.copy(accountPin = AccountPinPrompt(saved)) }
+            return
+        }
+        _state.update { it.copy(accountPin = null) }
         vault.save(saved, select = true)
         activate(saved)
     }
+
+    fun submitAccountPin(pin: String) {
+        val prompt = _state.value.accountPin ?: return
+        if (accountPins.verify(pin, prompt.account.accountId)) {
+            _state.update { it.copy(accountPin = null) }
+            vault.save(prompt.account, select = true)
+            activate(prompt.account)
+            return
+        }
+        _state.update {
+            it.copy(accountPin = prompt.copy(message = "That PIN is incorrect.", attempt = prompt.attempt + 1))
+        }
+    }
+
+    fun cancelAccountPin() {
+        _state.update { it.copy(accountPin = null) }
+    }
+
+    fun accountHasPin(accountId: String): Boolean = accountPins.hasPin(accountId)
+
+    fun accountBiometricsEnabled(accountId: String): Boolean = accountPins.biometricsEnabled(accountId)
+
+    fun setAccountBiometrics(enabled: Boolean) {
+        val id = _state.value.session?.accountId ?: return
+        accountPins.setBiometricsEnabled(enabled, id)
+    }
+
+    /** Face or fingerprint already proved this is the device owner, so the PIN prompt can close. */
+    fun unlockAccountWithBiometrics() {
+        val prompt = _state.value.accountPin ?: return
+        if (!accountPins.biometricsEnabled(prompt.account.accountId)) return
+        _state.update { it.copy(accountPin = null) }
+        vault.save(prompt.account, select = true)
+        activate(prompt.account)
+    }
+
+    /** Profile → account overview. Parental-rating names load only for administrators. */
+    suspend fun profileAccountOverview(): ProfileAccountOverview {
+        val libraries = _state.value.libraries
+        return pick(
+            { emby ->
+                val user = emby.signedInUser()
+                ProfileAccountOverview.fromEmby(user, libraries, ratingNames(ProfileAccountOverview.embyIsAdministrator(user)))
+            },
+            { jellyfin ->
+                val user = jellyfin.currentUser()
+                ProfileAccountOverview.fromJellyfin(user, libraries, ratingNames(user.policy?.isAdministrator == true))
+            },
+        )
+    }
+
+    private suspend fun ratingNames(admin: Boolean): Map<Int, String> {
+        if (!admin) return emptyMap()
+        return runCatching { parentalRatings() }.getOrDefault(emptyList())
+            .mapNotNull { choice -> choice.value?.let { it to choice.name } }
+            .toMap()
+    }
+
+    fun setAccountPin(pin: String) {
+        val id = _state.value.session?.accountId
+            ?: throw ZelefinException.server("Sign in to create an account PIN.")
+        accountPins.setPin(pin, id)
+    }
+
+    fun removeAccountPin() {
+        val id = _state.value.session?.accountId ?: return
+        accountPins.remove(id)
+    }
+
+    fun verifyAccountPin(accountId: String, pin: String): Boolean = accountPins.verify(pin, accountId)
 
     fun removeAccount(account: SavedSession) {
         if (_state.value.session?.accountId == account.accountId) {
@@ -1751,6 +1926,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             return
         }
         endAccountSession(account)
+        accountPins.remove(account.accountId)
         vault.remove(account.accountId)
         _state.update { it.copy(accounts = vault.accounts()) }
     }
@@ -1828,6 +2004,12 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     /** Makes [session] the live account: fresh clients, plugin detection, and that account's cached home. */
     private fun activate(session: SavedSession) {
+        val previousId = _state.value.session?.accountId
+        val revision = if (previousId != null && previousId != session.accountId) {
+            _state.value.avatarRevision + 1
+        } else {
+            _state.value.avatarRevision
+        }
         quickConnectJob?.cancel()
         movieCatalogJob?.cancel()
         showCatalogJob?.cancel()
@@ -1851,6 +2033,7 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
                 libraryLayout = it.libraryLayout,
                 search = LibrarySearchState(recents = searchHistory.load()),
                 localServerUrl = it.localServerUrl.takeIf { _ -> it.session?.serverUrl == session.serverUrl },
+                avatarRevision = revision,
             )
         }
         refreshRoute()
@@ -1925,6 +2108,55 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     fun homeNetwork(): HomeNetworkProfile =
         _state.value.session?.let { homeNetworks.load(it.accountId) } ?: HomeNetworkProfile()
+
+    /**
+     * Name, product, version, OS, and addresses for Settings → Server Info.
+     * Public system info fills the row; a signed-in Jellyfin server (not Silo) also supplies the OS display name.
+     */
+    suspend fun loadServerInfo(): ServerInfoSnapshot {
+        val state = _state.value
+        val session = state.session
+        val active = state.localServerUrl ?: session?.serverUrl
+        fun String?.filled(): String? = this?.trim()?.ifEmpty { null }
+        fun productLabel(productName: String?): String =
+            productName.filled() ?: session?.serverTypeName ?: "Jellyfin"
+        var name = session?.serverName.filled()
+        var version = session?.serverVersion.filled()
+        var product = productLabel(null)
+        var operatingSystem: String? = null
+        var localAddress: String? = null
+        if (session == null || active.isNullOrBlank()) {
+            return ServerInfoSnapshot(name, product, version, operatingSystem, active, localAddress)
+        }
+        if (session.isEmbyServer) {
+            EmbyApi.publicInfo(active)?.let { info ->
+                name = info.serverName.filled() ?: name
+                version = info.version.filled() ?: version
+                product = productLabel(info.productName)
+            }
+        } else {
+            val library = jellyfin ?: JellyfinLibrary(getApplication(), active)
+            runCatching { library.publicSystemInfo() }.getOrNull()?.let { info ->
+                name = info.serverName.filled() ?: name
+                version = info.version.filled() ?: version
+                product = productLabel(info.productName)
+                operatingSystem = info.operatingSystem.filled()
+                localAddress = info.localAddress.filled()
+            }
+            if (jellyfin != null && !session.isSiloServer) {
+                runCatching { jellyfin?.systemInfo() }.getOrNull()?.let { info ->
+                    name = info.serverName.filled() ?: name
+                    version = info.version.filled() ?: version
+                    product = productLabel(info.productName)
+                    operatingSystem = info.operatingSystemDisplayName.filled()
+                        ?: info.operatingSystem.filled()
+                        ?: operatingSystem
+                    localAddress = info.localAddress.filled() ?: localAddress
+                }
+            }
+        }
+        return ServerInfoSnapshot(name, product, version, operatingSystem, active, localAddress)
+    }
 
     fun saveHomeNetwork(profile: HomeNetworkProfile) {
         val session = _state.value.session ?: return
@@ -2232,9 +2464,48 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun currentHome(): HomeFeed {
         val hero = JellyfinLibrary.HeroContent.entries.first { it.name == app.zelefin.client.ui.HomeLayoutPreferences.heroContent.name }
-        return visibleHome(
+        val base = visibleHome(
             pick({ it.home(hero) }, { it.home(UUID.fromString(_state.value.session?.userId), hero) }),
         )
+        return withCustomHomeRows(base)
+    }
+
+    /** Loads up to 24 items per enabled custom Home row; empty shelves are omitted. */
+    private suspend fun withCustomHomeRows(feed: HomeFeed): HomeFeed {
+        val rows = CustomHomeRows.rows.filter { it.enabled }
+        if (rows.isEmpty()) return feed.copy(customRows = emptyList())
+        val sections = rows.mapNotNull { row ->
+            val items = runCatching { browseCustomHomeRow(row).take(24) }.getOrDefault(emptyList())
+            if (items.isEmpty()) null
+            else HomeSection(
+                id = "custom-${row.id}",
+                title = row.title,
+                style = HomeRowStyle.Portrait,
+                items = items,
+            )
+        }
+        return feed.copy(customRows = sections)
+    }
+
+    private suspend fun browseCustomHomeRow(row: CustomHomeRow): List<MediaItem> {
+        val query = row.browseQuery.forServer()
+        val scope = customHomeScope(row.resolvedScope)
+        return pick(
+            { it.browse(scope, query) },
+            { it.browse(userUuid(), scope, query) },
+        )
+    }
+
+    private fun customHomeScope(scope: CustomHomeRowScope): JellyfinScope {
+        val kinds = when (scope) {
+            CustomHomeRowScope.Movies -> listOf(org.jellyfin.sdk.model.api.BaseItemKind.MOVIE)
+            CustomHomeRowScope.Shows -> listOf(org.jellyfin.sdk.model.api.BaseItemKind.SERIES)
+            CustomHomeRowScope.Both -> listOf(
+                org.jellyfin.sdk.model.api.BaseItemKind.MOVIE,
+                org.jellyfin.sdk.model.api.BaseItemKind.SERIES,
+            )
+        }
+        return JellyfinScope(kinds)
     }
 
     /** Pulls Interface and Library layout choices from Jellyfin display preferences (iOS `pullDisplayPreferences`). */
@@ -2252,6 +2523,8 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             val layout = app.zelefin.client.ui.HomeLayoutPreferences
             val before = layout.mergeContinueAndNextUp to layout.heroContent
             app.zelefin.client.ui.TabPreferences.applySyncedOrder(context, prefs[SyncTabOrder])
+            // Custom rows first so slot order can resolve `custom:<id>` tokens.
+            CustomHomeRows.applySynced(context, prefs[SyncCustomHomeRows])
             layout.applySynced(
                 context,
                 orderRaw = prefs[SyncHomeRowOrder],
@@ -2292,9 +2565,10 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         val prefs = mapOf(
             SyncTabOrder to app.zelefin.client.ui.DockTab.rawOrder(app.zelefin.client.ui.TabPreferences.order),
             SyncMerge to if (layout.mergeContinueAndNextUp) "true" else "false",
-            SyncHomeRowOrder to app.zelefin.client.ui.HomeRowKind.rawOrder(layout.order),
+            SyncHomeRowOrder to HomeRowSlot.rawOrder(layout.slots),
             SyncHomeRowHidden to app.zelefin.client.ui.HomeRowKind.rawHidden(layout.hidden),
             SyncHero to layout.heroContent.raw,
+            SyncCustomHomeRows to CustomHomeRows.encode(),
             SyncLibraryOrder to libraryLayout.order.joinToString(","),
             SyncLibraryHidden to libraryLayout.encodedHidden(),
             SyncLibraryPageHidden to if (libraryLayout.hiddenBlocks.isEmpty()) {
@@ -2443,12 +2717,23 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
             is LibraryRoute.Person -> JellyfinScope(titles, personIds = listOf(route.id))
             is LibraryRoute.Studio -> JellyfinScope(titles, studioIds = listOf(route.id))
             LibraryRoute.AllCollections -> JellyfinScope(listOf(org.jellyfin.sdk.model.api.BaseItemKind.BOX_SET))
+            is LibraryRoute.CustomHome -> {
+                val row = CustomHomeRows.row(route.id)
+                customHomeScope(row?.resolvedScope ?: CustomHomeRowScope.Movies)
+            }
             else -> JellyfinScope(titles)
         }
     }
 
     private fun loadLibraryGrid(route: LibraryRoute, refreshing: Boolean = false) {
-        val stored = _state.value.libraryGrids[route]?.query ?: queryStore.load(CatalogQueryStore.routeKey(route))
+        val stored = when {
+            _state.value.libraryGrids[route]?.query != null -> _state.value.libraryGrids[route]!!.query
+            route is LibraryRoute.CustomHome -> {
+                CustomHomeRows.row(route.id)?.browseQuery
+                    ?: queryStore.load(CatalogQueryStore.routeKey(route))
+            }
+            else -> queryStore.load(CatalogQueryStore.routeKey(route))
+        }
         if (_state.value.libraryGrids[route]?.query != stored) {
             updateGrid(route) { copy(query = stored) }
         }

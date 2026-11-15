@@ -30,7 +30,8 @@ enum JellyfinPluginCatalog {
     }
 }
 
-/// Whether a plugin is on the server and running, from an administrator's `/Plugins` list.
+/// Whether a plugin is on the server and running.
+/// Prefer the administrator `/Plugins` list; when that is empty (non-admins), probe plugin routes.
 enum PluginPresence: Equatable, Sendable {
     case notInstalled
     case disabled
@@ -49,6 +50,43 @@ enum PluginPresence: Equatable, Sendable {
         let mine = entries.filter { matches($0.name) }
         if mine.contains(where: \.isEnabled) { return .enabled }
         return mine.isEmpty ? .notInstalled : .disabled
+    }
+
+    /// `/Plugins` is admin-only. A probe that is not 404 means the plugin's controller is loaded (enabled).
+    static func resolving(from entries: [JellyfinPluginCatalog.Entry], matches: (String) -> Bool, reachable: Bool) -> PluginPresence {
+        let listed = of(matches, in: entries)
+        if listed != .notInstalled { return listed }
+        return reachable ? .enabled : .notInstalled
+    }
+}
+
+enum JellyfinPluginProbe {
+    /// True when a plugin-owned path answers with anything other than 404 (403/405 count as installed).
+    static func isReachable(client: JellyfinClient, paths: [String]) async -> Bool {
+        for path in paths {
+            if let status = await status(client: client, path: path), status != 404 {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func status(client: JellyfinClient, path: String) async -> Int? {
+        guard let url = ServerURL.resolve(base: client.configuration.url, path: path, token: client.accessToken) else {
+            return nil
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        if let token = client.accessToken {
+            request.setValue("MediaBrowser Token=\"\(token)\"", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
+        }
+        do {
+            let (_, response) = try await JellyfinNetworking.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode
+        } catch {
+            return nil
+        }
     }
 }
 

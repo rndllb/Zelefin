@@ -106,7 +106,8 @@ struct StreamURLBuilder: Sendable {
             language: stream.language,
             formatHint: format,
             isForced: stream.isForced == true,
-            isHearingImpaired: stream.isHearingImpaired == true
+            isHearingImpaired: stream.isHearingImpaired == true,
+            streamIndex: index
         )
     }
 

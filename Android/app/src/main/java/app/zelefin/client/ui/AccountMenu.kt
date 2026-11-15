@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -48,15 +50,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.ZelefinModel
+import app.zelefin.client.session.ArtworkKindIndex
+import app.zelefin.core.ArtworkDiskKey
 import app.zelefin.core.SavedSession
 import app.zelefin.core.ServerUrl
 import app.zelefin.core.SiloAvatarUrl
 import app.zelefin.core.SiloProfile
+import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.memory.MemoryCache
+import coil.request.ImageRequest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 const val AddAccountTopicId = "add-account"
+const val DeviceAccountsTopicId = "device-accounts"
 
 private val Destructive = Color(0xFFFF453A)
 
@@ -238,6 +248,9 @@ private fun GlassAccountRow(account: SavedSession, onClick: () -> Unit) {
             Text(account.userName, color = DockInactive, fontFamily = ZelefinFont, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(account.displayServer, color = DockInactive.copy(alpha = 0.6f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        if (viewModel<ZelefinModel>().accountHasPin(account.accountId)) {
+            Icon(Icons.Outlined.Lock, contentDescription = "PIN", tint = DockInactive.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+        }
     }
 }
 
@@ -281,9 +294,7 @@ fun AccountAvatarImage(account: SavedSession, diameter: androidx.compose.ui.unit
         contentAlignment = Alignment.Center,
     ) {
         Text(initial, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.4f).sp)
-        avatarImageUrl(account)?.let { url ->
-            CachedArtwork(url = url, contentDescription = account.userName, contentScale = ContentScale.Crop, modifier = Modifier.size(diameter).clip(CircleShape))
-        }
+        AccountAvatarBitmap(account, diameter)
     }
 }
 
@@ -356,12 +367,15 @@ fun AccountAvatar(
 ) {
     val inset = maxOf(3.dp, diameter * 0.08f)
     val photo = diameter - inset * 2
+    val model: ZelefinModel = viewModel()
+    val revision by remember(model) { model.state.map { it.avatarRevision }.distinctUntilChanged() }
+        .collectAsState(initial = model.state.value.avatarRevision)
     if (floating && LocalZelefinGlassHost.current != null) {
         Box(
             modifier
                 .size(diameter)
                 .zelefinGlassFaceDisc(
-                    key = "account-avatar",
+                    key = "account-avatar-${session?.accountId.orEmpty()}-$revision",
                     description = "Account",
                     onClick = onClick,
                     face = { AvatarPhoto(session, photo) },
@@ -391,17 +405,43 @@ private fun AvatarPhoto(session: SavedSession?, photo: androidx.compose.ui.unit.
         contentAlignment = Alignment.Center,
     ) {
         Text(initial, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
-        val url = session?.let(::avatarImageUrl)
-        if (url != null) {
-            CachedArtwork(
-                url = url,
-                contentDescription = session.userName,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(photo).clip(CircleShape),
-            )
-        }
+        if (session != null) AccountAvatarBitmap(session, photo)
     }
 }
+
+/** Loads the account photo with a revisioned Coil key so a switch cannot keep the previous face. */
+@Composable
+private fun AccountAvatarBitmap(session: SavedSession, diameter: androidx.compose.ui.unit.Dp) {
+    val model: ZelefinModel = viewModel()
+    val revision by remember(model) { model.state.map { it.avatarRevision }.distinctUntilChanged() }
+        .collectAsState(initial = model.state.value.avatarRevision)
+    val context = LocalContext.current
+    val url = avatarImageUrl(session) ?: return
+    LaunchedEffect(url) { ArtworkKindIndex.note(context, ArtworkDiskKey.key(url)) }
+    LaunchedEffect(url, revision) {
+        if (revision <= 0) return@LaunchedEffect
+        val disk = ArtworkDiskKey.key(url)
+        context.imageLoader.memoryCache?.remove(MemoryCache.Key(disk))
+        context.imageLoader.memoryCache?.remove(MemoryCache.Key("$disk#${revision - 1}"))
+    }
+    val request = remember(url, revision) {
+        val disk = ArtworkDiskKey.key(url)
+        ImageRequest.Builder(context)
+            .data(if (revision > 0) url.withAvatarRevision(revision) else url)
+            .diskCacheKey(disk)
+            .memoryCacheKey("$disk#$revision")
+            .build()
+    }
+    AsyncImage(
+        model = request,
+        contentDescription = session.userName,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.size(diameter).clip(CircleShape),
+    )
+}
+
+private fun String.withAvatarRevision(revision: Int): String =
+    if ('?' in this) "$this&v=$revision" else "$this?v=$revision"
 
 fun avatarImageUrl(session: SavedSession): String? =
     session.siloLink?.profileAvatarUrl?.let(SiloAvatarUrl::displayable) ?: userAvatarUrl(session, session.userId, session.userImageTag)

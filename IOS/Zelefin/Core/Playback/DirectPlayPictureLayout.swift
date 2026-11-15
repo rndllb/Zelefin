@@ -82,8 +82,6 @@ enum DirectPlayPictureLayout {
         return (fontSize, margin)
     }
 
-    /// The engine publishes a prefetch window. Only cues whose time range contains the playhead
-    /// belong on screen; everything else is future (or expired) text that would stack and look early.
     /// Karaoke / styled ASS often arrives as one run per word with the space omitted.
     static func joinedRunText(_ parts: [String]) -> String {
         parts.reduce(into: "") { result, part in
@@ -97,15 +95,6 @@ enum DirectPlayPictureLayout {
             } else {
                 result += " " + part
             }
-        }
-    }
-
-    static func visibleCues(
-        in cues: [DirectPlaySubtitleCue],
-        at seconds: TimeInterval
-    ) -> [DirectPlaySubtitleCue] {
-        cues.filter { cue in
-            cue.startTime <= seconds && seconds < cue.endTime
         }
     }
 }

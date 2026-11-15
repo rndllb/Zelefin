@@ -42,6 +42,11 @@ enum AccentPreferences {
         color(id: storedPresetId, customHex: storedCustomHex)
     }
 
+    /// `#RRGGBB` for the active accent — used when shipping color into Live Activities.
+    static var currentHex: String {
+        preset(id: storedPresetId, customHex: storedCustomHex).hex
+    }
+
     static func color(id: String, customHex: String) -> Color {
         preset(id: id, customHex: customHex).color
     }
@@ -192,12 +197,17 @@ struct ZelefinAccentTint: ViewModifier {
     }
 }
 
-/// Accent-tinted fill for grouped list rows; apply to each `Section`.
+/// Accent-tinted fill for grouped list rows; apply to each `Section` (or row).
 struct ZelefinRowBackground: ViewModifier {
     @Environment(\.zelefinSurfaces) private var surfaces
 
     func body(content: Content) -> some View {
-        content.listRowBackground(surfaces.raised)
+        content
+            .listRowBackground(
+                Rectangle()
+                    .fill(surfaces.raised)
+                    .ignoresSafeArea()
+            )
     }
 }
 

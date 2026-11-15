@@ -455,6 +455,8 @@ data class HomeFeed(
     val collections: List<MediaItem> = emptyList(),
     val genres: List<MediaItem> = emptyList(),
     val recentlyWatched: List<MediaItem> = emptyList(),
+    /** Named filter shelves (`custom-<id>`); empty when the user has none. */
+    val customRows: List<HomeSection> = emptyList(),
 )
 
 @Serializable

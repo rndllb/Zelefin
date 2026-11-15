@@ -3,20 +3,65 @@ import UIKit
 import Foundation
 import ZelefinMPV
 
+/// Marks the layer that scales the current frame while the window is dragged.
+/// The Metal layer itself stays put so MoltenVK is not involved in the drag.
+let LayerHostScaleName = "zelefin.picture-scale"
+
 #if targetEnvironment(macCatalyst)
 /// ZelefinMPV's Mac Catalyst slice (upstream MPVKit) has no `vo_avfoundation`; it draws with
 /// `gpu-next` through Vulkan on MoltenVK into this layer.
 typealias MPVVideoLayer = MPVMetalLayer
 
 final class MPVMetalLayer: CAMetalLayer {
-    /// MoltenVK briefly asks for a 1×1 drawable while the swapchain starts, which stalls the first
-    /// frame; the layer keeps its real size instead.
+    /// Once the picture has a real drawable, later writes are ignored. MoltenVK pokes this during
+    /// a window resize (including its 1×1 startup size). Accepting that shows the old frame in
+    /// the corner until the video output is built again.
+    private var lockedDrawableSize: CGSize?
+
+    /// MoltenVK briefly asks for a 1×1 drawable while the swapchain starts. Accepting that leaves
+    /// the layer stuck at 1×1. Until the size is locked, a 1×1 write falls back to the layer bounds.
     override var drawableSize: CGSize {
         get { super.drawableSize }
         set {
-            guard newValue.width > 1, newValue.height > 1 else { return }
-            super.drawableSize = newValue
+            if let lockedDrawableSize {
+                if super.drawableSize != lockedDrawableSize {
+                    super.drawableSize = lockedDrawableSize
+                }
+                return
+            }
+            let accepted: CGSize
+            if newValue.width > 1, newValue.height > 1 {
+                accepted = newValue
+            } else {
+                let fallback = pixelSizeMatchingBounds
+                guard fallback.width > 1, fallback.height > 1 else { return }
+                accepted = fallback
+            }
+            super.drawableSize = accepted
+            let expected = pixelSizeMatchingBounds
+            if abs(accepted.width - expected.width) < 2, abs(accepted.height - expected.height) < 2 {
+                lockedDrawableSize = accepted
+            }
         }
+    }
+
+    /// `drawableSize` stops following `bounds` once anything sets it explicitly (MoltenVK does).
+    /// Call this from layout so window resizes update the Metal swapchain.
+    func syncDrawableToBounds() {
+        forceDrawableSize(pixelSizeMatchingBounds)
+    }
+
+    func forceDrawableSize(_ size: CGSize) {
+        guard size.width > 1, size.height > 1 else { return }
+        lockedDrawableSize = size
+        if super.drawableSize != size {
+            super.drawableSize = size
+        }
+    }
+
+    private var pixelSizeMatchingBounds: CGSize {
+        let scale = max(contentsScale, 1)
+        return CGSize(width: bounds.width * scale, height: bounds.height * scale)
     }
 }
 #else
@@ -73,6 +118,9 @@ final class MPVPlayback {
     var onEvent: (Event) -> Void = { _ in }
 
     private let core: MPVCore
+    /// Window size the current video output was built for. The view scales that frame while the
+    /// window is moving and calls `noteSurfaceSize` once the size has stopped changing.
+    private var fittedSurface: CGSize = .zero
 
     init() throws {
         #if !targetEnvironment(macCatalyst)
@@ -108,11 +156,59 @@ final class MPVPlayback {
         core.setString("sub-pos", String(position))
     }
 
+    func setSubtitleScale(_ scale: CGFloat) {
+        core.setString("sub-scale", String(format: "%.2f", scale))
+    }
+
     func setFillsScreen(_ fills: Bool) {
         #if targetEnvironment(macCatalyst)
         core.setString("panscan", fills ? "1.0" : "0.0")
         #else
         displayLayer.videoGravity = fills ? .resizeAspectFill : .resizeAspect
+        #endif
+    }
+
+    /// Rebuilds the video output for a window size that has already stopped changing.
+    /// Called once the drag is over. Doing this while the window is still moving stalls the drag.
+    func noteSurfaceSize(_ size: CGSize) {
+        #if targetEnvironment(macCatalyst)
+        guard size.width > 1, size.height > 1 else { return }
+        if fittedSurface == .zero {
+            fittedSurface = size
+            return
+        }
+        guard abs(size.width - fittedSurface.width) > 4 || abs(size.height - fittedSurface.height) > 4 else { return }
+        commitSurfaceSize(size)
+        #endif
+    }
+
+    private func commitSurfaceSize(_ size: CGSize) {
+        #if targetEnvironment(macCatalyst)
+        fittedSurface = size
+        core.beginRefit { [weak self] in
+            self?.applyDrawableSize(size)
+        }
+        #endif
+    }
+
+    private func applyDrawableSize(_ size: CGSize) {
+        #if targetEnvironment(macCatalyst)
+        guard let metal = displayLayer as? MPVMetalLayer else { return }
+        let scale = max(metal.contentsScale, 1)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // The drag scales a wrapper around this layer. Drop that scale in the same transaction
+        // as the new drawable so the stretched picture and the rebuilt one occupy the same rect.
+        if metal.superlayer?.name == LayerHostScaleName {
+            metal.superlayer?.transform = CATransform3DIdentity
+            metal.superlayer?.anchorPoint = .zero
+            metal.superlayer?.frame = CGRect(origin: .zero, size: size)
+        }
+        metal.transform = CATransform3DIdentity
+        metal.anchorPoint = .zero
+        metal.frame = CGRect(origin: .zero, size: size)
+        metal.forceDrawableSize(CGSize(width: size.width * scale, height: size.height * scale))
+        CATransaction.commit()
         #endif
     }
 
@@ -139,6 +235,9 @@ private final class MPVCore: @unchecked Sendable {
     private var sawFirstFrame = false
     private var lastReportedTime: Double = -1
     private var isShutDown = false
+    /// A resize landed before the first frame. Rebuild once that frame exists, against the drawable
+    /// size already applied on the main thread.
+    private var refitAfterFirstFrame = false
 
     private static var isSimulator: Bool {
         #if targetEnvironment(simulator)
@@ -314,6 +413,33 @@ private final class MPVCore: @unchecked Sendable {
         }
     }
 
+    /// Turns the picture off, lets the caller set the drawable on the main thread, then builds the
+    /// output again. Doing that on every drag frame is what made resizing stall.
+    func beginRefit(then applyDrawable: @escaping @MainActor () -> Void) {
+        queue.async { [self] in
+            guard !isShutDown else { return }
+            let rebuildNow = sawFirstFrame
+            if rebuildNow, let handle {
+                mpv_set_property_string(handle, "vid", "no")
+            } else {
+                refitAfterFirstFrame = true
+            }
+            Task { @MainActor in
+                applyDrawable()
+                if rebuildNow {
+                    self.finishRefit()
+                }
+            }
+        }
+    }
+
+    func finishRefit() {
+        queue.async { [self] in
+            guard let handle, !isShutDown, sawFirstFrame else { return }
+            mpv_set_property_string(handle, "vid", "auto")
+        }
+    }
+
     func shutdown() {
         queue.async { [self] in
             guard let handle, !isShutDown else { return }
@@ -352,6 +478,11 @@ private final class MPVCore: @unchecked Sendable {
             if !sawFirstFrame {
                 sawFirstFrame = true
                 onEvent(.firstFrame)
+                if refitAfterFirstFrame {
+                    refitAfterFirstFrame = false
+                    mpv_set_property_string(handle, "vid", "no")
+                    mpv_set_property_string(handle, "vid", "auto")
+                }
             }
             onEvent(.buffering(false))
         case MPV_EVENT_END_FILE:
@@ -559,14 +690,51 @@ enum MPVTrackMatch {
         for jellyfinIndex: Int?,
         language: String?,
         in tracks: [MPVPlayback.Track],
-        kind: MPVPlayback.Track.Kind
+        kind: MPVPlayback.Track.Kind,
+        externalSubtitles: [ExternalSubtitleSidecar] = []
     ) -> MPVPlayback.Track? {
         let candidates = tracks.filter { $0.kind == kind }
         if let jellyfinIndex, let exact = candidates.first(where: { !$0.isExternal && $0.streamIndex == jellyfinIndex }) {
             return exact
         }
+        if kind == .subtitle, let jellyfinIndex,
+           let ordinal = externalSubtitles.firstIndex(where: { $0.streamIndex == jellyfinIndex }) {
+            let externals = candidates.filter(\.isExternal).sorted { $0.id < $1.id }
+            if externals.indices.contains(ordinal) {
+                return externals[ordinal]
+            }
+        }
         guard let wanted = NativeLanguage.alpha2(language) else { return nil }
         return candidates.first { NativeLanguage.alpha2($0.language) == wanted }
+    }
+
+    /// Maps an mpv subtitle (including sidecars from `sub-add`) back to Jellyfin's stream index.
+    static func jellyfinSubtitleIndex(
+        for track: MPVPlayback.Track,
+        in plan: PlaybackPlan,
+        mpvTracks: [MPVPlayback.Track]
+    ) -> Int? {
+        if !track.isExternal, let index = track.streamIndex {
+            return index
+        }
+        if track.isExternal {
+            let externals = mpvTracks
+                .filter { $0.kind == .subtitle && $0.isExternal }
+                .sorted { $0.id < $1.id }
+            if let ordinal = externals.firstIndex(where: { $0.id == track.id }),
+               plan.externalSubtitles.indices.contains(ordinal) {
+                return plan.externalSubtitles[ordinal].streamIndex
+            }
+        }
+        if let match = plan.subtitleTracks.first(where: {
+            NativeLanguage.alpha2($0.language) == NativeLanguage.alpha2(track.language)
+                && ($0.title == (track.title ?? $0.title) || (track.title?.isEmpty ?? true))
+        }) {
+            return match.id
+        }
+        return plan.subtitleTracks.first {
+            NativeLanguage.alpha2($0.language) == NativeLanguage.alpha2(track.language)
+        }?.id
     }
 
     static func title(for track: MPVPlayback.Track) -> String {

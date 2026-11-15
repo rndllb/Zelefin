@@ -90,7 +90,7 @@ enum PosterMetrics {
     }
 
     static func heroHeight(for size: CGSize) -> CGFloat {
-        max(680, size.height * 0.82)
+        HeroSizePreferences.current.height(for: size)
     }
 
 }
@@ -555,6 +555,7 @@ struct EpisodeShowcaseCard: View {
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
+    @AppStorage(PosterBadgePreferences.watchedKey) private var showsWatched = true
 
     private var size: CGSize {
         if let width { return PosterMetrics.episodeCardSize(width: width) }
@@ -574,7 +575,7 @@ struct EpisodeShowcaseCard: View {
                     DownloadCoverBadge(item: item, padded: false)
                 }
                 .overlay(alignment: .topTrailing) {
-                    if item.isWatched {
+                    if showsWatched, item.isWatched {
                         PosterWatchedMark(size: markSize)
                             .padding(markPadding)
                     }
@@ -694,46 +695,42 @@ struct LabeledPortraitCard: View {
     }
 
     var body: some View {
-        Color.clear
-            .frame(width: fittedWidth, height: fittedHeight)
-            .background {
-                ZStack {
-                    fallbackFill
-                    if let collection, collection.usesGeneratedCollage {
-                        CollectionCover(item: collection, width: fittedWidth, height: fittedHeight)
-                    } else {
-                        PosterImage(url: imageURL)
-                            .frame(width: fittedWidth, height: fittedHeight)
-                    }
-                }
+        ZStack {
+            fallbackFill
+            if let collection, collection.usesGeneratedCollage {
+                CollectionCover(item: collection, width: fittedWidth, height: fittedHeight)
+            } else {
+                PosterImage(url: imageURL)
             }
-            .overlay {
-                if let washColor {
-                    washColor.opacity(0.70)
-                }
+        }
+        .frame(width: fittedWidth, height: fittedHeight)
+        .overlay {
+            if let washColor {
+                washColor.opacity(0.70)
             }
-            .overlay {
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.82)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-            }
-            .overlay(alignment: .bottomLeading) {
-                Text(title)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(width: max(0, fittedWidth - 16), alignment: .leading)
-                    .padding(.leading, 8)
-                    .padding(.bottom, 8)
-            }
-            .clipped()
-            .posterCard(cornerRadius: cornerRadius)
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .accessibilityLabel(title)
+        }
+        .overlay {
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.82)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+        }
+        .overlay(alignment: .bottomLeading) {
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(width: max(0, fittedWidth - 16), alignment: .leading)
+                .padding(.leading, 8)
+                .padding(.bottom, 8)
+        }
+        .clipped()
+        .posterCard(cornerRadius: cornerRadius)
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .accessibilityLabel(title)
     }
 
     private var fallbackFill: some View {
@@ -767,18 +764,31 @@ private struct CollectionCover: View {
                     CollectionCollage(posters: posters)
                 }
             } else {
-                Color(red: 0.11, green: 0.11, blue: 0.11)
+                // Keep the server primary (or raised fill) up while members load.
+                // A near-black placeholder looked like a missing card background, and a
+                // cancelled LazyVGrid task used to leave that hole forever.
+                PosterImage(url: session.library?.primaryURL(for: item))
             }
         }
         .frame(width: width, height: height)
         .task(id: item.id) {
-            guard let client = session.library as? JellyfinLibraryClient else {
-                members = []
+            let loaded = await Self.posterMembers(for: item.id, library: session.library)
+            if Task.isCancelled {
+                if members == nil { members = [] }
                 return
             }
-            let loaded = await client.collectionPosterMembers(parentID: item.id)
-            guard !Task.isCancelled else { return }
             members = loaded
+        }
+    }
+
+    private static func posterMembers(for parentID: String, library: (any LibraryServing)?) async -> [MediaItem] {
+        switch library {
+        case let client as JellyfinLibraryClient:
+            return await client.collectionPosterMembers(parentID: parentID)
+        case let client as EmbyLibraryClient:
+            return await client.collectionPosterMembers(parentID: parentID)
+        default:
+            return []
         }
     }
 }
@@ -803,11 +813,13 @@ private struct CollectionCollage: View {
                                 contentMode: .fill,
                                 fill: Color(red: 0.11, green: 0.11, blue: 0.11)
                             )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
                     .frame(height: rowHeight)
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 }
@@ -976,6 +988,9 @@ struct PortraitPoster: View {
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     @Environment(DownloadStore.self) private var downloads
     @Environment(SessionStore.self) private var session
+    @AppStorage(PosterBadgePreferences.ratingKey) private var showsRating = true
+    @AppStorage(PosterBadgePreferences.watchedKey) private var showsWatched = true
+    @AppStorage(PosterBadgePreferences.qualityKey) private var showsQuality = true
 
     private var fittedSize: CGSize {
         size ?? PosterMetrics.portraitSize.scaled(by: sidebarLayout.scale)
@@ -983,7 +998,18 @@ struct PortraitPoster: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PosterImage(url: downloads.posterURL(for: item, account: session.session, remote: imageURL))
+            PosterImage(
+                url: downloads.posterURL(
+                    for: item,
+                    account: session.session,
+                    remote: downloads.preferredRemotePoster(
+                        for: item,
+                        account: session.session,
+                        library: session.library,
+                        fallback: imageURL
+                    )
+                )
+            )
                 .frame(width: fittedSize.width, height: fittedSize.height)
                 .overlay {
                     DownloadCoverBadge(item: item)
@@ -993,17 +1019,17 @@ struct PortraitPoster: View {
                     PosterQualityBadgeStack(item: item)
                 }
                 .overlay(alignment: .topLeading) {
-                    if rank == nil, let score = PosterRatingBadge.starScore(from: item.communityRating) {
+                    if showsRating, rank == nil, let score = PosterRatingBadge.starScore(from: item.communityRating) {
                         PosterRatingBadge(rating: score)
                             .padding(6)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
                     VStack(alignment: .trailing, spacing: 4) {
-                        if item.isWatched {
+                        if showsWatched, item.isWatched {
                             PosterWatchedMark()
                         }
-                        if rank != nil, let score = PosterRatingBadge.starScore(from: item.communityRating) {
+                        if showsRating, rank != nil, let score = PosterRatingBadge.starScore(from: item.communityRating) {
                             PosterRatingBadge(rating: score)
                         }
                     }
@@ -1024,18 +1050,20 @@ struct PortraitPoster: View {
 
     private var accessibilityCaption: String {
         var parts = [item.name]
-        if item.isWatched {
+        if showsWatched, item.isWatched {
             parts.append("Watched")
         }
-        if let score = PosterRatingBadge.starScore(from: item.communityRating) {
+        if showsRating, let score = PosterRatingBadge.starScore(from: item.communityRating) {
             parts.append("Rated \(String(format: "%.1f", score)) out of 10")
         }
         if let download = downloads.coverMark(for: item, account: session.session).accessibilityCaption {
             parts.append(download)
         }
-        let quality = PosterQualityBadges.badges(for: item).map(\.accessibilityLabel)
-        if !quality.isEmpty {
-            parts.append(contentsOf: quality)
+        if showsQuality {
+            let quality = PosterQualityBadges.badges(for: item).map(\.accessibilityLabel)
+            if !quality.isEmpty {
+                parts.append(contentsOf: quality)
+            }
         }
         return parts.joined(separator: ", ")
     }
@@ -2368,6 +2396,10 @@ enum MacChromeMetrics {
     static let topInset: CGFloat = 26 - ZelefinPillMetrics.height / 2
     /// The row and the gap under it, which page content starts below.
     static let rowHeight: CGFloat = topInset + ZelefinPillMetrics.height + 16
+    /// Mac windows have no home-indicator inset, so the player scrubber needs its own lift.
+    static let playerBottomInset: CGFloat = 28
+    /// The traffic-light buttons occupy the top of the window. Player header controls start below them.
+    static let playerTopInset: CGFloat = 40
 }
 
 struct MacPushedChromeRow<Trailing: View>: View {

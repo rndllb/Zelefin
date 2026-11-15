@@ -126,6 +126,7 @@ class EmbyRequestsTest {
 
     @Test
     fun administration() {
+        assertRequest(EmbyRequests.branding(), "GET", "/Branding/Configuration")
         assertRequest(EmbyRequests.activityLog(80), "GET", "/System/ActivityLog/Entries", "StartIndex" to "0", "Limit" to "80")
         assertRequest(EmbyRequests.startTask("t1"), "POST", "/ScheduledTasks/Running/t1")
         assertRequest(EmbyRequests.stopTask("t1"), "DELETE", "/ScheduledTasks/Running/t1")

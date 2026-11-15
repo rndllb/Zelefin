@@ -572,6 +572,24 @@ final class SessionStore {
         persist(saved)
     }
 
+    /// Approves a Quick Connect code from another device for the signed-in account.
+    func authorizeQuickConnect(code: String) async throws {
+        guard !isEmbyServer else {
+            throw ZelefinError.server("Quick Connect is a Jellyfin feature.")
+        }
+        guard let client else {
+            throw ZelefinError.server("Sign in to authorize Quick Connect.")
+        }
+        guard try await QuickConnectClient.isEnabled(on: client) else {
+            throw ZelefinError.quickConnectDisabled
+        }
+        try await QuickConnectClient.authorize(
+            code: code,
+            on: client,
+            userID: session?.userID
+        )
+    }
+
     /// Signs in with Quick Connect, calling `presentCode` when the code is ready.
     func connectUsingQuickConnect(
         serverAddress: String,
@@ -664,6 +682,7 @@ final class SessionStore {
         let companion = remote.map(ZelefinCompanionClient.init)
         let remaining: SavedSession?
         if let id = session?.accountID, var box = try? vault.loadBox() {
+            AccountSwitchPIN.remove(for: id)
             remaining = box.remove(id: id)
             try? vault.persist(box)
             accounts = box.accounts
@@ -935,12 +954,15 @@ final class SessionStore {
         if let name, !name.isEmpty {
             syncPlayGroupName = name
         }
+        let label = syncPlayGroupName ?? "SyncPlay"
+        SyncPlayActivityPresenter.start(groupName: label, statusLine: "Joined")
     }
 
     func noteSyncPlayLeft() {
         syncPlayGroupID = nil
         syncPlayGroupName = nil
         syncPlayPlaylistItemID = nil
+        SyncPlayActivityPresenter.stop()
     }
 
     func noteSyncPlayPlaylistItem(_ playlistItemID: String?) {
@@ -952,6 +974,7 @@ final class SessionStore {
         let group = try await library.syncPlayCreateGroup(name: name)
         syncPlayGroupID = group.id
         syncPlayGroupName = group.name
+        SyncPlayActivityPresenter.start(groupName: group.name, statusLine: "Joined")
     }
 
     func joinSyncPlayGroup(_ group: SyncPlayGroupInfo) async throws {
@@ -959,6 +982,7 @@ final class SessionStore {
         try await library.syncPlayJoinGroup(id: group.id)
         syncPlayGroupID = group.id
         syncPlayGroupName = group.name
+        SyncPlayActivityPresenter.start(groupName: group.name, statusLine: "Joined")
     }
 
     func leaveSyncPlayGroup() async throws {
@@ -1093,6 +1117,16 @@ final class SessionStore {
         syncPlayPlaylistItemID = nil
         pendingPlayerItem = nil
         nowPlayingItem = nil
+        SyncPlayActivityPresenter.stop()
+        CatalogIndexLiveActivity.finishIfNeeded()
+        RemoteSessionsLiveActivityMonitor.stop()
+        #if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
+        ZelefinLiveActivityController.shared.stopKind(.request)
+        ZelefinLiveActivityController.shared.stopKind(.download)
+        ZelefinLiveActivityController.shared.stopKind(.catalog)
+        ZelefinLiveActivityController.shared.stopKind(.syncPlay)
+        ZelefinLiveActivityController.shared.stopKind(.remoteSession)
+        #endif
         needsFirstRunSetup = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
@@ -1149,7 +1183,8 @@ final class SessionStore {
         client existing: JellyfinClient? = nil,
         serverVersion: String? = nil
     ) {
-        if PluginSettings.shouldClearSession(switchingFrom: session?.accountID, to: saved.accountID) {
+        let previousAccountID = session?.accountID
+        if PluginSettings.shouldClearSession(switchingFrom: previousAccountID, to: saved.accountID) {
             PluginSettings.clearSeerrSession()
         } else if PluginSettings.hasRequestSession, PluginSettings.seerrOwnerAccountID == nil {
             PluginSettings.seerrOwnerAccountID = saved.accountID
@@ -1170,9 +1205,13 @@ final class SessionStore {
         if saved.isEmbyServer {
             jellyfin = nil
             library = Self.makeEmbyLibrary(for: saved, url: endpoint.url)
-        } else if let existing, HomeNetworkResolver.isSameEndpoint(existing.configuration.url, endpoint.url) {
+        } else if let existing,
+                  HomeNetworkResolver.isSameEndpoint(existing.configuration.url, endpoint.url),
+                  existing.accessToken == saved.accessToken {
+            // Same signed-in session / token — keep the live client.
             jellyfin = existing
         } else {
+            // New account or token: never reuse another user's client (avatar URLs include api_key).
             jellyfin = JellyfinNetworking.client(
                 url: endpoint.url,
                 accessToken: saved.accessToken,
@@ -1182,6 +1221,9 @@ final class SessionStore {
         client = jellyfin
         if let jellyfin {
             library = JellyfinLibraryClient(client: jellyfin, userID: saved.userID, serverVersion: serverVersion ?? saved.serverVersion)
+        }
+        if previousAccountID != saved.accountID {
+            avatarRevision += 1
         }
         serverName = saved.serverName ?? saved.serverURL.host
         introSkipperPresence = .notInstalled
@@ -1526,8 +1568,18 @@ final class SessionStore {
         }
         let entries = await JellyfinPluginCatalog.entries(client: client)
         let names = entries.filter(\.isEnabled).map(\.name)
-        introSkipperPresence = .of({ IntroSkipperPlugin.isInstalled(names: [$0]) }, in: entries)
-        theIntroDBPresence = .of({ TheIntroDBPlugin.isInstalled(names: [$0]) }, in: entries)
+        async let introReachable = JellyfinPluginProbe.isReachable(client: client, paths: IntroSkipperPlugin.presenceProbePaths)
+        async let theIntroDBReachable = JellyfinPluginProbe.isReachable(client: client, paths: TheIntroDBPlugin.presenceProbePaths)
+        introSkipperPresence = .resolving(
+            from: entries,
+            matches: { IntroSkipperPlugin.isInstalled(names: [$0]) },
+            reachable: await introReachable
+        )
+        theIntroDBPresence = .resolving(
+            from: entries,
+            matches: { TheIntroDBPlugin.isInstalled(names: [$0]) },
+            reachable: await theIntroDBReachable
+        )
         openSubtitlesAvailable = RemoteSubtitleOffer.pluginAvailable(
             listed: OpenSubtitlesPlugin.isInstalled(names: names),
             catalogNames: names,
@@ -1800,6 +1852,17 @@ final class SessionStore {
         return JellyfinUserAdminClient(client: client)
     }
 
+    /// The signed-in Jellyfin/Emby user record (policy, configuration, activity).
+    func currentUserDto() async throws -> UserDto {
+        if let embyLibrary {
+            return try await embyLibrary.currentUser()
+        }
+        guard let client else {
+            throw ZelefinError.server("Sign in to view this profile.")
+        }
+        return try await client.send(Paths.getCurrentUser).value
+    }
+
     func applyRenamedCurrentUser(_ name: String) {
         guard var saved = session else { return }
         saved.userName = name
@@ -1981,6 +2044,8 @@ final class SessionStore {
         var catalog: [MediaLibrary] = []
         var recommendations: [HomeSection] = []
         var upcoming: [MediaItem] = []
+        var customRows: [HomeSection] = []
+        let catalogLibraries = libraries
 
         await withTaskGroup(of: HomeFeedChunk.self) { group in
             group.addTask { .continueWatching(await library.resumeItemsIgnoringErrors()) }
@@ -1995,6 +2060,14 @@ final class SessionStore {
             group.addTask { .genres(await library.genresSectionIgnoringErrors()) }
             group.addTask { .recommendations(await library.movieRecommendationsIgnoringErrors()) }
             group.addTask { .upcoming(await library.upcomingEpisodesIgnoringErrors()) }
+            group.addTask {
+                var libs = catalogLibraries
+                if libs.isEmpty {
+                    libs = (try? await library.libraries()) ?? []
+                }
+                let sections = await CustomHomeRows.fetchSections(libraries: libs, using: library)
+                return .customRows(sections)
+            }
 
             for await chunk in group {
                 if Task.isCancelled { break }
@@ -2018,6 +2091,8 @@ final class SessionStore {
                     recommendations = sections
                 case let .upcoming(items):
                     upcoming = items
+                case let .customRows(sections):
+                    customRows = sections
                 }
 
                 guard !showingCachedHome else { continue }
@@ -2032,6 +2107,7 @@ final class SessionStore {
                     catalog: catalog,
                     recommendations: recommendations,
                     upcoming: upcoming,
+                    customRows: customRows,
                     persist: false
                 )
             }
@@ -2050,6 +2126,7 @@ final class SessionStore {
             catalog: catalog,
             recommendations: recommendations,
             upcoming: upcoming,
+            customRows: customRows,
             persist: true
         )
 
@@ -2074,6 +2151,7 @@ final class SessionStore {
         catalog: [MediaLibrary],
         recommendations: [HomeSection],
         upcoming: [MediaItem],
+        customRows: [HomeSection],
         persist: Bool
     ) {
         let continueWatching = HomeQueueHideStore.filter(
@@ -2097,7 +2175,7 @@ final class SessionStore {
             recentlyWatched: recentlyWatched,
             recommendations: recommendations,
             upcoming: upcoming
-        )
+        ) + customRows
 
         if !catalog.isEmpty {
             libraries = catalog

@@ -71,10 +71,55 @@ class SubtitleAppearanceTest {
         assertTrue(landscape.mpvSubPos > 88)
         assertTrue(filled.letterboxBottom < 1f)
         assertTrue(filled.bottomPaddingFraction < portrait.bottomPaddingFraction)
+        // Fill changes where the picture sits; ExoPlayer size stays tied to the window. MPV's
+        // sub-scale shrinks by the panscan zoom so image captions do not grow with the crop.
+        assertEquals(portrait.fractionalTextSize, filled.fractionalTextSize, 0.001f)
+        assertTrue(filled.mpvSubScale < style.sizeScale)
+        assertEquals(style.sizeScale / SubtitlePictureLayout.fillZoom(1080f, 2400f, 1920f, 1080f), filled.mpvSubScale, 0.01f)
         val portraitPx = portrait.fractionalTextSize * 2400f
         val landscapePx = landscape.fractionalTextSize * 1080f
         assertTrue(portraitPx > landscapePx * 0.85f)
         assertTrue(portrait.mpvFontSize >= style.mpvFontSize)
+    }
+
+    @Test
+    fun fillScreenDoesNotGrowOrCropCaptions() {
+        val style = SubtitleAppearance.Snapshot()
+        val windowW = 1920
+        val windowH = 1080
+        val fourByThree = SubtitlePictureLayout.placement(
+            viewWidth = windowW,
+            viewHeight = windowH,
+            videoWidth = 1440f,
+            videoHeight = 1080f,
+            fill = false,
+            style = style,
+        )
+        val filled = SubtitlePictureLayout.placement(
+            viewWidth = windowW,
+            viewHeight = windowH,
+            videoWidth = 1440f,
+            videoHeight = 1080f,
+            fill = true,
+            style = style,
+        )
+        assertEquals(1.333f, SubtitlePictureLayout.fillZoom(1920f, 1080f, 1440f, 1080f), 0.01f)
+        assertEquals(style.sizeScale / (1920f / 1440f), filled.mpvSubScale, 0.01f)
+        assertTrue(filled.mpvSubScale < fourByThree.mpvSubScale)
+        assertEquals(fourByThree.fractionalTextSize, filled.fractionalTextSize, 0.001f)
+        assertTrue(filled.mpvSubPos <= 100)
+        assertTrue(filled.bottomPaddingFraction >= 0.05f)
+
+        val matching = SubtitlePictureLayout.placement(
+            viewWidth = windowW,
+            viewHeight = windowH,
+            videoWidth = 1920f,
+            videoHeight = 1080f,
+            fill = true,
+            style = SubtitleAppearance.Snapshot(size = SubtitleAppearance.SIZE_LARGE),
+        )
+        assertEquals(1.28f, matching.mpvSubScale, 0.001f)
+        assertTrue(matching.mpvSubPos in 90..100)
     }
 
     @Test

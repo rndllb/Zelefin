@@ -70,8 +70,26 @@ fun CastRouteButton(modifier: Modifier = Modifier) {
 @Composable
 fun rememberCastConnected(): Boolean {
     val context = LocalContext.current
-    var connected by remember { mutableStateOf(ZelefinCast.isConnected(context)) }
-    DisposableEffect(context) {
+    // Start false — CastContext may still be warming up off the main thread.
+    var connected by remember { mutableStateOf(false) }
+    var castReady by remember { mutableStateOf(ZelefinCast.context(context) != null) }
+    LaunchedEffect(context) {
+        ZelefinCast.warmup(context)
+        if (castReady) {
+            connected = ZelefinCast.isConnected(context)
+            return@LaunchedEffect
+        }
+        repeat(50) {
+            if (ZelefinCast.context(context) != null) {
+                castReady = true
+                connected = ZelefinCast.isConnected(context)
+                return@LaunchedEffect
+            }
+            delay(100)
+        }
+    }
+    DisposableEffect(context, castReady) {
+        if (!castReady) return@DisposableEffect onDispose { }
         val manager = ZelefinCast.context(context)?.sessionManager
         val listener = object : SessionManagerListener<CastSession> {
             override fun onSessionStarted(session: CastSession, sessionId: String) { connected = true }

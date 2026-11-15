@@ -14,6 +14,9 @@ struct ItemDetailView: View {
     @Environment(\.scenePhase) private var scenePhase
     let itemID: String
     let focusEpisodeID: String?
+    /// Reached from the Downloaded page: the same detail layout, but only the episodes on this
+    /// device, playable offline. Online-only sections (trailers, cast, related) are left out.
+    let downloadsOnly: Bool
 
     @State private var item: MediaItem?
     @State private var seasons: [MediaItem] = []
@@ -21,6 +24,7 @@ struct ItemDetailView: View {
     @State private var channel: MediaItem?
     @State private var youtubeChromeVisible = true
     @State private var heroLock = HeroHeightLock()
+    @AppStorage(HeroSizePreferences.storageKey) private var heroSizeRaw = HeroSizePreferences.compact.rawValue
     @State private var trailers: [TitleTrailer] = []
     @State private var extras: [TitleExtra] = []
     @State private var additionalParts: [MediaItem] = []
@@ -58,24 +62,26 @@ struct ItemDetailView: View {
     @State private var subtitleTracks: [MediaTrack]?
     /// The files the hero's title can play from, for its version picker.
 
-    init(itemID: String, preview: MediaItem? = nil, focusEpisodeID: String? = nil) {
+    init(itemID: String, preview: MediaItem? = nil, focusEpisodeID: String? = nil, downloadsOnly: Bool = false) {
         self.itemID = itemID
         self.focusEpisodeID = focusEpisodeID
+        self.downloadsOnly = downloadsOnly
         _item = State(initialValue: preview)
         _isLoading = State(initialValue: preview == nil)
     }
 
-    init(item: MediaItem) {
+    init(item: MediaItem, downloadsOnly: Bool = false) {
         if item.isYouTube {
-            self.init(itemID: item.id, preview: item)
+            self.init(itemID: item.id, preview: item, downloadsOnly: downloadsOnly)
         } else if let seriesID = item.seriesDetailItemID {
             self.init(
                 itemID: seriesID,
                 preview: item.seriesShowcasePreview(),
-                focusEpisodeID: item.kind == .episode ? item.id : nil
+                focusEpisodeID: item.kind == .episode ? item.id : nil,
+                downloadsOnly: downloadsOnly
             )
         } else {
-            self.init(itemID: item.id, preview: item)
+            self.init(itemID: item.id, preview: item, downloadsOnly: downloadsOnly)
         }
     }
 
@@ -326,6 +332,10 @@ struct ItemDetailView: View {
             }
             .onAppear { heroLock.lock(geo.size) }
             .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
+            .onChange(of: heroSizeRaw) {
+                heroLock = HeroHeightLock()
+                heroLock.lock(geo.size)
+            }
         }
         .background(Color.zelefinPage.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
@@ -440,11 +450,13 @@ struct ItemDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     overviewBlock(overview)
                     TitleSpecsRow(item: item)
+                    TitleDirectorsLine(people: credits)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     TitleSpecsRow(item: item)
+                    TitleDirectorsLine(people: credits)
                     if moreInfo.hasDetails {
                         moreInfoButton
                     }
@@ -851,7 +863,7 @@ struct ItemDetailView: View {
                         } label: {
                             CastMemberCard(
                                 person: person,
-                                imageURL: person.imageURL ?? session.library?.personImageURL(id: person.id, tag: person.imageTag),
+                                imageURL: person.portraitURL(library: session.library),
                                 width: DetailRowLayout.cardWidth(fitting: 10, in: rowWidth)
                             )
                         }
@@ -966,8 +978,13 @@ struct ItemDetailView: View {
     }
 
     private func load() async {
-        guard session.library != nil else { return }
         if hasLoadedDetail { return }
+        if downloadsOnly {
+            await loadDownloadsDetail()
+            hasLoadedDetail = true
+            return
+        }
+        guard session.library != nil else { return }
 
         if let snapshot = session.cachedItemDetail(itemID: itemID) {
             apply(snapshot)
@@ -978,6 +995,103 @@ struct ItemDetailView: View {
         }
         await refreshFromServer()
         hasLoadedDetail = true
+    }
+
+    /// The Downloaded page's detail: the same layout, but just the title and its downloaded episodes,
+    /// and no online-only sections. Works offline — a live library only sharpens the season/episode
+    /// data and the hero metadata when it's reachable.
+    private func loadDownloadsDetail() async {
+        if let snapshot = session.cachedItemDetail(itemID: itemID) {
+            item = snapshot.item
+            seasons = MediaItem.orderedSeasons(snapshot.seasons)
+            episodes = MediaItem.orderedShowEpisodes(snapshot.episodes, seasons: seasons)
+            credits = snapshot.credits
+        }
+        if let library = session.library {
+            if let loaded = try? await library.item(id: itemID) { item = loaded }
+            if let loaded = item {
+                if loaded.kind == .series {
+                    async let fetchedSeasons = library.seasons(seriesID: itemID)
+                    async let fetchedEpisodes = library.episodes(seriesID: itemID)
+                    async let fetchedCredits = library.credits(for: loaded)
+                    let loadedSeasons = MediaItem.orderedSeasons((try? await fetchedSeasons) ?? [])
+                    let loadedEpisodes = MediaItem.orderedShowEpisodes(
+                        (try? await fetchedEpisodes) ?? [],
+                        seasons: loadedSeasons
+                    )
+                    if !loadedSeasons.isEmpty { seasons = loadedSeasons }
+                    if !loadedEpisodes.isEmpty { episodes = loadedEpisodes }
+                    credits = Self.keepingCastPhotos(await fetchedCredits, from: credits)
+                } else {
+                    credits = Self.keepingCastPhotos(await library.credits(for: loaded), from: credits)
+                }
+                Task { await fillCastPhotos(library: library, for: itemID) }
+            }
+        }
+        applyDownloadsFilter()
+        isLoading = false
+    }
+
+    /// Keep only the episodes that are downloaded, reusing the real season objects when they loaded
+    /// (online or cached) and falling back to the downloaded items themselves when offline.
+    private func applyDownloadsFilter() {
+        let records = downloads.libraryRow(id: itemID, account: session.session)?.records ?? []
+        let downloadedIDs = Set(records.map(\.item.id))
+        var kept = episodes.filter { downloadedIDs.contains($0.id) }
+        if kept.isEmpty {
+            // Unique by id — a rebuild mid-transfer could have written the same episode twice.
+            var seen = Set<String>()
+            kept = records.map(\.item).filter { seen.insert($0.id).inserted }
+        }
+        let keptSeasonNumbers = Set(kept.compactMap(\.seasonIndex))
+        var filteredSeasons = seasons.filter { season in
+            season.resolvedSeasonNumber.map { keptSeasonNumbers.contains($0) } ?? false
+        }
+        // Offline with no cached seasons: build season rows from the downloaded episodes.
+        if filteredSeasons.isEmpty, !records.isEmpty {
+            filteredSeasons = DownloadSeasonLayout.groups(from: records).map { group in
+                MediaItem(
+                    id: "\(itemID)-season-\(group.id)",
+                    name: group.title,
+                    kind: .season,
+                    overview: nil,
+                    year: nil,
+                    runtime: nil,
+                    officialRating: nil,
+                    genres: [],
+                    seriesName: item?.name ?? item?.seriesName,
+                    seasonIndex: group.seasonIndex,
+                    episodeIndex: nil,
+                    playbackPosition: 0,
+                    unplayedCount: nil,
+                    isPlayed: false,
+                    primaryImageTag: nil,
+                    thumbImageTag: nil,
+                    backdropImageTag: nil,
+                    backdropImageTags: [],
+                    logoImageTag: nil,
+                    parentBackdropItemID: itemID,
+                    parentThumbItemID: itemID,
+                    parentThumbImageTag: nil,
+                    parentLogoItemID: nil,
+                    parentLogoImageTag: nil,
+                    seriesThumbImageTag: nil,
+                    seriesID: itemID,
+                    imageItemID: nil,
+                    queueKind: .nextUp,
+                    videoRange: .sdr,
+                    audioFormat: .unknown
+                )
+            }
+        }
+        seasons = filteredSeasons
+        episodes = MediaItem.orderedShowEpisodes(kept, seasons: filteredSeasons)
+        selectedSeasonID = filteredSeasons.first?.id
+        scrolledEpisodeID = EpisodeCarousel.homePosition(
+            seasonID: selectedSeasonID,
+            seasons: seasons,
+            episodes: episodes
+        )
     }
 
     private func apply(_ snapshot: ItemDetailSnapshot) {
@@ -1000,6 +1114,7 @@ struct ItemDetailView: View {
     }
 
     private func persistSnapshot() {
+        guard !downloadsOnly else { return }
         guard let item else { return }
         session.persistItemDetail(
             item: item,
@@ -1065,11 +1180,11 @@ struct ItemDetailView: View {
             id: person.id,
             name: person.name,
             roleLabel: person.roleLabel,
-            imageTag: profile.imageTag,
+            imageTag: profile.imageTag ?? person.imageTag,
             rank: person.rank,
             overview: person.overview ?? profile.overview,
             birthYear: person.birthYear ?? profile.birthYear,
-            imageURL: person.imageURL
+            imageURL: profile.imageURL ?? person.imageURL
         )
     }
 
@@ -1187,6 +1302,7 @@ struct ItemDetailView: View {
         } else if loaded.kind == .series {
             let fetched = (try? await library.episodes(seriesID: loaded.id)) ?? []
             episodes = MediaItem.orderedShowEpisodes(fetched, seasons: seasons)
+            if downloadsOnly { applyDownloadsFilter() }
         }
         persistSnapshot()
     }
@@ -1440,7 +1556,7 @@ private struct CastCrewListView: View {
                     } label: {
                         HStack(spacing: 14) {
                             PosterImage(
-                                url: person.imageURL ?? session.library?.personImageURL(id: person.id, tag: person.imageTag),
+                                url: person.portraitURL(library: session.library),
                                 aspectRatio: 1
                             )
                             .frame(width: 56, height: 56)

@@ -45,6 +45,7 @@ import app.zelefin.core.VideoResolution
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import app.zelefin.client.session.ArtworkKindIndex
 import app.zelefin.core.ArtworkDiskKey
 import app.zelefin.core.ArtworkUrls
 import app.zelefin.core.MediaItem
@@ -62,7 +63,7 @@ fun PosterCard(
     onClick: () -> Unit,
 ) {
     val width = if (landscape) 280.dp else 132.dp
-    Column(modifier.width(width).clickable(onClick = onClick)) {
+    Column(modifier.width(width).tvFocusScale().clickable(onClick = onClick)) {
         Box {
             CachedArtwork(
                 urls = artworkCandidates(item, session, landscape),
@@ -229,8 +230,9 @@ fun CachedArtwork(
         Box(modifier.background(Color(0xFF1C1C1E)))
         return
     }
+    val cacheKey = ArtworkDiskKey.key(url)
+    LaunchedEffect(cacheKey) { ArtworkKindIndex.note(context, cacheKey) }
     val request = remember(url, crossfade) {
-        val cacheKey = ArtworkDiskKey.key(url)
         ImageRequest.Builder(context)
             .data(url)
             .diskCacheKey(cacheKey)
@@ -254,12 +256,18 @@ fun CachedArtwork(
 @Composable
 fun BoxScope.ItemPosterMarks(item: MediaItem, portrait: Boolean) {
     if (portrait) {
-        QualityBadgeRow(item, compact = false, Modifier.align(Alignment.BottomStart).padding(7.dp))
-        posterStarScore(item.communityRating)?.let { score ->
-            RatingBadge(score, Modifier.align(Alignment.TopStart).padding(6.dp))
+        if (PosterBadgePreferences.showsQuality) {
+            QualityBadgeRow(item, compact = false, Modifier.align(Alignment.BottomStart).padding(7.dp))
         }
-        if (item.isWatched) WatchedMark(Modifier.align(Alignment.TopEnd).padding(6.dp))
-    } else {
+        if (PosterBadgePreferences.showsRating) {
+            posterStarScore(item.communityRating)?.let { score ->
+                RatingBadge(score, Modifier.align(Alignment.TopStart).padding(6.dp))
+            }
+        }
+        if (PosterBadgePreferences.showsWatched && item.isWatched) {
+            WatchedMark(Modifier.align(Alignment.TopEnd).padding(6.dp))
+        }
+    } else if (PosterBadgePreferences.showsQuality) {
         QualityBadgeRow(item, compact = true, Modifier.align(Alignment.TopStart).padding(6.dp))
     }
     DownloadPosterMark(item, portrait)

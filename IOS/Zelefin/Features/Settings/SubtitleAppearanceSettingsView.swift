@@ -43,10 +43,11 @@ struct SubtitleAppearanceSettingsView: View {
                     size: size.wrappedValue,
                     color: color.wrappedValue,
                     background: background.wrappedValue,
-                    brightness: brightness
+                    brightness: brightness,
+                    positionLift: positionLift
                 )
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 112)
+                .frame(minHeight: 140)
             } header: {
                 Text("Style")
             }
@@ -76,7 +77,9 @@ struct SubtitleAppearanceSettingsView: View {
                         Text(option.title).tag(option)
                     }
                 }
-                Slider(value: $positionLift, in: SubtitleAppearance.positionRange, step: 1)
+                sliderRow("Raise", value: $positionLift, range: SubtitleAppearance.positionRange, step: 1) {
+                    "\(Int(positionLift.rounded()))"
+                }
                 sliderRow("Sync", value: syncBinding, range: SubtitleAppearance.syncRange, step: SubtitleAppearance.syncStep) {
                     SubtitleAppearance.syncTitle(syncSeconds)
                 }
@@ -130,14 +133,26 @@ struct SubtitleAppearancePreview: View {
     var color: SubtitleAppearance.TextColor
     var background: SubtitleAppearance.Background
     var brightness: Double
+    var positionLift: Double
+
+    /// How far the sample can climb inside the preview frame (points).
+    private static let maxLiftPoints: CGFloat = 72
 
     var body: some View {
-        Text("Sample subtitle text")
-            .font(.system(size: 17 * size.scale, weight: .semibold))
-            .multilineTextAlignment(.center)
-            .modifier(SubtitleTextChrome(color: color, background: background, brightness: brightness))
-            .frame(maxWidth: .infinity, minHeight: 80)
-            .padding(.horizontal, 12)
+        let lift = CGFloat(max(0, min(100, positionLift)) / 100) * Self.maxLiftPoints
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black.opacity(0.55))
+            Text("Sample subtitle text")
+                .font(.system(size: 17 * size.scale, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .modifier(SubtitleTextChrome(color: color, background: background, brightness: brightness))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10 + lift)
+                .animation(.easeInOut(duration: 0.15), value: positionLift)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
+        .padding(.vertical, 4)
     }
 }
 

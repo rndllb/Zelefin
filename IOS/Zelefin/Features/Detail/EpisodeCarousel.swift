@@ -16,6 +16,9 @@ struct EpisodeCarouselCard: Identifiable, Hashable {
 enum EpisodeCarousel {
     static let loopCopies = 3
     static let homeCopy = 1
+    /// Below this count, tripling the strip just shows the same episode two or three times
+    /// side by side (common on the Downloaded detail page with one episode).
+    static let minimumEpisodesToLoop = 3
 
     static func cards(seasons: [MediaItem], episodes: [MediaItem]) -> [EpisodeCarouselCard] {
         let ordered = MediaItem.orderedShowEpisodes(episodes, seasons: seasons)
@@ -28,8 +31,14 @@ enum EpisodeCarousel {
             return (seasonID, episode)
         }
 
-        return (0..<loopCopies).flatMap { copy in
-            base.map { EpisodeCarouselCard(copy: copy, seasonID: $0.seasonID, episode: $0.episode) }
+        let looping = base.count >= minimumEpisodesToLoop
+        let copies = looping ? loopCopies : 1
+        return (0..<copies).flatMap { copy in
+            // Non-looping strips still use homeCopy so scroll-position helpers stay consistent.
+            let copyIndex = looping ? copy : homeCopy
+            return base.map {
+                EpisodeCarouselCard(copy: copyIndex, seasonID: $0.seasonID, episode: $0.episode)
+            }
         }
     }
 

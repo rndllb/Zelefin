@@ -2,7 +2,38 @@ import AVKit
 import SwiftUI
 import UIKit
 
-/// Fullscreen chrome that follows AVPlayerViewController: xmark, AirPlay, PiP, ellipsis,
+/// SharePlay actions for the Watch Together menu.
+struct AVKitSharePlayChrome {
+    var isActive: Bool
+    var title: String
+    var onStart: () -> Void
+    var onLeave: () -> Void
+}
+
+/// AirPlay / Chromecast / SharePlay / SyncPlay — one menu next to PiP.
+struct AVKitWatchTogetherChrome {
+    var onAirPlay: (() -> Void)? = nil
+    var onCast: (() -> Void)? = nil
+    var isCastConnected = false
+    var castDeviceName: String? = nil
+    var isAirPlaying = false
+    var sharePlay: AVKitSharePlayChrome? = nil
+    var syncPlayTitle: String? = nil
+    var syncPlayIsActive = false
+    var onSyncPlay: (() -> Void)? = nil
+
+    var hasAnyOption: Bool {
+        onAirPlay != nil
+            || onCast != nil
+            || sharePlay != nil
+            || onSyncPlay != nil
+    }
+
+    /// Distinct from AirPlay / Cast / SharePlay row icons.
+    var menuSymbol: String { "dot.radiowaves.left.and.right" }
+}
+
+/// Fullscreen chrome that follows AVPlayerViewController: xmark, PiP, ellipsis,
 /// skip, play/pause, elapsed / scrubber / remaining, auto-hide while playing.
 struct AVKitPlaybackChrome: View {
     var model: PlayerModel
@@ -22,6 +53,7 @@ struct AVKitPlaybackChrome: View {
     var onNext: (() -> Void)? = nil
     /// Off while something else (the subtitle search) has the keyboard.
     var keyboardEnabled = true
+    var watchTogether: AVKitWatchTogetherChrome? = nil
 
     @State private var controlsVisible = true
     @State private var keyHint: String?
@@ -38,11 +70,20 @@ struct AVKitPlaybackChrome: View {
         GeometryReader { geo in
             let panelCeiling = min(420, max(180, geo.size.height - 58 - (controlsVisible ? 88 : 16)))
             ZStack {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: toggleControls)
+                PlayerGestureOverlay(
+                    model: model,
+                    controlsVisible: controlsVisible,
+                    onToggleControls: toggleControls,
+                    bottomChromeHeight: controlsVisible ? (120 + controlsBottomPadding) : 0
+                )
 
-                dimming
+                // Match Android: gesture skip / seek rebuffer keeps chrome hidden; only a spinner shows.
+                if isWaiting && !controlsVisible {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(1.15)
+                        .allowsHitTesting(false)
+                }
 
                 if controlsVisible {
                     VStack(spacing: 0) {
@@ -64,8 +105,8 @@ struct AVKitPlaybackChrome: View {
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
-                    .padding(.top, 8)
-                    .padding(.bottom, 2)
+                    .padding(.top, controlsTopPadding)
+                    .padding(.bottom, controlsBottomPadding)
                     .transition(.opacity)
                 }
 
@@ -73,7 +114,7 @@ struct AVKitPlaybackChrome: View {
                     skipIntro("Skip", action: onSkipCinema)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .padding(.trailing, horizontalPadding)
-                        .padding(.bottom, controlsVisible ? 64 : 10)
+                        .padding(.bottom, controlsVisible ? (64 + controlsBottomPadding) : (10 + controlsBottomPadding))
                 } else if let title = model.skipPrompt?.title {
                     skipIntro(title, action: {
                         model.skipCurrentSegment()
@@ -81,7 +122,7 @@ struct AVKitPlaybackChrome: View {
                     })
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .padding(.trailing, horizontalPadding)
-                        .padding(.bottom, controlsVisible ? 64 : 10)
+                        .padding(.bottom, controlsVisible ? (64 + controlsBottomPadding) : (10 + controlsBottomPadding))
                 }
 
                 if settingsOpen {
@@ -110,7 +151,7 @@ struct AVKitPlaybackChrome: View {
                         onSubtitleChange: onSubtitleChange
                     )
                     .padding(.trailing, horizontalPadding)
-                    .padding(.top, 58)
+                    .padding(.top, controlsTopPadding + 50)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
 
@@ -146,11 +187,6 @@ struct AVKitPlaybackChrome: View {
                 revealControls()
             }
         }
-        .onChange(of: isWaiting) { _, waiting in
-            if waiting {
-                revealControls()
-            }
-        }
     }
 
     private var isWaiting: Bool {
@@ -165,25 +201,22 @@ struct AVKitPlaybackChrome: View {
         horizontalSizeClass == .regular ? 28 : 16
     }
 
-    @ViewBuilder
-    private var dimming: some View {
-        LinearGradient(
-            colors: [Color.black.opacity(controlsVisible ? 0.28 : 0), .clear],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: 140)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .allowsHitTesting(false)
+    /// iPhone gets a home-indicator safe area; Mac Catalyst does not, so lift the scrubber by hand.
+    private var controlsBottomPadding: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        MacChromeMetrics.playerBottomInset
+        #else
+        2
+        #endif
+    }
 
-        LinearGradient(
-            colors: [.clear, Color.black.opacity(controlsVisible ? 0.32 : 0)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: 180)
-        .frame(maxHeight: .infinity, alignment: .bottom)
-        .allowsHitTesting(false)
+    /// Mac traffic lights sit over the top of the window. The header row starts below them.
+    private var controlsTopPadding: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        MacChromeMetrics.playerTopInset
+        #else
+        8
+        #endif
     }
 
     private var topBar: some View {
@@ -200,10 +233,9 @@ struct AVKitPlaybackChrome: View {
                 .shadow(color: .black.opacity(0.45), radius: 8, y: 1)
             Spacer(minLength: 8)
             HStack(spacing: 16) {
-                AirPlayRouteButton()
-                    .frame(width: 44, height: 44)
-                    .avkitGlassCircle()
-                    .accessibilityLabel("AirPlay")
+                if let watchTogether, watchTogether.hasAnyOption {
+                    watchTogetherMenu(watchTogether)
+                }
                 if model.canUsePictureInPicture {
                     iconButton("pip.enter", label: "Picture in Picture", size: 18) {
                         model.togglePictureInPicture()
@@ -222,6 +254,73 @@ struct AVKitPlaybackChrome: View {
         }
         .foregroundStyle(.white)
         .padding(.top, 4)
+    }
+
+    private func watchTogetherMenu(_ routes: AVKitWatchTogetherChrome) -> some View {
+        Menu {
+            if let onAirPlay = routes.onAirPlay {
+                Button {
+                    onAirPlay()
+                    revealControls()
+                } label: {
+                    Label(
+                        routes.isAirPlaying ? "AirPlay (Connected)" : "AirPlay",
+                        systemImage: "airplayvideo"
+                    )
+                }
+            }
+            if let onCast = routes.onCast {
+                Button {
+                    onCast()
+                    revealControls()
+                } label: {
+                    Label(
+                        routes.isCastConnected
+                            ? "Chromecast (\(routes.castDeviceName ?? "TV"))"
+                            : "Chromecast",
+                        systemImage: routes.isCastConnected ? "tv.fill" : "tv"
+                    )
+                }
+            }
+            if let sharePlay = routes.sharePlay {
+                Button {
+                    if sharePlay.isActive {
+                        sharePlay.onLeave()
+                    } else {
+                        sharePlay.onStart()
+                    }
+                    revealControls()
+                } label: {
+                    Label(
+                        sharePlay.title,
+                        systemImage: sharePlay.isActive ? "shareplay.slash" : "shareplay"
+                    )
+                }
+            }
+            if let onSyncPlay = routes.onSyncPlay, let syncTitle = routes.syncPlayTitle {
+                Button {
+                    onSyncPlay()
+                    revealControls()
+                } label: {
+                    Label(
+                        syncTitle,
+                        systemImage: routes.syncPlayIsActive ? "person.2.fill" : "person.2"
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: routes.menuSymbol)
+                .font(.system(size: 18, weight: .semibold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .tint(.white)
+        .foregroundStyle(.white)
+        .avkitGlassCircle()
+        .accessibilityLabel("Watch together")
     }
 
     private var centerTransport: some View {
@@ -1148,6 +1247,7 @@ private struct AVKitTimelineChrome: View {
                 AVKitScrubber(
                     value: displayedTime,
                     duration: max(model.duration, 0.001),
+                    bufferedAhead: model.bufferedAheadSeconds,
                     chapters: model.plan.chapters,
                     onEditingChanged: { editing, time in
                         isScrubbing = editing
@@ -1238,9 +1338,11 @@ private struct BIFFramePreview: View {
 }
 
 /// Capsule timeline matching AVKit: thin until dragged, then a thicker white fill.
+/// A secondary darker fill shows how far media is buffered ahead of the playhead.
 private struct AVKitScrubber: View {
     var value: TimeInterval
     var duration: TimeInterval
+    var bufferedAhead: TimeInterval = 0
     var chapters: [MediaChapter] = []
     var onEditingChanged: (_ editing: Bool, _ time: TimeInterval) -> Void
 
@@ -1255,14 +1357,21 @@ private struct AVKitScrubber: View {
         GeometryReader { proxy in
             let width = max(proxy.size.width, 1)
             let progress = min(1, max(0, shown / duration))
+            let buffered = min(1, max(progress, (shown + max(0, bufferedAhead)) / duration))
+            let trackHeight: CGFloat = isDragging ? 8 : 5
             let knobX = progress * width
+            let bufferedWidth = buffered * width
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(.white.opacity(0.32))
-                    .frame(height: isDragging ? 8 : 5)
+                    .fill(.white.opacity(0.22))
+                    .frame(height: trackHeight)
+                // Loaded ahead of (and under) the playhead — slightly darker than the played fill.
+                Capsule()
+                    .fill(.white.opacity(0.42))
+                    .frame(width: max(4, bufferedWidth), height: trackHeight)
                 Capsule()
                     .fill(.white)
-                    .frame(width: max(4, knobX), height: isDragging ? 8 : 5)
+                    .frame(width: max(4, knobX), height: trackHeight)
                 ForEach(chapters) { chapter in
                     let x = CGFloat(min(1, max(0, chapter.startTime / duration))) * width
                     Capsule()
@@ -1302,34 +1411,6 @@ private struct AVKitScrubber: View {
             .accessibilityLabel("Timeline")
             .accessibilityValue(PlaybackTimeFormatting.elapsed(shown))
         }
-    }
-}
-
-struct AirPlayRouteButton: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView {
-        let host = UIView()
-        host.backgroundColor = .clear
-        host.isUserInteractionEnabled = true
-        let picker = AVRoutePickerView()
-        picker.prioritizesVideoDevices = true
-        picker.tintColor = .white
-        picker.activeTintColor = .white
-        picker.backgroundColor = .clear
-        picker.translatesAutoresizingMaskIntoConstraints = false
-        host.addSubview(picker)
-        NSLayoutConstraint.activate([
-            picker.centerXAnchor.constraint(equalTo: host.centerXAnchor),
-            picker.centerYAnchor.constraint(equalTo: host.centerYAnchor),
-            picker.widthAnchor.constraint(equalToConstant: 24),
-            picker.heightAnchor.constraint(equalToConstant: 24)
-        ])
-        return host
-    }
-
-    func updateUIView(_: UIView, context _: Context) {}
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView _: UIView, context _: Context) -> CGSize {
-        CGSize(width: 44, height: 44)
     }
 }
 

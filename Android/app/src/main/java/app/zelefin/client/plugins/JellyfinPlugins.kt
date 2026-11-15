@@ -31,7 +31,7 @@ data class JellyfinPluginState(
     val names: List<String> = emptyList(),
 )
 
-/** Whether a plugin is on the server and running, from an administrator's `/Plugins` list. Mirrors iOS. */
+/** Whether a plugin is on the server and running. Prefer `/Plugins`; probe routes when that list is empty. */
 enum class PluginPresence(val label: String) {
     NotInstalled("Not Installed"),
     Disabled("Disabled"),
@@ -46,6 +46,13 @@ enum class PluginPresence(val label: String) {
                 mine.isEmpty() -> NotInstalled
                 else -> Disabled
             }
+        }
+
+        /** `/Plugins` is admin-only. A probe that is not 404 means the plugin's controller is loaded. */
+        fun resolving(entries: List<PluginEntry>, matches: (String) -> Boolean, reachable: Boolean): PluginPresence {
+            val listed = of(entries, matches)
+            if (listed != NotInstalled) return listed
+            return if (reachable) Enabled else NotInstalled
         }
     }
 }
@@ -111,8 +118,16 @@ object JellyfinPlugins {
     ): JellyfinPluginState {
         val entries = entries(baseUrl, token)
         val names = entries.filter { it.enabled }.map { it.name }
-        val introSkipper = PluginPresence.of(entries) { IntroSkipperPlugin.isInstalled(listOf(it)) }
-        val theIntroDB = PluginPresence.of(entries) { TheIntroDBPlugin.isInstalled(listOf(it)) }
+        val introSkipper = PluginPresence.resolving(
+            entries,
+            { IntroSkipperPlugin.isInstalled(listOf(it)) },
+            isReachable(baseUrl, token, IntroSkipperPlugin.presenceProbePaths),
+        )
+        val theIntroDB = PluginPresence.resolving(
+            entries,
+            { TheIntroDBPlugin.isInstalled(listOf(it)) },
+            isReachable(baseUrl, token, TheIntroDBPlugin.presenceProbePaths),
+        )
         val openSubtitles = RemoteSubtitleOffer.pluginAvailable(
             listed = OpenSubtitlesPlugin.isInstalled(names),
             catalogNames = names,
@@ -133,6 +148,15 @@ object JellyfinPlugins {
             companion = companion,
             names = names,
         )
+    }
+
+    /** True when a plugin-owned path answers with anything other than 404 (403/405 count as installed). */
+    suspend fun isReachable(baseUrl: String, accessToken: String, paths: List<String>): Boolean {
+        for (path in paths) {
+            val response = PluginHttp.sendOrNull(baseUrl, accessToken, "GET", path) ?: continue
+            if (response.status != 404) return true
+        }
+        return false
     }
 }
 

@@ -642,14 +642,19 @@ internal fun DownloadedPage(
     val active = downloads.activeTransfers
     val rows = downloads.rows
     val entries = active.map { progress ->
-        val title = if (progress.item.kind == MediaKind.Episode && !progress.item.seriesId.isNullOrEmpty()) {
+        val title = if (DownloadEligibility.seriesGroupingId(progress.item) != null) {
             DownloadEligibility.showItem(progress.item)
         } else {
             progress.item
         }
         DownloadedEntry.Active(progress, title)
-    }.distinctBy { it.title.id } + rows.filter { row -> active.none { it.item.id == row.id || it.item.seriesId == row.id } }
-        .map { DownloadedEntry.Stored(it) }
+    }.distinctBy { it.title.id } + rows.filter { row ->
+        active.none { progress ->
+            progress.item.id == row.id ||
+                DownloadEligibility.seriesGroupingId(progress.item) == row.id ||
+                progress.item.seriesId == row.id
+        }
+    }.map { DownloadedEntry.Stored(it) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val headerHeight = statusTop + 59.dp
     var menu by remember { mutableStateOf<Pair<DownloadRow, Rect>?>(null) }

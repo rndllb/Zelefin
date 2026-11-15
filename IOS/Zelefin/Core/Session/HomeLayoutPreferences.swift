@@ -203,26 +203,53 @@ enum HomeLayoutPreferences {
         order: [HomeRowKind],
         hidden: Set<HomeRowKind>
     ) -> [HomeFeedItem] {
+        feed(
+            featured: featured,
+            sections: sections,
+            slots: order.map(HomeRowSlot.builtIn),
+            hidden: hidden
+        )
+    }
+
+    static func feed(
+        featured: [MediaItem],
+        sections: [HomeSection],
+        slots: [HomeRowSlot],
+        hidden: Set<HomeRowKind>
+    ) -> [HomeFeedItem] {
         var buckets: [HomeRowKind: [HomeSection]] = [:]
+        var customBuckets: [String: HomeSection] = [:]
         var leftovers: [HomeSection] = []
         for section in sections {
-            if let kind = HomeRowKind.kind(forSectionID: section.id) {
+            if section.id.hasPrefix(CustomHomeRows.sectionIDPrefix) {
+                let rowID = String(section.id.dropFirst(CustomHomeRows.sectionIDPrefix.count))
+                customBuckets[rowID] = section
+            } else if let kind = HomeRowKind.kind(forSectionID: section.id) {
                 buckets[kind, default: []].append(section)
             } else {
                 leftovers.append(section)
             }
         }
 
-        let resolvedOrder = HomeRowKind.ordered(from: HomeRowKind.raw(from: order))
         var feed: [HomeFeedItem] = []
-        for kind in resolvedOrder where !hidden.contains(kind) {
-            if kind == .featured {
-                if !featured.isEmpty {
-                    feed.append(.featured(featured))
+        for slot in slots {
+            switch slot {
+            case let .builtIn(kind) where !hidden.contains(kind):
+                if kind == .featured {
+                    if !featured.isEmpty {
+                        feed.append(.featured(featured))
+                    }
+                    continue
                 }
+                if kind == .nextUp, mergeContinueAndNextUp { continue }
+                feed.append(contentsOf: (buckets[kind] ?? []).map(HomeFeedItem.section))
+            case let .custom(id):
+                guard let row = CustomHomeRows.row(id: id), row.enabled,
+                      let section = customBuckets[id], !section.items.isEmpty else { continue }
+                feed.append(.section(section))
+            default:
                 continue
             }
-            feed.append(contentsOf: (buckets[kind] ?? []).map(HomeFeedItem.section))
         }
         feed.append(contentsOf: leftovers.map(HomeFeedItem.section))
         return feed
@@ -374,6 +401,11 @@ enum HomeLayoutPreferences {
 
     static func isPlaybackQueueSection(_ id: String) -> Bool {
         id == "continue" || id == "next-up"
+    }
+
+    /// Home row cards that start playback on tap instead of opening the title page.
+    static func playsEpisodesOnTap(_ id: String) -> Bool {
+        isPlaybackQueueSection(id) || id == "upcoming"
     }
 
     static func menuContext(forSectionID id: String) -> PlaybackQueueMenuContext? {

@@ -1,0 +1,69 @@
+name: Bug report
+description: Something in Zelefin is broken or unexpected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong in one or two sentences.
+      placeholder: Playback stalls after seeking on MPV…
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we hit the same bug?
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: What happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server
+      options:
+        - Jellyfin
+        - Emby
+        - Silo
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: server_version
+    attributes:
+      label: Server version
+      description: From Settings → Server Info when you can.
+      placeholder: 10.10.7
+  - type: input
+    id: app_version
+    attributes:
+      label: Zelefin version
+      description: Settings → About (version and build).
+      placeholder: 0.1.0 (22)
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics / log
+      description: Paste Settings → Log header output, or attach the exported log file.
+      render: shell

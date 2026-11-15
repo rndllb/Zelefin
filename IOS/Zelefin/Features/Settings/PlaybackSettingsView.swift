@@ -10,6 +10,8 @@ struct PlaybackSettingsView: View {
     @AppStorage(PlaybackPreferences.maxBitrateKey) private var maxBitrate = 0
     @AppStorage(PlaybackPreferences.adaptiveBitrateKey) private var adaptiveBitrate = true
     @AppStorage(PlaybackPreferences.autoPlayNextEpisodeKey) private var autoPlayNextEpisode = true
+    @AppStorage(PlaybackPreferences.askStillWatchingKey) private var askStillWatching = true
+    @AppStorage(PlaybackPreferences.autoPictureInPictureOnLeaveKey) private var autoPictureInPictureOnLeave = false
     @AppStorage(PlaybackPreferences.themeSongsKey) private var themeSongs = false
     @AppStorage(PlaybackPreferences.themeVideosKey) private var themeVideos = false
     @AppStorage(PlaybackPreferences.themeVideoSoundKey) private var themeVideoSound = false
@@ -205,6 +207,10 @@ struct PlaybackSettingsView: View {
                 }
             }
             Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
+            if autoPlayNextEpisode {
+                Toggle("Ask If Still Watching", isOn: $askStillWatching)
+            }
+            Toggle("Picture in Picture When Leaving", isOn: $autoPictureInPictureOnLeave)
             Picker("Skip Backward", selection: $skipBackward) {
                 ForEach(PlaybackSkipInterval.allCases) { interval in
                     Text(interval.title).tag(interval.rawValue)
@@ -228,7 +234,13 @@ struct PlaybackSettingsView: View {
         } header: {
             Text("Watching")
         } footer: {
-            Text("Speed, skip distance, and whether the next episode starts when this one ends. " + playerFooter)
+            Text(
+                "Speed, skip distance, and whether the next episode starts when this one ends. "
+                    + "Ask If Still Watching pauses binge auto-play after "
+                    + "\(PlaybackPreferences.stillWatchingEpisodeThreshold) episodes. "
+                    + "Picture in Picture When Leaving keeps playback going in a small window when you close the player. "
+                    + playerFooter
+            )
         }
         .zelefinRowBackground()
     }
@@ -265,8 +277,6 @@ struct PlaybackSettingsView: View {
             return "Apple’s player opens MP4 and remuxed HLS. MKV remuxes on Jellyfin first. Turn off Prefer fMP4 to ask for MPEG-TS."
         case .mpv:
             return "MPV Direct Plays every stream on this device and lists every audio and subtitle track in the file, including styled subtitles."
-        case .aether:
-            return "AetherEngine Direct Plays every stream on this device, including remuxed HLS."
         }
     }
 

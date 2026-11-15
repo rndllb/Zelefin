@@ -232,6 +232,8 @@ object EmbyRequests {
         embyQuery { this["MediaSourceId"] = mediaSourceId },
     )
 
+    fun branding() = EmbyRequest("GET", "/Branding/Configuration")
+
     fun activityLog(limit: Int) = EmbyRequest(
         "GET",
         "/System/ActivityLog/Entries",

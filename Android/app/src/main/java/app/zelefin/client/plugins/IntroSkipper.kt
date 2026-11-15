@@ -69,6 +69,12 @@ data class IntroTimestampPayload(
 /** TheIntroDB's Jellyfin plugin, which fills media segments from TheIntroDB's community timestamps. */
 object TheIntroDBPlugin {
     fun isInstalled(names: List<String>): Boolean = names.any { it.lowercase().filter(Char::isLetter).contains("theintrodb") }
+
+    /** Plugin-owned routes (not the admin `/Plugins` catalog). Missing → 404; installed → 405/403/200. */
+    val presenceProbePaths = listOf(
+        "/Plugins/TheIntroDB/NotFoundCache/Clear",
+        "/Plugins/TheIntroDB/Validation/ApiKeyStats",
+    )
 }
 
 object IntroSkipperPlugin {
@@ -76,6 +82,12 @@ object IntroSkipperPlugin {
         val lower = name.lowercase()
         lower.contains("intro skip") || lower.contains("introskipper")
     }
+
+    /** Routes that only exist when Intro Skipper is loaded. Non-admins cannot list `/Plugins`. */
+    val presenceProbePaths = listOf(
+        "/IntroSkipper",
+        "/Intros/UserInterfaceConfiguration",
+    )
 }
 
 class IntroSkipperClient(private val baseUrl: String, private val accessToken: String) {

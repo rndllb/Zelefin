@@ -149,9 +149,21 @@ object ZelefinPush {
         _openItem.compareAndSet(id, null)
     }
 
-    /** Draws an alert while Zelefin is in the foreground; Android draws it itself while the app is closed. */
-    fun show(context: Context, data: Map<String, String>, fallbackTitle: String?, fallbackBody: String?) {
+    /**
+     * Draws an alert while Zelefin is in the foreground; Android draws it itself while the app is closed.
+     * Quiet hours and mute hold library banners back. Pass [applyPresentationRules] false for an admin
+     * [SessionDisplayMessage]: [app.zelefin.client.session.SessionMessageCenter] still presents those in-app,
+     * and this draw is only the closed-app fallback.
+     */
+    fun show(
+        context: Context,
+        data: Map<String, String>,
+        fallbackTitle: String?,
+        fallbackBody: String?,
+        applyPresentationRules: Boolean = true,
+    ) {
         if (!isEnabled(context) || !permissionGranted(context)) return
+        if (applyPresentationRules && NotificationPreferences.shouldSuppressPresentation(context)) return
         ensureChannel(context)
         val title = data["title"]?.takeIf { it.isNotBlank() } ?: fallbackTitle ?: "Zelefin"
         val subtitle = data["subtitle"]?.takeIf { it.isNotBlank() }
@@ -194,6 +206,7 @@ object ZelefinPush {
             ),
             message.alertTitle,
             message.alertBody ?: message.text,
+            applyPresentationRules = false,
         )
     }
 }

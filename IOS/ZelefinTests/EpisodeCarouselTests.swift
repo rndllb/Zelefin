@@ -21,14 +21,28 @@ final class EpisodeCarouselTests: XCTestCase {
         let seasons = [season("s1", 1), season("s2", 2)]
         let episodes = [
             episode("s1e1", season: 1, number: 1),
+            episode("s1e2", season: 1, number: 2),
             episode("s2e1", season: 2, number: 1)
         ]
         let cards = EpisodeCarousel.cards(seasons: seasons, episodes: episodes)
 
-        XCTAssertEqual(cards.count, 6)
-        XCTAssertEqual(cards.map(\.copy), [0, 0, 1, 1, 2, 2])
-        XCTAssertEqual(cards.map(\.episode.id), ["s1e1", "s2e1", "s1e1", "s2e1", "s1e1", "s2e1"])
-        XCTAssertEqual(cards.map(\.seasonID), ["s1", "s2", "s1", "s2", "s1", "s2"])
+        XCTAssertEqual(cards.count, 9)
+        XCTAssertEqual(cards.map(\.copy), [0, 0, 0, 1, 1, 1, 2, 2, 2])
+        XCTAssertEqual(
+            cards.map(\.episode.id),
+            ["s1e1", "s1e2", "s2e1", "s1e1", "s1e2", "s2e1", "s1e1", "s1e2", "s2e1"]
+        )
+        XCTAssertEqual(cards.map(\.seasonID), ["s1", "s1", "s2", "s1", "s1", "s2", "s1", "s1", "s2"])
+    }
+
+    func testShortStripDoesNotLoopSoOneDownloadIsNotShownThreeTimes() {
+        let seasons = [season("s5", 5)]
+        let episodes = [episode("s5e12", season: 5, number: 12)]
+        let cards = EpisodeCarousel.cards(seasons: seasons, episodes: episodes)
+
+        XCTAssertEqual(cards.count, 1)
+        XCTAssertEqual(cards.map(\.episode.id), ["s5e12"])
+        XCTAssertEqual(cards.first?.copy, EpisodeCarousel.homeCopy)
     }
 
     func testHomePositionIsFirstEpisodeOfSelectedSeasonInTheMiddleCopy() {

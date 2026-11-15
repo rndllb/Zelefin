@@ -152,6 +152,11 @@ sealed interface LibraryRoute {
     data class DiscoverTitle(val discovered: app.zelefin.client.plugins.SeerrTitle) : LibraryRoute {
         override val title get() = discovered.name
     }
+
+    /** Filtered catalog for a custom Home row (`CustomHomeRows`). */
+    data class CustomHome(val id: String) : LibraryRoute {
+        override val title get() = CustomHomeRows.row(id)?.title ?: "Custom"
+    }
 }
 
 data class LibraryGridState(

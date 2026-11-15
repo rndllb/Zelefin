@@ -158,7 +158,11 @@ fun SearchTabPage(
     // Counts closed request sheets, so an open title page asks for its status again.
     var requestRevision by remember { mutableIntStateOf(0) }
     val sheet = rememberZelefinSheet(requestTitle)
-    val openTitle: (SeerrTitle) -> Unit = { title -> onRoute(LibraryRoute.DiscoverTitle(title)) }
+    val openTitle: (SeerrTitle) -> Unit = { title ->
+        // Available titles open the library detail page, not the Seerr/Ombi request page.
+        val library = discoverState.libraryItemIfAvailable(title)
+        if (library != null) onOpen(library) else onRoute(LibraryRoute.DiscoverTitle(title))
+    }
     val requestTitleNow: (SeerrTitle) -> Unit = { title ->
         if (discoverState.resolved(title).availability != SeerrTitle.Availability.Available) requestTitle = title
     }

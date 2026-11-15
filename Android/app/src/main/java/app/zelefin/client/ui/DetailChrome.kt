@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.sp
 import app.zelefin.client.BrowsePage
 import app.zelefin.client.EnhancedExtras
 import app.zelefin.client.LibraryRoute
+import app.zelefin.client.PlaybackLaunchOptions
 import app.zelefin.client.PluginsController
 import app.zelefin.client.R
 import app.zelefin.client.ZelefinUiState
@@ -92,6 +93,7 @@ import app.zelefin.core.MediaKind
 import app.zelefin.core.MediaVersion
 import app.zelefin.core.SavedSession
 import app.zelefin.core.TitleDetail
+import app.zelefin.core.TitleDirectors
 import app.zelefin.core.TitleTrailer
 import app.zelefin.core.VideoRange
 import app.zelefin.core.VideoResolution
@@ -282,6 +284,9 @@ fun DetailPage(
                         collectionItems = detail.collectionItems,
                         chosenVersions = chosenVersions,
                         onVersions = { target, anchor -> sheet = DetailSheet.Versions(target, anchor) },
+                        onPerson = { person ->
+                            personRoute(person)?.let { actions.onBrowse(BrowsePage.Library(it)) }
+                        },
                     )
                 }
                 item(key = "download-status") {
@@ -588,6 +593,7 @@ fun DetailPage(
         onEditMetadata = actions.saveMetadata?.let { { target -> sheet = DetailSheet.Metadata(pageItem ?: target) } },
         onDownloadSeason = actions.downloadRelated,
         onToggleLike = actions.onToggleLike,
+        onToggleDislike = actions.onToggleDislike,
         isSiloServer = session?.isSiloServer == true,
         skipCinemaIntros = skipCinema,
         onCollections = detail?.item?.let { pageItem ->
@@ -603,6 +609,7 @@ fun DetailPage(
                 .edit()
                 .putBoolean("skipCinema.$id", next)
                 .apply()
+            actions.updateLaunchOptions(id) { it.copy(skipCinemaIntros = next) }
         },
         note = note,
         onDismissNote = { note = null },
@@ -618,6 +625,11 @@ fun DetailPage(
             ?.takeIf { pageItem?.kind != MediaKind.Collection }
             ?.let { delete -> { target -> delete(pageItem ?: target) } },
         onChooseVersion = { target, anchor -> sheet = DetailSheet.Versions(target, anchor) },
+        launchOptions = more?.item?.let { actions.launchOptions(it.id) } ?: PlaybackLaunchOptions(),
+        onLaunchOptions = { next ->
+            more?.item?.id?.let { id -> actions.updateLaunchOptions(id) { next } }
+        },
+        loadStreamTracks = actions.loadStreamTracks,
     )
     val versionMenu = sheet as? DetailSheet.Versions
     VersionMenu(
@@ -626,6 +638,7 @@ fun DetailPage(
         loadVersions = actions.loadVersions,
         onPick = { target, versionId ->
             chosenVersions = chosenVersions + (target.id to versionId)
+            actions.chooseVersion(target.id, versionId)
             sheet = null
         },
         onDismiss = { sheet = null },
@@ -672,9 +685,10 @@ private fun DetailHero(
     collectionItems: List<MediaItem> = emptyList(),
     chosenVersions: Map<String, String> = emptyMap(),
     onVersions: (MediaItem, Rect) -> Unit = { _, _ -> },
+    onPerson: (app.zelefin.core.CreditPerson) -> Unit = {},
 ) {
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val heroHeight = (screenHeight * 0.82f).coerceAtLeast(560.dp).coerceAtMost(screenHeight)
+    val heroHeight = HeroSizePreferences.heightDp(screenHeight.value).dp
     val isCollection = item.kind == MediaKind.Collection
     val playback = if (isCollection) collectionPlaybackItem(item, collectionItems) else MediaItem.heroPlaybackItem(item, episodes)
     Box(Modifier.fillMaxWidth().height(heroHeight).besideSidebar()) {
@@ -753,6 +767,7 @@ private fun DetailHero(
                     }
                 }
                 SpecsRow(item)
+                DirectorsLine(item.people, onPerson)
                 if (overview == null && showMore) {
                     MoreCapsule(Modifier, onMore)
                 }
@@ -914,6 +929,54 @@ private fun DetailPlayButton(item: MediaItem, onClick: () -> Unit) {
             fontSize = 15.sp,
             maxLines = 1,
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DirectorsLine(
+    people: List<app.zelefin.core.CreditPerson>,
+    onPerson: (app.zelefin.core.CreditPerson) -> Unit,
+) {
+    val directors = TitleDirectors.people(people)
+    if (directors.isEmpty()) return
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            "Directed by",
+            color = Color.White.copy(alpha = 0.88f),
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+        )
+        directors.forEachIndexed { index, person ->
+            if (index > 0) {
+                val sep = when {
+                    directors.size == 2 -> "and"
+                    index == directors.lastIndex -> ", and"
+                    else -> ","
+                }
+                Text(
+                    sep,
+                    color = Color.White.copy(alpha = 0.88f),
+                    fontFamily = ZelefinFont,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
+            }
+            Text(
+                person.name,
+                color = Color.White,
+                fontFamily = ZelefinFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                modifier = Modifier.clickable(enabled = person.id.isNotBlank()) { onPerson(person) },
+            )
+        }
     }
 }
 

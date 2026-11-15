@@ -219,6 +219,38 @@ object CreditRoles {
     }
 }
 
+/** Directors pulled out of cast & crew for the title page, matching iOS `TitleDirectors`. */
+object TitleDirectors {
+    fun people(people: List<CreditPerson>): List<CreditPerson> {
+        val seen = linkedSetOf<String>()
+        val directors = mutableListOf<CreditPerson>()
+        for (person in people) {
+            if (!isDirector(person)) continue
+            val name = person.name.trim()
+            if (name.isEmpty() || !seen.add(name.lowercase())) continue
+            directors += person
+        }
+        return directors
+    }
+
+    fun names(people: List<CreditPerson>): List<String> = people(people).map { it.name }
+
+    fun line(people: List<CreditPerson>): String? {
+        val names = names(people)
+        if (names.isEmpty()) return null
+        return when (names.size) {
+            1 -> "Directed by ${names[0]}"
+            2 -> "Directed by ${names[0]} and ${names[1]}"
+            else -> "Directed by ${names.dropLast(1).joinToString(", ")}, and ${names.last()}"
+        }
+    }
+
+    private fun isDirector(person: CreditPerson): Boolean {
+        val role = person.roleLabel.trim().lowercase()
+        return role == "director" || role.startsWith("director")
+    }
+}
+
 object ArtworkUrls {
     const val POSTER_MAX_HEIGHT = 420
 

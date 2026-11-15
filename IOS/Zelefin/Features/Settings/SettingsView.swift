@@ -11,6 +11,9 @@ struct SettingsView: View {
     var body: some View {
         List {
             profileSection
+            if showsQuickConnect {
+                quickConnectSection
+            }
             accountSection
             playbackSection
             if canAdminister {
@@ -60,6 +63,37 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
             .accessibilityLabel("\(accountDisplayName), Account info")
+
+            settingsRow(
+                session.isSiloServer ? "Accounts" : "Users",
+                systemImage: "person.2",
+                subtitle: session.isSiloServer
+                    ? "Switch or add a login on this device"
+                    : "Switch or add a user on this device"
+            ) {
+                DeviceAccountsView()
+            }
+
+            if !session.lacksJellyfinOnlyFeatures {
+                settingsRow("SyncPlay", systemImage: "person.3", subtitle: "Watch together in a group") {
+                    SyncPlayView()
+                }
+            }
+        }
+        .zelefinRowBackground()
+    }
+
+    private var showsQuickConnect: Bool {
+        !session.isEmbyServer
+    }
+
+    private var quickConnectSection: some View {
+        Section {
+            QuickConnectAuthorizeRows()
+        } header: {
+            Text("Quick Connect")
+        } footer: {
+            Text("Enter the code shown on another device to sign it in as \(accountDisplayName).")
         }
         .zelefinRowBackground()
     }
@@ -68,16 +102,6 @@ struct SettingsView: View {
         Section("Account") {
             settingsRow("Notifications", systemImage: "bell", subtitle: "Alerts from your server") {
                 NotificationSettingsView()
-            }
-            if !session.isSiloServer {
-                settingsRow("Sessions", systemImage: "laptopcomputer.and.iphone", subtitle: "Devices signed in to \(serverProduct)") {
-                    SessionsView()
-                }
-            }
-            if !session.lacksJellyfinOnlyFeatures {
-                settingsRow("SyncPlay", systemImage: "person.3", subtitle: "Watch together in a group") {
-                    SyncPlayView()
-                }
             }
         }
         .zelefinRowBackground()
@@ -103,7 +127,12 @@ struct SettingsView: View {
 
     private var serverSection: some View {
         Section {
-            settingsRow("Users", systemImage: "person.2", subtitle: "Permissions, libraries, and parental controls") {
+            if !session.isSiloServer {
+                settingsRow("Sessions", systemImage: "laptopcomputer.and.iphone", subtitle: "Devices signed in to \(serverProduct)") {
+                    SessionsView()
+                }
+            }
+            settingsRow("User Access", systemImage: "person.badge.key", subtitle: "Permissions, libraries, and parental controls") {
                 UserManagementView()
             }
             settingsRow("Scheduled Tasks", systemImage: "clock", subtitle: "Start, cancel, and watch progress") {
@@ -131,6 +160,9 @@ struct SettingsView: View {
 
     private var deviceSection: some View {
         Section("This Device") {
+            settingsRow("Server Info", systemImage: "server.rack", subtitle: "Name, version, OS, and address") {
+                ServerInfoView()
+            }
             settingsRow("Network", systemImage: "wifi", subtitle: networkSubtitle) {
                 NetworkSettingsView()
             }
@@ -139,9 +171,6 @@ struct SettingsView: View {
             }
             settingsRow("Interface", systemImage: "rectangle.3.group", subtitle: interfaceSubtitle) {
                 TabCustomizationView()
-            }
-            settingsRow("Appearance", systemImage: "paintpalette", subtitle: "Accent color") {
-                AppearanceSettingsView()
             }
             settingsRow("Log", systemImage: "doc.text", subtitle: "What Zelefin did, to read or send") {
                 LogView()
@@ -152,9 +181,9 @@ struct SettingsView: View {
 
     private var interfaceSubtitle: String {
         #if targetEnvironment(macCatalyst)
-        "Home rows and sidebar"
+        "Home, sidebar, accent color"
         #else
-        "Home rows and tabs"
+        "Home, tabs, accent color"
         #endif
     }
 
@@ -250,40 +279,164 @@ struct SettingsView: View {
 }
 
 enum ZelefinSite {
+    static let home = URL(string: "https://zelefin.app")!
     static let privacy = URL(string: "https://zelefin.app/privacy")!
     static let terms = URL(string: "https://zelefin.app/terms")!
+    static let support = URL(string: "https://zelefin.app/support")!
 }
 
 struct SettingsAboutView: View {
+    @Environment(\.zelefinSurfaces) private var surfaces
+    @Environment(\.openURL) private var openURL
     @State private var legalPage: LegalPage?
 
     var body: some View {
-        List {
-            Section {
-                VStack(spacing: 12) {
-                    ConnectBrandMark(size: 88)
-                    Text("Zelefin")
-                        .font(.title2.weight(.semibold))
-                }
-                .frame(maxWidth: .infinity)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                LabeledContent("Version", value: DeviceIdentity.version)
-                LabeledContent("Build", value: DeviceIdentity.build)
-            } footer: {
-                Text("A native Jellyfin and Silo client for iPhone and iPad. Tab icons are from Iconsax. Anime library icons are from PlainIcon's Anime characters pack, licensed under CC BY 4.0.")
+        ScrollView {
+            VStack(spacing: 28) {
+                aboutHero
+                aboutVersionCard
+                aboutLinks
+                aboutCredits
             }
-
-            Section {
-                Button("Privacy Policy") { legalPage = .privacy }
-                Button("Terms of Use") { legalPage = .terms }
-            }
-            .zelefinRowBackground()
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 40)
         }
-        .zelefinSettingsChrome(title: "About")
+        .background {
+            ZStack {
+                surfaces.canvas.ignoresSafeArea()
+                LoginCanvasGlow(isRegularWidth: false)
+                    .opacity(0.85)
+            }
+        }
+        .zelefinSettingsCanvas()
+        .navigationTitle("About")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $legalPage) { page in
             SettingsSafariView(url: page.url)
         }
+    }
+
+    private var aboutHero: some View {
+        VStack(spacing: 18) {
+            ConnectBrandMark(size: 112)
+                .shadow(color: LoginPalette.lavender.opacity(0.35), radius: 28, y: 10)
+
+            VStack(spacing: 10) {
+                Text("Zelefin")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                (
+                    Text("Your library, ")
+                        .foregroundStyle(.white)
+                    + Text("beautifully native.")
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [LoginPalette.lavender, LoginPalette.sky],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+                .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+            }
+
+            Text("A native client for Jellyfin, Silo, and Emby — free, with no subscription and no ads.")
+                .font(.subheadline)
+                .foregroundStyle(LoginPalette.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+    }
+
+    private var aboutVersionCard: some View {
+        HStack(spacing: 12) {
+            aboutStat(title: "Version", value: DeviceIdentity.version)
+            aboutStat(title: "Build", value: DeviceIdentity.build)
+        }
+    }
+
+    private func aboutStat(title: String, value: String) -> some View {
+        VStack(spacing: 6) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.bold))
+                .tracking(1.1)
+                .foregroundStyle(LoginPalette.captionText)
+            Text(value)
+                .font(.title3.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.tint)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .background(surfaces.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private var aboutLinks: some View {
+        VStack(spacing: 12) {
+            aboutLinkButton(title: "zelefin.app", systemImage: "safari") {
+                openURL(ZelefinSite.home)
+            }
+            aboutLinkButton(title: "Support", systemImage: "questionmark.circle") {
+                openURL(ZelefinSite.support)
+            }
+            aboutLinkButton(title: "Privacy Policy", systemImage: "hand.raised") {
+                legalPage = .privacy
+            }
+            aboutLinkButton(title: "Terms of Use", systemImage: "doc.text") {
+                legalPage = .terms
+            }
+        }
+    }
+
+    private func aboutLinkButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 28)
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 28, height: 28)
+                    .background(Color.white.opacity(0.08), in: Circle())
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(surfaces.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var aboutCredits: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Credits")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+            Text("Tab icons are from Iconsax. Anime library icons are from PlainIcon’s Anime characters pack, licensed under CC BY 4.0.")
+                .font(.footnote)
+                .foregroundStyle(LoginPalette.captionText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(surfaces.raised.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 

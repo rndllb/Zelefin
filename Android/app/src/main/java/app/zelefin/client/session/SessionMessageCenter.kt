@@ -10,7 +10,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Shows a Jellyfin user message in-app when Zelefin is open. Closed-app delivery is the plugin push. */
+/**
+ * Shows a Jellyfin user message in-app when Zelefin is open. Closed-app delivery is the plugin push.
+ * Quiet hours and mute do not apply here; the in-app banner still shows while Zelefin is open.
+ */
 object SessionMessageCenter : Application.ActivityLifecycleCallbacks {
     private val _message = MutableStateFlow<SessionDisplayMessage?>(null)
     val message: StateFlow<SessionDisplayMessage?> = _message.asStateFlow()

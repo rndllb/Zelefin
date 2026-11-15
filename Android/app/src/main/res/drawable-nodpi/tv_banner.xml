@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV home-screen banner (320x180). The app logo on the brand gradient. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#1A1D55"
+                android:endColor="#090A2E" />
+        </shape>
+    </item>
+    <item
+        android:width="150dp"
+        android:height="150dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@mipmap/ic_launcher_foreground"
+            android:gravity="center" />
+    </item>
+</layer-list>

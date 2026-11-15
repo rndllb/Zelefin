@@ -10,6 +10,7 @@ import app.zelefin.core.TitleDetail
 import java.io.File
 import java.net.URI
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -105,6 +106,26 @@ class SnapshotStore(context: Context) {
             ),
         )
         pruneDetails()
+    }
+
+    /** Drops saved home, catalog, or title files. Runs after any snapshot write already queued. */
+    fun clear(folder: String?) {
+        val latch = CountDownLatch(1)
+        writer.execute {
+            try {
+                val names = when (folder) {
+                    HOME, CATALOG, DETAIL -> listOf(folder)
+                    null -> listOf(HOME, CATALOG, DETAIL)
+                    else -> emptyList()
+                }
+                names.forEach { name ->
+                    File(root, name).listFiles()?.forEach { it.delete() }
+                }
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await()
     }
 
     private fun pruneDetails() {

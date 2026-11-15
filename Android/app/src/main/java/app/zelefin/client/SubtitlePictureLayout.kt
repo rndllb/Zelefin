@@ -1,5 +1,7 @@
 package app.zelefin.client
 
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Places captions on the fitted video picture, not in letterbox bars. */
@@ -11,6 +13,8 @@ object SubtitlePictureLayout {
         val bottomPaddingFraction: Float,
         val mpvSubPos: Int,
         val mpvFontSize: Int,
+        /** `sub-scale` for mpv. Fill/panscan zooms the picture, so this is shrunk by that zoom. */
+        val mpvSubScale: Float,
     )
 
     fun placement(
@@ -26,30 +30,45 @@ object SubtitlePictureLayout {
         if (viewWidth <= 0 || viewHeight <= 0) {
             return fallback(style)
         }
+        val viewW = viewWidth.toFloat()
+        val viewH = viewHeight.toFloat()
         val picture = pictureSize(
-            viewWidth = viewWidth.toFloat(),
-            viewHeight = viewHeight.toFloat(),
+            viewWidth = viewW,
+            viewHeight = viewH,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
             fill = fill,
         )
-        val letterboxBottom = ((viewHeight - picture.height) / 2f).coerceAtLeast(0f)
+        val letterboxBottom = ((viewH - picture.height) / 2f).coerceAtLeast(0f)
         val lift = (style.positionLift / 100f).coerceIn(0f, 1f)
-        val inset = picture.height * (0.06f + 0.32f * lift)
-        val placedBottom = (letterboxBottom + inset).coerceIn(0f, viewHeight * 0.48f)
-        val bottom = controlsTop?.let { maxOf(placedBottom, viewHeight - it) }?.coerceAtMost(viewHeight * 0.7f) ?: placedBottom
-        val line = minOf(picture.bottom - inset, controlsTop ?: Float.MAX_VALUE)
-        val shortSide = minOf(viewWidth, viewHeight).toFloat()
-        val fontPx = (0.0533f * style.sizeScale * shortSide).coerceAtMost(picture.height * 0.16f)
-        val videoScale = (shortSide / picture.height.coerceAtLeast(1f)).coerceIn(1f, 2.4f)
+        // Use the on-screen picture height so fill's cropped edges do not pull the inset off-screen.
+        val visiblePictureHeight = min(picture.height, viewH)
+        val inset = visiblePictureHeight * (0.06f + 0.32f * lift)
+        val placedBottom = (letterboxBottom + inset).coerceIn(0f, viewH * 0.48f)
+        val bottom = controlsTop?.let { maxOf(placedBottom, viewH - it) }?.coerceAtMost(viewH * 0.7f) ?: placedBottom
+        // Cap to the window so a panscan crop cannot leave the baseline below the visible edge.
+        val line = minOf(picture.bottom - inset, viewH, controlsTop ?: Float.MAX_VALUE)
+        val shortSide = min(viewW, viewH)
+        val fontPx = (0.0533f * style.sizeScale * shortSide).coerceAtMost(visiblePictureHeight * 0.16f)
+        val videoScale = (shortSide / visiblePictureHeight.coerceAtLeast(1f)).coerceIn(1f, 2.4f)
+        val zoom = fillZoom(viewW, viewH, videoWidth, videoHeight).takeIf { fill } ?: 1f
         return Placement(
             pictureHeight = picture.height,
             letterboxBottom = letterboxBottom,
-            fractionalTextSize = (fontPx / viewHeight).coerceIn(0.018f, 0.09f),
-            bottomPaddingFraction = bottom / viewHeight,
-            mpvSubPos = ((line / viewHeight) * 100f).toInt().coerceIn(18, 100),
+            fractionalTextSize = (fontPx / viewH).coerceIn(0.018f, 0.09f),
+            bottomPaddingFraction = bottom / viewH,
+            mpvSubPos = ((line / viewH) * 100f).toInt().coerceIn(18, 100),
             mpvFontSize = (style.mpvFontSize * videoScale).roundToInt().coerceIn(28, 72),
+            mpvSubScale = style.sizeScale / zoom,
         )
+    }
+
+    /** How much fill/panscan enlarges the fitted picture. 1 when the picture already fills the window. */
+    fun fillZoom(viewWidth: Float, viewHeight: Float, videoWidth: Float, videoHeight: Float): Float {
+        if (viewWidth <= 0f || viewHeight <= 0f || videoWidth <= 0f || videoHeight <= 0f) return 1f
+        val fit = min(viewWidth / videoWidth, viewHeight / videoHeight)
+        val filled = max(viewWidth / videoWidth, viewHeight / videoHeight)
+        return if (fit > 0f) max(filled / fit, 1f) else 1f
     }
 
     data class PictureSize(val width: Float, val height: Float, val bottom: Float)
@@ -90,5 +109,6 @@ object SubtitlePictureLayout {
         bottomPaddingFraction = style.bottomPadding,
         mpvSubPos = 100,
         mpvFontSize = style.mpvFontSize,
+        mpvSubScale = style.sizeScale,
     )
 }

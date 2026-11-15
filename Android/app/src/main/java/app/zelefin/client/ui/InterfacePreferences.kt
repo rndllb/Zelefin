@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import app.zelefin.client.AppTab
+import app.zelefin.client.CustomHomeRows
+import app.zelefin.client.HomeRowSlot
 import app.zelefin.client.LibraryKind
 import app.zelefin.client.LibraryRoom
 import app.zelefin.core.FeaturedHero
@@ -151,10 +153,80 @@ enum class FeaturedHeroContent(val raw: String, val title: String) {
     }
 }
 
+/** Same raw values as iOS `HeroSizePreferences`. Compact shows more of a landscape backdrop. */
+enum class HeroSizePreference(val raw: String, val title: String, val heightFactor: Float, val minimumDp: Float) {
+    Compact("compact", "Compact", 0.58f, 480f),
+    Tall("tall", "Tall", 0.82f, 560f);
+
+    companion object {
+        fun from(raw: String?): HeroSizePreference = entries.firstOrNull { it.raw == raw } ?: Compact
+    }
+}
+
+/** Which marks appear on posters. Matches iOS `PosterBadgePreferences`. */
+object PosterBadgePreferences {
+    private const val RATING = "poster-badge-rating"
+    private const val QUALITY = "poster-badge-quality"
+    private const val WATCHED = "poster-badge-watched"
+
+    var showsRating by mutableStateOf(true)
+        private set
+    var showsQuality by mutableStateOf(true)
+        private set
+    var showsWatched by mutableStateOf(true)
+        private set
+
+    fun load(context: Context) {
+        val prefs = prefs(context)
+        showsRating = prefs.getBoolean(RATING, true)
+        showsQuality = prefs.getBoolean(QUALITY, true)
+        showsWatched = prefs.getBoolean(WATCHED, true)
+    }
+
+    fun setShowsRating(context: Context, on: Boolean) {
+        showsRating = on
+        prefs(context).edit().putBoolean(RATING, on).apply()
+    }
+
+    fun setShowsQuality(context: Context, on: Boolean) {
+        showsQuality = on
+        prefs(context).edit().putBoolean(QUALITY, on).apply()
+    }
+
+    fun setShowsWatched(context: Context, on: Boolean) {
+        showsWatched = on
+        prefs(context).edit().putBoolean(WATCHED, on).apply()
+    }
+}
+
+object HeroSizePreferences {
+    private const val KEY = "hero-size"
+
+    var size by mutableStateOf(HeroSizePreference.Compact)
+        private set
+
+    fun load(context: Context) {
+        size = HeroSizePreference.from(prefs(context).getString(KEY, null))
+    }
+
+    fun setSize(context: Context, next: HeroSizePreference) {
+        size = next
+        prefs(context).edit().putString(KEY, next.raw).apply()
+    }
+
+    /** Featured and title-page backdrop height for the current preference. */
+    fun heightDp(screenHeightDp: Float): Float =
+        (screenHeightDp * size.heightFactor).coerceAtLeast(size.minimumDp).coerceAtMost(screenHeightDp)
+}
+
 /** Home layout choices from Interface settings. Home reads these directly, so changes show right away. */
 object HomeLayoutPreferences {
-    var order by mutableStateOf(HomeRowKind.entries.toList())
+    /** Interleaved built-in + `custom:<id>` slots. */
+    var slots by mutableStateOf<List<HomeRowSlot>>(HomeRowKind.entries.map { HomeRowSlot.BuiltIn(it) })
         private set
+    /** Built-in kinds only — kept for callers that still list system rows. */
+    val order: List<HomeRowKind>
+        get() = slots.mapNotNull { (it as? HomeRowSlot.BuiltIn)?.kind }
     var hidden by mutableStateOf(emptySet<HomeRowKind>())
         private set
     var mergeContinueAndNextUp by mutableStateOf(false)
@@ -165,18 +237,57 @@ object HomeLayoutPreferences {
     fun isVisible(row: HomeRowKind): Boolean =
         row !in hidden && !(mergeContinueAndNextUp && row == HomeRowKind.NextUp)
 
+    fun isVisible(slot: HomeRowSlot): Boolean = when (slot) {
+        is HomeRowSlot.BuiltIn -> isVisible(slot.kind)
+        is HomeRowSlot.Custom -> CustomHomeRows.row(slot.id)?.enabled == true
+    }
+
     fun load(context: Context) {
         val prefs = prefs(context)
         migrateLegacy(prefs)
-        order = HomeRowKind.ordered(prefs.getString(ORDER, null) ?: HomeRowKind.defaultOrderRaw)
+        CustomHomeRows.load(context)
+        val customIds = CustomHomeRows.rows.map { it.id }.toSet()
+        slots = HomeRowSlot.ordered(
+            prefs.getString(ORDER, null) ?: HomeRowKind.defaultOrderRaw,
+            customIds,
+        )
         hidden = HomeRowKind.hidden(prefs.getString(HIDDEN, null) ?: HomeRowKind.defaultHiddenRaw)
         mergeContinueAndNextUp = prefs.getBoolean(MERGE, false)
         heroContent = FeaturedHeroContent.from(prefs.getString(HERO, null))
+        HeroSizePreferences.load(context)
+        PosterBadgePreferences.load(context)
     }
 
     fun setOrder(context: Context, next: List<HomeRowKind>) {
-        order = HomeRowKind.ordered(HomeRowKind.rawOrder(next))
-        prefs(context).edit().putString(ORDER, HomeRowKind.rawOrder(order)).apply()
+        val custom = slots.filterIsInstance<HomeRowSlot.Custom>()
+        val rebuilt = next.map { HomeRowSlot.BuiltIn(it) as HomeRowSlot }.toMutableList()
+        // Keep custom slots after Recently Added Movies when only built-ins were reordered.
+        val insertAt = rebuilt.indexOfFirst {
+            it is HomeRowSlot.BuiltIn && it.kind == HomeRowKind.RecentlyAddedMovies
+        }.let { if (it >= 0) it + 1 else rebuilt.size }
+        rebuilt.addAll(insertAt, custom)
+        setSlots(context, rebuilt)
+    }
+
+    fun setSlots(context: Context, next: List<HomeRowSlot>) {
+        val customIds = CustomHomeRows.rows.map { it.id }.toSet()
+        slots = HomeRowSlot.ordered(HomeRowSlot.rawOrder(next), customIds)
+        prefs(context).edit().putString(ORDER, HomeRowSlot.rawOrder(slots)).apply()
+    }
+
+    /** Inserts a new custom row after Recently Added Movies (or at the end). */
+    fun insertCustomSlot(context: Context, id: String) {
+        if (slots.any { it is HomeRowSlot.Custom && it.id == id }) return
+        val next = slots.toMutableList()
+        val insertAt = next.indexOfFirst {
+            it is HomeRowSlot.BuiltIn && it.kind == HomeRowKind.RecentlyAddedMovies
+        }.let { if (it >= 0) it + 1 else next.size }
+        next.add(insertAt, HomeRowSlot.Custom(id))
+        setSlots(context, next)
+    }
+
+    fun removeCustomSlot(context: Context, id: String) {
+        setSlots(context, slots.filterNot { it is HomeRowSlot.Custom && it.id == id })
     }
 
     fun setVisible(context: Context, row: HomeRowKind, visible: Boolean) {
@@ -194,7 +305,7 @@ object HomeLayoutPreferences {
         prefs(context).edit().putString(HERO, content.raw).apply()
     }
 
-    /** iOS "Reset Home Rows": default order, default hidden rows, Recently Added hero. */
+    /** iOS "Reset Home Rows": default order, default hidden rows, Recently Added hero. Keeps custom rows. */
     fun reset(context: Context) {
         prefs(context).edit().remove(ORDER).remove(HIDDEN).remove(HERO).apply()
         load(context)
@@ -203,8 +314,9 @@ object HomeLayoutPreferences {
     internal fun applySynced(context: Context, orderRaw: String?, hiddenRaw: String?, merge: Boolean?, hero: String?) {
         val edit = prefs(context).edit()
         orderRaw?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            order = HomeRowKind.ordered(it)
-            edit.putString(ORDER, HomeRowKind.rawOrder(order))
+            val customIds = CustomHomeRows.rows.map { row -> row.id }.toSet()
+            slots = HomeRowSlot.ordered(it, customIds)
+            edit.putString(ORDER, HomeRowSlot.rawOrder(slots))
         }
         hiddenRaw?.let {
             hidden = HomeRowKind.hidden(it)
@@ -441,6 +553,8 @@ object HomeHero {
 fun loadInterfacePreferences(context: Context) {
     AccentPreferences.load(context)
     HomeLayoutPreferences.load(context)
+    PosterBadgePreferences.load(context)
+    HeroSizePreferences.load(context)
     TabPreferences.load(context)
     LibraryIcons.load(context)
     StartPagePreferences.load(context)

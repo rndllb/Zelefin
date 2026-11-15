@@ -4,7 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
@@ -14,24 +17,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -47,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -62,6 +56,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.zelefin.client.PlaybackPreferences
+import app.zelefin.client.PlaybackQuality
+import app.zelefin.client.StillWatchingSession
 import app.zelefin.client.TrackPick
 import app.zelefin.client.PlayerDirective
 import app.zelefin.client.SubtitleAppearance
@@ -92,6 +88,7 @@ data class MpvPlaybackState(
     val position: Double = 0.0,
     val duration: Double = 0.0,
     val speed: Float = 1f,
+    val cacheSeconds: Double = 0.0,
 )
 
 /**
@@ -119,6 +116,7 @@ class MpvController(private val mpv: MPVLib) {
     fun toggle() = post { mpv.setPropertyBoolean("pause", mpv.getPropertyBoolean("pause") != true) }
     fun seek(seconds: Double) = post { mpv.command(arrayOf("seek", seconds.coerceAtLeast(0.0).toString(), "absolute")) }
     fun setSpeed(rate: Float) = post { mpv.setPropertyDouble("speed", rate.toDouble()) }
+    fun setVolume(level: Float) = post { mpv.setPropertyDouble("volume", level.coerceIn(0f, 1f) * 100.0) }
     fun duration(): Double = mpv.getPropertyDouble("duration") ?: 0.0
     fun position(): Double = mpv.getPropertyDouble("time-pos") ?: 0.0
     fun isPaused(): Boolean = mpv.getPropertyBoolean("pause") == true
@@ -199,8 +197,9 @@ class MpvController(private val mpv: MPVLib) {
             controlsTop = controlsTop,
         )
         // sub-scale is what resizes image subtitles (PGS, VobSub); text takes it on top of the font size,
-        // so the font size is divided back out to keep text where the layout put it.
-        val scale = subtitleStyle.sizeScale
+        // so the font size is divided back out to keep text where the layout put it. Fill/panscan
+        // zooms the picture — placed.mpvSubScale is already shrunk by that zoom so captions stay put.
+        val scale = placed.mpvSubScale.coerceAtLeast(0.01f)
         mpv.setPropertyString("sub-scale", "%.2f".format(Locale.US, scale))
         mpv.setPropertyString("sub-font-size", (placed.mpvFontSize / scale).roundToInt().toString())
         mpv.setPropertyString("sub-pos", placed.mpvSubPos.toString())
@@ -306,11 +305,11 @@ fun MpvPlayerHost(
             onReady(controller)
             val (next, running) = withContext(MpvCalls) {
                 if (controller.released) return@withContext MpvPlaybackState() to false
-                controller.applySubtitlePlacement()
                 val duration = controller.duration()
                 val position = controller.position()
                 val paused = controller.isPaused()
                 val ended = controller.eof() || (duration > 1 && position >= duration - 0.4 && !paused)
+                val cache = controller.double("demuxer-cache-duration")?.takeIf { it >= 0.0 } ?: 0.0
                 MpvPlaybackState(
                     playing = !paused && duration > 0 && !ended,
                     buffering = duration <= 0 && !ended,
@@ -318,6 +317,7 @@ fun MpvPlayerHost(
                     position = position,
                     duration = duration,
                     speed = controller.speed(),
+                    cacheSeconds = cache,
                 ) to (!paused && !ended)
             }
             playing = running
@@ -367,24 +367,40 @@ private class MpvSession(
     private val startSeconds: Double,
     private val headers: Map<String, String>,
 ) {
+    @Volatile
     var controller: MpvController? = null
         private set
-    private val mpv: MPVLib? = MPVLib.create(context)
+    private var mpv: MPVLib? = null
     private var loaded = false
+    @Volatile
+    private var released = false
+    @Volatile
+    private var pendingSurface: Surface? = null
+    private var pendingWidth = 0
+    private var pendingHeight = 0
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     init {
-        val lib = mpv
-        if (lib != null) {
+        // Native load + mpv init must never run on the UI thread (ANR on emulators / soft devices).
+        // idle=yes keeps the core alive until loadfile/surface catch up — idle=once quit before that.
+        val app = context.applicationContext
+        MpvThread.execute {
+            if (released) return@execute
+            val lib = runCatching { MPVLib.create(app) }.getOrNull() ?: return@execute
+            if (released) {
+                runCatching { lib.destroy() }
+                return@execute
+            }
             if (headers.isNotEmpty()) {
                 lib.setOptionString("http-header-fields", headers.entries.joinToString(",") { "${it.key}: ${it.value}" })
             }
-            lib.setOptionString("hwdec", "auto")
+            lib.setOptionString("hwdec", if (PlaybackPreferences.isEmulator()) "no" else "auto")
             lib.setOptionString("vo", "gpu")
             lib.setOptionString("keepaspect", "yes")
             lib.setOptionString("video-unscaled", "no")
             lib.setOptionString("force-window", "no")
             lib.setOptionString("keep-open", "yes")
-            lib.setOptionString("idle", "once")
+            lib.setOptionString("idle", "yes")
             lib.setOptionString("sub-ass", "yes")
             lib.setOptionString("sub-ass-override", "strip")
             lib.setOptionString("sub-italic", "no")
@@ -397,50 +413,110 @@ private class MpvSession(
             PlaybackResumePolicy.clientStartPosition(plan.method, startSeconds, plan.clientOwnsPlayhead)?.let { resume ->
                 lib.setOptionString("start", resume.toString())
             }
-            lib.init()
+            runCatching { lib.init() }
+            if (released) {
+                runCatching { lib.destroy() }
+                return@execute
+            }
+            mpv = lib
             controller = MpvController(lib)
+            // MediaCodec needs a real surface before loadfile — opening first leaves surface 0x0 (black video, audio only).
+            val surface = pendingSurface
+            if (surface != null) {
+                bindSurfaceOnMain(lib, surface, pendingWidth, pendingHeight)
+            }
         }
     }
 
     fun resize(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
-        val lib = mpv ?: return
-        val engine = controller ?: return
-        MpvThread.execute { if (!engine.released) lib.setPropertyString("android-surface-size", "${width}x${height}") }
+        pendingWidth = width
+        pendingHeight = height
+        val lib = mpv
+        val engine = controller
+        if (lib == null || engine == null) return
+        MpvThread.execute {
+            if (released || engine.released) return@execute
+            lib.setPropertyString("android-surface-size", "${width}x${height}")
+        }
         engine.setViewSize(width, height)
     }
 
     fun attach(holder: SurfaceHolder) {
-        val lib = mpv ?: return
-        lib.attachSurface(holder.surface)
+        val surface = holder.surface
         val frame = holder.surfaceFrame
-        resize(frame.width(), frame.height())
-        lib.setOptionString("force-window", "yes")
-        if (!loaded) {
-            loaded = true
-            PlaybackResumePolicy.clientStartPosition(plan.method, startSeconds, plan.clientOwnsPlayhead)?.let { resume ->
-                lib.setPropertyString("start", resume.toString())
-            }
-            lib.command(arrayOf("loadfile", plan.streamUrl))
-            plan.externalSubtitles.forEach { subtitle ->
-                lib.command(arrayOf("sub-add", subtitle.url, "auto", subtitle.title, subtitle.language.orEmpty()))
-            }
-            if (plan.subtitlesOff) lib.setPropertyString("sid", "no")
-        } else {
-            lib.setPropertyString("vo", "gpu")
+        val width = frame.width()
+        val height = frame.height()
+        pendingSurface = surface
+        if (width > 0 && height > 0) {
+            pendingWidth = width
+            pendingHeight = height
+        }
+        val lib = mpv
+        if (lib != null) {
+            // Surface attach must happen on the main thread or the emulator often stays black.
+            bindSurfaceOnMain(lib, surface, pendingWidth, pendingHeight)
         }
     }
 
+    private fun loadFileIfNeeded(lib: MPVLib) {
+        if (loaded) return
+        loaded = true
+        PlaybackResumePolicy.clientStartPosition(plan.method, startSeconds, plan.clientOwnsPlayhead)?.let { resume ->
+            lib.setPropertyString("start", resume.toString())
+        }
+        lib.command(arrayOf("loadfile", plan.streamUrl))
+        plan.externalSubtitles.forEach { subtitle ->
+            lib.command(arrayOf("sub-add", subtitle.url, "auto", subtitle.title, subtitle.language.orEmpty()))
+        }
+        if (plan.subtitlesOff) lib.setPropertyString("sid", "no")
+    }
+
+    private fun bindSurfaceOnMain(lib: MPVLib, surface: Surface, width: Int, height: Int) {
+        val work = Runnable {
+            if (released || pendingSurface !== surface) return@Runnable
+            // attachSurface is JNI into the GL path — keep it on main; other props stay on MpvThread.
+            runCatching { lib.attachSurface(surface) }
+            MpvThread.execute {
+                if (released) return@execute
+                if (width > 0 && height > 0) {
+                    lib.setPropertyString("android-surface-size", "${width}x${height}")
+                    controller?.setViewSize(width, height)
+                }
+                lib.setPropertyString("force-window", "yes")
+                lib.setPropertyString("vo", "gpu")
+                loadFileIfNeeded(lib)
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) work.run() else mainHandler.post(work)
+    }
+
     fun detach() {
-        mpv?.setPropertyString("vo", "null")
-        mpv?.detachSurface()
+        val surface = pendingSurface
+        pendingSurface = null
+        val lib = mpv
+        val work = Runnable {
+            if (lib == null) return@Runnable
+            runCatching { lib.setPropertyString("vo", "null") }
+            runCatching { lib.detachSurface() }
+        }
+        if (surface == null) {
+            MpvThread.execute(work)
+        } else if (Looper.myLooper() == Looper.getMainLooper()) {
+            work.run()
+        } else {
+            mainHandler.post(work)
+        }
     }
 
     fun release() {
+        released = true
         controller?.released = true
         controller = null
-        val lib = mpv ?: return
+        pendingSurface = null
         MpvThread.execute {
+            val lib = mpv ?: return@execute
+            mpv = null
             runCatching { lib.detachSurface() }
             runCatching { lib.destroy() }
         }
@@ -454,7 +530,7 @@ fun MpvPlayerSurface(
     onProgress: (Double, Boolean) -> Unit,
     onStopped: (Double) -> Unit,
     onClose: () -> Unit,
-    onCast: () -> Unit,
+    watchTogether: PlayerWatchTogether? = PlayerWatchTogether(),
     skipSegments: List<SkipSegment> = emptyList(),
     autoSkip: (SkipSegment.Kind) -> Boolean = { false },
     nextEpisode: MediaItem? = null,
@@ -468,8 +544,10 @@ fun MpvPlayerSurface(
     directives: SharedFlow<PlayerDirective>? = null,
     versions: List<MediaVersion> = emptyList(),
     onChooseVersion: ((String, Double) -> Unit)? = null,
+    onQualityChange: ((PlaybackQuality, Double) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    TrackAlertPlayback()
     val activity = remember(context) { context.findActivity() }
     var controller by remember { mutableStateOf<MpvController?>(null) }
     var state by remember { mutableStateOf(MpvPlaybackState(position = plan.startTimeSeconds)) }
@@ -567,7 +645,9 @@ fun MpvPlayerSurface(
         }
     }
     LaunchedEffect(activity, windowOwner, state.playing) {
-        activity?.let { PlayerWindow.update(it, windowOwner, null, state.playing) }
+        activity?.let {
+            PlayerWindow.update(it, windowOwner, null, state.playing, PlaybackPreferences.autoPipOnLeave(it))
+        }
     }
     DisposableEffect(controller) {
         val receiver = object : BroadcastReceiver() {
@@ -584,13 +664,12 @@ fun MpvPlayerSurface(
     val skipBack = remember { PlaybackPreferences.skipBackward(context) }
     val skipForward = remember { PlaybackPreferences.skipForward(context) }
     val autoplayPreference = remember { PlaybackPreferences.autoplayNext(context) }
+    var playerVolume by remember(plan.streamUrl) { mutableFloatStateOf(1f) }
 
     var chromeVisible by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
-    var locked by remember { mutableStateOf(false) }
     var timelineTop by remember { mutableStateOf<Float?>(null) }
     var surfaceTop by remember { mutableFloatStateOf(0f) }
-    var lockHint by remember { mutableStateOf(false) }
     var scrubTime by remember { mutableStateOf<Double?>(null) }
     var menuPage by remember { mutableStateOf<PlayerMenuPage?>(null) }
     var fillsScreen by remember { mutableStateOf(false) }
@@ -624,22 +703,12 @@ fun MpvPlayerSurface(
         }
     }
     LaunchedEffect(state.playing) {
-        if (!state.playing && !locked) reveal()
-    }
-    LaunchedEffect(lockHint, interaction) {
-        if (lockHint) {
-            delay(3_000)
-            lockHint = false
-        }
+        if (!state.playing) reveal()
     }
     LaunchedEffect(inPip) {
         if (inPip) menuPage = null
     }
     BackHandler(enabled = menuPage != null) { menuPage = null }
-    BackHandler(enabled = locked && menuPage == null) {
-        lockHint = true
-        interaction += 1
-    }
 
     val mediaPosition = state.position
     val mediaDuration = if (state.duration > 0) state.duration else plan.item.runtime ?: 0.0
@@ -681,28 +750,45 @@ fun MpvPlayerSurface(
     var upNextCancelled by remember { mutableStateOf(false) }
     var upNextCountdown by remember { mutableStateOf<Double?>(null) }
     var finishing by remember { mutableStateOf(false) }
+    var stillWatching by remember { mutableStateOf(false) }
     val outroStart = skipSegments.firstOrNull { it.kind == SkipSegment.Kind.Outro && it.end - it.start >= SkipSegment.MIN_LENGTH }?.start
     val remaining = (mediaDuration - mediaPosition).coerceAtLeast(0.0)
     val inOutro = outroStart != null && mediaPosition >= outroStart - 0.35
     val upNextVisible = nextEpisode != null && !upNextCancelled && mediaDuration > 60.0 &&
         !state.buffering && scrubTime == null && (inOutro || remaining <= 30.0)
     val currentOnPlayNext by rememberUpdatedState(onPlayNext)
-    val advance = {
-        val next = nextEpisode
-        if (!finishing && next != null) {
-            finishing = true
+    val episode = plan.item.kind == MediaKind.Episode
+    val advance = advance@{ automatic: Boolean ->
+        if (finishing || stillWatching) return@advance
+        val next = nextEpisode ?: return@advance
+        if (automatic && StillWatchingSession.shouldPrompt(PlaybackPreferences.stillWatchingEnabled(context), episode)) {
+            stillWatching = true
             controller?.pause()
-            currentOnPlayNext(next, mediaPosition)
+            return@advance
         }
+        if (automatic) StillWatchingSession.armAuto(next.id) else StillWatchingSession.armManual(next.id)
+        finishing = true
+        controller?.pause()
+        currentOnPlayNext(next, mediaPosition)
+    }
+    val stopStillWatching = {
+        stillWatching = false
+        StillWatchingSession.reset()
+        currentOnClose()
+    }
+    val continueStillWatching = {
+        stillWatching = false
+        StillWatchingSession.continueWatching()
+        if (nextEpisode == null) currentOnClose() else advance(true)
     }
     LaunchedEffect(upNextVisible, inOutro) {
-        upNextCountdown = if (upNextVisible && autoplay && inOutro) min(10.0, remaining) else null
+        upNextCountdown = if (upNextVisible && autoplay && inOutro && !stillWatching) min(10.0, remaining) else null
     }
-    LaunchedEffect(upNextCountdown != null, state.playing) {
-        while (state.playing && !finishing) {
+    LaunchedEffect(upNextCountdown != null, state.playing, stillWatching) {
+        while (state.playing && !finishing && !stillWatching) {
             val left = upNextCountdown ?: break
             if (left <= 0.0) {
-                advance()
+                advance(true)
                 break
             }
             delay(250)
@@ -722,10 +808,13 @@ fun MpvPlayerSurface(
         }
         reveal()
     }
-    val skipBy: (Int) -> Unit = { seconds ->
+    val seekBy: (Int) -> Unit = { seconds ->
         val target = (mediaPosition + seconds).coerceAtLeast(0.0)
         seekMedia(target)
         currentOnUserTransport(PlayerDirective.Seek(target))
+    }
+    val skipBy: (Int) -> Unit = { seconds ->
+        seekBy(seconds)
         reveal()
     }
 
@@ -746,7 +835,7 @@ fun MpvPlayerSurface(
     val item = plan.item
     val title = if (item.kind == MediaKind.Episode) item.seriesName ?: item.name else item.name
     val subtitle = if (item.kind == MediaKind.Episode) episodeCaption(item, includeName = item.seriesName != null) else null
-    val showChrome = chromeVisible && !locked && !inPip && !suspended
+    val showChrome = chromeVisible && !inPip && !suspended
     val captionGap = with(LocalDensity.current) { 8.dp.toPx() }
     val subtitleCeiling = timelineTop?.takeIf { showChrome }?.let { it - surfaceTop - captionGap }
     LaunchedEffect(controller, subtitleCeiling) { controller?.setControlsTop(subtitleCeiling) }
@@ -758,9 +847,9 @@ fun MpvPlayerSurface(
             headers = plan.headers,
             onState = { state = it },
             onEnded = {
-                if (finishing) return@MpvPlayerHost
+                if (finishing || stillWatching) return@MpvPlayerHost
                 if (nextEpisode != null && autoplay && !upNextCancelled) {
-                    advance()
+                    advance(true)
                 } else {
                     finishing = true
                     currentOnClose()
@@ -768,22 +857,18 @@ fun MpvPlayerSurface(
             },
             onReady = { controller = it },
         )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(inPip, locked, chromeVisible) {
-                    detectTapGestures {
-                        when {
-                            inPip -> Unit
-                            locked -> {
-                                lockHint = !lockHint
-                                interaction += 1
-                            }
-                            chromeVisible -> chromeVisible = false
-                            else -> reveal()
-                        }
-                    }
-                },
+        PlayerGestureOverlay(
+            enabled = !inPip && !stillWatching && menuPage == null,
+            controlsVisible = chromeVisible,
+            onSingleTap = {
+                if (chromeVisible) chromeVisible = false else reveal()
+            },
+            onSkip = seekBy,
+            volume = playerVolume,
+            onVolume = { level ->
+                playerVolume = level
+                controller?.setVolume(level)
+            },
         )
         if (state.buffering && !showChrome && !inPip) {
             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(44.dp))
@@ -796,6 +881,7 @@ fun MpvPlayerSurface(
                 buffering = state.buffering,
                 position = scrubTime ?: mediaPosition,
                 duration = mediaDuration,
+                bufferedAhead = state.cacheSeconds,
                 skipBack = skipBack,
                 skipForward = skipForward,
                 pipSupported = pipSupported,
@@ -807,11 +893,6 @@ fun MpvPlayerSurface(
                     reveal()
                 },
                 onClose = onClose,
-                onLock = {
-                    locked = true
-                    lockHint = true
-                    interaction += 1
-                },
                 onPip = { activity?.let { PlayerWindow.enter(it) } },
                 onMore = {
                     menuPage = PlayerMenuPage.Root
@@ -836,7 +917,7 @@ fun MpvPlayerSurface(
                     val signed = session ?: return@PlayerChrome null
                     app.zelefin.core.ArtworkUrls.trickplayTile(signed.serverUrl, plan.item.id, info, time, signed.accessToken)
                 },
-                onCast = onCast,
+                watchTogether = watchTogether,
             )
         }
         if (showStats && !inPip) {
@@ -857,7 +938,7 @@ fun MpvPlayerSurface(
             }
         }
         val lift by animateDpAsState(if (showChrome) 84.dp else 18.dp, label = "mpv-player-lift")
-        val promptVisible = prompt != null && !inPip && !locked && !(upNextVisible && (prompt.kind == SkipSegment.Kind.Outro || prompt.kind == SkipSegment.Kind.Preview))
+        val promptVisible = prompt != null && !inPip && !(upNextVisible && (prompt.kind == SkipSegment.Kind.Outro || prompt.kind == SkipSegment.Kind.Preview))
         AnimatedVisibility(
             visible = promptVisible,
             enter = fadeIn(),
@@ -883,7 +964,7 @@ fun MpvPlayerSurface(
             )
         }
         AnimatedVisibility(
-            visible = upNextVisible && !inPip && nextEpisode != null,
+            visible = upNextVisible && !inPip && !stillWatching,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -901,7 +982,7 @@ fun MpvPlayerSurface(
                         countdown != null -> "Starts in ${countdown.coerceAtLeast(0.0).toInt()}s"
                         else -> "Next Episode"
                     },
-                    onPlay = advance,
+                    onPlay = { advance(false) },
                     onCancel = {
                         upNextCancelled = true
                         upNextCountdown = null
@@ -909,30 +990,9 @@ fun MpvPlayerSurface(
                 )
             }
         }
-        AnimatedVisibility(
-            visible = locked && lockHint && !inPip,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(bottom = 28.dp),
-        ) {
-            Row(
-                Modifier
-                    .playerGlass(RoundedCornerShape(50))
-                    .clickable {
-                        locked = false
-                        lockHint = false
-                        reveal()
-                    }
-                    .padding(horizontal = 18.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.LockOpen, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Tap to Unlock", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-            }
+        if (stillWatching) {
+            BackHandler(onBack = stopStillWatching)
+            StillWatchingOverlay(onContinue = continueStillWatching, onStop = stopStillWatching)
         }
     }
 
@@ -945,7 +1005,6 @@ fun MpvPlayerSurface(
             speed = state.speed,
             onSpeed = { rate ->
                 controller?.setSpeed(rate)
-                menuPage = null
             },
             audio = audioTracks,
             audioNote = null,
@@ -953,14 +1012,12 @@ fun MpvPlayerSurface(
                 controller?.selectAudio(track.key)
                 onTrackPicked(TrackPick.Audio(track.language))
                 trackTick += 1
-                menuPage = null
             },
             subtitles = subtitleTracks,
             onSubtitle = { track ->
                 controller?.selectSubtitle(track?.key)
                 onTrackPicked(track?.let { TrackPick.Subtitle(it.language) } ?: TrackPick.SubtitlesOff)
                 trackTick += 1
-                menuPage = null
             },
             chapters = plan.chapters,
             position = mediaPosition,
@@ -997,6 +1054,13 @@ fun MpvPlayerSurface(
                 { version ->
                     menuPage = null
                     if (version.id != plan.mediaSourceId) choose(version.id, mediaPosition)
+                }
+            },
+            quality = PlaybackPreferences.selectedQuality(context),
+            onQuality = onQualityChange?.takeUnless { plan.streamUrl.startsWith("file:") }?.let { change ->
+                { option ->
+                    menuPage = null
+                    change(option, mediaPosition)
                 }
             },
         )

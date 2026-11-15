@@ -13,7 +13,11 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "6"
+    # iOS build number. Lives here so `xcodegen generate` preserves it instead of resetting
+    # the number set in Xcode — bump this value when cutting a TestFlight build.
+    CURRENT_PROJECT_VERSION: "22"
+    # Signing team, kept here so regeneration never strips it from the targets.
+    DEVELOPMENT_TEAM: F7YZT72GUX
     GENERATE_INFOPLIST_FILE: YES
     DISABLE_DIAMOND_PROBLEM_DIAGNOSTIC: YES
     INFOPLIST_KEY_CFBundleDisplayName: Zelefin
@@ -25,9 +29,6 @@ packages:
   JellyfinAPI:
     url: https://github.com/jellyfin/jellyfin-sdk-swift.git
     from: "1.0.0"
-  AetherEngine:
-    url: https://github.com/superuser404notfound/AetherEngine
-    from: "6.67.2"
   ZelefinMPV:
     path: Packages/ZelefinMPV
 targets:
@@ -47,6 +48,7 @@ targets:
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: YES
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home."
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "Zelefin uses Face ID or Touch ID to unlock a switch PIN when changing accounts on this device."
         INFOPLIST_KEY_UIBackgroundModes: "audio remote-notification"
         INFOPLIST_KEY_UILaunchScreen_UIColorName: LaunchBackground
         INFOPLIST_KEY_UILaunchScreen_UIImageName: LaunchMark
@@ -65,10 +67,6 @@ targets:
     dependencies:
       - package: JellyfinAPI
         product: JellyfinAPI
-      # AetherEngine's FFmpeg and LibDovi ship no Mac Catalyst slices yet (AetherEngine#253).
-      - package: AetherEngine
-        product: AetherEngine
-        platformFilter: iOS
       - package: ZelefinMPV
         product: ZelefinMPV
       # AppKit for the Mac sidebar (no collapsing, fixed width, no sidebar button), loaded from PlugIns.
@@ -77,6 +75,10 @@ targets:
         embed: true
         copy:
           destination: plugins
+      # Download Live Activity (Lock Screen + Dynamic Island). iPhone/iPad only — not on Mac Catalyst.
+      - target: ZelefinDownloadsWidget
+        platformFilter: iOS
+        embed: true
     postBuildScripts:
       - name: Generate framework dSYMs
         basedOnDependencyAnalysis: false
@@ -96,10 +98,19 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIRequiresFullScreen: false
+        # Download progress on the Lock Screen and in the Dynamic Island.
+        NSSupportsLiveActivities: true
         UILaunchScreen:
           UIColorName: LaunchBackground
           UIImageName: LaunchMark
         NSLocationWhenInUseUsageDescription: "Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home."
+        NSFaceIDUsageDescription: "Zelefin uses Face ID or Touch ID to unlock a switch PIN when changing accounts on this device."
+        # Kept here so regeneration doesn't strip them from Info.plist.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSCameraUsageDescription: "Zelefin does not use the camera. A video library built into its player can capture from a camera, so iOS asks apps that include it to explain why; Zelefin never turns it on."
+        NSMicrophoneUsageDescription: "Zelefin does not use the microphone. A video library built into its player can record audio, so iOS asks apps that include it to explain why; Zelefin never turns it on."
+        NSLocalNetworkUsageDescription: "Zelefin connects to Jellyfin, Seerr, and Ombi servers on your home network."
         UIBackgroundModes:
           - audio
           - remote-notification
@@ -118,6 +129,26 @@ targets:
         WRAPPER_EXTENSION: bundle
         SKIP_INSTALL: YES
         CODE_SIGN_STYLE: Automatic
+  ZelefinDownloadsWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ZelefinDownloadsWidget
+        excludes:
+          - Info.plist
+      # The Live Activity contract, shared with the app (which also compiles it via its glob).
+      - path: Zelefin/Core/LiveActivities/ZelefinActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.zelefin.client.DownloadsWidget
+        INFOPLIST_FILE: ZelefinDownloadsWidget/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Zelefin Downloads
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
   ZelefinTests:
     type: bundle.unit-test
     platform: iOS

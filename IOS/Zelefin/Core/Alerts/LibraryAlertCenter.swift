@@ -56,6 +56,9 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
 
     func post(_ alerts: [LibraryAlert]) {
         for alert in alerts {
+            if alert.kind == .seerrRequest {
+                RequestLiveActivityBridge.notePush(alertID: alert.id, body: alert.body)
+            }
             let content = UNMutableNotificationContent()
             content.title = alert.title
             content.body = alert.body
@@ -103,8 +106,10 @@ final class LibraryAlertCenter: NSObject, UNUserNotificationCenterDelegate {
             completionHandler([])
             return
         }
-        // A push already in flight when the switch went off should not still land on screen.
-        completionHandler(LibraryAlertSettings.isEnabled ? [.banner, .sound, .list] : [])
+        // Foreground delivery only — background alerts still land through the system.
+        // Quiet hours / mute-while-open / mute-while-playing hold banners back here.
+        let suppress = LibraryAlertSettings.shouldSuppressPresentation(appIsForeground: true)
+        completionHandler(suppress ? [] : [.banner, .sound, .list])
     }
 
     nonisolated func userNotificationCenter(

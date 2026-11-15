@@ -945,10 +945,13 @@ private struct SearchPage: View {
     }
 
     private func markRequested(_ title: SeerrTitle) {
+        var pending = title
+        pending.availability = .pending
         if let index = seerrResults.firstIndex(where: { $0.id == title.id }) {
             seerrResults[index].availability = .pending
         }
         discoverHome.markRequested(title)
+        RequestLiveActivityBridge.noteSubmitted(pending)
     }
 
     private func recordRecent(_ item: MediaItem) {
@@ -982,12 +985,34 @@ struct SeerrRequestRow: View {
         title.canRequest && !isFullyOnServer
     }
 
+    /// Available titles open the library detail page instead of the Seerr/Ombi request page.
+    private var libraryItemID: String? {
+        var current = title
+        if !current.availability.isOnServer, isInJellyfin {
+            current.availability = .available
+        }
+        let fullyOnServer = current.availability == .available
+            || (current.kind == .movie && current.availability.isOnServer)
+        guard fullyOnServer else { return nil }
+        return session.tmdbCatalog.itemID(for: current)
+    }
+
     var body: some View {
         HStack(spacing: 14) {
-            NavigationLink {
-                RequestTitleDetailView(title: title, onRequested: onRequested)
-            } label: {
-                details
+            Group {
+                if let libraryItemID {
+                    NavigationLink {
+                        ItemDetailView(itemID: libraryItemID)
+                    } label: {
+                        details
+                    }
+                } else {
+                    NavigationLink {
+                        RequestTitleDetailView(title: title, onRequested: onRequested)
+                    } label: {
+                        details
+                    }
+                }
             }
             .buttonStyle(.plain)
 

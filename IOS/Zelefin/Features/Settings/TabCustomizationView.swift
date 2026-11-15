@@ -8,6 +8,10 @@ struct TabCustomizationView: View {
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
     @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = HomeRowKind.defaultHiddenRaw
     @AppStorage(FeaturedHeroContent.storageKey) private var featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
+    @AppStorage(HeroSizePreferences.storageKey) private var heroSizeRaw = HeroSizePreferences.compact.rawValue
+    @AppStorage(PosterBadgePreferences.ratingKey) private var showsPosterRating = true
+    @AppStorage(PosterBadgePreferences.qualityKey) private var showsPosterQuality = true
+    @AppStorage(PosterBadgePreferences.watchedKey) private var showsPosterWatched = true
     @AppStorage(AppTab.showsTitlesStorageKey) private var showsTabNames = true
     @AppStorage(AppTab.dockLibrariesStorageKey) private var dockLibraryIDsRaw = ""
     @AppStorage(AppTab.startTabStorageKey) private var startTabRaw = AppTab.home.rawValue
@@ -15,6 +19,8 @@ struct TabCustomizationView: View {
     @AppStorage(LibraryLayoutPreferences.orderKey) private var libraryOrderRaw = ""
     @AppStorage(LibraryLayoutPreferences.hiddenKey) private var libraryHiddenRaw = ""
     @AppStorage(LibraryLayoutPreferences.pageHiddenKey) private var libraryPageHiddenRaw = ""
+    @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
+    @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
 
     @Environment(\.editMode) private var editMode
 
@@ -24,6 +30,30 @@ struct TabCustomizationView: View {
 
     var body: some View {
         List {
+            Section {
+                VStack(alignment: .leading, spacing: 16) {
+                    AccentColorPickerGrid(
+                        accentPresetId: $accentPresetId,
+                        customAccentHex: $customAccentHex
+                    )
+
+                    if accentPresetId == AccentPreferences.customId {
+                        CustomAccentColorControls(
+                            accentPresetId: $accentPresetId,
+                            customAccentHex: $customAccentHex
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .padding(.vertical, 4)
+                .animation(.spring(response: 0.34, dampingFraction: 0.84), value: accentPresetId)
+            } header: {
+                Text("Accent Color")
+            } footer: {
+                Text("Tints buttons, highlights, and icons throughout the app.")
+            }
+            .zelefinRowBackground()
+
             Section {
                 Toggle("Combine Continue Watching and Next Up", isOn: gatedMergeBinding)
             } footer: {
@@ -37,24 +67,41 @@ struct TabCustomizationView: View {
                         Text(option.title).tag(option.rawValue)
                     }
                 }
+                Picker("Size", selection: $heroSizeRaw) {
+                    ForEach(HeroSizePreferences.allCases) { option in
+                        Text(option.title).tag(option.rawValue)
+                    }
+                }
             } header: {
                 Text("Featured Hero")
             } footer: {
-                Text("What the Home hero cycles through. Recently Added is the default. Random picks a new set when Home refreshes.")
+                Text("What the Home hero cycles through, and how tall the Featured and title-page backdrops run. Compact shows more of a landscape image; Tall is the previous full-bleed height. Recently Added is the default content.")
             }
             .zelefinRowBackground()
 
             Section {
-                ForEach(displayedHomeRows) { row in
-                    if isEditing {
-                        Label(row.title, systemImage: row.systemImage)
-                    } else {
-                        Toggle(isOn: homeRowVisibilityBinding(for: row)) {
-                            Label(row.title, systemImage: row.systemImage)
-                        }
+                Toggle("Community Rating", isOn: $showsPosterRating)
+                Toggle("Quality Badges", isOn: $showsPosterQuality)
+                Toggle("Watched Mark", isOn: $showsPosterWatched)
+            } header: {
+                Text("Poster Badges")
+            } footer: {
+                Text("Rating stars, 4K/HDR/Atmos marks, and the watched check on posters. Turn any of them off to quiet the covers.")
+            }
+            .zelefinRowBackground()
+
+            Section {
+                ForEach(homeRowSlots) { slot in
+                    homeRowSlotRow(slot)
+                }
+                .onMove(perform: moveHomeRowSlots)
+                if !isEditing {
+                    Button {
+                        addCustomHomeRow()
+                    } label: {
+                        Label("Add Custom Row", systemImage: "plus.circle.fill")
                     }
                 }
-                .onMove(perform: moveHomeRows)
             } header: {
                 Text("Home")
             } footer: {
@@ -152,7 +199,10 @@ struct TabCustomizationView: View {
 
             Section {
                 Button("Reset Home Rows") {
-                    homeRowOrder = HomeRowKind.defaultOrderRaw
+                    let customIDs = Set(CustomHomeRows.rows.map(\.id))
+                    homeRowOrder = HomeRowSlot.rawOrder(
+                        HomeRowSlot.ordered(from: HomeRowKind.defaultOrderRaw, customIDs: customIDs)
+                    )
                     homeRowHidden = HomeRowKind.defaultHiddenRaw
                     featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
                 }
@@ -369,14 +419,60 @@ struct TabCustomizationView: View {
         #else
         let edit = "Tap Edit to drag rows into a new order."
         #endif
-        let rows = "Turn off a row to hide it from Home. \(edit)"
+        let custom = "Custom rows use catalog filters and can sit between built-in rows. "
+        let rows = custom + "Turn off a row to hide it from Home. \(edit)"
         return mergeContinueAndNextUp
             ? rows + " Next Up only appears when Combine Continue Watching and Next Up is off."
             : rows
     }
 
-    private var displayedHomeRows: [HomeRowKind] {
-        HomeRowKind.ordered(from: homeRowOrder)
+    private var homeRowSlots: [HomeRowSlot] {
+        HomeRowSlot.ordered(from: homeRowOrder, customIDs: Set(CustomHomeRows.rows.map(\.id)))
+    }
+
+    @ViewBuilder
+    private func homeRowSlotRow(_ slot: HomeRowSlot) -> some View {
+        switch slot {
+        case let .builtIn(row):
+            if isEditing {
+                Label(row.title, systemImage: row.systemImage)
+            } else {
+                Toggle(isOn: homeRowVisibilityBinding(for: row)) {
+                    Label(row.title, systemImage: row.systemImage)
+                }
+            }
+        case let .custom(id):
+            if let row = CustomHomeRows.row(id: id) {
+                Group {
+                    if isEditing {
+                        Label(row.title, systemImage: "line.3.horizontal.decrease.circle")
+                    } else {
+                        HStack(spacing: 12) {
+                            NavigationLink {
+                                CustomHomeRowEditorView(rowID: id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.title)
+                                    Text(CustomHomeRows.filterSummary(row))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            Toggle("Visible", isOn: customHomeRowEnabledBinding(for: row))
+                                .labelsHidden()
+                        }
+                    }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        deleteCustomHomeRow(id: id)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
+        }
     }
 
     private var gatedMergeBinding: Binding<Bool> {
@@ -401,10 +497,43 @@ struct TabCustomizationView: View {
         )
     }
 
-    private func moveHomeRows(from offsets: IndexSet, to destination: Int) {
-        var order = HomeRowKind.ordered(from: homeRowOrder)
-        order.move(fromOffsets: offsets, toOffset: destination)
-        homeRowOrder = HomeRowKind.raw(from: order)
+    private func moveHomeRowSlots(from offsets: IndexSet, to destination: Int) {
+        var slots = homeRowSlots
+        slots.move(fromOffsets: offsets, toOffset: destination)
+        homeRowOrder = HomeRowSlot.rawOrder(slots)
+    }
+
+    private func customHomeRowEnabledBinding(for row: CustomHomeRow) -> Binding<Bool> {
+        Binding(
+            get: { CustomHomeRows.row(id: row.id)?.enabled ?? row.enabled },
+            set: { enabled in
+                var next = row
+                next.enabled = enabled
+                CustomHomeRows.update(next)
+                Task {
+                    await session.refreshHome()
+                    await session.pushDisplayPreferences()
+                }
+            }
+        )
+    }
+
+    private func addCustomHomeRow() {
+        let row = CustomHomeRows.add()
+        CustomHomeRows.insertCustomSlot(id: row.id, into: &homeRowOrder)
+        Task {
+            await session.refreshHome()
+            await session.pushDisplayPreferences()
+        }
+    }
+
+    private func deleteCustomHomeRow(id: String) {
+        CustomHomeRows.removeCustomSlot(id: id, from: &homeRowOrder)
+        CustomHomeRows.remove(id: id)
+        Task {
+            await session.refreshHome()
+            await session.pushDisplayPreferences()
+        }
     }
 
     private var enabledDockTabCount: Int {
@@ -467,6 +596,112 @@ struct TabCustomizationView: View {
         order.move(fromOffsets: offsets, toOffset: destination)
         tabOrderRaw = AppTab.raw(from: order)
         tabCustomization.resetSectionOrder()
+    }
+}
+
+struct CustomHomeRowEditorView: View {
+    @Environment(SessionStore.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    let rowID: String
+
+    @State private var draft: CustomHomeRow
+    @State private var browseQuery: CatalogBrowseQuery
+    @State private var options = CatalogFilterOptions()
+    @State private var showFilters = false
+    @State private var showSort = false
+    @State private var confirmDelete = false
+
+    init(rowID: String) {
+        self.rowID = rowID
+        let row = CustomHomeRows.row(id: rowID) ?? CustomHomeRow()
+        _draft = State(initialValue: row)
+        _browseQuery = State(initialValue: row.browseQuery)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                TextField("Title", text: $draft.title)
+                Picker("Scope", selection: $draft.scope) {
+                    ForEach(CustomHomeRowScope.allCases) { scope in
+                        Text(scope.title).tag(scope.rawValue)
+                    }
+                }
+            }
+            .zelefinRowBackground()
+
+            Section {
+                Text(CustomHomeRows.filterSummary(draft.withQuery(browseQuery)))
+                    .foregroundStyle(.secondary)
+                Button("Filters") { showFilters = true }
+                Button("Sort") { showSort = true }
+            } header: {
+                Text("Catalog Filters")
+            }
+            .zelefinRowBackground()
+
+            Section {
+                Button("Delete Custom Row", role: .destructive) {
+                    confirmDelete = true
+                }
+            }
+            .zelefinRowBackground()
+        }
+        .zelefinSettingsChrome(title: "Custom Row")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Save") { save() }
+                    .fontWeight(.semibold)
+            }
+        }
+        .catalogFilterSheets(
+            query: $browseQuery,
+            options: options,
+            showFilters: $showFilters,
+            showSort: $showSort
+        )
+        .confirmationDialog("Delete this custom row?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { deleteRow() }
+            Button("Cancel", role: .cancel) {}
+        }
+        .task { await loadOptions() }
+        .onChange(of: browseQuery) { _, _ in
+            draft = draft.withQuery(browseQuery)
+        }
+        .onChange(of: draft.scope) { _, _ in
+            Task { await loadOptions() }
+        }
+    }
+
+    private func loadOptions() async {
+        guard let library = session.library else { return }
+        let scope = CustomHomeRowScope.from(raw: draft.scope)
+        if scope == .both {
+            options = await library.mixedCatalogFilterOptions()
+        } else {
+            options = await library.catalogFilterOptions(for: scope.primaryLibraryKind)
+        }
+    }
+
+    private func save() {
+        let next = draft.withQuery(browseQuery)
+        CustomHomeRows.update(next)
+        Task {
+            await session.refreshHome()
+            await session.pushDisplayPreferences()
+        }
+    }
+
+    private func deleteRow() {
+        var order = UserDefaults.standard.string(forKey: HomeRowKind.orderStorageKey) ?? HomeRowKind.defaultOrderRaw
+        CustomHomeRows.removeCustomSlot(id: rowID, from: &order)
+        UserDefaults.standard.set(order, forKey: HomeRowKind.orderStorageKey)
+        CustomHomeRows.remove(id: rowID)
+        Task {
+            await session.refreshHome()
+            await session.pushDisplayPreferences()
+        }
+        dismiss()
     }
 }
 
@@ -546,34 +781,3 @@ struct LibraryIconPickerView: View {
     }
 }
 
-struct AppearanceSettingsView: View {
-    @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
-    @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
-
-    var body: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 16) {
-                    AccentColorPickerGrid(
-                        accentPresetId: $accentPresetId,
-                        customAccentHex: $customAccentHex
-                    )
-                    .padding(.vertical, 4)
-
-                    if accentPresetId == AccentPreferences.customId {
-                        CustomAccentColorControls(
-                            accentPresetId: $accentPresetId,
-                            customAccentHex: $customAccentHex
-                        )
-                    }
-                }
-            } header: {
-                Text("Accent Color")
-            } footer: {
-                Text("Accent color tints buttons, highlights, and icons throughout the app.")
-            }
-            .zelefinRowBackground()
-        }
-        .zelefinSettingsChrome(title: "Appearance")
-    }
-}

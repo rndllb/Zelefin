@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -69,7 +70,7 @@ import app.zelefin.core.SiloProfile
 private val PickerCaption = Color.White.copy(alpha = 0.55f)
 private val PickerFailure = Color(1f, 0.38f, 0.38f)
 private val PickerWarning = Color(1f, 0.8f, 0.45f)
-private const val PinMaxLength = 8
+private val ProfileSwatches = floatArrayOf(0.22f, 0.30f, 0.38f, 0.46f, 0.28f, 0.34f)
 
 /** Kids, Primary, and PIN, in the order the picker badges show them. */
 fun siloProfileCaption(profile: SiloProfile): String = listOfNotNull(
@@ -78,17 +79,36 @@ fun siloProfileCaption(profile: SiloProfile): String = listOfNotNull(
     "PIN".takeIf { profile.hasPin },
 ).joinToString(" · ").ifEmpty { "Profile" }
 
+/** Up to two letters, matching iOS `HouseholdProfileAvatar`. */
+private fun profileInitials(name: String): String {
+    val letters = name.trim().split(Regex("\\s+"))
+        .filter { it.isNotEmpty() }
+        .take(2)
+        .mapNotNull { part -> part.firstOrNull()?.uppercaseChar()?.toString() }
+    return letters.joinToString("").ifEmpty { "•" }
+}
+
+private fun profileSwatch(id: String): Color {
+    val gray = ProfileSwatches[id.hashCode().mod(ProfileSwatches.size)]
+    return Color(gray, gray, gray)
+}
+
 @Composable
 fun SiloProfileAvatar(profile: SiloProfile, diameter: Dp) {
-    val initial = profile.name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
     Box(
         Modifier
             .size(diameter)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(LoginPalette.Lavender.copy(alpha = 0.55f), LoginPalette.Sky.copy(alpha = 0.55f)))),
+            .background(profileSwatch(profile.id)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(initial, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.4f).sp)
+        Text(
+            profileInitials(profile.name),
+            color = Color.White.copy(alpha = 0.92f),
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = (diameter.value * 0.36f).sp,
+        )
         profile.avatarUrl?.let { url ->
             CachedArtwork(url = url, contentDescription = profile.name, contentScale = ContentScale.Crop, modifier = Modifier.size(diameter).clip(CircleShape))
         }
@@ -122,16 +142,6 @@ fun SiloProfilePickerScreen(picker: SiloProfilePicker, onChoose: (SiloProfile) -
         ) {
             Spacer(Modifier.height(24.dp))
             Text("Who’s watching?", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 30.sp)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "${picker.accountName} · ${picker.serverName}",
-                color = PickerCaption,
-                fontFamily = ZelefinFont,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
             picker.warning?.let { warning ->
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -142,20 +152,31 @@ fun SiloProfilePickerScreen(picker: SiloProfilePicker, onChoose: (SiloProfile) -
                     textAlign = TextAlign.Center,
                 )
             }
-            Spacer(Modifier.height(32.dp))
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(128.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            ) {
-                items(picker.profiles, key = { it.id }) { profile ->
-                    ProfileTile(
-                        profile = profile,
-                        busy = picker.busyProfileId == profile.id,
-                        enabled = picker.busyProfileId == null,
-                        onClick = { onChoose(profile) },
-                    )
+            if (picker.profiles.isEmpty()) {
+                Text(
+                    "This account has no household profiles yet.",
+                    color = PickerCaption,
+                    fontFamily = ZelefinFont,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).padding(top = 28.dp).fillMaxWidth(),
+                )
+            } else {
+                Spacer(Modifier.height(32.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(128.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                ) {
+                    items(picker.profiles, key = { it.id }) { profile ->
+                        ProfileTile(
+                            profile = profile,
+                            busy = picker.busyProfileId == profile.id,
+                            enabled = picker.busyProfileId == null,
+                            onClick = { onChoose(profile) },
+                        )
+                    }
                 }
             }
             picker.message?.let { message ->
@@ -180,12 +201,11 @@ fun SiloProfilePickerScreen(picker: SiloProfilePicker, onChoose: (SiloProfile) -
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "USE A DIFFERENT ACCOUNT",
-                    color = Color.White,
+                    "Use a different account",
+                    color = PickerCaption,
                     fontFamily = ZelefinFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
                 )
             }
         }
@@ -234,28 +254,73 @@ private fun ProfileTile(profile: SiloProfile, busy: Boolean, enabled: Boolean, o
             overflow = TextOverflow.Ellipsis,
         )
         if (profile.isChild) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "KIDS",
-                color = LoginPalette.Canvas,
-                fontFamily = ZelefinFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 10.sp,
-                letterSpacing = 0.8.sp,
-                modifier = Modifier.clip(RoundedCornerShape(50)).background(LoginPalette.Action).padding(horizontal = 8.dp, vertical = 2.dp),
-            )
+            Text("Kids", color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+        }
+    }
+}
+
+/** A profile tile for Profile → Who’s watching. Current and in-progress tiles get a white ring. */
+@Composable
+internal fun HouseholdProfileTile(
+    profile: SiloProfile,
+    isCurrent: Boolean,
+    isSelected: Boolean,
+    enabled: Boolean,
+    dimmed: Boolean = false,
+    onClick: () -> Unit,
+    size: Dp = 76.dp,
+) {
+    Column(
+        Modifier
+            .alpha(if (dimmed) 0.5f else 1f)
+            .width(size + 8.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            SiloProfileAvatar(profile, size)
+            if (isCurrent || isSelected) {
+                Box(Modifier.size(size).border(3.dp, Color.White, CircleShape))
+            }
+            if (profile.hasPin) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.72f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            profile.name,
+            color = Color.White,
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        if (profile.isChild) {
+            Text("Kids", color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
         }
     }
 }
 
 /** Asks for a household profile's PIN, for the picker and for profile switching. */
 @Composable
-fun SiloPinDialog(prompt: SiloPinPrompt, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
+fun SiloPinDialog(prompt: SiloPinPrompt, switching: Boolean = false, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
     var pin by rememberSaveable(prompt.profile.id) { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(prompt.profile.id) { runCatching { focus.requestFocus() } }
     LaunchedEffect(prompt.message) { if (prompt.message != null) pin = "" }
-    val canSubmit = pin.length >= 4 && !prompt.busy
+    val canSubmit = pin.isNotBlank() && !prompt.busy
     Dialog(onDismissRequest = onCancel) {
         Column(
             Modifier
@@ -266,15 +331,30 @@ fun SiloPinDialog(prompt: SiloPinPrompt, onSubmit: (String) -> Unit, onCancel: (
                 .padding(start = 22.dp, end = 22.dp, top = 24.dp, bottom = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            SiloProfileAvatar(prompt.profile, 64.dp)
-            Spacer(Modifier.height(12.dp))
-            Text(prompt.profile.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+            if (!switching) {
+                SiloProfileAvatar(prompt.profile, 64.dp)
+                Spacer(Modifier.height(12.dp))
+            }
+            Text(
+                "PIN for ${prompt.profile.name}",
+                color = Color.White,
+                fontFamily = ZelefinFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 17.sp,
+                textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(4.dp))
-            Text("Enter this profile’s PIN.", color = Color.White.copy(alpha = 0.72f), fontFamily = ZelefinFont, fontSize = 15.sp)
+            Text(
+                prompt.message ?: if (switching) "This profile is locked." else "Enter this profile’s PIN.",
+                color = if (prompt.message != null && switching) IOSColors.red else Color.White.copy(alpha = 0.72f),
+                fontFamily = ZelefinFont,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(16.dp))
             BasicTextField(
                 value = pin,
-                onValueChange = { next -> pin = next.filter(Char::isDigit).take(PinMaxLength) },
+                onValueChange = { next -> pin = next.filter(Char::isDigit) },
                 singleLine = true,
                 enabled = !prompt.busy,
                 textStyle = TextStyle(
@@ -297,9 +377,11 @@ fun SiloPinDialog(prompt: SiloPinPrompt, onSubmit: (String) -> Unit, onCancel: (
                     .padding(vertical = 12.dp)
                     .focusRequester(focus),
             )
-            prompt.message?.let { message ->
-                Spacer(Modifier.height(10.dp))
-                Text(message, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 13.sp, textAlign = TextAlign.Center)
+            if (!switching) {
+                prompt.message?.let { message ->
+                    Spacer(Modifier.height(10.dp))
+                    Text(message, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 13.sp, textAlign = TextAlign.Center)
+                }
             }
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -307,7 +389,7 @@ fun SiloPinDialog(prompt: SiloPinPrompt, onSubmit: (String) -> Unit, onCancel: (
                 if (prompt.busy) {
                     Box(Modifier.weight(1f).height(48.dp), contentAlignment = Alignment.Center) { IOSSpinner(color = Color.White) }
                 } else {
-                    IOSCapsuleButton("Unlock", { onSubmit(pin) }, Modifier.weight(1f), prominent = true, enabled = canSubmit)
+                    IOSCapsuleButton(if (switching) "Switch" else "Continue", { onSubmit(pin) }, Modifier.weight(1f), prominent = true, enabled = canSubmit)
                 }
             }
         }
@@ -345,24 +427,3 @@ fun SiloNoticeDialog(notice: SiloNotice, onDismiss: () -> Unit, onSignInAgain: (
     }
 }
 
-@Composable
-internal fun SiloProfileRowContent(profile: SiloProfile, current: Boolean, busy: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        SiloProfileAvatar(profile, 36.dp)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(profile.name, style = SettingsRowText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                if (current) "Watching now" else siloProfileCaption(profile),
-                color = IOSColors.secondaryLabel,
-                fontFamily = ZelefinFont,
-                fontSize = 13.sp,
-                maxLines = 1,
-            )
-        }
-        when {
-            busy -> IOSSpinner()
-            profile.hasPin && !current -> Icon(Icons.Outlined.Lock, contentDescription = "PIN", tint = IOSColors.tertiaryLabel, modifier = Modifier.size(18.dp))
-        }
-    }
-}

@@ -312,8 +312,12 @@ struct LibraryView: View {
             errorMessage = error.localizedDescription
         }
         let fetchedCounts = await counts
-        guard session.library === client else { return }
-        session.libraryPage.catalogCounts = fetchedCounts
+        guard !Task.isCancelled, session.library === client else { return }
+        // A cancelled or failed count fetch returns zeros. Keep the last good header
+        // so pull-to-refresh does not blank Movies / Shows / Episodes.
+        if fetchedCounts.showsHeaderStats || page.catalogCounts == nil {
+            session.libraryPage.catalogCounts = fetchedCounts
+        }
         await loadDetails(for: libraries)
         if errorMessage == nil, session.library === client {
             session.libraryPage.isLoaded = true
@@ -346,7 +350,12 @@ struct LibraryView: View {
                 }
             }
             for await (id, counts) in group where session.library === client {
-                session.libraryPage.roomCounts[id] = counts
+                guard !Task.isCancelled else { return }
+                // Same as the header: do not replace a real caption with an empty
+                // one from a cancelled refresh.
+                if counts.caption != nil || page.roomCounts[id] == nil {
+                    session.libraryPage.roomCounts[id] = counts
+                }
             }
         }
     }
@@ -458,6 +467,8 @@ private struct LibraryRoomBand: View {
     let covers: [MediaItem]
     var showsArtwork = true
     var countCaption: String?
+    /// Cinematic backdrop from a collection member when the box set itself has none.
+    @State private var memberWashURL: URL?
 
     private var height: CGFloat {
         168 * sidebarLayout.scale
@@ -469,6 +480,12 @@ private struct LibraryRoomBand: View {
 
     private var overlap: CGFloat {
         -24 * sidebarLayout.scale
+    }
+
+    /// Same art the fan prefers — tagged posters — so the wash is not stuck on an
+    /// untagged box set whose parent-backdrop URL 404s into the raised fill.
+    private var washLead: MediaItem? {
+        fanArt.first ?? covers.first
     }
 
     var body: some View {
@@ -511,6 +528,9 @@ private struct LibraryRoomBand: View {
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(caption.map { "\(library.name), \($0)" } ?? library.name)
+        .task(id: washLead?.id) {
+            await resolveMemberWash()
+        }
     }
 
     private var caption: String? {
@@ -529,13 +549,57 @@ private struct LibraryRoomBand: View {
 
     @ViewBuilder
     private var wash: some View {
-        if showsArtwork, let lead = covers.first {
-            PosterImage(
-                url: session.library?.backdropURL(for: lead) ?? session.library?.primaryURL(for: lead),
-                contentMode: .fill
-            )
+        if showsArtwork, let url = memberWashURL ?? washURL(for: washLead) {
+            PosterImage(url: url, contentMode: .fill)
         } else {
             surfaces.raised
+        }
+    }
+
+    /// Prefer an image the cover owns. `backdropURL` can return a parent Backdrop
+    /// with no tag that 404s for box sets, which left Collections on a blank fill
+    /// even though the fan posters on the right loaded fine.
+    private func washURL(for lead: MediaItem?) -> URL? {
+        guard let lead, let client = session.library else { return nil }
+        if lead.backdropImageTag != nil || !lead.backdropImageTags.isEmpty {
+            return client.backdropURL(for: lead)
+        }
+        return client.primaryURL(for: lead) ?? client.backdropURL(for: lead)
+    }
+
+    private func resolveMemberWash() async {
+        memberWashURL = nil
+        guard library.libraryKind == .collections || washLead?.kind == .collection,
+              let lead = washLead
+        else { return }
+        let members = await Self.posterMembers(for: lead.id, library: session.library)
+        guard !Task.isCancelled else { return }
+        for member in members {
+            if member.backdropImageTag != nil || !member.backdropImageTags.isEmpty,
+               let url = session.library?.backdropURL(for: member)
+            {
+                memberWashURL = url
+                return
+            }
+        }
+        for member in members {
+            if let url = session.library?.backdropURL(for: member)
+                ?? session.library?.primaryURL(for: member)
+            {
+                memberWashURL = url
+                return
+            }
+        }
+    }
+
+    private static func posterMembers(for parentID: String, library: (any LibraryServing)?) async -> [MediaItem] {
+        switch library {
+        case let client as JellyfinLibraryClient:
+            return await client.collectionPosterMembers(parentID: parentID)
+        case let client as EmbyLibraryClient:
+            return await client.collectionPosterMembers(parentID: parentID)
+        default:
+            return []
         }
     }
 
@@ -1072,6 +1136,7 @@ struct LibraryItemsView: View {
         }
         items = (try? await client.items(in: library, query: query) { update in
             indexProgress = .listing(loaded: update.items.count, total: update.totalCount)
+            CatalogIndexLiveActivity.sync(indexProgress)
             guard !update.items.isEmpty else { return }
             items = update.items
             isLoading = false
@@ -1083,6 +1148,7 @@ struct LibraryItemsView: View {
     private func finishArtwork(for items: [MediaItem], client: any LibraryServing) async {
         guard PosterPrefetcher.prefetchesPosters(for: library.libraryKind), !items.isEmpty else {
             indexProgress = nil
+            CatalogIndexLiveActivity.sync(nil)
             return
         }
         let urls = PosterPrefetcher.posterURLs(for: items, library: client)
@@ -1092,7 +1158,9 @@ struct LibraryItemsView: View {
             } else {
                 indexProgress = .artwork(cached: cached, total: total)
             }
+            CatalogIndexLiveActivity.sync(indexProgress)
         }
         indexProgress = nil
+        CatalogIndexLiveActivity.sync(nil)
     }
 }

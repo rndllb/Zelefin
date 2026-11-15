@@ -62,6 +62,21 @@ enum QuickConnectClient {
         throw ZelefinError.quickConnectExpired
     }
 
+    /// Approves `code` for the signed-in user so another device can finish Quick Connect.
+    static func authorize(code: String, on client: JellyfinClient, userID: String?) async throws {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw ZelefinError.server("Enter the Quick Connect code.")
+        }
+        do {
+            _ = try await client.send(Paths.authorizeQuickConnect(code: trimmed, userID: userID))
+        } catch let APIError.unacceptableStatusCode(status) where status == 401 || status == 403 {
+            throw ZelefinError.server("This account cannot authorize Quick Connect.")
+        } catch let APIError.unacceptableStatusCode(status) where status == 404 {
+            throw ZelefinError.server("That Quick Connect code was not found or has expired.")
+        }
+    }
+
     /// Returns the boolean encoded in a Quick Connect enabled response body.
     static func enabledFlag(from data: Data) -> Bool? {
         if let flag = try? JSONDecoder().decode(Bool.self, from: data) {

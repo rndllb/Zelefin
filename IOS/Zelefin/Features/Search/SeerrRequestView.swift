@@ -597,6 +597,9 @@ struct SeerrRequestView: View {
         )
         do {
             try await client.request(draft)
+            var submitted = current
+            submitted.availability = .pending
+            RequestLiveActivityBridge.noteSubmitted(submitted)
             onRequested()
             dismiss()
         } catch {

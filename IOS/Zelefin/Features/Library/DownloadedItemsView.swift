@@ -15,13 +15,16 @@ struct DownloadedItemsView: View {
         downloads.libraryRows(for: session.session)
     }
 
-    private var inFlight: [DownloadProgress] {
-        downloads.activeTransfers(for: session.session)
+    private var entries: [DownloadLibraryEntry] {
+        DownloadLibraryEntry.grid(
+            active: downloads.activeTransfers(for: session.session),
+            rows: rows
+        )
     }
 
     var body: some View {
         Group {
-            if rows.isEmpty && inFlight.isEmpty {
+            if entries.isEmpty {
                 ContentUnavailableView(
                     "No Downloads",
                     systemImage: "arrow.down.circle",
@@ -30,10 +33,14 @@ struct DownloadedItemsView: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 20) {
-                        ForEach(inFlight) { transfer in
-                            if let title = transfer.item {
+                        ForEach(entries) { entry in
+                            switch entry {
+                            case .active(_, let title):
                                 NavigationLink {
-                                    ItemDetailView(item: title)
+                                    ItemDetailView(
+                                        item: title,
+                                        downloadsOnly: title.kind == .series
+                                    )
                                 } label: {
                                     FillingPortraitPoster(
                                         item: title,
@@ -41,29 +48,33 @@ struct DownloadedItemsView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
-                            }
-                        }
-                        ForEach(rows) { row in
-                            NavigationLink {
-                                ItemDetailView(item: row.title)
-                            } label: {
-                                FillingPortraitPoster(
-                                    item: row.title,
-                                    imageURL: downloads.posterURL(
-                                        for: row.title,
-                                        account: session.session,
-                                        remote: session.library?.primaryURL(for: row.title)
+                            case .stored(let row):
+                                NavigationLink {
+                                    ItemDetailView(item: row.title, downloadsOnly: row.kind == .series)
+                                } label: {
+                                    FillingPortraitPoster(
+                                        item: row.title,
+                                        imageURL: downloads.posterURL(
+                                            for: row.title,
+                                            account: session.session,
+                                            remote: downloads.preferredRemotePoster(
+                                                for: row.title,
+                                                account: session.session,
+                                                library: session.library,
+                                                fallback: session.library?.primaryURL(for: row.title)
+                                            )
+                                        )
                                     )
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("Remove Download", systemImage: "trash", role: .destructive) {
-                                    pendingRemoval = row
-                                    removalPrompt = .make(row: row)
                                 }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("Remove Download", systemImage: "trash", role: .destructive) {
+                                        pendingRemoval = row
+                                        removalPrompt = .make(row: row)
+                                    }
+                                }
+                                .accessibilityHint(row.kind == .series ? "\(row.episodeCount) episodes" : "")
                             }
-                            .accessibilityHint(row.kind == .series ? "\(row.episodeCount) episodes" : "")
                         }
                     }
                     .padding(16)

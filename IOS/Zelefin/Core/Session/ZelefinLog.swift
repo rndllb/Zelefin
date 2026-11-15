@@ -170,6 +170,7 @@ final class ZelefinLog: @unchecked Sendable {
         return lines.joined(separator: "\n")
     }
 
+    @MainActor
     private static var deviceKind: String {
         #if targetEnvironment(macCatalyst)
         "Mac"

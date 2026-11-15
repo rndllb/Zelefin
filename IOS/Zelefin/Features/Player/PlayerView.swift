@@ -1,4 +1,6 @@
+import AVFoundation
 import AVKit
+import GroupActivities
 import SwiftUI
 import UIKit
 
@@ -6,6 +8,7 @@ struct PlayerView: View {
     let item: MediaItem
     @Environment(SessionStore.self) private var session
     @Environment(DownloadStore.self) private var downloads
+    @Environment(SharePlayManager.self) private var sharePlay
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @State private var activeItem: MediaItem
@@ -23,6 +26,15 @@ struct PlayerView: View {
     @State private var presentationSettled = false
     @State private var didRetryStart = false
     @State private var isOnScreen = true
+    @State private var autoAdvancedEpisodeCount = 0
+    @State private var showsStillWatchingPrompt = false
+    @State private var isLeavingPlayback = false
+    @State private var alertPresence = PlaybackPresence()
+    @State private var airPlayRouteBridge = AirPlayRouteBridge()
+    @State private var castRouteBridge = CastRouteBridge()
+    @State private var isPreparingAirPlayRelay = false
+    @State private var isPreparingCast = false
+    @State private var showsSyncPlaySheet = false
 
     /// Roughly the full-screen / zoom presentation. Building the video surface or unlocking
     /// rotation before it ends stalls the animation part way up the screen.
@@ -44,6 +56,16 @@ struct PlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            #if !targetEnvironment(macCatalyst)
+            // Under MPV: full-size AVPlayerLayer so AirPlay routes video (not audio-only).
+            if let relay = model?.airPlayRelay {
+                AirPlayRelayLayerHost(player: relay)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            #endif
             if let model {
                 playerSurface(model)
             }
@@ -54,7 +76,25 @@ struct PlayerView: View {
             if let message = fallbackError {
                 errorOverlay(message)
             }
+            if showsStillWatchingPrompt {
+                stillWatchingOverlay
+            }
+            #if !targetEnvironment(macCatalyst)
+            AirPlayRoutePickerHost(bridge: airPlayRouteBridge)
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            if CastManager.shared.isCastAvailable {
+                CastRoutePickerHost(bridge: castRouteBridge)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            #endif
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeOut(duration: 0.2), value: showsLoadingOverlay)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -66,14 +106,24 @@ struct PlayerView: View {
         }
         .task {
             session.rememberNowPlaying(activeItem)
+            #if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
+            // Clear downloads/SyncPlay/etc. so sample-buffer PiP can become possible.
+            await ZelefinLiveActivityController.shared.endAllActivities()
+            #endif
             Task { await PlaybackAudioSession.activate() }
             await prepareAndStart()
         }
         .task(id: liveAdaptiveMonitorID) {
             await monitorLiveAdaptive()
         }
+        .onAppear {
+            LibraryAlertSettings.beginPlaybackPresence(alertPresence)
+            sharePlay.playerOpened(activeItem)
+        }
         .onDisappear {
             isOnScreen = false
+            sharePlay.playerClosed(activeItem.id)
+            LibraryAlertSettings.endPlaybackPresence(alertPresence)
             InterfaceOrientationLock.setPhoneLandscapeAllowed(false)
             if let time = model?.currentTime {
                 session.updateNowPlayingPosition(time)
@@ -85,7 +135,33 @@ struct PlayerView: View {
         }
         .onChange(of: activeItem) { _, item in
             session.rememberNowPlaying(item)
+            sharePlay.playerOpened(item)
         }
+        .playerCastSharePlay(
+            sharePlay: sharePlay,
+            activeItem: activeItem,
+            model: model,
+            onHelloReply: { _ in
+                sharePlay.send(
+                    model?.isPaused == false ? .play : .pause,
+                    itemId: activeItem.id,
+                    positionSeconds: model?.currentTime ?? 0,
+                    rate: model?.playbackRate ?? 1
+                )
+            },
+            onFollowItem: { id in
+                Task { await followSharePlay(to: id) }
+            },
+            onCastConnected: {
+                Task { await startCasting() }
+            },
+            onCastDisconnected: {
+                model?.resumeLocalPlaybackAfterCast()
+            },
+            onCastFinished: {
+                Task { await advanceOrDismiss() }
+            }
+        )
         .onChange(of: model?.isFinished) { _, finished in
             guard finished == true else { return }
             if model?.plan.isLive == true { return }
@@ -123,7 +199,7 @@ struct PlayerView: View {
             Task { await retuneAdaptiveBitrate() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinRemoteStopPlayback)) { _ in
-            dismiss()
+            Task { await leavePlayback(preferPictureInPicture: false) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .zelefinRemoteNextTrack)) { _ in
             Task { await advanceOrDismiss() }
@@ -132,6 +208,24 @@ struct PlayerView: View {
         .task(id: activeItem.id) {
             guard activeItem.kind == .movie || activeItem.kind == .episode else { return }
             await session.loadVersions(for: activeItem.id)
+        }
+        .alert(
+            "SharePlay",
+            isPresented: Binding(
+                get: { sharePlay.notice != nil },
+                set: { if !$0 { sharePlay.notice = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { sharePlay.notice = nil }
+        } message: {
+            Text(sharePlay.notice ?? "")
+        }
+        .sheet(isPresented: $showsSyncPlaySheet) {
+            SyncPlayPlaySheet(item: activeItem) {
+                showsSyncPlaySheet = false
+            }
+            .environment(session)
+            .environment(downloads)
         }
     }
 
@@ -143,6 +237,9 @@ struct PlayerView: View {
         switch phase {
         case .background:
             playerWasBackgrounded = true
+            if PlaybackPreferences.autoPictureInPictureOnLeave {
+                model?.startPictureInPictureIfPossible()
+            }
         case .active:
             let pipActive = model?.isPictureInPictureActive ?? false
             guard PlaybackForegroundRecovery.shouldRestore(
@@ -159,7 +256,7 @@ struct PlayerView: View {
     private var loadingClose: some View {
         VStack {
             HStack {
-                Button(action: { dismiss() }) {
+                Button(action: { Task { await leavePlayback(preferPictureInPicture: PlaybackPreferences.autoPictureInPictureOnLeave) } }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
@@ -459,15 +556,33 @@ struct PlayerView: View {
         }
     }
 
-    private func startPlayback(_ plan: PlaybackPlan, skipSegments: [SkipSegment]? = nil) async {
+    private func startPlayback(
+        _ plan: PlaybackPlan,
+        skipSegments: [SkipSegment]? = nil,
+        pipelineOverride: PlaybackPipeline? = nil
+    ) async {
         await waitForPresentation()
         // Restarts run in unstructured tasks that outlive the view; never start after close.
         guard !Task.isCancelled, isOnScreen else { return }
         ZelefinLog.info("Playback", Self.logLine(for: plan))
         let reporter = session.makePlaybackReporter(for: plan)
-        let created = PlayerModel(plan: plan, reporter: reporter)
-        created.onUserTransport = { action in
+        let created = PlayerModel(plan: plan, reporter: reporter, pipelineOverride: pipelineOverride)
+        created.syncPlayGroupNameForRestore = { [session] in
+            guard session.syncPlayGroupID != nil else { return nil }
+            return session.syncPlayGroupName
+        }
+        created.onUserTransport = { [sharePlay] action in
             Task { await session.forwardSyncPlay(action) }
+            Self.forwardSharePlay(action, itemID: plan.item.id, sharePlay: sharePlay, model: created)
+        }
+        created.onPlaybackRateChange = { [sharePlay] rate in
+            guard sharePlay.isActive else { return }
+            sharePlay.send(
+                .rate,
+                itemId: plan.item.id,
+                positionSeconds: created.currentTime,
+                rate: rate
+            )
         }
         created.onRemoteSeekApplied = { time in
             Task {
@@ -539,21 +654,34 @@ struct PlayerView: View {
         cinemaQueue = []
         cinemaIndex = 0
         if model?.sleepAtEndOfEpisode == true {
-            dismiss()
+            await leavePlayback(preferPictureInPicture: false)
             return
         }
         guard PlaybackPreferences.autoPlayNextEpisode else {
-            dismiss()
+            await leavePlayback(preferPictureInPicture: false)
             return
         }
-        if await !playNextEpisode() {
-            dismiss()
+        if shouldAskStillWatching {
+            if model?.isPaused == false {
+                model?.togglePlayPause()
+            }
+            showsStillWatchingPrompt = true
+            return
         }
+        if await !playNextEpisode(countsTowardStillWatching: true) {
+            await leavePlayback(preferPictureInPicture: false)
+        }
+    }
+
+    private var shouldAskStillWatching: Bool {
+        PlaybackPreferences.askStillWatching
+            && activeItem.kind == .episode
+            && autoAdvancedEpisodeCount >= PlaybackPreferences.stillWatchingEpisodeThreshold
     }
 
     /// Moves on to the episode after this one. False when there isn't one.
     @discardableResult
-    private func playNextEpisode() async -> Bool {
+    private func playNextEpisode(countsTowardStillWatching: Bool) async -> Bool {
         guard let library = session.library,
               let next = await library.nextEpisode(after: activeItem)
         else { return false }
@@ -564,8 +692,98 @@ struct PlayerView: View {
         activeItem = next
         liveBitrateOverride = nil
         appliedBitrate = nil
+        if countsTowardStillWatching {
+            autoAdvancedEpisodeCount += 1
+        }
         await prepareAndStart()
         return true
+    }
+
+    private func continueAfterStillWatching() async {
+        showsStillWatchingPrompt = false
+        autoAdvancedEpisodeCount = 0
+        if await !playNextEpisode(countsTowardStillWatching: true) {
+            await leavePlayback(preferPictureInPicture: false)
+        }
+    }
+
+    private func stopAfterStillWatching() async {
+        showsStillWatchingPrompt = false
+        autoAdvancedEpisodeCount = 0
+        await leavePlayback(preferPictureInPicture: false)
+    }
+
+    /// Close / dismiss. Prefer PiP when the user leaves while something is still playing.
+    private func leavePlayback(preferPictureInPicture: Bool) async {
+        guard !isLeavingPlayback else { return }
+        isLeavingPlayback = true
+        defer { isLeavingPlayback = false }
+        showsStillWatchingPrompt = false
+        // Always re-read the setting here — don't trust a captured Bool from the button action.
+        let wantsPiP = preferPictureInPicture && PlaybackPreferences.autoPictureInPictureOnLeave
+        if wantsPiP {
+            if let model, await model.leavePreferringPictureInPicture() {
+                closePlayer()
+                return
+            }
+            // Native AVPlayer: PiP starts when the VC leaves the screen with auto-inline on.
+            model?.prepareNativeLeaveIntoPictureInPicture()
+            closePlayer()
+            return
+        }
+        // Stop first so AVKit has nothing left to promote into a PiP window on dismiss.
+        model?.suppressAutomaticPictureInPicture()
+        await model?.stop()
+        closePlayer()
+    }
+
+    /// Mac hosts the player in the window overlay, so closing clears that item.
+    /// iPhone and iPad dismiss the full-screen cover.
+    private func closePlayer() {
+        #if targetEnvironment(macCatalyst)
+        session.pendingPlayerItem = nil
+        #else
+        dismiss()
+        #endif
+    }
+
+    private var stillWatchingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.72).ignoresSafeArea()
+            VStack(spacing: 20) {
+                Text("Are you still watching?")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("You’ve auto-played \(PlaybackPreferences.stillWatchingEpisodeThreshold) episodes.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .multilineTextAlignment(.center)
+                HStack(spacing: 14) {
+                    Button {
+                        Task { await stopAfterStillWatching() }
+                    } label: {
+                        Text("Stop")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.white.opacity(0.14), in: Capsule())
+                    }
+                    Button {
+                        Task { await continueAfterStillWatching() }
+                    } label: {
+                        Text("Continue")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.white, in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 24)
+            }
+            .padding(28)
+        }
+        .allowsHitTesting(true)
     }
 
     /// The first open after a cold start can fail while the server spins up; a reopen works.
@@ -666,49 +884,47 @@ struct PlayerView: View {
 
     @ViewBuilder
     private func playerSurface(_ model: PlayerModel) -> some View {
-        if let engine = model.engine {
+        if let mpv = model.mpv {
             ZStack {
                 Color.black
                     .ignoresSafeArea()
-                    .overlay {
-                        DirectPlayVideoLayer(
-                            engine: engine,
-                            surfaceGeneration: model.surfaceGeneration,
-                            onBound: { model.noteSurfaceReady() },
-                            onLayerAttached: { model.syncPictureInPicture() }
-                        )
-                    }
-                    .ignoresSafeArea()
-                DirectPlaySubtitleOverlay(
-                    cues: model.subtitleCues,
+                MPVVideoSurface(
+                    layer: mpv.displayLayer,
                     pictureSize: model.pictureSize,
                     fillsScreen: model.fillsScreen,
-                    controlsTop: model.controlsTop
-                )
-                playerChrome(model)
-                if model.showsPlaybackStats {
-                    PlaybackStatsOverlay(snapshot: model.playbackStats)
-                }
-            }
-        } else if let mpv = model.mpv {
-            ZStack {
-                Color.black
-                    .ignoresSafeArea()
-                MPVVideoSurface(layer: mpv.displayLayer, onBound: { model.noteSurfaceReady() })
-                    .ignoresSafeArea()
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    onBound: { model.noteSurfaceReady() },
+                    onLayerAttached: { model.syncPictureInPicture() },
+                    onResizeSettled: { frame, size in
                         model.setMPVSurfaceFrame(frame)
+                        mpv.noteSurfaceSize(size)
                     }
+                )
+                .ignoresSafeArea()
+                if model.isCastingExternally {
+                    castingPlaceholder
+                } else if model.isAirPlayingExternally {
+                    Color.black.opacity(0.72).ignoresSafeArea()
+                    VStack(spacing: 10) {
+                        Image(systemName: "airplayvideo")
+                            .font(.system(size: 36, weight: .semibold))
+                        Text("AirPlaying")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .allowsHitTesting(false)
+                }
                 playerChrome(model)
                 if model.showsPlaybackStats {
                     PlaybackStatsOverlay(snapshot: model.playbackStats)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let player = model.player {
             NativePlayerContainer(
                 player: player,
                 surfaceGeneration: model.surfaceGeneration,
                 skipTitle: isCinemaBumper ? "Skip" : model.skipPrompt?.title,
+                allowsAutomaticPictureInPicture: PlaybackPreferences.autoPictureInPictureOnLeave,
                 onSkip: {
                     if isCinemaBumper {
                         Task { await advanceOrDismiss() }
@@ -716,8 +932,14 @@ struct PlayerView: View {
                         model.skipCurrentSegment()
                     }
                 },
-                onPictureInPictureActive: { model.setNativePictureInPictureActive($0) }
+                onPictureInPictureActive: { model.setNativePictureInPictureActive($0) },
+                onControllerReady: { controller in
+                    model.applyNativeAutomaticPictureInPicture = { allowed in
+                        controller.canStartPictureInPictureAutomaticallyFromInline = allowed
+                    }
+                }
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()
         } else {
             loadingSurface
@@ -739,14 +961,14 @@ struct PlayerView: View {
         SeriesTrackMemory.update(accountID: accountID, seriesID: seriesID, mutate)
     }
 
-    /// Zelefin's controls and track menus, shared by the AetherEngine and MPV players.
+    /// Zelefin's controls and track menus for the MPV player.
     private func playerChrome(_ model: PlayerModel) -> some View {
         AVKitPlaybackChrome(
             model: model,
             title: model.plan.item.name,
             quality: session.launchOptions(for: item.id).resolvedQuality,
             canAddSubtitles: !isCinemaBumper && session.shouldShowAddSubtitles(for: activeItem),
-            onClose: { dismiss() },
+            onClose: { Task { await leavePlayback(preferPictureInPicture: PlaybackPreferences.autoPictureInPictureOnLeave) } },
             onQualityChange: { quality in
                 Task { await changeQuality(quality) }
             },
@@ -778,9 +1000,278 @@ struct PlayerView: View {
                 }
             },
             onSkipCinema: isCinemaBumper ? { Task { await advanceOrDismiss() } } : nil,
-            onNext: activeItem.kind == .episode && !isCinemaBumper ? { Task { await playNextEpisode() } } : nil,
-            keyboardEnabled: subtitleSearchItem == nil
+            onNext: activeItem.kind == .episode && !isCinemaBumper
+                ? { Task { _ = await playNextEpisode(countsTowardStillWatching: false) } }
+                : nil,
+            keyboardEnabled: subtitleSearchItem == nil,
+            watchTogether: watchTogetherChrome(for: model)
         )
+    }
+
+    private func watchTogetherChrome(for model: PlayerModel) -> AVKitWatchTogetherChrome {
+        let syncAvailable = !session.lacksJellyfinOnlyFeatures && !isCinemaBumper
+        let syncActive = session.syncPlayGroupID != nil
+        let syncTitle: String? = {
+            guard syncAvailable else { return nil }
+            if syncActive {
+                let name = session.syncPlayGroupName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let name, !name.isEmpty {
+                    return "Leave SyncPlay (\(name))"
+                }
+                return "Leave SyncPlay"
+            }
+            return "SyncPlay"
+        }()
+        #if targetEnvironment(macCatalyst)
+        let airPlay: (() -> Void)? = nil
+        let cast: (() -> Void)? = nil
+        #else
+        let airPlay: (() -> Void)? = { Task { await presentAirPlayPicker() } }
+        let cast: (() -> Void)? = CastManager.shared.isCastAvailable
+            ? { castRouteBridge.presentPicker() }
+            : nil
+        #endif
+        return AVKitWatchTogetherChrome(
+            onAirPlay: airPlay,
+            onCast: cast,
+            isCastConnected: CastManager.shared.isConnected,
+            castDeviceName: CastManager.shared.deviceName,
+            isAirPlaying: model.isAirPlayingExternally,
+            sharePlay: AVKitSharePlayChrome(
+                isActive: sharePlay.isActive,
+                title: sharePlay.isActive
+                    ? (sharePlay.participantCount > 1
+                        ? "Leave SharePlay (\(sharePlay.participantCount))"
+                        : "Leave SharePlay")
+                    : "SharePlay",
+                onStart: { sharePlay.start(activeItem) },
+                onLeave: { sharePlay.leave() }
+            ),
+            syncPlayTitle: syncTitle,
+            syncPlayIsActive: syncActive,
+            onSyncPlay: syncAvailable
+                ? {
+                    if syncActive {
+                        Task { try? await session.leaveSyncPlayGroup() }
+                    } else {
+                        showsSyncPlaySheet = true
+                    }
+                }
+                : nil
+        )
+    }
+
+    private var castingPlaceholder: some View {
+        ZStack {
+            Color.black.opacity(0.85).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Image(systemName: "tv")
+                    .font(.system(size: 40, weight: .semibold))
+                Text("Casting to \(CastManager.shared.deviceName ?? "TV")")
+                    .font(.title3.weight(.semibold))
+                Text(activeItem.name)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 24)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private static func forwardSharePlay(
+        _ action: RemotePlaybackAction,
+        itemID: String,
+        sharePlay: SharePlayManager,
+        model: PlayerModel
+    ) {
+        guard sharePlay.isActive else { return }
+        let rate = model.playbackRate
+        switch action {
+        case .play:
+            sharePlay.send(.play, itemId: itemID, positionSeconds: model.currentTime, rate: rate)
+        case .pause:
+            sharePlay.send(.pause, itemId: itemID, positionSeconds: model.currentTime, rate: rate)
+        case .playPause:
+            sharePlay.send(
+                model.isPaused ? .pause : .play,
+                itemId: itemID,
+                positionSeconds: model.currentTime,
+                rate: rate
+            )
+        case .seek(let time):
+            sharePlay.send(.seek, itemId: itemID, positionSeconds: time, rate: rate)
+        case .stop, .skip, .next, .previous, .mute, .unmute, .volumeUp, .volumeDown:
+            break
+        }
+    }
+
+    private func followSharePlay(to itemID: String) async {
+        guard let library = session.library else { return }
+        guard let next = try? await library.item(id: itemID) else { return }
+        activeItem = next
+        resumeOverride = nil
+        await model?.stop()
+        model = nil
+        await prepareAndStart()
+    }
+
+    private func startCasting() async {
+        guard let model else { return }
+        guard !isPreparingCast else { return }
+        isPreparingCast = true
+        defer { isPreparingCast = false }
+        model.beginCastingExternally()
+        if CastManager.shared.nowPlayingItemID == activeItem.id {
+            return
+        }
+        do {
+            let plan = try await castPlaybackPlan(from: model)
+            let poster = session.library?.primaryURL(for: activeItem, maxHeight: 720)
+            let subtitleTracks = plan.externalSubtitles.map { track in
+                CastManager.SubtitleTrack(
+                    id: track.streamIndex,
+                    url: track.url,
+                    languageCode: track.language,
+                    name: track.name
+                )
+            }
+            let activeSubtitle = model.selectedSubtitleID.flatMap { id in
+                let serverIndex = model.subtitlePick(id: id).serverIndex
+                return subtitleTracks.contains(where: { $0.id == serverIndex || $0.id == id })
+                    ? (serverIndex ?? id)
+                    : nil
+            }
+            CastManager.shared.loadMedia(
+                itemID: activeItem.id,
+                streamURL: plan.streamURL,
+                title: activeItem.name,
+                subtitle: activeItem.seriesName,
+                posterImageURL: poster,
+                contentType: CastManager.contentType(for: plan.streamURL, container: plan.container),
+                startPositionSeconds: model.currentTime,
+                subtitleTracks: subtitleTracks,
+                activeSubtitleTrackID: activeSubtitle,
+                isTransportStreamHLS: CastManager.isTransportStreamHLS(plan.streamURL),
+                isLive: plan.isLive
+            )
+        } catch {
+            fallbackError = error.localizedDescription
+            CastManager.shared.endSession()
+        }
+    }
+
+    private func castPlaybackPlan(from model: PlayerModel) async throws -> PlaybackPlan {
+        syncLaunchTracksForAirPlay(from: model)
+        guard let library = session.library else {
+            throw ZelefinError.missingUser
+        }
+        let launch = session.launchOptions(for: activeItem.id)
+        // Chromecast Default Media Receiver needs a remux/transcode it can open (HLS/MP4).
+        return try await library.playbackPlan(
+            for: activeItem,
+            audioIndex: isCinemaBumper ? nil : launch.audioIndex,
+            subtitleIndex: isCinemaBumper ? nil : launch.subtitleStreamIndex,
+            allowDirectPlay: false,
+            maxBitrate: streamingBitrate(for: launch),
+            startTime: model.currentTime,
+            mediaSourceID: isCinemaBumper ? nil : launch.mediaSourceID
+        )
+    }
+
+    /// ArcFin-style: keep MPV on screen, route a companion AVPlayer through the system picker.
+    private func presentAirPlayPicker() async {
+        guard let model else { return }
+        if model.pipeline == .appleNative, let player = model.player {
+            // Native path already is an AVPlayer — just open the sheet.
+            _ = player
+            airPlayRouteBridge.presentPicker()
+            return
+        }
+        guard model.pipeline == .mpv else { return }
+        if model.airPlayRelay == nil {
+            guard !isPreparingAirPlayRelay else { return }
+            isPreparingAirPlayRelay = true
+            defer { isPreparingAirPlayRelay = false }
+            do {
+                let relayPlan = try await airPlayRelayPlan(from: model)
+                model.installAirPlayRelay(
+                    url: relayPlan.streamURL,
+                    extraHeaders: relayPlan.extraHTTPHeaders
+                )
+                // Let SwiftUI mount the full-size relay layer before we warm/play it.
+                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(100))
+            } catch {
+                fallbackError = error.localizedDescription
+                return
+            }
+        }
+        await model.prepareAirPlayRelayForPresentation()
+        airPlayRouteBridge.presentPicker()
+        // If the sheet is cancelled, tear down the warm remux so local playback doesn't buffer forever.
+        model.scheduleAirPlayRelayParkIfUnused()
+    }
+
+    /// Same stream when AVPlayer can open it; otherwise a remux with the current audio/subs.
+    private func airPlayRelayPlan(from model: PlayerModel) async throws -> PlaybackPlan {
+        syncLaunchTracksForAirPlay(from: model)
+        let selectedSubtitleID = model.selectedSubtitleID
+        let plan = model.plan
+        let containerNeedsRemux = PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
+            url: plan.streamURL,
+            method: plan.method,
+            container: plan.container,
+            videoCodec: plan.videoCodec,
+            usesNativePlayer: true
+        )
+        guard AirPlayHandoffPolicy.needsServerRemux(
+            containerNeedsRemux: containerNeedsRemux,
+            selectedSubtitleID: selectedSubtitleID
+        ) else {
+            return plan
+        }
+        guard let library = session.library else {
+            throw ZelefinError.missingUser
+        }
+        let launch = session.launchOptions(for: activeItem.id)
+        return try await library.playbackPlan(
+            for: activeItem,
+            audioIndex: isCinemaBumper ? nil : launch.audioIndex,
+            subtitleIndex: isCinemaBumper ? nil : launch.subtitleStreamIndex,
+            allowDirectPlay: false,
+            maxBitrate: streamingBitrate(for: launch),
+            startTime: model.currentTime,
+            mediaSourceID: isCinemaBumper ? nil : launch.mediaSourceID
+        )
+    }
+
+    private func syncLaunchTracksForAirPlay(from model: PlayerModel) {
+        guard !isCinemaBumper else { return }
+        if let audioID = model.selectedAudioID {
+            let pick = model.audioPick(id: audioID)
+            session.updateLaunchOptions(for: activeItem.id) { options in
+                if let index = pick.serverIndex {
+                    options.audioIndex = index
+                }
+            }
+        }
+        if let subtitleID = model.selectedSubtitleID {
+            let pick = model.subtitlePick(id: subtitleID)
+            session.updateLaunchOptions(for: activeItem.id) { options in
+                options.subtitlesDisabled = false
+                if let index = pick.serverIndex {
+                    options.subtitleIndex = index
+                }
+            }
+        } else {
+            session.updateLaunchOptions(for: activeItem.id) { options in
+                options.subtitlesDisabled = true
+                options.subtitleIndex = nil
+            }
+        }
     }
 
     private func errorOverlay(_ message: String) -> some View {
@@ -791,7 +1282,7 @@ struct PlayerView: View {
                 .font(.body)
                 .foregroundStyle(.white.opacity(0.75))
                 .multilineTextAlignment(.center)
-            Button { dismiss() } label: {
+            Button { Task { await leavePlayback(preferPictureInPicture: false) } } label: {
                 Image(systemName: "xmark")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.black)
@@ -806,151 +1297,203 @@ struct PlayerView: View {
     }
 }
 
-/// Hosts `AetherPlayerView` at the size SwiftUI actually proposes. A zero-size
-/// representable leaves Aether decoding into a layer that is never visible: audio
-/// plays, the picture stays black.
-private final class DirectPlaySurfaceView: UIView {
-    let playerView = DirectPlayPlayerView()
-    var onReady: (() -> Void)?
-    private var didNotify = false
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .black
-        isOpaque = true
-        playerView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(playerView)
-        NSLayoutConstraint.activate([
-            playerView.topAnchor.constraint(equalTo: topAnchor),
-            playerView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            playerView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            playerView.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        notifyIfReady()
-    }
-
-    func notifyIfReady() {
-        guard !didNotify, bounds.width > 1, bounds.height > 1 else { return }
-        didNotify = true
-        onReady?()
-    }
-}
-
-/// Rebinds on every SwiftUI update (Aether #188). An empty `updateUIView` leaves a
-/// reused surface showing a detached layer: black video over working audio.
 /// Hosts the layer mpv's vo_avfoundation paints into.
 private struct MPVVideoSurface: UIViewRepresentable {
     let layer: MPVVideoLayer
+    var pictureSize: CGSize = .zero
+    var fillsScreen = false
     var onBound: () -> Void
+    var onLayerAttached: () -> Void = {}
+    /// Window coordinates of the picture, and its size, after the window has stopped moving.
+    var onResizeSettled: (CGRect, CGSize) -> Void = { _, _ in }
 
     func makeUIView(context: Context) -> LayerHostView {
         let view = LayerHostView()
         view.backgroundColor = .black
+        #if targetEnvironment(macCatalyst)
+        view.clipsToBounds = true
+        #endif
+        view.onAttached = onLayerAttached
+        view.onResizeSettled = onResizeSettled
+        view.pictureSize = pictureSize
+        view.fillsScreen = fillsScreen
         view.host(layer)
+        view.pinPicture(to: view.bounds.size)
         return view
     }
 
     func updateUIView(_ uiView: LayerHostView, context: Context) {
+        let pictureChanged = uiView.pictureSize != pictureSize || uiView.fillsScreen != fillsScreen
+        uiView.onAttached = onLayerAttached
+        uiView.onResizeSettled = onResizeSettled
+        uiView.pictureSize = pictureSize
+        uiView.fillsScreen = fillsScreen
         uiView.host(layer)
-        onBound()
+        if pictureChanged {
+            uiView.pinPicture(to: uiView.bounds.size, force: true)
+        }
+        if !context.coordinator.didBind {
+            context.coordinator.didBind = true
+            onBound()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var didBind = false
     }
 
     final class LayerHostView: UIView {
+        /// Scales the already-drawn frame. The Metal layer is a child and is not resized during the drag.
+        private let scaler = CALayer()
         private weak var hosted: CALayer?
+        var onAttached: () -> Void = {}
+        var onResizeSettled: (CGRect, CGSize) -> Void = { _, _ in }
+        var pictureSize: CGSize = .zero
+        var fillsScreen = false
+        private var pinnedSize: CGSize = .zero
+        private var settleWork: DispatchWorkItem?
+        private var hasReportedFit = false
+        private var isPinning = false
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            scaler.name = LayerHostScaleName
+            scaler.anchorPoint = .zero
+            layer.addSublayer(scaler)
+        }
+
+        required init?(coder: NSCoder) {
+            nil
+        }
+
+        override var intrinsicContentSize: CGSize {
+            CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
+        }
+
+        override var bounds: CGRect {
+            didSet {
+                guard abs(oldValue.width - bounds.width) > 0.5 || abs(oldValue.height - bounds.height) > 0.5 else { return }
+                pinPicture(to: bounds.size)
+            }
+        }
 
         func host(_ layer: CALayer) {
             guard hosted !== layer else { return }
             hosted?.removeFromSuperlayer()
-            self.layer.addSublayer(layer)
+            layer.magnificationFilter = .linear
+            scaler.addSublayer(layer)
             hosted = layer
-            setNeedsLayout()
+            DispatchQueue.main.async { [weak self] in
+                self?.onAttached()
+            }
+        }
+
+        func pinPicture(to size: CGSize, force: Bool = false) {
+            guard !isPinning, let hosted, size.width > 1, size.height > 1 else { return }
+            guard force || abs(size.width - pinnedSize.width) > 0.5 || abs(size.height - pinnedSize.height) > 0.5 else { return }
+            isPinning = true
+            defer { isPinning = false }
+            pinnedSize = size
+            let base = hosted.bounds.size
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if base.width < 2 || base.height < 2 || !usesLiveScale {
+                let scale = max(traitCollection.displayScale, 1)
+                let next = CGRect(origin: .zero, size: size)
+                hosted.anchorPoint = .zero
+                hosted.transform = CATransform3DIdentity
+                hosted.frame = next
+                hosted.contentsScale = scale
+                scaler.transform = CATransform3DIdentity
+                scaler.frame = next
+            } else if abs(base.width - size.width) < 0.5, abs(base.height - size.height) < 0.5 {
+                scaler.transform = CATransform3DIdentity
+                scaler.anchorPoint = .zero
+                scaler.frame = CGRect(origin: .zero, size: size)
+                hosted.anchorPoint = .zero
+                hosted.transform = CATransform3DIdentity
+                hosted.frame = CGRect(origin: .zero, size: size)
+            } else {
+                // Scale the wrapper only. Touching the Metal layer here stalls the drag and
+                // makes MoltenVK redraw the old frame into the corner.
+                let placement = Self.placement(from: base, to: size, picture: pictureSize, fills: fillsScreen)
+                scaler.anchorPoint = .zero
+                scaler.bounds = CGRect(origin: .zero, size: base)
+                scaler.position = placement.position
+                scaler.transform = CATransform3DMakeScale(placement.scaleX, placement.scaleY, 1)
+            }
+            CATransaction.commit()
+            scheduleSettle()
+        }
+
+        /// The drag only scales a wrapper layer. mpv is told about the new size once the window
+        /// has stayed still, so a live resize does not rebuild the video output.
+        private func scheduleSettle() {
+            settleWork?.cancel()
+            if !hasReportedFit {
+                hasReportedFit = true
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.bounds.width > 1, self.bounds.height > 1 else { return }
+                    self.onResizeSettled(self.convert(self.bounds, to: nil), self.bounds.size)
+                }
+                return
+            }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.bounds.width > 1, self.bounds.height > 1 else { return }
+                self.onResizeSettled(self.convert(self.bounds, to: nil), self.bounds.size)
+            }
+            settleWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: work)
+        }
+
+        private var usesLiveScale: Bool {
+            #if targetEnvironment(macCatalyst)
+            true
+            #else
+            false
+            #endif
+        }
+
+        /// Maps the picture mpv already drew into `from` onto the picture rect of `to`.
+        /// The layer's baked-in black bars fall outside the view and get clipped.
+        private static func placement(from: CGSize, to: CGSize, picture: CGSize, fills: Bool) -> (scaleX: CGFloat, scaleY: CGFloat, position: CGPoint) {
+            guard picture.width > 1, picture.height > 1 else {
+                let scale = min(to.width / from.width, to.height / from.height)
+                let fitted = CGSize(width: from.width * scale, height: from.height * scale)
+                return (
+                    scale,
+                    scale,
+                    CGPoint(x: (to.width - fitted.width) / 2, y: (to.height - fitted.height) / 2)
+                )
+            }
+            let source = DirectPlayPictureLayout.pictureRect(picture: picture, in: from, fill: fills)
+            let target = DirectPlayPictureLayout.pictureRect(picture: picture, in: to, fill: fills)
+            guard source.width > 1, source.height > 1, target.width > 1, target.height > 1 else {
+                let scale = min(to.width / from.width, to.height / from.height)
+                let fitted = CGSize(width: from.width * scale, height: from.height * scale)
+                return (
+                    scale,
+                    scale,
+                    CGPoint(x: (to.width - fitted.width) / 2, y: (to.height - fitted.height) / 2)
+                )
+            }
+            let scaleX = target.width / source.width
+            let scaleY = target.height / source.height
+            return (
+                scaleX,
+                scaleY,
+                CGPoint(
+                    x: target.minX - source.minX * scaleX,
+                    y: target.minY - source.minY * scaleY
+                )
+            )
         }
 
         override func layoutSubviews() {
             super.layoutSubviews()
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            hosted?.frame = bounds
-            // A Metal layer renders at 1x unless told the screen's scale.
-            hosted?.contentsScale = traitCollection.displayScale
-            CATransaction.commit()
-        }
-    }
-}
-
-private struct DirectPlayVideoLayer: UIViewRepresentable {
-    let engine: DirectPlayEngine
-    var surfaceGeneration: Int
-    var onBound: () -> Void
-    var onLayerAttached: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onBound: onBound, onLayerAttached: onLayerAttached)
-    }
-
-    func makeUIView(context: Context) -> DirectPlaySurfaceView {
-        let view = DirectPlaySurfaceView()
-        context.coordinator.bind(
-            engine,
-            to: view,
-            generation: surfaceGeneration,
-            onBound: onBound,
-            onLayerAttached: onLayerAttached
-        )
-        return view
-    }
-
-    func updateUIView(_ uiView: DirectPlaySurfaceView, context: Context) {
-        context.coordinator.bind(
-            engine,
-            to: uiView,
-            generation: surfaceGeneration,
-            onBound: onBound,
-            onLayerAttached: onLayerAttached
-        )
-    }
-
-    @MainActor
-    final class Coordinator {
-        var onBound: () -> Void
-        var onLayerAttached: () -> Void
-        private var lastGeneration: Int?
-
-        init(onBound: @escaping () -> Void, onLayerAttached: @escaping () -> Void) {
-            self.onBound = onBound
-            self.onLayerAttached = onLayerAttached
-        }
-
-        func bind(
-            _ engine: DirectPlayEngine,
-            to view: DirectPlaySurfaceView,
-            generation: Int,
-            onBound: @escaping () -> Void,
-            onLayerAttached: @escaping () -> Void
-        ) {
-            self.onBound = onBound
-            self.onLayerAttached = onLayerAttached
-            if lastGeneration != generation {
-                if lastGeneration != nil {
-                    engine.unbind(view: view.playerView)
-                }
-                lastGeneration = generation
-            }
-            engine.bind(view: view.playerView)
-            view.onReady = { [weak self] in
-                self?.onBound()
-            }
-            view.notifyIfReady()
-            onLayerAttached()
+            pinPicture(to: bounds.size)
         }
     }
 }
@@ -959,8 +1502,11 @@ struct NativePlayerContainer: UIViewControllerRepresentable {
     let player: AVPlayer
     var surfaceGeneration: Int
     var skipTitle: String?
+    var allowsAutomaticPictureInPicture: Bool
+    var hidesSystemChrome: Bool = false
     var onSkip: () -> Void
     var onPictureInPictureActive: (Bool) -> Void
+    var onControllerReady: (AVPlayerViewController) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onSkip: onSkip, onPictureInPictureActive: onPictureInPictureActive)
@@ -971,9 +1517,11 @@ struct NativePlayerContainer: UIViewControllerRepresentable {
         controller.player = player
         controller.delegate = context.coordinator
         controller.allowsPictureInPicturePlayback = true
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.canStartPictureInPictureAutomaticallyFromInline = allowsAutomaticPictureInPicture
+        controller.showsPlaybackControls = !hidesSystemChrome
         controller.updatesNowPlayingInfoCenter = true
         context.coordinator.install(on: controller)
+        onControllerReady(controller)
         return controller
     }
 
@@ -984,10 +1532,13 @@ struct NativePlayerContainer: UIViewControllerRepresentable {
         }
         controller.player = player
         controller.delegate = context.coordinator
+        controller.canStartPictureInPictureAutomaticallyFromInline = allowsAutomaticPictureInPicture
+        controller.showsPlaybackControls = !hidesSystemChrome
         context.coordinator.onSkip = onSkip
         context.coordinator.onPictureInPictureActive = onPictureInPictureActive
         context.coordinator.install(on: controller)
         context.coordinator.update(title: skipTitle)
+        onControllerReady(controller)
     }
 
     @MainActor

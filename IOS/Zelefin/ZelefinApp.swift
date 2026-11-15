@@ -186,6 +186,7 @@ final class ZelefinAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         LibraryAlertCenter.shared.prepare()
+        CastManager.shared.start()
         #if targetEnvironment(macCatalyst)
         MacBridge.start()
         #endif
@@ -205,6 +206,23 @@ final class ZelefinAppDelegate: NSObject, UIApplicationDelegate {
     ) {
         PushNotificationCenter.didRegister(deviceToken: deviceToken)
     }
+
+    /// iOS relaunched or resumed the app to hand back a background download. Reconnect to the
+    /// session and hold the completion handler until its queued events have been delivered.
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        guard identifier == BackgroundDownloadService.sessionIdentifier else {
+            completionHandler()
+            return
+        }
+        BackgroundDownloadService.shared.setBackgroundCompletionHandler(completionHandler)
+        // Reconnect so queued events can arrive. Completions stay buffered until DownloadStore
+        // attaches its handlers and flushes (flushBuffers keeps them if no handler yet).
+        BackgroundDownloadService.shared.attachAndFlush()
+    }
 }
 
 @main
@@ -213,6 +231,7 @@ struct ZelefinApp: App {
     @State private var session = SessionStore()
     @State private var downloads = DownloadStore()
     @State private var deepLinks = DeepLinkStore()
+    @State private var sharePlay = SharePlayManager()
 
     init() {
         PlaybackPreferences.moveEveryoneToMPVOnce()
@@ -226,8 +245,35 @@ struct ZelefinApp: App {
                 .environment(\.libraryArtworkRevision, session.artworkRevision)
                 .environment(downloads)
                 .environment(deepLinks)
-                .task { [session, downloads] in
+                .environment(sharePlay)
+                .task { [session, downloads, sharePlay] in
                     downloads.chosenVersion = { session.launchOptions(for: $0).mediaSourceID }
+                    downloads.libraryProvider = { session.library }
+                    // Same Jellyfin/Emby host — not per-user accountID — so friends on the
+                    // same server can SharePlay (and so a solo start doesn't false-reject).
+                    sharePlay.currentServerId = {
+                        guard let url = session.session?.serverURL else { return "" }
+                        return SharePlayManager.serverIdentity(from: url)
+                    }
+                    sharePlay.openItem = { id in
+                        Task { @MainActor in
+                            if let item = try? await session.library?.item(id: id) {
+                                session.presentPlayer(item)
+                            }
+                        }
+                    }
+                    await sharePlay.observeSessions()
+                }
+                .alert(
+                    "SharePlay",
+                    isPresented: Binding(
+                        get: { sharePlay.notice != nil },
+                        set: { if !$0 { sharePlay.notice = nil } }
+                    )
+                ) {
+                    Button("OK", role: .cancel) { sharePlay.notice = nil }
+                } message: {
+                    Text(sharePlay.notice ?? "")
                 }
                 #if targetEnvironment(macCatalyst)
                 .onAppear(perform: MacWindowChrome.apply)

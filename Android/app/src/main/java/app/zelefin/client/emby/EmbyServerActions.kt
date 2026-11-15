@@ -11,6 +11,7 @@ import app.zelefin.client.jellyfin.RemoteIdentifyHit
 import app.zelefin.client.jellyfin.RemoteImageChoice
 import app.zelefin.client.jellyfin.RemoteSession
 import app.zelefin.client.jellyfin.ScheduledTask
+import app.zelefin.client.jellyfin.ServerBranding
 import app.zelefin.client.jellyfin.ServerUserAccount
 import app.zelefin.client.jellyfin.SessionControl
 import app.zelefin.client.jellyfin.UserPolicyDraft
@@ -165,6 +166,16 @@ suspend fun EmbyLibrary.startScheduledTask(id: String) {
 
 suspend fun EmbyLibrary.stopScheduledTask(id: String) {
     call(EmbyRequests.stopTask(id))
+}
+
+suspend fun EmbyLibrary.serverBranding(): ServerBranding = withContext(Dispatchers.IO) {
+    val body = json(EmbyRequests.branding()) as? JsonObject
+        ?: throw ZelefinException.server("Emby did not return branding.")
+    ServerBranding(
+        loginDisclaimer = body.text("LoginDisclaimer").orEmpty(),
+        customCss = body.text("CustomCss").orEmpty(),
+        splashscreenEnabled = false,
+    )
 }
 
 suspend fun EmbyLibrary.activityLog(limit: Int = 80): List<ActivityLogItem> = withContext(Dispatchers.IO) {
@@ -336,3 +347,6 @@ suspend fun EmbyLibrary.liveTvEnabled(): Boolean = withContext(Dispatchers.IO) {
 suspend fun EmbyLibrary.closeLiveStream(liveStreamId: String) {
     call(EmbyRequests.closeLiveStream(liveStreamId))
 }
+
+/** The signed-in Emby user, including policy and configuration for Profile. */
+suspend fun EmbyLibrary.signedInUser(): JsonObject = withContext(Dispatchers.IO) { userObject(user) }

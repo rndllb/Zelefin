@@ -59,7 +59,7 @@ struct PluginSettingsView: View {
         } header: {
             Text("Skip Recaps, Intros, Credits and Previews")
         } footer: {
-            Text("Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly. Plugins only show as installed to an administrator.")
+            Text("Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly.")
         }
         .zelefinRowBackground()
 
@@ -121,6 +121,7 @@ struct PluginSettingsView: View {
                 Text("\(rooms.map(\.name).joined(separator: ", ")) appears as its own YouTube library, with channels and videos kept apart from your movies and shows.")
             }
         }
+        .zelefinRowBackground()
     }
 
     /// Silo has no Jellyfin plugins, but it finds intros and credits itself and serves them as media segments.

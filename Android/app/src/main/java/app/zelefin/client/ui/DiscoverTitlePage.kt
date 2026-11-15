@@ -256,7 +256,7 @@ private fun DiscoverTitleHero(
     onViewInLibrary: (() -> Unit)?,
 ) {
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val heroHeight = (screenHeight * 0.82f).coerceAtLeast(560.dp).coerceAtMost(screenHeight)
+    val heroHeight = HeroSizePreferences.heightDp(screenHeight.value).dp
     var expanded by remember(title.id) { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().heightIn(min = heroHeight)) {
         CachedArtwork(

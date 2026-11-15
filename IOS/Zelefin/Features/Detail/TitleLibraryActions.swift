@@ -56,9 +56,19 @@ struct PersonDetailView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            PosterImage(url: profile?.imageURL ?? imageURL ?? session.library?.personImageURL(id: personID, tag: profile?.imageTag ?? imageTag))
-                .frame(width: 110, height: 110)
-                .clipShape(Circle())
+            PosterImage(
+                url: profile?.portraitURL(library: session.library)
+                    ?? CreditPerson(
+                        id: personID,
+                        name: name,
+                        roleLabel: "",
+                        imageTag: imageTag,
+                        rank: 0,
+                        imageURL: imageURL
+                    ).portraitURL(library: session.library)
+            )
+            .frame(width: 110, height: 110)
+            .clipShape(Circle())
             VStack(alignment: .leading, spacing: 6) {
                 Text(profile?.name ?? name)
                     .font(.title2.weight(.bold))

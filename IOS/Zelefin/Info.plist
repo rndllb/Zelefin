@@ -38,12 +38,21 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Zelefin does not use the camera. A video library built into its player can capture from a camera, so iOS asks apps that include it to explain why; Zelefin never turns it on.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Zelefin uses Face ID or Touch ID to unlock a switch PIN when changing accounts on this device.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_googlecast._tcp</string>
+		<string>_CC1AD845._googlecast._tcp</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Zelefin connects to Jellyfin, Seerr, and Ombi servers on your home network.</string>
+	<string>Zelefin connects to Jellyfin, Seerr, and Ombi servers on your home network, and finds Chromecast devices nearby.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Zelefin reads your Wi-Fi name so it can use your local Jellyfin address when you’re home.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Zelefin does not use the microphone. A video library built into its player can record audio, so iOS asks apps that include it to explain why; Zelefin never turns it on.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

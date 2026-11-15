@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ImageIO
 import os
 import UIKit
 
@@ -52,6 +53,24 @@ final class ArtworkCache: @unchecked Sendable {
         try? fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
         memory.countLimit = 500
         memory.totalCostLimit = 96 * 1_024 * 1_024
+        // Cast portraits that Jellyfin 12 served as WebP/AVIF were marked permanently missing
+        // after UIImage failed. Drop those markers once so format=jpg / ImageIO can retry.
+        Self.clearStaleMissingMarkersIfNeeded(in: self.directory, fileManager: fileManager)
+    }
+
+    private static let clearedUndecodableMissingKey = "zelefin.artwork.cleared-undecodable-missing-v1"
+
+    private static func clearStaleMissingMarkersIfNeeded(in directory: URL, fileManager: FileManager) {
+        guard !UserDefaults.standard.bool(forKey: clearedUndecodableMissingKey) else { return }
+        if let files = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) {
+            for file in files where file.pathExtension == "missing" {
+                try? fileManager.removeItem(at: file)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: clearedUndecodableMissingKey)
     }
 
     // MARK: Memory (synchronous, for view bodies)
@@ -105,10 +124,10 @@ final class ArtworkCache: @unchecked Sendable {
         let outcome = await fetchCoalesced(url, serviceType: .responsiveData, timeout: nil)
         switch outcome {
         case let .bytes(data):
-            guard let image = UIImage(data: data) else {
-                if persist { markMissing(url) }
-                return nil
-            }
+            // Jellyfin 12 can answer 200 with WebP/AVIF. UIImage(data:) sometimes fails those;
+            // ImageIO usually still decodes. Never mark those permanent-missing — a later
+            // format=jpg URL (or ImageIO) would otherwise stay blank forever.
+            guard let image = Self.decodeImage(data) else { return nil }
             store(image, for: url)
             if persist { writeDisk(data, for: url) }
             return image
@@ -118,6 +137,16 @@ final class ArtworkCache: @unchecked Sendable {
         case .failed:
             return nil
         }
+    }
+
+    /// UIImage first, then ImageIO — covers JPEG/PNG/WebP and whatever else ImageIO knows.
+    static func decodeImage(_ data: Data) -> UIImage? {
+        if let image = UIImage(data: data) { return image }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 
     /// Whether the remote image already has a persisted copy — a cheap file-exists check the
@@ -257,7 +286,9 @@ final class ArtworkCache: @unchecked Sendable {
         let queue = qos == .userInitiated ? visibleIO : io
         return await withCheckedContinuation { continuation in
             queue.async {
-                guard let data = try? Data(contentsOf: file), let image = UIImage(data: data) else {
+                guard let data = try? Data(contentsOf: file),
+                      let image = Self.decodeImage(data)
+                else {
                     continuation.resume(returning: nil)
                     return
                 }
@@ -282,7 +313,9 @@ final class ArtworkCache: @unchecked Sendable {
     private func readFile(_ url: URL) async -> UIImage? {
         await withCheckedContinuation { continuation in
             io.async {
-                guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else {
+                guard let data = try? Data(contentsOf: url),
+                      let image = Self.decodeImage(data)
+                else {
                     continuation.resume(returning: nil)
                     return
                 }

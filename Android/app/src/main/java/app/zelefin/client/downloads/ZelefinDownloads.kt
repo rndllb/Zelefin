@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -65,6 +66,21 @@ data class DownloadedItem(
 
 @Serializable
 private data class DownloadCatalog(val version: Int, val records: List<DownloadedItem>)
+
+/**
+ * An in-flight transfer persisted so a process kill can resume it. The media URL is not stored —
+ * [ZelefinDownloads] asks the backend again and continues from `media.part` with a Range request.
+ */
+@Serializable
+private data class PendingDownload(
+    val item: MediaItem,
+    val userId: String,
+    val serverHost: String,
+    val runId: String,
+    val bytesWritten: Long = 0,
+    val bytesExpected: Long = 0,
+    val paused: Boolean = false,
+)
 
 data class DownloadProgress(
     val item: MediaItem,
@@ -188,9 +204,9 @@ data class DownloadsState(
             val movies = mutableListOf<DownloadRow>()
             val buckets = LinkedHashMap<String, MutableList<DownloadedItem>>()
             sorted.forEach { record ->
-                val seriesId = record.item.seriesId
-                if (record.item.kind == MediaKind.Episode && !seriesId.isNullOrEmpty()) {
-                    buckets.getOrPut(seriesId) { mutableListOf() } += record
+                val seriesKey = DownloadEligibility.seriesGroupingId(record.item)
+                if (seriesKey != null) {
+                    buckets.getOrPut(seriesKey) { mutableListOf() } += record
                 } else {
                     movies += DownloadRow(record.item.id, isSeries = false, title = record.item, records = listOf(record))
                 }
@@ -209,6 +225,12 @@ object DownloadEligibility {
         MediaKind.Movie, MediaKind.Episode -> item
         MediaKind.Series -> MediaItem.heroPlaybackItem(item, episodes).takeIf { it.kind == MediaKind.Episode }
         else -> null
+    }
+
+    /** Episodes that belong to a show collapse under one series poster on the Downloaded page. */
+    fun seriesGroupingId(item: MediaItem): String? {
+        if (item.kind != MediaKind.Episode) return null
+        return item.seriesId?.takeIf { it.isNotEmpty() }
     }
 
     /** The show an episode belongs to, built from what the episode carries so it works offline. */
@@ -290,6 +312,7 @@ object ZelefinDownloads {
     @Volatile private var backend: DownloadBackend? = null
     @Volatile private var session: SavedSession? = null
     private var sessionJob: Job? = null
+    @Volatile private var lastPendingWrite = 0L
 
     private val transferClient by lazy {
         GatewayHttp.client.newBuilder()
@@ -303,7 +326,24 @@ object ZelefinDownloads {
         synchronized(lock) {
             if (appContext == null) {
                 appContext = app
-                _state.update { it.copy(records = loadCatalog(app)) }
+                val pending = loadPending(app)
+                _state.update {
+                    it.copy(
+                        records = loadCatalog(app),
+                        // Restore progress rows so the Downloaded page shows them before resume starts.
+                        progress = pending.associate { job ->
+                            job.item.id to DownloadProgress(
+                                item = job.item,
+                                userId = job.userId,
+                                serverHost = job.serverHost,
+                                runId = job.runId,
+                                bytesWritten = job.bytesWritten,
+                                bytesExpected = job.bytesExpected,
+                                paused = job.paused,
+                            )
+                        },
+                    )
+                }
             }
         }
         this.backend = backend
@@ -313,6 +353,8 @@ object ZelefinDownloads {
                 session = current
                 val account = current?.let { DownloadAccount(it.userId, host(it.serverUrl)) }
                 _state.update { it.copy(account = account, available = current != null) }
+                // After a process kill, pick up unfinished transfers for this account.
+                if (current != null) resumePending(app, current)
             }
         }
     }
@@ -333,11 +375,11 @@ object ZelefinDownloads {
             showNotice(DownloadNotice("Download", "Connect to Wi-Fi to download, or turn off Wi-Fi only in Playback settings."))
             return
         }
-        val runId = UUID.randomUUID().toString()
+        val existing = _state.value.progress[target.id]
+        val runId = existing?.runId ?: UUID.randomUUID().toString()
         synchronized(lock) {
             if (jobs.containsKey(target.id)) return
             if (_state.value.record(target.id) != null) return
-            val existing = _state.value.progress[target.id]
             val progress = DownloadProgress(
                 target,
                 current.userId,
@@ -345,18 +387,30 @@ object ZelefinDownloads {
                 runId,
                 bytesWritten = existing?.bytesWritten ?: 0,
                 bytesExpected = existing?.bytesExpected ?: 0,
+                paused = false,
             )
             _state.update { it.copy(progress = it.progress + (target.id to progress)) }
+            persistPending(app)
             val job = scope.launch(start = CoroutineStart.LAZY) { perform(app, target, current, backend, runId) }
             jobs[target.id] = job
             job.invokeOnCompletion { cause ->
                 synchronized(lock) { if (jobs[target.id] === job) jobs.remove(target.id) }
                 val keep = _state.value.progress[target.id]?.paused == true || cause is CancellationException && _state.value.progress[target.id]?.paused == true
                 if (!keep) clearProgress(target.id, runId)
+                persistPending(app)
             }
             job.start()
         }
         DownloadService.start(app)
+    }
+
+    /** Restart unfinished transfers that survived a process kill. */
+    private fun resumePending(app: Context, account: SavedSession) {
+        val host = host(account.serverUrl)
+        val pending = _state.value.progress.values.filter {
+            !it.paused && it.userId == account.userId && it.serverHost == host && !jobs.containsKey(it.item.id)
+        }
+        pending.forEach { start(it.item) }
     }
 
     fun startAll(targets: List<MediaItem>) {
@@ -370,7 +424,10 @@ object ZelefinDownloads {
             jobs.remove(id)?.cancel()
             _state.update { it.copy(progress = it.progress - id) }
         }
-        appContext?.let { File(itemDirectory(it, session ?: return, id), "media.part").delete() }
+        appContext?.let { app ->
+            session?.let { File(itemDirectory(app, it, id), "media.part").delete() }
+            persistPending(app)
+        }
     }
 
     fun pause(item: MediaItem) {
@@ -382,6 +439,7 @@ object ZelefinDownloads {
             }
             jobs.remove(id)?.cancel()
         }
+        appContext?.let(::persistPending)
     }
 
     fun resume(item: MediaItem) {
@@ -633,12 +691,20 @@ object ZelefinDownloads {
             val current = state.progress[id]
             if (current == null || current.runId != runId) state else state.copy(progress = state.progress + (id to current.transform()))
         }
+        // Keep the pending file current without writing every 250 ms progress tick.
+        val app = appContext ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastPendingWrite >= 2_000 && _state.value.progress[id]?.runId == runId) {
+            lastPendingWrite = now
+            persistPending(app)
+        }
     }
 
     private fun clearProgress(id: String, runId: String) {
         _state.update { state ->
             if (state.progress[id]?.runId == runId) state.copy(progress = state.progress - id) else state
         }
+        appContext?.let(::persistPending)
     }
 
     private fun moveInto(source: File, destination: File): File {
@@ -674,6 +740,46 @@ object ZelefinDownloads {
         val catalog = runCatching { json.decodeFromString<DownloadCatalog>(file.readText()) }.getOrNull() ?: return emptyList()
         if (catalog.version != CatalogVersion) return emptyList()
         return catalog.records.filter { File(root(context), it.relativeMediaPath).exists() }
+    }
+
+    private fun pendingFile(context: Context) = File(root(context), "pending-downloads.json")
+
+    private fun loadPending(context: Context): List<PendingDownload> {
+        val file = pendingFile(context)
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            json.decodeFromString(ListSerializer(PendingDownload.serializer()), file.readText())
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistPending(context: Context) {
+        runCatching {
+            val directory = root(context)
+            directory.mkdirs()
+            val pending = _state.value.progress.values.map {
+                PendingDownload(
+                    item = it.item,
+                    userId = it.userId,
+                    serverHost = it.serverHost,
+                    runId = it.runId,
+                    bytesWritten = it.bytesWritten,
+                    bytesExpected = it.bytesExpected,
+                    paused = it.paused,
+                )
+            }
+            val target = pendingFile(context)
+            if (pending.isEmpty()) {
+                target.delete()
+                return@runCatching
+            }
+            val encoded = json.encodeToString(ListSerializer(PendingDownload.serializer()), pending)
+            val temporary = File(directory, "pending-downloads.json.tmp")
+            temporary.writeText(encoded)
+            if (!temporary.renameTo(target)) {
+                target.writeText(encoded)
+                temporary.delete()
+            }
+        }
     }
 
     private fun persist(context: Context) {

@@ -2,15 +2,12 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import PhotosUI
+import JellyfinAPI
 
 struct ProfileView: View {
     @Environment(SessionStore.self) private var session
-    @State private var currentPassword = ""
-    @State private var newPassword = ""
-    @State private var confirmPassword = ""
     @State private var status: String?
     @State private var statusIsError = false
-    @State private var isSavingPassword = false
     @State private var isUpdatingPhoto = false
     @State private var localAvatar: UIImage?
     @State private var pickerItem: PhotosPickerItem?
@@ -21,7 +18,9 @@ struct ProfileView: View {
     @State private var profilePIN = ""
     @State private var switchingProfileID: String?
     @State private var profileError: String?
-    @FocusState private var passwordField: PasswordField?
+    @State private var overview: ProfileAccountOverview?
+    @State private var overviewError: String?
+    @State private var isLoadingOverview = false
 
     var body: some View {
         Form {
@@ -46,50 +45,32 @@ struct ProfileView: View {
                 .zelefinRowBackground()
             }
 
-            if let current = session.session {
-                Section("Server") {
-                    LabeledContent("Server", value: current.displayServer)
-                    LabeledContent("Address", value: current.serverURL.absoluteString)
+            if isLoadingOverview, overview == nil {
+                Section {
+                    HStack {
+                        ProgressView()
+                        Text("Loading account…")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .zelefinRowBackground()
             }
 
-            Section {
-                if canChangePassword {
-                    SecureField("Current Password", text: $currentPassword)
-                        .textContentType(.password)
-                        .focused($passwordField, equals: .current)
-                        .submitLabel(.next)
-                        .onSubmit { advancePasswordField(from: .current) }
-                    SecureField("New Password", text: $newPassword)
-                        .textContentType(.newPassword)
-                        .focused($passwordField, equals: .newPassword)
-                        .submitLabel(.next)
-                        .onSubmit { advancePasswordField(from: .newPassword) }
-                    SecureField("Confirm Password", text: $confirmPassword)
-                        .textContentType(.newPassword)
-                        .focused($passwordField, equals: .confirm)
-                        .submitLabel(.go)
-                        .onSubmit { advancePasswordField(from: .confirm) }
-                    if passwordMismatch {
-                        Text("The new passwords do not match.")
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-                    Button("Update Password") {
-                        Task { await savePassword() }
-                    }
-                    .disabled(!canUpdatePassword || isSavingPassword)
-                } else {
-                    Text("Change this password in Silo. Its Jellyfin-compatible API cannot change it.")
-                        .foregroundStyle(.secondary)
+            if let overviewError, overview == nil {
+                Section {
+                    SettingsStatusText(text: overviewError, isError: true)
                 }
-            } header: {
-                Text("Password")
-            } footer: {
-                Text(passwordFooter)
+                .zelefinRowBackground()
             }
-            .zelefinRowBackground()
+
+            accountSection(overview)
+
+            if let overview {
+                librariesSection(overview)
+                limitsSection(overview)
+                capabilitiesSection(overview)
+                preferencesSection(overview)
+            }
 
             if session.session != nil, !accessToken.isEmpty {
                 Section {
@@ -109,25 +90,6 @@ struct ProfileView: View {
                 .zelefinRowBackground()
             }
 
-            Section {
-                if let current = session.session {
-                    accountRow(current, isCurrent: true)
-                }
-                ForEach(session.otherAccounts) { account in
-                    Button {
-                        Task { await session.switchTo(account) }
-                    } label: {
-                        accountRow(account, isCurrent: false)
-                    }
-                    .buttonStyle(.plain)
-                }
-                addUserRow
-            } header: {
-                Text(session.isSiloServer ? "Accounts" : "Users")
-            } footer: {
-                Text(usersFooter)
-            }
-            .zelefinRowBackground()
         }
         .zelefinSettingsChrome(title: "Profile")
         .onChange(of: pickerItem) { _, item in
@@ -157,11 +119,123 @@ struct ProfileView: View {
         }
         .task {
             if session.hasSiloLink { await session.refreshSiloProfiles() }
+            await loadOverview()
         }
+        .refreshable { await loadOverview() }
         .sheet(isPresented: $showsSiloAvatarPicker) {
             SiloAvatarPickerView()
         }
     }
+
+    // MARK: Server account overview
+
+    private func accountSection(_ overview: ProfileAccountOverview?) -> some View {
+        Section {
+            AccountPINControls(status: $status, statusIsError: $statusIsError)
+            if let overview {
+                LabeledContent("Name", value: overview.displayName)
+                LabeledContent("Role", value: overview.role)
+                LabeledContent("Password", value: overview.hasPassword ? "Set" : "Not set")
+                LabeledContent("Last sign-in", value: ProfileAccountFormatting.absolute(overview.lastLogin))
+                LabeledContent("Last active", value: ProfileAccountFormatting.relative(overview.lastActivity))
+            }
+            if let status {
+                SettingsStatusText(text: status, isError: statusIsError)
+            }
+        } header: {
+            Text("Account")
+        } footer: {
+            Text(
+                "A 4–6 digit PIN locks this account on this device so others can’t sign into it. "
+                    + "\(AccountSwitchPIN.biometricsName) can unlock it instead of typing the PIN."
+            )
+        }
+        .zelefinRowBackground()
+    }
+
+    private func librariesSection(_ overview: ProfileAccountOverview) -> some View {
+        Section {
+            LabeledContent("Access", value: overview.librariesSummary)
+        } header: {
+            Text("Libraries")
+        }
+        .zelefinRowBackground()
+    }
+
+    private func limitsSection(_ overview: ProfileAccountOverview) -> some View {
+        Section {
+            LabeledContent("Maximum rating", value: overview.maxRatingLabel)
+            LabeledContent("Unrated titles", value: overview.unratedLabel)
+            LabeledContent("Allowed time", value: overview.accessScheduleLabel)
+        } header: {
+            Text("Limits")
+        } footer: {
+            Text(overview.limitsFooter)
+        }
+        .zelefinRowBackground()
+    }
+
+    private func capabilitiesSection(_ overview: ProfileAccountOverview) -> some View {
+        Section {
+            ForEach(overview.capabilities) { capability in
+                ProfileCapabilityRow(title: capability.title, isAllowed: capability.isAllowed)
+            }
+        } header: {
+            Text("Capabilities")
+        } footer: {
+            Text("What this login is allowed to do on \(serverLabel).")
+        }
+        .zelefinRowBackground()
+    }
+
+    private func preferencesSection(_ overview: ProfileAccountOverview) -> some View {
+        Section {
+            LabeledContent("Audio language", value: overview.audioLanguageLabel)
+            ProfileCapabilityRow(title: "Play the default audio track", isAllowed: overview.playDefaultAudio)
+            LabeledContent("Subtitle language", value: overview.subtitleLanguageLabel)
+            LabeledContent("Subtitles", value: overview.subtitleModeLabel)
+            ProfileCapabilityRow(title: "Play next episode automatically", isAllowed: overview.autoPlayNextEpisode)
+            ProfileCapabilityRow(title: "Remember audio choices", isAllowed: overview.rememberAudio)
+            ProfileCapabilityRow(title: "Remember subtitle choices", isAllowed: overview.rememberSubtitles)
+            ProfileCapabilityRow(title: "Hide watched titles in Latest", isAllowed: overview.hideWatchedInLatest)
+            NavigationLink("Edit in Playback") {
+                PlaybackSettingsView()
+            }
+        } header: {
+            Text("Preferences")
+        } footer: {
+            Text("Language and autoplay defaults live on the server. Caps and library access are changed from the dashboard.")
+        }
+        .zelefinRowBackground()
+    }
+
+    private func loadOverview() async {
+        isLoadingOverview = true
+        overviewError = nil
+        defer { isLoadingOverview = false }
+        do {
+            let user = try await session.currentUserDto()
+            var ratingNames: [Int: String] = [:]
+            if session.isAdministrator, let admin = try? session.userAdminClient() {
+                let ratings = (try? await admin.parentalRatings()) ?? []
+                for rating in ratings {
+                    if let value = rating.value {
+                        ratingNames[value] = rating.name
+                    }
+                }
+            }
+            overview = ProfileAccountOverview.make(
+                user: user,
+                libraries: session.libraries,
+                ratingNames: ratingNames
+            )
+        } catch {
+            overview = nil
+            overviewError = error.localizedDescription
+        }
+    }
+
+    // MARK: Household / identity
 
     private var profileStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -208,6 +282,7 @@ struct ProfileView: View {
         }
         do {
             try await session.switchSiloProfile(profile, pin: pin)
+            await loadOverview()
         } catch {
             profileError = error.localizedDescription
         }
@@ -223,42 +298,8 @@ struct ProfileView: View {
         return name.isEmpty ? "this server" : name
     }
 
-    private enum PasswordField: Hashable {
-        case current, newPassword, confirm
-    }
-
-    private var canChangePassword: Bool {
-        !session.isSiloServer
-    }
-
-    private var canUpdatePassword: Bool {
-        canChangePassword
-            && !currentPassword.isEmpty
-            && !newPassword.isEmpty
-            && newPassword == confirmPassword
-    }
-
-    private var passwordMismatch: Bool {
-        !confirmPassword.isEmpty && newPassword != confirmPassword
-    }
-
-    private var passwordFooter: String {
-        if !canChangePassword {
-            return "Silo keeps account passwords in its own settings."
-        }
-        return "Updates the password for this login on \(serverLabel)."
-    }
-
-    private func advancePasswordField(from field: PasswordField) {
-        switch field {
-        case .current:
-            passwordField = .newPassword
-        case .newPassword:
-            passwordField = .confirm
-        case .confirm:
-            guard canUpdatePassword, !isSavingPassword else { return }
-            Task { await savePassword() }
-        }
+    private var serverAddress: String {
+        session.session?.serverURL.absoluteString ?? ""
     }
 
     private var accessToken: String {
@@ -268,16 +309,6 @@ struct ProfileView: View {
     private var maskedToken: String {
         guard !accessToken.isEmpty else { return "—" }
         return String(repeating: "•", count: min(28, max(12, accessToken.count)))
-    }
-
-    private var usersFooter: String {
-        if session.hasSiloLink {
-            return "Switch household profiles under Who’s watching. Saved users stay on this device."
-        }
-        if session.isSiloServer {
-            return "Add another household profile by signing in as username#profile. Saved users stay on this device."
-        }
-        return "Add another person on \(serverLabel). Saved users stay on this device."
     }
 
     private var canRemovePhoto: Bool {
@@ -299,61 +330,70 @@ struct ProfileView: View {
     }
 
     private var identityHero: some View {
-        VStack(spacing: 12) {
-            if !canChangePhoto {
-                profileAvatar
-            } else if session.hasSiloLink {
-                Button {
-                    showsSiloAvatarPicker = true
-                } label: {
-                    ZStack(alignment: .bottomTrailing) {
-                        profileAvatar
-                        CameraBadge()
-                            .offset(x: 2, y: 2)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Change Profile Picture")
-            } else {
-                ZStack(alignment: .bottomTrailing) {
-                    profileAvatar
-                    PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
-                        CameraBadge()
-                    }
-                    .disabled(isUpdatingPhoto)
-                    .offset(x: 2, y: 2)
-                    .accessibilityLabel("Change Profile Picture")
-                }
-            }
-
-            VStack(spacing: 4) {
+        HStack(alignment: .center, spacing: 16) {
+            identityAvatarControl
+            VStack(alignment: .leading, spacing: 4) {
                 Text(displayName)
                     .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.center)
-                Text("\(serverKindLabel) · \(serverLabel)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+                if !serverAddress.isEmpty {
+                    Text(serverAddress)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                } else {
+                    Text("\(serverKindLabel) · \(serverLabel)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if canRemovePhoto {
+                    Button("Remove Photo", role: .destructive) {
+                        Task { await removePhoto() }
+                    }
+                    .font(.footnote)
+                    .disabled(isUpdatingPhoto)
+                }
+                if let status {
+                    Text(status)
+                        .font(.footnote)
+                        .foregroundStyle(statusIsError ? Color.red : .secondary)
+                }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(displayName), \(serverKindLabel), \(serverLabel)")
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(displayName), \(serverKindLabel), \(serverLabel)")
+    }
 
-            if canRemovePhoto {
-                Button("Remove Photo", role: .destructive) {
-                    Task { await removePhoto() }
+    @ViewBuilder
+    private var identityAvatarControl: some View {
+        if !canChangePhoto {
+            profileAvatar
+        } else if session.hasSiloLink {
+            Button {
+                showsSiloAvatarPicker = true
+            } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    profileAvatar
+                    CameraBadge()
+                        .offset(x: 2, y: 2)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Change Profile Picture")
+        } else {
+            ZStack(alignment: .bottomTrailing) {
+                profileAvatar
+                PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
+                    CameraBadge()
                 }
                 .disabled(isUpdatingPhoto)
-            }
-
-            if let status {
-                Text(status)
-                    .font(.footnote)
-                    .foregroundStyle(statusIsError ? Color.red : .secondary)
-                    .multilineTextAlignment(.center)
+                .offset(x: 2, y: 2)
+                .accessibilityLabel("Change Profile Picture")
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
     }
 
     private var serverKindLabel: String {
@@ -362,65 +402,17 @@ struct ProfileView: View {
 
     private var profileAvatar: some View {
         ZStack {
-            UserAvatarView(url: session.avatarURL, localImage: localAvatar, diameter: 72)
+            UserAvatarView(url: session.avatarURL, localImage: localAvatar, diameter: 64)
                 .id(session.avatarRevision)
             if isUpdatingPhoto {
                 Circle()
                     .fill(.black.opacity(0.48))
-                    .frame(width: 72, height: 72)
+                    .frame(width: 64, height: 64)
                 ProgressView()
             }
         }
-        .frame(width: 72, height: 72)
+        .frame(width: 64, height: 64)
         .accessibilityHidden(true)
-    }
-
-    private var addUserTitle: String {
-        session.isSiloServer ? "Add Account" : "Add User"
-    }
-
-    private var addUserRow: some View {
-        NavigationLink {
-            AddAccountView()
-        } label: {
-            addUserLabel
-        }
-    }
-
-    private var addUserLabel: some View {
-        Label(addUserTitle, systemImage: "person.badge.plus")
-    }
-
-    private func accountRow(_ account: SavedSession, isCurrent: Bool) -> some View {
-        HStack(spacing: 14) {
-            SettingsPersonRow(
-                name: account.userName,
-                subtitle: isCurrent ? "Signed in" : accountSubtitle(account),
-                avatarURL: session.avatarURL(for: account),
-                localImage: isCurrent ? localAvatar : nil,
-                showsChevron: false
-            )
-            if isCurrent {
-                Image(systemName: "checkmark")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.tint)
-                    .accessibilityHidden(true)
-            } else {
-                SettingsChevron()
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(isCurrent ? "\(account.userName), signed in" : "Switch to \(account.userName)")
-        .accessibilityAddTraits(isCurrent ? [.isStaticText] : [.isButton])
-    }
-
-    private func accountSubtitle(_ account: SavedSession) -> String {
-        let currentHost = session.session?.serverURL.host?.lowercased()
-        let accountHost = account.serverURL.host?.lowercased()
-        if currentHost != nil, currentHost == accountHost {
-            return "On this device"
-        }
-        return account.displayServer
     }
 
     private func uploadPhoto(_ item: PhotosPickerItem) async {
@@ -477,26 +469,22 @@ struct ProfileView: View {
         }
     }
 
-    private func savePassword() async {
-        guard newPassword == confirmPassword else {
-            statusIsError = true
-            status = "The new passwords do not match."
-            return
+}
+
+private struct ProfileCapabilityRow: View {
+    let title: String
+    let isAllowed: Bool
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 12)
+            Image(systemName: isAllowed ? "checkmark.circle.fill" : "minus.circle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(isAllowed ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                .accessibilityLabel(isAllowed ? "Allowed" : "Not allowed")
         }
-        isSavingPassword = true
-        status = nil
-        defer { isSavingPassword = false }
-        do {
-            try await session.changePassword(current: currentPassword, new: newPassword)
-            currentPassword = ""
-            newPassword = ""
-            confirmPassword = ""
-            statusIsError = false
-            status = "Password updated."
-        } catch {
-            statusIsError = true
-            status = error.localizedDescription
-        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -595,16 +583,15 @@ struct UserAvatarView: View {
         .background(Color.white.opacity(0.08))
         .clipShape(Circle())
         .task(id: url?.absoluteString) {
+            // Drop the previous face immediately so a failed reload can't leave the old user up.
+            remoteImage = nil
             await load()
         }
     }
 
     private func load() async {
         guard localImage == nil else { return }
-        guard let url else {
-            remoteImage = nil
-            return
-        }
+        guard let url else { return }
         guard let loaded = await ArtworkCache.shared.load(from: url, persist: false) else { return }
         guard !Task.isCancelled else { return }
         remoteImage = loaded

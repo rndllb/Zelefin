@@ -10,6 +10,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- Android TV: run on TV without requiring a touchscreen, and don't require Leanback so the one
+         app still installs on phones and tablets. -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <application
         android:name=".ZelefinApplication"
         android:allowBackup="false"
@@ -18,6 +27,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Zelefin"
+        android:banner="@drawable/tv_banner"
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
         <activity
@@ -30,6 +40,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- Entry point from the Android TV home screen. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 

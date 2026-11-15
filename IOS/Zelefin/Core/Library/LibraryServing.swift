@@ -580,3 +580,14 @@ extension LibraryServing {
     func applyIdentify(itemID: String, hit: RemoteIdentifyHit) async throws {}
     func updateItemMetadata(itemID: String, draft: ItemMetadataDraft) async throws {}
 }
+
+extension CreditPerson {
+    /// Prefer a server URL only once we have a Primary tag — untagged person fetches 404 and
+    /// used to be cached as permanently missing, blanking the whole cast row.
+    func portraitURL(library: (any LibraryServing)?) -> URL? {
+        if let imageURL { return imageURL }
+        let tag = imageTag?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !tag.isEmpty else { return nil }
+        return library?.personImageURL(id: id, tag: tag)
+    }
+}

@@ -3,9 +3,11 @@ import SwiftUI
 struct PosterQualityBadgeStack: View {
     let item: MediaItem
     var compact = false
+    @AppStorage(PosterBadgePreferences.qualityKey) private var showsQuality = true
 
     private var badges: [PosterQualityBadge] {
-        PosterQualityBadges.badges(for: item)
+        guard showsQuality else { return [] }
+        return PosterQualityBadges.badges(for: item)
     }
 
     var body: some View {

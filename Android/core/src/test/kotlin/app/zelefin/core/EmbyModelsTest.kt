@@ -45,6 +45,26 @@ class EmbyModelsTest {
     """.trimIndent()
 
     @Test
+    fun titleDirectorsLine() {
+        assertNull(TitleDirectors.line(emptyList()))
+        assertEquals(
+            "Directed by Nolan",
+            TitleDirectors.line(listOf(CreditPerson("1", "Nolan", "Director"))),
+        )
+        assertEquals(
+            "Directed by A and B",
+            TitleDirectors.line(
+                listOf(
+                    CreditPerson("1", "A", "Director"),
+                    CreditPerson("2", "B", "Director"),
+                ),
+            ),
+        )
+        val item = ItemMapper.mediaItem(EmbyJson.parser.decodeFromString(EmbyItem.serializer(), movie).toSnapshot())!!
+        assertEquals("Directed by David Gordon Green", TitleDirectors.line(item.people))
+    }
+
+    @Test
     fun movieMapsLikeAJellyfinItem() {
         val dto = EmbyJson.parser.decodeFromString(EmbyItem.serializer(), movie)
         assertEquals("3603", dto.studios.single().id)

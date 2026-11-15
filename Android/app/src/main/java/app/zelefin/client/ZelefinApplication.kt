@@ -1,7 +1,11 @@
 package app.zelefin.client
 
 import android.app.Application
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import app.zelefin.client.network.GatewayHttp
+import app.zelefin.client.push.NotificationPreferences
 import app.zelefin.client.push.ZelefinPush
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -20,6 +24,20 @@ class ZelefinApplication : Application(), ImageLoaderFactory {
         ZelefinLog.attach(this)
         ZelefinLog.info("App", "Opened Zelefin ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         ZelefinPush.ensureChannel(this)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_START -> NotificationPreferences.setAppForeground(true)
+                    Lifecycle.Event.ON_STOP -> NotificationPreferences.setAppForeground(false)
+                    Lifecycle.Event.ON_CREATE,
+                    Lifecycle.Event.ON_RESUME,
+                    Lifecycle.Event.ON_PAUSE,
+                    Lifecycle.Event.ON_DESTROY,
+                    Lifecycle.Event.ON_ANY,
+                    -> Unit
+                }
+            },
+        )
         app.zelefin.client.session.SessionMessageCenter.install(this)
         app.zelefin.client.ui.loadInterfacePreferences(this)
         app.zelefin.client.cast.ZelefinCast.warmup(this)

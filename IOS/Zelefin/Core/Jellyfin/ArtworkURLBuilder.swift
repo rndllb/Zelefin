@@ -32,10 +32,11 @@ struct ArtworkURLBuilder: Sendable {
         )
     }
 
-    /// Movies and shows without a Primary tag have no poster. Collections still request
-    /// untagged covers because Jellyfin often serves collages without a tag.
+    /// Movies without a Primary tag have no poster. Shows may omit the tag when built from an
+    /// episode (downloads / seriesShowcasePreview), and Jellyfin still serves `/Images/Primary`.
+    /// Collections request untagged covers because Jellyfin often serves collages without a tag.
     static func requestsPrimary(kind: MediaKind, tag: String?) -> Bool {
-        tag != nil || kind == .collection || kind == .photo || kind == .playlist || kind == .liveTV
+        tag != nil || kind == .series || kind == .collection || kind == .photo || kind == .playlist || kind == .liveTV
     }
 
     func splashscreenURL() -> URL? {

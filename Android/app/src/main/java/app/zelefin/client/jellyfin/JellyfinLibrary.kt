@@ -103,7 +103,9 @@ import org.jellyfin.sdk.model.api.PlaybackOrder
 import org.jellyfin.sdk.model.api.PlaybackProgressInfo
 import org.jellyfin.sdk.model.api.PlaybackStartInfo
 import org.jellyfin.sdk.model.api.PlaybackStopInfo
+import org.jellyfin.sdk.model.api.PublicSystemInfo
 import org.jellyfin.sdk.model.api.QuickConnectDto
+import org.jellyfin.sdk.model.api.SystemInfo
 import org.jellyfin.sdk.model.api.RepeatMode
 import org.jellyfin.sdk.model.api.SearchHint
 import org.jellyfin.sdk.model.api.SortOrder
@@ -169,6 +171,16 @@ class JellyfinLibrary(
         }
     }
 
+    /** `/System/Info/Public`: name, product, version, OS, and local address. No sign-in required. */
+    internal suspend fun publicSystemInfo(): JellyfinSystemFacts = withContext(Dispatchers.IO) {
+        api.systemApi.getPublicSystemInfo().content.toFacts()
+    }
+
+    /** Authenticated `/System/Info`, including the operating-system display name. */
+    internal suspend fun systemInfo(): JellyfinSystemFacts = withContext(Dispatchers.IO) {
+        api.systemApi.getSystemInfo().content.toFacts()
+    }
+
     /** Null when the branding read fails, so a stored answer is kept while offline. */
     suspend fun detectSiloServer(): Boolean? = withContext(Dispatchers.IO) {
         runCatching { api.brandingApi.getBrandingOptions().content.loginDisclaimer }
@@ -231,6 +243,23 @@ class JellyfinLibrary(
             delay(pause)
         }
         throw ZelefinException.quickConnectExpired()
+    }
+
+    /** Approves [code] for the signed-in user so another device can finish Quick Connect. */
+    suspend fun authorizeQuickConnect(code: String, userId: String?) = withContext(Dispatchers.IO) {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) throw ZelefinException.server("Enter the Quick Connect code.")
+        val user = userId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+        try {
+            api.quickConnectApi.authorizeQuickConnect(trimmed, user)
+        } catch (error: InvalidStatusException) {
+            when (error.status) {
+                401, 403 -> throw ZelefinException.server("This account cannot authorize Quick Connect.")
+                404 -> throw ZelefinException.server("That Quick Connect code was not found or has expired.")
+                else -> throw error
+            }
+        }
+        Unit
     }
 
     /** Ends this access token on the server (`POST /Sessions/Logout`). */
@@ -878,6 +907,30 @@ class JellyfinLibrary(
         ItemMapper.mediaItem(dto.toSnapshot())
     }
 
+    /** Audio / subtitle rows for the detail More menu (iOS `streamTracks`). */
+    suspend fun streamTracks(
+        userId: UUID,
+        itemId: String,
+        mediaSourceId: String?,
+    ): Pair<List<app.zelefin.client.LanguageTrack>, List<app.zelefin.client.LanguageTrack>> = withContext(Dispatchers.IO) {
+        val dto = runCatching { api.userLibraryApi.getItem(UUID.fromString(itemId), userId).content }.getOrNull()
+            ?: return@withContext emptyList<app.zelefin.client.LanguageTrack>() to emptyList()
+        val source = dto.mediaSources?.firstOrNull { it.id != null && it.id == mediaSourceId }
+            ?: dto.mediaSources?.firstOrNull()
+        val streams = source?.mediaStreams ?: dto.mediaStreams.orEmpty()
+        fun tracks(type: MediaStreamType, selected: Int?) = streams.filter { it.type == type }.map { stream ->
+            app.zelefin.client.LanguageTrack(
+                index = stream.index,
+                language = stream.language,
+                isSelected = stream.index == selected || (selected == null && stream.isDefault),
+                title = stream.displayTitle ?: stream.title.orEmpty(),
+                isHearingImpaired = stream.isHearingImpaired == true,
+            )
+        }
+        tracks(MediaStreamType.AUDIO, source?.defaultAudioStreamIndex) to
+            tracks(MediaStreamType.SUBTITLE, source?.defaultSubtitleStreamIndex)
+    }
+
     /** Movies and episodes play as-is. A series or season resolves to the resume / next episode. */
     suspend fun playableItem(userId: UUID, item: MediaItem): MediaItem = withContext(Dispatchers.IO) {
         if (item.kind != MediaKind.Series && item.kind != MediaKind.Season) return@withContext item
@@ -1085,6 +1138,8 @@ class JellyfinLibrary(
         audioLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
         subtitleLanguage: String = app.zelefin.client.PlaybackPreferences.AUTOMATIC,
         preferSdh: Boolean = false,
+        audioStreamIndex: Int? = null,
+        subtitleStreamIndex: Int? = null,
         bitrate: suspend (sourceBitrate: Int?) -> Int = { MAX_BITRATE },
     ): PlaybackPlan = withContext(Dispatchers.IO) {
         val target = item
@@ -1111,7 +1166,7 @@ class JellyfinLibrary(
                     isHearingImpaired = stream.isHearingImpaired == true,
                 )
             }
-        val audioIndex = app.zelefin.client.PlaybackLanguage.audioIndex(
+        val audioIndex = audioStreamIndex ?: app.zelefin.client.PlaybackLanguage.audioIndex(
             languageTracks(MediaStreamType.AUDIO, firstSource?.defaultAudioStreamIndex),
             audioLanguage,
         )
@@ -1125,6 +1180,7 @@ class JellyfinLibrary(
         val preferences = runCatching { playbackPreferences() }.getOrNull()
         val itemSubtitleTracks = languageTracks(MediaStreamType.SUBTITLE, firstSource?.defaultSubtitleStreamIndex)
         val plannedSubtitle = when {
+            subtitleStreamIndex != null -> subtitleStreamIndex
             subtitleLanguage == app.zelefin.client.PlaybackPreferences.OFF -> -1
             explicitSubtitle -> subtitleIndex
             else -> app.zelefin.client.PlaybackLanguage.startingSubtitleIndex(
@@ -1147,6 +1203,7 @@ class JellyfinLibrary(
                 startTimeTicks = app.zelefin.core.TickClock.ticks(resume),
                 audioStreamIndex = audioIndex,
                 subtitleStreamIndex = when {
+                    subtitleStreamIndex != null -> subtitleStreamIndex
                     subtitleLanguage == app.zelefin.client.PlaybackPreferences.OFF -> -1
                     explicitSubtitle -> subtitleIndex
                     plannedSubtitle != null -> plannedSubtitle
@@ -1397,6 +1454,11 @@ class JellyfinLibrary(
         Unit
     }
 
+    /** The signed-in user, including policy and configuration for Profile. */
+    suspend fun currentUser(): org.jellyfin.sdk.model.api.UserDto = withContext(Dispatchers.IO) {
+        api.userApi.getCurrentUser().content
+    }
+
     /** The signed-in user's Jellyfin audio and subtitle settings (Settings → Playback). */
     suspend fun playbackPreferences(): app.zelefin.client.JellyfinPlaybackPreferences = withContext(Dispatchers.IO) {
         val configuration = api.userApi.getCurrentUser().content.configuration
@@ -1470,12 +1532,33 @@ class JellyfinLibrary(
     }
 
     /**
-     * `Items/Latest` across every library, so a show returns to the front when it gets new episodes,
-     * matching Emby. The server can mix other kinds into the answer, so results keep only [kind].
-     * Servers without that endpoint fall back to titles sorted by date added.
+     * Recently added for Home. Jellyfin 12+ with `groupItems=true` picks collection type from the
+     * *first* library, so Movie Latest is empty (or TV-only) when Shows is listed first. Movies use
+     * DateCreated Items; shows keep grouped Latest so new episodes bump the series.
      */
     private suspend fun latest(userId: UUID, kind: BaseItemKind): List<MediaItem> {
         val wanted = if (kind == BaseItemKind.MOVIE) MediaKind.Movie else MediaKind.Series
+        if (kind == BaseItemKind.MOVIE) {
+            val byDate = latestByDateAdded(userId, kind)
+            if (byDate.isNotEmpty()) return byDate
+            return runCatching {
+                api.userLibraryApi.getLatestMedia(
+                    GetLatestMediaRequest(
+                        userId = userId,
+                        includeItemTypes = listOf(kind),
+                        fields = listFields,
+                        enableImages = true,
+                        enableImageTypes = imageTypes,
+                        enableUserData = true,
+                        limit = 36,
+                        groupItems = false,
+                    ),
+                ).content.withoutTubeArchivist()
+                    .mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+                    .filter { it.kind == wanted }
+                    .take(24)
+            }.getOrDefault(emptyList())
+        }
         val newest = runCatching {
             api.userLibraryApi.getLatestMedia(
                 GetLatestMediaRequest(
@@ -1497,6 +1580,7 @@ class JellyfinLibrary(
     }
 
     private suspend fun latestByDateAdded(userId: UUID, kind: BaseItemKind): List<MediaItem> = runCatching {
+        val wanted = if (kind == BaseItemKind.MOVIE) MediaKind.Movie else MediaKind.Series
         api.itemsApi.getItems(
             GetItemsRequest(
                 userId = userId,
@@ -1509,7 +1593,10 @@ class JellyfinLibrary(
                 enableUserData = true,
                 enableImageTypes = imageTypes,
             ),
-        ).content.items.withoutTubeArchivist().mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+        ).content.items.withoutTubeArchivist()
+            .mapNotNull { ItemMapper.mediaItem(it.toSnapshot()) }
+            .filter { it.kind == wanted }
+            .take(24)
     }.getOrDefault(emptyList())
 
     private suspend fun items(
@@ -1931,3 +2018,33 @@ private fun MediaSourceInfo.versionSource(): MediaVersion.Source {
 }
 
 fun ServerUrl.normalizeOrThrow(raw: String): String = normalize(raw)
+
+/** Fields Settings → Server Info shows from Jellyfin's public and authenticated system info. */
+internal data class JellyfinSystemFacts(
+    val serverName: String?,
+    val version: String?,
+    val productName: String?,
+    val operatingSystem: String?,
+    val operatingSystemDisplayName: String?,
+    val localAddress: String?,
+)
+
+@Suppress("DEPRECATION")
+private fun PublicSystemInfo.toFacts(): JellyfinSystemFacts = JellyfinSystemFacts(
+    serverName = serverName,
+    version = version,
+    productName = productName,
+    operatingSystem = operatingSystem,
+    operatingSystemDisplayName = null,
+    localAddress = localAddress,
+)
+
+@Suppress("DEPRECATION")
+private fun SystemInfo.toFacts(): JellyfinSystemFacts = JellyfinSystemFacts(
+    serverName = serverName,
+    version = version,
+    productName = productName,
+    operatingSystem = operatingSystem,
+    operatingSystemDisplayName = operatingSystemDisplayName,
+    localAddress = localAddress,
+)

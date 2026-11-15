@@ -71,6 +71,31 @@ final class DownloadLayoutTests: XCTestCase {
         XCTAssertEqual(DownloadCoverLogic.mark(for: episode, records: [], progress: progress), .downloading(0.4))
     }
 
+    func testDownloadSeasonLayoutGroupsEpisodesBySeasonInOrder() {
+        let records = [
+            downloaded(sampleEpisode(id: "s2e1", season: 2, number: 1, watched: false)),
+            downloaded(sampleEpisode(id: "s1e2", season: 1, number: 2, watched: false)),
+            downloaded(sampleEpisode(id: "sp1", season: 0, number: 1, watched: false)),
+            downloaded(sampleEpisode(id: "s1e1", season: 1, number: 1, watched: false)),
+        ]
+        let groups = DownloadSeasonLayout.groups(from: records)
+        XCTAssertEqual(groups.map(\.title), ["Season 1", "Season 2", "Specials"])
+        XCTAssertEqual(groups[0].episodes.map(\.id), ["s1e1", "s1e2"])
+        XCTAssertEqual(groups[0].episodeCount, 2)
+        XCTAssertEqual(groups[0].byteSize, 2_048)
+    }
+
+    func testDownloadSeasonLayoutSortsEpisodesByNumberWithinASeason() {
+        let records = [
+            downloaded(sampleEpisode(id: "e3", season: 1, number: 3, watched: false)),
+            downloaded(sampleEpisode(id: "e1", season: 1, number: 1, watched: false)),
+            downloaded(sampleEpisode(id: "e2", season: 1, number: 2, watched: false)),
+        ]
+        let groups = DownloadSeasonLayout.groups(from: records)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].episodes.map(\.id), ["e1", "e2", "e3"])
+    }
+
     func testLibraryGroupsEpisodesUnderTheShow() {
         let movie = downloaded(sampleMovie())
         let episodeA = downloaded(sampleEpisode(id: "e1", season: 1, number: 1, watched: false))
@@ -81,6 +106,23 @@ final class DownloadLayoutTests: XCTestCase {
         XCTAssertEqual(rows[1].id, "show-1")
         XCTAssertEqual(rows[1].episodeCount, 2)
         XCTAssertEqual(rows[1].title.kind, .series)
+    }
+
+    func testDownloadedGridCollapsesActiveEpisodesUnderOneSeriesPoster() {
+        let episodeA = sampleEpisode(id: "e1", season: 1, number: 1, watched: false)
+        let episodeB = sampleEpisode(id: "e2", season: 1, number: 2, watched: false)
+        let active = [
+            DownloadProgress(item: episodeA, fraction: 0.2, seriesID: "show-1", userID: "u", serverHost: "h"),
+            DownloadProgress(item: episodeB, fraction: 0.5, seriesID: "show-1", userID: "u", serverHost: "h"),
+        ]
+        let stored = DownloadLibraryLayout.rows(from: [downloaded(episodeA)])
+        let entries = DownloadLibraryEntry.grid(active: active, rows: stored)
+        XCTAssertEqual(entries.count, 1)
+        guard case .active(_, let title) = entries[0] else {
+            return XCTFail("expected one active series poster")
+        }
+        XCTAssertEqual(title.kind, .series)
+        XCTAssertEqual(title.id, "show-1")
     }
 
     func testContentDispositionMapsMatroskaFilenames() {
@@ -307,7 +349,7 @@ final class DownloadStoreTests: XCTestCase {
 }
 
 final class OfflinePlaybackPipelineTests: XCTestCase {
-    func testLocalMKVUsesDirectPlayEvenWhenNativePlayerIsOn() {
+    func testLocalMKVUsesMPVEvenWhenNativePlayerIsOn() {
         let url = URL(fileURLWithPath: "/tmp/Zelefin/media.mkv")
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(
@@ -316,7 +358,7 @@ final class OfflinePlaybackPipelineTests: XCTestCase {
                 container: "mkv",
                 usesNativePlayer: true
             ),
-            .directDecode
+            .mpv
         )
         XCTAssertFalse(
             PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
@@ -354,19 +396,6 @@ final class OfflinePlaybackPipelineTests: XCTestCase {
         XCTAssertTrue(OfflinePlaybackPolicy.shouldFallBackToRemux(isLocalFile: false))
     }
 
-    func testLocalFileReaderRejectsEmptyFiles() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Zelefin-empty-\(UUID().uuidString).mkv")
-        try Data().write(to: url)
-        defer { try? FileManager.default.removeItem(at: url) }
-        XCTAssertNil(LocalMediaByteReader(url: url))
-
-        let media = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Zelefin-media-\(UUID().uuidString).mkv")
-        try Data("offline-bytes".utf8).write(to: media)
-        defer { try? FileManager.default.removeItem(at: media) }
-        XCTAssertNotNil(LocalMediaByteReader(url: media))
-    }
 }
 
 private func downloaded(

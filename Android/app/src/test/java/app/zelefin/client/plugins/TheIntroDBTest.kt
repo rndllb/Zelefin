@@ -75,6 +75,24 @@ class TheIntroDBTest {
     }
 
     @Test
+    fun pluginPresenceProbeFillsInWhenCatalogIsEmpty() {
+        val empty = emptyList<PluginEntry>()
+        assertEquals(
+            PluginPresence.Enabled,
+            PluginPresence.resolving(empty, { IntroSkipperPlugin.isInstalled(listOf(it)) }, reachable = true),
+        )
+        assertEquals(
+            PluginPresence.NotInstalled,
+            PluginPresence.resolving(empty, { IntroSkipperPlugin.isInstalled(listOf(it)) }, reachable = false),
+        )
+        val disabled = listOf(PluginEntry("Intro Skipper", enabled = false))
+        assertEquals(
+            PluginPresence.Disabled,
+            PluginPresence.resolving(disabled, { IntroSkipperPlugin.isInstalled(listOf(it)) }, reachable = true),
+        )
+    }
+
+    @Test
     fun onlyFillsKindsTheServerLacks() {
         val serverIntro = SkipSegment(SkipSegment.Kind.Intro, 60.0, 90.0)
         val community = listOf(

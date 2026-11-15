@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SessionsView: View {
     @Environment(SessionStore.self) private var session
+    @AppStorage(RemoteSessionActivityPresenter.preferenceKey) private var liveActivityRemoteSessions = false
 
     @State private var sessions: [PlaybackSession] = []
     @State private var isLoading = true
@@ -17,13 +18,21 @@ struct SessionsView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if sessions.isEmpty {
-                ContentUnavailableView(
-                    "No Sessions",
-                    systemImage: "play.tv",
-                    description: Text(errorMessage ?? "No one is connected to this server right now.")
-                )
+                List {
+                    remoteActivitySection
+                    Section {
+                        ContentUnavailableView(
+                            "No Sessions",
+                            systemImage: "play.tv",
+                            description: Text(errorMessage ?? "No one is connected to this server right now.")
+                        )
+                    }
+                    .zelefinRowBackground()
+                }
+                .listStyle(.insetGrouped)
             } else {
                 List {
+                    remoteActivitySection
                     if let errorMessage {
                         Section {
                             SettingsStatusText(text: errorMessage, isError: true)
@@ -63,6 +72,27 @@ struct SessionsView: View {
         }
         .zelefinSettingsChrome(title: "Sessions")
         .task { await monitor() }
+        .onChange(of: liveActivityRemoteSessions) { _, enabled in
+            RemoteSessionsLiveActivityMonitor.isEnabled = enabled
+            if enabled {
+                RemoteSessionsLiveActivityMonitor.handle(sessions, localDeviceID: session.session?.deviceID)
+            }
+        }
+        .onDisappear {
+            // Keep the activity running after leaving Settings when the toggle stays on.
+            if !liveActivityRemoteSessions {
+                RemoteSessionsLiveActivityMonitor.stop()
+            }
+        }
+    }
+
+    private var remoteActivitySection: some View {
+        Section {
+            Toggle("Live Activity for other sessions", isOn: $liveActivityRemoteSessions)
+        } footer: {
+            Text("When on, shows other devices’ Now Playing on the Lock Screen. Off by default.")
+        }
+        .zelefinRowBackground()
     }
 
     private func monitor() async {
@@ -84,6 +114,10 @@ struct SessionsView: View {
         do {
             sessions = try await library.playbackSessions()
             errorMessage = nil
+            if liveActivityRemoteSessions {
+                RemoteSessionsLiveActivityMonitor.isEnabled = true
+                RemoteSessionsLiveActivityMonitor.handle(sessions, localDeviceID: session.session?.deviceID)
+            }
         } catch is CancellationError {
             return
         } catch {

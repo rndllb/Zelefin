@@ -212,7 +212,7 @@ struct SeerrDiscoverGridView: View {
     }
 }
 
-/// A Discover poster that opens the title's page.
+/// A Discover poster that opens the library detail when available, otherwise the Seerr/Ombi page.
 private struct SeerrRequestPosterButton: View {
     @Environment(SessionStore.self) private var session
     let title: SeerrTitle
@@ -224,11 +224,33 @@ private struct SeerrRequestPosterButton: View {
         title.isInJellyfin(catalog: session.tmdbCatalog)
     }
 
+    /// Same gate as Android `libraryItemIfAvailable` / RequestTitleDetailView's "View in Library".
+    private var libraryItemID: String? {
+        var current = title
+        if !current.availability.isOnServer, locked {
+            current.availability = .available
+        }
+        let fullyOnServer = current.availability == .available
+            || (current.kind == .movie && current.availability.isOnServer)
+        guard fullyOnServer else { return nil }
+        return session.tmdbCatalog.itemID(for: current)
+    }
+
     var body: some View {
-        NavigationLink {
-            RequestTitleDetailView(title: title, onRequested: onRequested)
-        } label: {
-            poster
+        Group {
+            if let libraryItemID {
+                NavigationLink {
+                    ItemDetailView(itemID: libraryItemID)
+                } label: {
+                    poster
+                }
+            } else {
+                NavigationLink {
+                    RequestTitleDetailView(title: title, onRequested: onRequested)
+                } label: {
+                    poster
+                }
+            }
         }
         .buttonStyle(.plain)
     }

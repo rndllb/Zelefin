@@ -781,6 +781,76 @@ final class MediaItemProgressTests: XCTestCase {
         XCTAssertEqual(MediaItem.strippingCollectionSuffix("101 Dalmatians (Animated) Collection"), "101 Dalmatians (Animated)")
         XCTAssertEqual(MediaItem.strippingCollectionSuffix("Action"), "Action")
     }
+
+    func testUntaggedCollectionUsesGeneratedCollage() {
+        let untagged = MediaItem(
+            id: "box-1",
+            name: "Dune Collection",
+            kind: .collection,
+            overview: nil,
+            year: 2024,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+        XCTAssertTrue(untagged.usesGeneratedCollage)
+
+        let tagged = MediaItem(
+            id: "box-2",
+            name: "Tagged",
+            kind: .collection,
+            overview: nil,
+            year: 2024,
+            runtime: nil,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: "abc",
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .unknown
+        )
+        XCTAssertFalse(tagged.usesGeneratedCollage)
+    }
 }
 
 final class PlaybackQueueMenuLayoutTests: XCTestCase {

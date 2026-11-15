@@ -38,9 +38,10 @@ final class ArtworkCacheKeyTests: XCTestCase {
         XCTAssertFalse(query.contains { $0.hasPrefix("fillWidth=") || $0.hasPrefix("fillHeight=") })
     }
 
-    func testMoviesAndShowsWithoutAPosterTagAreNotRequested() {
+    func testMoviesWithoutAPosterTagAreNotRequested() {
         XCTAssertFalse(ArtworkURLBuilder.requestsPrimary(kind: .movie, tag: nil))
-        XCTAssertFalse(ArtworkURLBuilder.requestsPrimary(kind: .series, tag: nil))
+        // Shows may omit the tag when built from an episode (downloads); Jellyfin still serves Primary.
+        XCTAssertTrue(ArtworkURLBuilder.requestsPrimary(kind: .series, tag: nil))
         XCTAssertTrue(ArtworkURLBuilder.requestsPrimary(kind: .movie, tag: "abc"))
         XCTAssertTrue(ArtworkURLBuilder.requestsPrimary(kind: .collection, tag: nil))
         XCTAssertTrue(ArtworkURLBuilder.requestsPrimary(kind: .liveTV, tag: nil))

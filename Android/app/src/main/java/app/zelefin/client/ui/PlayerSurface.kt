@@ -17,7 +17,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,10 +58,11 @@ import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Forward30
 import androidx.compose.material.icons.rounded.Forward5
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay
@@ -70,11 +70,16 @@ import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Replay30
 import androidx.compose.material.icons.rounded.Replay5
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.SettingsInputAntenna
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -93,7 +98,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -116,6 +120,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.zelefin.client.push.NotificationPreferences
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem as ExoItem
@@ -135,6 +140,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import app.zelefin.client.PlaybackLanguage
 import app.zelefin.client.PlaybackPreferences
+import app.zelefin.client.PlaybackQuality
+import app.zelefin.client.StillWatchingSession
 import app.zelefin.client.TrackPick
 import app.zelefin.client.PlayerDirective
 import app.zelefin.client.R
@@ -162,6 +169,7 @@ private const val UpNextMinimumRuntime = 60.0
 
 internal enum class PlayerMenuPage(val title: String) {
     Root("More"),
+    Quality("Quality"),
     Version("Version"),
     Speed("Playback Speed"),
     Audio("Select Audio"),
@@ -190,6 +198,32 @@ private class PlayerTrack(val title: String, val group: Tracks.Group, val index:
     )
 }
 
+/** Mute-while-playing follows this screen: on while it is started, off once it leaves or the app backgrounds. */
+@Composable
+internal fun TrackAlertPlayback() {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        NotificationPreferences.setPlaybackActive(true)
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> NotificationPreferences.setPlaybackInForeground(true)
+                Lifecycle.Event.ON_STOP -> NotificationPreferences.setPlaybackInForeground(false)
+                Lifecycle.Event.ON_CREATE,
+                Lifecycle.Event.ON_RESUME,
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_DESTROY,
+                Lifecycle.Event.ON_ANY,
+                -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            NotificationPreferences.setPlaybackActive(false)
+        }
+    }
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerSurface(
@@ -214,11 +248,15 @@ fun PlayerSurface(
     directives: SharedFlow<PlayerDirective>? = null,
     versions: List<MediaVersion> = emptyList(),
     onChooseVersion: ((String, Double) -> Unit)? = null,
+    onQualityChange: ((PlaybackQuality, Double) -> Unit)? = null,
+    watchTogether: PlayerWatchTogether? = PlayerWatchTogether(),
 ) {
     val context = LocalContext.current
+    TrackAlertPlayback()
     val activity = remember(context) { context.findActivity() }
+    // Only take over the player when a Cast session is actively connected — a warm CastContext alone must not block local playback.
     val castConnected = app.zelefin.client.cast.rememberCastConnected()
-    if (castConnected) {
+    if (castConnected && app.zelefin.client.cast.ZelefinCast.remote(context) != null) {
         app.zelefin.client.cast.CastRemoteSurface(
             plan = plan,
             artworkUrl = plan.item.backdropUrl ?: plan.item.posterUrl,
@@ -233,7 +271,7 @@ fun PlayerSurface(
             onProgress = onProgress,
             onStopped = onStopped,
             onClose = onClose,
-            onCast = {},
+            watchTogether = watchTogether,
             skipSegments = skipSegments,
             autoSkip = autoSkip,
             nextEpisode = nextEpisode,
@@ -247,6 +285,7 @@ fun PlayerSurface(
             directives = directives,
             versions = versions,
             onChooseVersion = onChooseVersion,
+            onQualityChange = onQualityChange,
         )
         return
     }
@@ -306,6 +345,7 @@ fun PlayerSurface(
     var aspect by remember(player) { mutableStateOf<Rational?>(null) }
     var positionMs by remember(player) { mutableLongStateOf(0L) }
     var durationMs by remember(player) { mutableLongStateOf(C.TIME_UNSET) }
+    var bufferedAheadSeconds by remember(player) { mutableStateOf(0.0) }
     var playbackError by remember(player) { mutableStateOf<String?>(null) }
     var recovering by remember(player) { mutableStateOf(false) }
     DisposableEffect(player) {
@@ -362,6 +402,7 @@ fun PlayerSurface(
         while (true) {
             positionMs = player.currentPosition
             durationMs = player.duration
+            bufferedAheadSeconds = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L) / 1000.0
             delay(250)
         }
     }
@@ -415,7 +456,9 @@ fun PlayerSurface(
         }
     }
     LaunchedEffect(activity, windowOwner, aspect, playWhenReady) {
-        activity?.let { PlayerWindow.update(it, windowOwner, aspect, playWhenReady) }
+        activity?.let {
+            PlayerWindow.update(it, windowOwner, aspect, playWhenReady, PlaybackPreferences.autoPipOnLeave(it))
+        }
     }
     DisposableEffect(player) {
         val receiver = object : BroadcastReceiver() {
@@ -474,13 +517,12 @@ fun PlayerSurface(
     val skipBack = remember { PlaybackPreferences.skipBackward(context) }
     val skipForward = remember { PlaybackPreferences.skipForward(context) }
     val autoplayPreference = remember { PlaybackPreferences.autoplayNext(context) }
+    var playerVolume by remember(player) { mutableFloatStateOf(player.volume) }
 
     var chromeVisible by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
-    var locked by remember { mutableStateOf(false) }
     var timelineTop by remember { mutableStateOf<Float?>(null) }
     var surfaceTop by remember { mutableFloatStateOf(0f) }
-    var lockHint by remember { mutableStateOf(false) }
     var scrubTime by remember { mutableStateOf<Double?>(null) }
     var menuPage by remember { mutableStateOf<PlayerMenuPage?>(null) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
@@ -517,59 +559,66 @@ fun PlayerSurface(
         }
     }
     LaunchedEffect(playWhenReady) {
-        if (!playWhenReady && !locked) reveal()
-    }
-    LaunchedEffect(lockHint, interaction) {
-        if (lockHint) {
-            delay(ChromeIdleMillis)
-            lockHint = false
-        }
+        if (!playWhenReady) reveal()
     }
     LaunchedEffect(inPip) {
         if (inPip) menuPage = null
     }
     BackHandler(enabled = menuPage != null) { menuPage = null }
-    BackHandler(enabled = locked && menuPage == null) {
-        lockHint = true
-        interaction += 1
-    }
 
     val autoplay = autoplayPreference && sleep != SleepTimer.EndOfEpisode
     var upNextCancelled by remember { mutableStateOf(false) }
     var upNextCountdown by remember { mutableStateOf<Double?>(null) }
     var finishing by remember { mutableStateOf(false) }
+    var stillWatching by remember { mutableStateOf(false) }
     val outroStart = skipSegments.firstOrNull { it.kind == SkipSegment.Kind.Outro && it.end - it.start >= SkipSegment.MIN_LENGTH }?.start
     val remaining = (mediaDuration - mediaPosition).coerceAtLeast(0.0)
     val inOutro = outroStart != null && mediaPosition >= outroStart - 0.35
     val upNextVisible = nextEpisode != null && !upNextCancelled && mediaDuration > UpNextMinimumRuntime &&
         playbackState != Player.STATE_IDLE && scrubTime == null && (inOutro || remaining <= UpNextWindowSeconds)
     val currentOnPlayNext by rememberUpdatedState(onPlayNext)
-    val advance = {
-        val next = nextEpisode
-        if (!finishing && next != null) {
-            finishing = true
+    val episode = plan.item.kind == MediaKind.Episode
+    val advance = advance@{ automatic: Boolean ->
+        if (finishing || stillWatching) return@advance
+        val next = nextEpisode ?: return@advance
+        if (automatic && StillWatchingSession.shouldPrompt(PlaybackPreferences.stillWatchingEnabled(context), episode)) {
+            stillWatching = true
             player.pause()
-            currentOnPlayNext(next, mediaSeconds())
+            return@advance
         }
+        if (automatic) StillWatchingSession.armAuto(next.id) else StillWatchingSession.armManual(next.id)
+        finishing = true
+        player.pause()
+        currentOnPlayNext(next, mediaSeconds())
+    }
+    val stopStillWatching = {
+        stillWatching = false
+        StillWatchingSession.reset()
+        currentOnClose()
+    }
+    val continueStillWatching = {
+        stillWatching = false
+        StillWatchingSession.continueWatching()
+        if (nextEpisode == null) currentOnClose() else advance(true)
     }
     LaunchedEffect(upNextVisible, inOutro) {
-        upNextCountdown = if (upNextVisible && autoplay && inOutro) min(UpNextOutroCountdown, remaining) else null
+        upNextCountdown = if (upNextVisible && autoplay && inOutro && !stillWatching) min(UpNextOutroCountdown, remaining) else null
     }
-    LaunchedEffect(upNextCountdown != null, isPlaying) {
-        while (isPlaying && !finishing) {
+    LaunchedEffect(upNextCountdown != null, isPlaying, stillWatching) {
+        while (isPlaying && !finishing && !stillWatching) {
             val left = upNextCountdown ?: break
             if (left <= 0.0) {
-                advance()
+                advance(true)
                 break
             }
             delay(250)
             upNextCountdown = upNextCountdown?.minus(0.25)
         }
     }
-    LaunchedEffect(playbackState) {
-        if (playbackState != Player.STATE_ENDED || finishing) return@LaunchedEffect
+    LaunchedEffect(playbackState, stillWatching) {
+        if (playbackState != Player.STATE_ENDED || finishing || stillWatching) return@LaunchedEffect
         if (nextEpisode != null && autoplay && !upNextCancelled) {
-            advance()
+            advance(true)
         } else {
             finishing = true
             currentOnClose()
@@ -590,10 +639,13 @@ fun PlayerSurface(
         }
         reveal()
     }
-    val skipBy: (Int) -> Unit = { seconds ->
+    val seekBy: (Int) -> Unit = { seconds ->
         val target = (mediaSeconds() + seconds).coerceAtLeast(streamOffset)
         seekMedia(target)
         currentOnUserTransport(PlayerDirective.Seek(target))
+    }
+    val skipBy: (Int) -> Unit = { seconds ->
+        seekBy(seconds)
         reveal()
     }
 
@@ -605,7 +657,6 @@ fun PlayerSurface(
             .setOverrideForType(TrackSelectionOverride(track.group.mediaTrackGroup, track.index))
             .build()
         onTrackPicked(TrackPick.Audio(track.group.getTrackFormat(track.index).language))
-        menuPage = null
     }
     val selectSubtitle: (PlayerTrack?) -> Unit = { track ->
         val builder = player.trackSelectionParameters.buildUpon()
@@ -617,11 +668,9 @@ fun PlayerSurface(
         }
         player.trackSelectionParameters = builder.build()
         onTrackPicked(track?.let { TrackPick.Subtitle(it.group.getTrackFormat(it.index).language) } ?: TrackPick.SubtitlesOff)
-        menuPage = null
     }
     val selectSpeed: (Float) -> Unit = { rate ->
         player.setPlaybackSpeed(rate)
-        menuPage = null
     }
     val audioNote = if (plan.method == PlaybackMethod.Transcode && audioTracks.size <= 1) {
         "This stream carries the audio track the server chose."
@@ -634,7 +683,7 @@ fun PlayerSurface(
     val subtitle = if (item.kind == MediaKind.Episode) episodeCaption(item, includeName = item.seriesName != null) else null
     val buffering = playbackError == null &&
         (playbackState == Player.STATE_BUFFERING || (playbackState == Player.STATE_IDLE && playWhenReady))
-    val showChrome = chromeVisible && !locked && !inPip && !suspended
+    val showChrome = chromeVisible && !inPip && !suspended
     val captionGap = with(LocalDensity.current) { 8.dp.toPx() }
     val subtitleCeiling = timelineTop?.takeIf { showChrome }?.let { it - surfaceTop - captionGap }
 
@@ -678,22 +727,18 @@ fun PlayerSurface(
             },
             modifier = if (sampleVideo) Modifier.fillMaxSize().glassSource(videoGlass) else Modifier.fillMaxSize(),
         )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(inPip, locked, chromeVisible) {
-                    detectTapGestures {
-                        when {
-                            inPip -> Unit
-                            locked -> {
-                                lockHint = !lockHint
-                                interaction += 1
-                            }
-                            chromeVisible -> chromeVisible = false
-                            else -> reveal()
-                        }
-                    }
-                },
+        PlayerGestureOverlay(
+            enabled = !inPip && !stillWatching && menuPage == null,
+            controlsVisible = chromeVisible,
+            onSingleTap = {
+                if (chromeVisible) chromeVisible = false else reveal()
+            },
+            onSkip = seekBy,
+            volume = playerVolume,
+            onVolume = { level ->
+                playerVolume = level
+                player.volume = level
+            },
         )
         if ((recovering || (buffering && !showChrome)) && !inPip) {
             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(44.dp))
@@ -706,6 +751,7 @@ fun PlayerSurface(
                 buffering = buffering,
                 position = scrubTime ?: mediaPosition,
                 duration = mediaDuration,
+                bufferedAhead = bufferedAheadSeconds,
                 skipBack = skipBack,
                 skipForward = skipForward,
                 pipSupported = pipSupported,
@@ -717,11 +763,6 @@ fun PlayerSurface(
                     reveal()
                 },
                 onClose = onClose,
-                onLock = {
-                    locked = true
-                    lockHint = true
-                    interaction += 1
-                },
                 onPip = { activity?.let { PlayerWindow.enter(it) } },
                 onMore = {
                     menuPage = PlayerMenuPage.Root
@@ -746,7 +787,7 @@ fun PlayerSurface(
                     val signed = session ?: return@PlayerChrome null
                     app.zelefin.core.ArtworkUrls.trickplayTile(signed.serverUrl, plan.item.id, info, time, signed.accessToken)
                 },
-                onCast = {},
+                watchTogether = watchTogether,
             )
         }
         if (showStats && !inPip) {
@@ -765,7 +806,7 @@ fun PlayerSurface(
             )
         }
         val lift by animateDpAsState(if (showChrome) 84.dp else 18.dp, label = "player-lift")
-        val promptVisible = prompt != null && !inPip && !locked && !(upNextVisible && (prompt.kind == SkipSegment.Kind.Outro || prompt.kind == SkipSegment.Kind.Preview))
+        val promptVisible = prompt != null && !inPip && !(upNextVisible && (prompt.kind == SkipSegment.Kind.Outro || prompt.kind == SkipSegment.Kind.Preview))
         AnimatedVisibility(
             visible = promptVisible,
             enter = fadeIn(),
@@ -791,7 +832,7 @@ fun PlayerSurface(
             )
         }
         AnimatedVisibility(
-            visible = upNextVisible && !inPip && nextEpisode != null,
+            visible = upNextVisible && !inPip && !stillWatching,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -809,37 +850,12 @@ fun PlayerSurface(
                         countdown != null -> "Starts in ${countdown.coerceAtLeast(0.0).roundToInt()}s"
                         else -> "Next Episode"
                     },
-                    onPlay = advance,
+                    onPlay = { advance(false) },
                     onCancel = {
                         upNextCancelled = true
                         upNextCountdown = null
                     },
                 )
-            }
-        }
-        AnimatedVisibility(
-            visible = locked && lockHint && !inPip,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(bottom = 28.dp),
-        ) {
-            Row(
-                Modifier
-                    .playerGlass(RoundedCornerShape(50))
-                    .clickable {
-                        locked = false
-                        lockHint = false
-                        reveal()
-                    }
-                    .padding(horizontal = 18.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.LockOpen, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Tap to Unlock", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             }
         }
         playbackError?.takeIf { !inPip && !recovering }?.let { message ->
@@ -859,6 +875,10 @@ fun PlayerSurface(
                 onClose = onClose,
                 modifier = Modifier.align(Alignment.Center),
             )
+        }
+        if (stillWatching) {
+            BackHandler(onBack = stopStillWatching)
+            StillWatchingOverlay(onContinue = continueStillWatching, onStop = stopStillWatching)
         }
     }
 
@@ -914,9 +934,26 @@ fun PlayerSurface(
                     if (version.id != plan.mediaSourceId) choose(version.id, mediaSeconds())
                 }
             },
+            quality = PlaybackPreferences.selectedQuality(context),
+            onQuality = onQualityChange?.takeUnless { plan.streamUrl.startsWith("file:") }?.let { change ->
+                { option ->
+                    menuPage = null
+                    change(option, mediaSeconds())
+                }
+            },
         )
     }
     }
+}
+
+/** Chromecast + SyncPlay — same grouped menu as iOS (AirPlay/SharePlay are Apple-only). */
+data class PlayerWatchTogether(
+    val showCast: Boolean = true,
+    val syncPlayTitle: String? = null,
+    val syncPlayActive: Boolean = false,
+    val onSyncPlay: (() -> Unit)? = null,
+) {
+    val hasAnyOption: Boolean get() = showCast || onSyncPlay != null
 }
 
 @Composable
@@ -927,6 +964,7 @@ internal fun PlayerChrome(
     buffering: Boolean,
     position: Double,
     duration: Double,
+    bufferedAhead: Double = 0.0,
     skipBack: Int,
     skipForward: Int,
     pipSupported: Boolean,
@@ -934,7 +972,6 @@ internal fun PlayerChrome(
     fillsScreen: Boolean,
     onToggleFill: () -> Unit,
     onClose: () -> Unit,
-    onLock: () -> Unit,
     onPip: () -> Unit,
     onMore: () -> Unit,
     onTogglePlay: () -> Unit,
@@ -943,25 +980,12 @@ internal fun PlayerChrome(
     onSeek: (Double) -> Unit,
     trickplay: app.zelefin.core.TrickplayInfo? = null,
     trickplayUrl: ((Double) -> Any?)? = null,
-    onCast: (() -> Unit)? = null,
+    watchTogether: PlayerWatchTogether? = PlayerWatchTogether(),
     onTimelineTop: (Float) -> Unit = {},
 ) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val horizontal = if (wide) 28.dp else 16.dp
     Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(140.dp)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent))),
-        )
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(180.dp)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))),
-        )
         Box(Modifier.align(Alignment.Center)) {
             Row(horizontalArrangement = Arrangement.spacedBy(if (wide) 64.dp else 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 SkipButton(seconds = skipBack, forward = false) { onSkip(-skipBack) }
@@ -1022,12 +1046,9 @@ internal fun PlayerChrome(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (onCast != null) {
-                        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-                            app.zelefin.client.cast.CastRouteButton()
-                        }
+                    if (watchTogether?.hasAnyOption == true) {
+                        WatchTogetherMenuButton(watchTogether)
                     }
-                    GlassIconButton(Icons.Rounded.Lock, "Lock Controls", onClick = onLock)
                     if (pipSupported) GlassIconButton(Icons.Rounded.PictureInPictureAlt, "Picture in Picture", onClick = onPip)
                     GlassIconButton(
                         if (fillsScreen) Icons.Rounded.CloseFullscreen else Icons.Rounded.OpenInFull,
@@ -1041,6 +1062,7 @@ internal fun PlayerChrome(
             Timeline(
                 position = position,
                 duration = duration,
+                bufferedAhead = bufferedAhead,
                 chapterStarts = chapterStarts,
                 onScrub = onScrub,
                 onSeek = onSeek,
@@ -1056,6 +1078,7 @@ internal fun PlayerChrome(
 private fun Timeline(
     position: Double,
     duration: Double,
+    bufferedAhead: Double,
     chapterStarts: List<Double>,
     onScrub: (Double) -> Unit,
     onSeek: (Double) -> Unit,
@@ -1085,6 +1108,7 @@ private fun Timeline(
         Scrubber(
             position = position,
             duration = duration,
+            bufferedAhead = bufferedAhead,
             chapterStarts = chapterStarts,
             onScrub = {
                 previewing = true
@@ -1149,6 +1173,7 @@ private fun TimeLabel(text: String, modifier: Modifier, end: Boolean = false) {
 private fun Scrubber(
     position: Double,
     duration: Double,
+    bufferedAhead: Double,
     chapterStarts: List<Double>,
     onScrub: (Double) -> Unit,
     onSeek: (Double) -> Unit,
@@ -1159,6 +1184,11 @@ private fun Scrubber(
     val currentSeek by rememberUpdatedState(onSeek)
     val thickness by animateDpAsState(if (dragging) 8.dp else 5.dp, label = "scrub-thickness")
     val fraction = if (duration > 0) (position / duration).coerceIn(0.0, 1.0).toFloat() else 0f
+    val buffered = if (duration > 0) {
+        ((position + bufferedAhead.coerceAtLeast(0.0)) / duration).coerceIn(fraction.toDouble(), 1.0).toFloat()
+    } else {
+        fraction
+    }
     androidx.compose.foundation.layout.BoxWithConstraints(
         modifier.pointerInput(duration) {
             if (duration <= 0) return@pointerInput
@@ -1189,7 +1219,14 @@ private fun Scrubber(
                 .fillMaxWidth()
                 .height(thickness)
                 .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.32f)),
+                .background(Color.White.copy(alpha = 0.22f)),
+        )
+        Box(
+            Modifier
+                .width((width * buffered).coerceAtLeast(4.dp))
+                .height(thickness)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.42f)),
         )
         Box(
             Modifier
@@ -1266,6 +1303,70 @@ private fun GlassIconButton(icon: ImageVector, description: String, size: Dp = 4
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun WatchTogetherMenuButton(routes: PlayerWatchTogether) {
+    val context = LocalContext.current
+    val castConnected = app.zelefin.client.cast.rememberCastConnected()
+    var open by remember { mutableStateOf(false) }
+    Box {
+        GlassIconButton(Icons.Rounded.SettingsInputAntenna, "Watch together", onClick = { open = true })
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            containerColor = Color(0xE6121212),
+        ) {
+            if (routes.showCast) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (castConnected) "Chromecast (Connected)" else "Chromecast",
+                            color = Color.White,
+                            fontFamily = ZelefinFont,
+                        )
+                    },
+                    onClick = {
+                        open = false
+                        app.zelefin.client.cast.ZelefinCast.showChooser(context)
+                    },
+                    leadingIcon = {
+                        Icon(
+                            if (castConnected) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
+                            contentDescription = null,
+                            tint = Color.White,
+                        )
+                    },
+                    colors = MenuDefaults.itemColors(
+                        textColor = Color.White,
+                        leadingIconColor = Color.White,
+                    ),
+                )
+            }
+            if (routes.onSyncPlay != null && routes.syncPlayTitle != null) {
+                DropdownMenuItem(
+                    text = {
+                        Text(routes.syncPlayTitle, color = Color.White, fontFamily = ZelefinFont)
+                    },
+                    onClick = {
+                        open = false
+                        routes.onSyncPlay.invoke()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Groups,
+                            contentDescription = null,
+                            tint = Color.White,
+                        )
+                    },
+                    colors = MenuDefaults.itemColors(
+                        textColor = Color.White,
+                        leadingIconColor = Color.White,
+                    ),
+                )
+            }
+        }
     }
 }
 
@@ -1365,6 +1466,14 @@ private fun playbackFailureCopy(error: PlaybackException): String = when (error.
     PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
     PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
     -> "This file couldn't be read from the server."
+    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+    PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+    PlaybackException.ERROR_CODE_DECODING_FAILED,
+    PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+    PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+    PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
+    -> "This audio or video format isn't supported here. Try MPV in Settings."
     else -> "The connection to the server dropped."
 }
 
@@ -1436,6 +1545,7 @@ internal fun PlayerMenuPanel(
     sleep: SleepTimer,
     sleepRemaining: Double?,
     sleepOffersEndOfEpisode: Boolean,
+    showSleepTimer: Boolean = true,
     onSleep: (SleepTimer) -> Unit,
     onAddSubtitles: (() -> Unit)?,
     fillsScreen: Boolean,
@@ -1446,10 +1556,13 @@ internal fun PlayerMenuPanel(
     versions: List<MediaVersion> = emptyList(),
     playingVersion: String? = null,
     onVersion: ((MediaVersion) -> Unit)? = null,
+    quality: PlaybackQuality? = null,
+    onQuality: ((PlaybackQuality) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var appearance by remember { mutableStateOf(SubtitleAppearance.current(context)) }
     val shownVersion = versions.firstOrNull { it.id == playingVersion } ?: versions.firstOrNull()
+    val selectedQuality = quality ?: PlaybackPreferences.selectedQuality(context)
     fun updateAppearance(change: () -> Unit) {
         change()
         appearance = SubtitleAppearance.current(context)
@@ -1506,6 +1619,10 @@ internal fun PlayerMenuPanel(
             ) {
                 when (page) {
                     PlayerMenuPage.Root -> {
+                        // Same order as iOS AVKitPlaybackSettingsPanel.rootRows.
+                        if (onQuality != null) {
+                            MenuRow("Quality", selectedQuality.title, Icons.Rounded.Tune) { onPage(PlayerMenuPage.Quality) }
+                        }
                         if (onVersion != null && versions.size > 1) {
                             MenuRow("Version", shownVersion?.title ?: "Default", Icons.Rounded.Layers) { onPage(PlayerMenuPage.Version) }
                         }
@@ -1527,18 +1644,24 @@ internal fun PlayerMenuPanel(
                                 onPage(PlayerMenuPage.Chapters)
                             }
                         }
-                        MenuRow(
-                            "Sleep Timer",
-                            sleepRemaining?.let { clockText(it) } ?: sleepTitle(sleep),
-                            Icons.Rounded.Bedtime,
-                        ) { onPage(PlayerMenuPage.Sleep) }
+                        if (showSleepTimer) {
+                            MenuRow(
+                                "Sleep Timer",
+                                sleepRemaining?.let { clockText(it) } ?: sleepTitle(sleep),
+                                Icons.Rounded.Bedtime,
+                            ) { onPage(PlayerMenuPage.Sleep) }
+                        }
                         ToggleRow("Fill screen", Icons.Rounded.OpenInFull, fillsScreen, onToggleFill)
                         ToggleRow("Stats", Icons.Rounded.Info, showStats, onToggleStats)
                     }
+                    PlayerMenuPage.Quality -> PlaybackQuality.entries.forEach { option ->
+                        ChoiceRow(option.title, selected = option == selectedQuality) {
+                            onQuality?.invoke(option)
+                        }
+                    }
                     PlayerMenuPage.Chapters -> {
-                        val current = chapters.lastOrNull { it.startSeconds <= position + 0.5 }
                         chapters.forEach { chapter ->
-                            ChoiceRow("${clockText(chapter.startSeconds)}  ${chapter.name}", selected = chapter == current) { onChapter(chapter) }
+                            ChoiceRow("${clockText(chapter.startSeconds)}  ${chapter.name}", selected = false) { onChapter(chapter) }
                         }
                     }
                     PlayerMenuPage.Sleep -> {
@@ -1563,7 +1686,7 @@ internal fun PlayerMenuPanel(
                     }
                     PlayerMenuPage.Audio -> {
                         if (audio.isEmpty()) {
-                            MenuNote("This stream has one audio track.")
+                            MenuNote("No audio tracks")
                         } else {
                             audio.forEach { track -> ChoiceRow(track.title, selected = track.selected) { onAudio(track) } }
                         }
@@ -1575,7 +1698,7 @@ internal fun PlayerMenuPanel(
                         subtitles.forEach { track -> ChoiceRow(track.title, selected = track.selected) { onSubtitle(track) } }
                     }
                     PlayerMenuPage.SubtitleStyle -> {
-                        MenuNote("Font Size")
+                        MenuSection("Font Size")
                         SubtitleAppearance.sizes.forEach { option ->
                             ChoiceRow(SubtitleAppearance.sizeTitle(option), selected = appearance.size == option) {
                                 updateAppearance { SubtitleAppearance.setSize(context, option) }
@@ -1584,13 +1707,13 @@ internal fun PlayerMenuPanel(
                         if (subtitles.any { it.selected && it.isPicture }) {
                             MenuNote("These subtitles are pictures (PGS or VobSub), so only their size can change.")
                         } else {
-                            MenuNote("Text Color")
+                            MenuSection("Text Color")
                             SubtitleAppearance.colors.forEach { option ->
                                 ChoiceRow(SubtitleAppearance.colorTitle(option), selected = appearance.color == option) {
                                     updateAppearance { SubtitleAppearance.setColor(context, option) }
                                 }
                             }
-                            MenuNote("Background")
+                            MenuSection("Background")
                             SubtitleAppearance.backgrounds.forEach { option ->
                                 ChoiceRow(SubtitleAppearance.backgroundTitle(option), selected = appearance.background == option) {
                                     updateAppearance { SubtitleAppearance.setBackground(context, option) }
@@ -1599,66 +1722,81 @@ internal fun PlayerMenuPanel(
                         }
                     }
                     PlayerMenuPage.SubtitleSync -> {
-                        Text(
-                            appearance.syncTitle(),
-                            color = Color.White,
-                            fontFamily = ZelefinFont,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 16.sp,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
                             Text(
-                                "−0.25",
+                                appearance.syncTitle(),
                                 color = Color.White,
                                 fontFamily = ZelefinFont,
                                 fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.White.copy(alpha = 0.12f))
-                                    .clickable {
-                                        updateAppearance { SubtitleAppearance.setSyncSeconds(context, appearance.syncSeconds - 0.25) }
-                                    }
-                                    .padding(vertical = 10.dp),
+                                fontSize = 16.sp,
+                                modifier = Modifier.fillMaxWidth(),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Text(
+                                    "−0.25",
+                                    color = Color.White,
+                                    fontFamily = ZelefinFont,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color.White.copy(alpha = 0.12f))
+                                        .clickable {
+                                            updateAppearance { SubtitleAppearance.setSyncSeconds(context, appearance.syncSeconds - 0.25) }
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                )
+                                Text(
+                                    "+0.25",
+                                    color = Color.White,
+                                    fontFamily = ZelefinFont,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color.White.copy(alpha = 0.12f))
+                                        .clickable {
+                                            updateAppearance { SubtitleAppearance.setSyncSeconds(context, appearance.syncSeconds + 0.25) }
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                )
+                            }
+                            Slider(
+                                value = appearance.syncSeconds.toFloat(),
+                                onValueChange = {
+                                    updateAppearance { SubtitleAppearance.setSyncSeconds(context, it.toDouble()) }
+                                },
+                                valueRange = -10f..10f,
+                                steps = 79,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color.White,
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.22f),
+                                ),
                             )
                             Text(
-                                "+0.25",
-                                color = Color.White,
+                                "Reset",
+                                color = Color.White.copy(alpha = 0.72f),
                                 fontFamily = ZelefinFont,
-                                fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.White.copy(alpha = 0.12f))
+                                    .fillMaxWidth()
                                     .clickable {
-                                        updateAppearance { SubtitleAppearance.setSyncSeconds(context, appearance.syncSeconds + 0.25) }
+                                        updateAppearance { SubtitleAppearance.setSyncSeconds(context, 0.0) }
                                     }
-                                    .padding(vertical = 10.dp),
+                                    .padding(vertical = 8.dp),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             )
-                        }
-                        Slider(
-                            value = appearance.syncSeconds.toFloat(),
-                            onValueChange = {
-                                updateAppearance { SubtitleAppearance.setSyncSeconds(context, it.toDouble()) }
-                            },
-                            valueRange = -10f..10f,
-                            steps = 79,
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.White,
-                                activeTrackColor = Color.White,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.22f),
-                            ),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
-                        ChoiceRow("Reset", selected = appearance.syncSeconds == 0.0) {
-                            updateAppearance { SubtitleAppearance.setSyncSeconds(context, 0.0) }
                         }
                     }
                 }
@@ -1785,12 +1923,24 @@ private fun ChoiceRow(title: String, selected: Boolean, detail: String? = null, 
 }
 
 @Composable
+private fun MenuSection(title: String) {
+    Text(
+        title,
+        color = Color.White.copy(alpha = 0.55f),
+        fontFamily = ZelefinFont,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
 private fun MenuNote(text: String) {
     Text(
         text,
-        color = Color.White.copy(alpha = 0.6f),
+        color = Color.White.copy(alpha = 0.55f),
         fontFamily = ZelefinFont,
-        fontSize = 13.sp,
+        fontSize = 12.sp,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
     )
 }

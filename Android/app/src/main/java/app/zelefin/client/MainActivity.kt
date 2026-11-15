@@ -5,7 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -58,6 +58,7 @@ import app.zelefin.client.ui.ConnectScreen
 import app.zelefin.client.ui.DetailScreen
 import app.zelefin.client.ui.DetailTitleActions
 import app.zelefin.client.ui.LibraryScreen
+import app.zelefin.client.ui.AccountPinUnlockDialog
 import app.zelefin.client.ui.SiloNoticeDialog
 import app.zelefin.client.ui.SiloPinDialog
 import app.zelefin.client.ui.SiloProfilePickerScreen
@@ -99,6 +100,16 @@ import app.zelefin.client.ui.rememberZelefinSheet
 import app.zelefin.client.ui.zelefinHazeSource
 import app.zelefin.client.ui.zelefinSheetBackdrop
 import app.zelefin.client.ui.isLargeScreen
+import app.zelefin.client.ui.isTelevision
+import app.zelefin.client.ui.LocalIsTv
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import app.zelefin.core.TitleDetail
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -118,7 +129,7 @@ import app.zelefin.client.ui.ZelefinTabletSidebar
 import app.zelefin.client.ui.ZelefinTabletTopBar
 import app.zelefin.client.ui.ZelefinTabletMiniPlayer
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         app.zelefin.client.ui.PlayerWindow.onUserLeaveHint(this)
@@ -147,6 +158,12 @@ class MainActivity : ComponentActivity() {
             PushEffects(model, state)
             val configuration = LocalConfiguration.current
             val tablet = configuration.isLargeScreen()
+            // Android TV uses a D-pad, so navigation is wired explicitly (below) instead of relying on
+            // geometric focus search, which strands focus in the top bar and sidebar.
+            val isTv = configuration.isTelevision()
+            val contentFocus = remember { FocusRequester() }
+            val topBarFocus = remember { FocusRequester() }
+            val sidebarFocus = remember { FocusRequester() }
             val context = LocalContext.current
             LaunchedEffect(state.screen, tablet) {
                 val activity = context as? Activity ?: return@LaunchedEffect
@@ -254,11 +271,28 @@ class MainActivity : ComponentActivity() {
                             model.pushDisplayPreferences()
                             if (!shown && tab.appTab == state.tab) model.selectTab(AppTab.Home)
                         },
-                        modifier = modifier,
+                        modifier = modifier.then(
+                            // TV: the D-pad leaves the sidebar rightward into the page content.
+                            if (isTv) {
+                                Modifier
+                                    .focusRequester(sidebarFocus)
+                                    .focusGroup()
+                                    .onKeyEvent { e ->
+                                        if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
+                                            runCatching { contentFocus.requestFocus() }.isSuccess
+                                        } else {
+                                            false
+                                        }
+                                    }
+                            } else {
+                                Modifier
+                            },
+                        ),
                     )
                 }
                 LaunchedEffect(state.tab, backdrop.pageKey()) { dockChrome.expand() }
                 CompositionLocalProvider(
+                    LocalIsTv provides isTv,
                     LocalTabletTopBarBounds provides topBarBounds.takeIf { tablet },
                     LocalTabletSidebarShown provides sidebarVisible,
                     LocalZelefinHaze provides hazeState,
@@ -282,8 +316,26 @@ class MainActivity : ComponentActivity() {
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .zelefinSheetBackdrop(sheetMotion.progress),
+                                .zelefinSheetBackdrop(sheetMotion.progress)
+                                .then(
+                                    // TV: the page content is one focus group; from its top edge the D-pad
+                                    // leaves up to the tab bar, from its left edge over to the sidebar.
+                                    if (isTv) {
+                                        Modifier
+                                            .focusRequester(contentFocus)
+                                            .focusGroup()
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         ) {
+                            // Land the remote in the content when the page or tab changes, so the viewer
+                            // isn't stranded in the chrome. No-op until the grid has a focusable child.
+                            if (isTv) {
+                                LaunchedEffect(state.tab, backdrop.pageKey()) {
+                                    runCatching { contentFocus.requestFocus() }
+                                }
+                            }
                             navigation.AnimatedContent(
                                 modifier = Modifier.fillMaxSize(),
                                 transitionSpec = { pageTransition() },
@@ -344,7 +396,26 @@ class MainActivity : ComponentActivity() {
                                 onShowSidebar = { sidebarOpen = true },
                                 onSelectEntry = selectEntry,
                                 onBounds = { topBarBounds.value = it },
-                                modifier = Modifier.align(Alignment.TopStart).padding(start = pageStart),
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(start = pageStart)
+                                    .then(
+                                        if (isTv) {
+                                            Modifier
+                                                .focusRequester(topBarFocus)
+                                                .focusGroup()
+                                                // D-pad DOWN leaves the tab bar into the page content.
+                                                .onKeyEvent { e ->
+                                                    if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown) {
+                                                        runCatching { contentFocus.requestFocus() }.isSuccess
+                                                    } else {
+                                                        false
+                                                    }
+                                                }
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
                             )
                         }
                         state.nowPlaying?.takeIf { showDock }?.let { playing ->
@@ -391,7 +462,30 @@ class MainActivity : ComponentActivity() {
                         SiloProfilePickerScreen(picker, onChoose = model::chooseSiloProfile, onCancel = model::cancelSiloPicker)
                     }
                     state.siloPin?.let { prompt ->
-                        SiloPinDialog(prompt, onSubmit = model::submitSiloPin, onCancel = model::cancelSiloPin)
+                        SiloPinDialog(
+                            prompt,
+                            switching = state.siloPicker == null,
+                            onSubmit = model::submitSiloPin,
+                            onCancel = model::cancelSiloPin,
+                        )
+                    }
+                    state.accountPin?.let { prompt ->
+                        val biometrics = if (
+                            AccountBiometrics.canUse(context) && model.accountBiometricsEnabled(prompt.account.accountId)
+                        ) {
+                            AccountBiometrics.name(context)
+                        } else {
+                            null
+                        }
+                        AccountPinUnlockDialog(
+                            name = prompt.account.userName,
+                            error = prompt.message,
+                            attempt = prompt.attempt,
+                            biometricsLabel = biometrics,
+                            onBiometricUnlocked = model::unlockAccountWithBiometrics,
+                            onSubmit = model::submitAccountPin,
+                            onCancel = model::cancelAccountPin,
+                        )
                     }
                     state.siloNotice?.let { notice ->
                         SiloNoticeDialog(notice, onDismiss = model::dismissSiloNotice, onSignInAgain = model::signInToSiloAgain)
@@ -539,6 +633,12 @@ private fun ZelefinScreen(
             onAdaptiveBitrate = { bitsPerSecond, position -> model.reloadPlaybackAtBitrate(screen.plan, position, bitsPerSecond) },
             onLoadVersions = model::versions,
             onChooseVersion = { versionId, position -> model.switchVersion(screen.plan, position, versionId) },
+            onQualityChange = { quality, position -> model.changePlaybackQuality(screen.plan, position, quality) },
+            syncPlayGroupId = state.syncPlayGroupId,
+            syncPlayGroupName = state.syncPlayGroupName,
+            syncPlayGroups = if (state.hasJellyfinExtras) model::syncPlayGroups else null,
+            playInSyncPlay = model::playInSyncPlay,
+            leaveSyncPlay = model::leaveSyncPlayGroup,
         )
     }
 }
@@ -558,11 +658,16 @@ private fun detailActions(model: ZelefinModel, state: ZelefinUiState): DetailTit
         deleteFromLibrary = if (tools) model::deleteFromLibrary else null,
         onToggleWatchlist = if (tools) model::toggleWatchlist else null,
         onToggleLike = if (state.hasJellyfinExtras) model::toggleLike else null,
+        onToggleDislike = if (state.hasJellyfinExtras) model::toggleDislike else null,
         identifyHits = if (tools) model::identifyHits else null,
         applyIdentify = if (tools) model::applyIdentify else null,
         saveMetadata = if (tools) model::saveItemMetadata else null,
         downloadRelated = model::downloadRelated,
         loadVersions = model::versions,
+        launchOptions = model::launchOptions,
+        updateLaunchOptions = model::updateLaunchOptions,
+        chooseVersion = model::chooseVersion,
+        loadStreamTracks = model::streamTracks,
     )
 }
 

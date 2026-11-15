@@ -191,12 +191,14 @@ internal fun IOSTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    enabled: Boolean = true,
 ) {
     val textStyle = style.copy(textAlign = textAlign)
     BasicTextField(
         value = value,
         onValueChange = onChange,
         modifier = modifier,
+        enabled = enabled,
         singleLine = singleLine,
         textStyle = textStyle,
         cursorBrush = SolidColor(ZelefinCyan),

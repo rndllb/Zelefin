@@ -12,4 +12,5 @@ enum HomeFeedChunk: Sendable {
     case libraryHome(libraries: [MediaLibrary], sections: [HomeSection])
     case recommendations([HomeSection])
     case upcoming([MediaItem])
+    case customRows([HomeSection])
 }

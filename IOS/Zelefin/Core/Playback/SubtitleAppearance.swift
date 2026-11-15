@@ -237,6 +237,35 @@ enum SubtitleAppearance {
         Int((100 - positionLift * 0.32).rounded())
     }
 
+    /// Fill screen scales the video, and the captions are drawn into that video, so they grow and the
+    /// cropped edge can take the bottom line with it. Shrink `sub-scale` by the same zoom and move
+    /// `sub-pos` up to the bottom of the area that stays on screen.
+    static func mpvFillSubtitle(
+        userScale: CGFloat,
+        basePosition: Int,
+        picture: CGSize,
+        window: CGRect,
+        fill: Bool,
+        ceiling: CGFloat?
+    ) -> (scale: CGFloat, position: Int) {
+        guard picture.width > 1, picture.height > 1, window.width > 1, window.height > 1 else {
+            return (userScale, basePosition)
+        }
+        let fitted = DirectPlayPictureLayout.pictureRect(picture: picture, in: window.size, fill: false)
+            .offsetBy(dx: window.minX, dy: window.minY)
+        let fittedPosition = mpvSubtitlePosition(base: basePosition, video: fitted, ceiling: ceiling)
+        guard fill else { return (userScale, fittedPosition) }
+
+        let fit = min(window.width / picture.width, window.height / picture.height)
+        let filled = max(window.width / picture.width, window.height / picture.height)
+        let zoom = fit > 0 ? max(filled / fit, 1) : 1
+        let video = DirectPlayPictureLayout.filledRect(picture: picture, in: window.size)
+        let screenLine = window.height * CGFloat(fittedPosition) / 100
+        let fraction = (screenLine - video.minY) / max(video.height, 1)
+        let position = min(150, max(0, Int((fraction * 100).rounded())))
+        return (userScale / zoom, position)
+    }
+
     /// How far mpv's `sub-pos` has to drop so subtitles clear controls whose top edge sits at `ceiling`.
     /// mpv keeps text `sub-margin-y` (22 of 720 lines) above the position line.
     static func mpvSubtitlePosition(base: Int, video: CGRect, ceiling: CGFloat?) -> Int {

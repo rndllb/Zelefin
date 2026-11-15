@@ -5,14 +5,16 @@ struct HomeView: View {
     @Environment(\.tabBarPlacement) private var tabBarPlacement
     @AppStorage(HomeRowKind.orderStorageKey) private var homeRowOrder = HomeRowKind.defaultOrderRaw
     @AppStorage(HomeRowKind.hiddenStorageKey) private var homeRowHidden = HomeRowKind.defaultHiddenRaw
+    @AppStorage(HeroSizePreferences.storageKey) private var heroSizeRaw = HeroSizePreferences.compact.rawValue
     @State private var headerVisible = true
     @State private var heroLock = HeroHeightLock()
 
     private var homeFeed: [HomeFeedItem] {
-        HomeLayoutPreferences.feed(
+        let customIDs = Set(CustomHomeRows.rows.map(\.id))
+        return HomeLayoutPreferences.feed(
             featured: session.homeLayout.featured,
             sections: session.homeLayout.sections,
-            order: HomeRowKind.ordered(from: homeRowOrder),
+            slots: HomeRowSlot.ordered(from: homeRowOrder, customIDs: customIDs),
             hidden: HomeRowKind.hidden(from: homeRowHidden)
         )
     }
@@ -83,6 +85,10 @@ struct HomeView: View {
             }
             .onAppear { heroLock.lock(geo.size) }
             .onChange(of: geo.size.width) { heroLock.lock(geo.size) }
+            .onChange(of: heroSizeRaw) {
+                heroLock = HeroHeightLock()
+                heroLock.lock(geo.size)
+            }
         }
         .background(Color.zelefinPage.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
@@ -163,6 +169,15 @@ struct MediaRow: View {
                 items: section.items,
                 mode: .watched,
                 menuContext: .recentlyWatched
+            )
+        } else if let rowID = section.customHomeRowID(), let row = CustomHomeRows.row(id: rowID) {
+            CatalogBrowseView(
+                title: section.title,
+                libraryKind: row.resolvedScope.primaryLibraryKind,
+                catalogKinds: row.resolvedScope.catalogKinds,
+                showsBackButton: true,
+                queryStorageKey: CustomHomeRows.queryStoreKey(id: rowID),
+                seededQuery: row.browseQuery
             )
         } else if section.isCatalogBrowse {
             CatalogCardGridView(section: section)
@@ -263,7 +278,7 @@ struct MediaRow: View {
     }
 
     private func playsOnTap(_ item: MediaItem) -> Bool {
-        HomeLayoutPreferences.isPlaybackQueueSection(section.id) && item.kind == .episode
+        item.kind == .episode && HomeLayoutPreferences.playsEpisodesOnTap(section.id)
     }
 
     private func play(_ item: MediaItem) {
@@ -278,21 +293,43 @@ struct SectionGridView: View {
     @Environment(\.zelefinSidebarLayout) private var sidebarLayout
     let section: HomeSection
 
+    private var usesLandscape: Bool {
+        switch section.style {
+        case .landscape, .replayLandscape:
+            return true
+        case .portrait, .ranked, .labeledPortrait:
+            return false
+        }
+    }
+
     private var columns: [GridItem] {
-        PosterGridLayout.columns(for: sidebarLayout)
+        usesLandscape
+            ? PosterGridLayout.landscapeColumns(for: sidebarLayout)
+            : PosterGridLayout.columns(for: sidebarLayout)
     }
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 20) {
+            LazyVGrid(columns: columns, spacing: usesLandscape ? 16 : 20) {
                 ForEach(section.items) { item in
                     NavigationLink {
                         LibraryItemRoute(item: item)
                     } label: {
-                        FillingPortraitPoster(
-                            item: item,
-                            imageURL: session.library?.primaryURL(for: item)
-                        )
+                        if usesLandscape {
+                            FillingPosterCell(aspectRatio: 16 / 9) { size in
+                                LandscapeCard(
+                                    item: item,
+                                    imageURL: session.library?.artworkURL(for: item, style: section.style),
+                                    showsOverflowIcon: false,
+                                    width: size.width
+                                )
+                            }
+                        } else {
+                            FillingPortraitPoster(
+                                item: item,
+                                imageURL: portraitURL(for: item)
+                            )
+                        }
                     }
                     .buttonStyle(.plain)
                 }
@@ -301,6 +338,12 @@ struct SectionGridView: View {
         }
         .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinPushedChrome(title: section.title) { EmptyView() }
+    }
+
+    /// Episodes often have no Primary tag; fall back to the same thumb art the home row uses.
+    private func portraitURL(for item: MediaItem) -> URL? {
+        session.library?.artworkURL(for: item, style: .portrait)
+            ?? session.library?.artworkURL(for: item, style: .landscape)
     }
 }
 
@@ -615,6 +658,7 @@ struct CatalogGridView: View {
         do {
             let onPage: CatalogPageHandler = { update in
                 indexProgress = .listing(loaded: update.items.count, total: update.totalCount)
+                CatalogIndexLiveActivity.sync(indexProgress)
                 guard !update.items.isEmpty else { return }
                 items = update.items
                 isLoading = false
@@ -641,6 +685,7 @@ struct CatalogGridView: View {
     private func finishArtwork(for items: [MediaItem], library: any LibraryServing) async {
         guard !items.isEmpty else {
             indexProgress = nil
+            CatalogIndexLiveActivity.sync(nil)
             return
         }
         let urls = PosterPrefetcher.posterURLs(for: items, library: library)
@@ -650,7 +695,9 @@ struct CatalogGridView: View {
             } else {
                 indexProgress = .artwork(cached: cached, total: total)
             }
+            CatalogIndexLiveActivity.sync(indexProgress)
         }
         indexProgress = nil
+        CatalogIndexLiveActivity.sync(nil)
     }
 }

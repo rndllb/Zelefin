@@ -31,18 +31,18 @@ final class PlaybackPipelineTests: XCTestCase {
         )
     }
 
-    func testHLSRemuxUsesDirectDecodeWhenNativePlayerIsOff() {
+    func testHLSRemuxUsesMPVWhenNativePlayerIsOff() {
         let url = URL(string: "https://jellyfin.example.com/Videos/1/master.m3u8?DeviceId=abc")
         guard let url else {
             return XCTFail("URL")
         }
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(url: url, method: .remux, usesNativePlayer: false),
-            .directDecode
+            .mpv
         )
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(url: url, method: .transcode, usesNativePlayer: false),
-            .directDecode
+            .mpv
         )
         XCTAssertFalse(
             PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
@@ -72,10 +72,10 @@ final class PlaybackPipelineTests: XCTestCase {
                 container: "mkv"
             )
         )
-        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .directDecode)
+        XCTAssertEqual(PlaybackPipelineResolver.pipeline(url: url, method: .directPlay), .mpv)
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, usesNativePlayer: false),
-            .directDecode
+            .mpv
         )
         XCTAssertFalse(
             PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
@@ -129,7 +129,7 @@ final class PlaybackPipelineTests: XCTestCase {
         )
     }
 
-    func testOriginalMKVDirectDecodesAndNeedsRemuxForNativePlayer() {
+    func testOriginalMKVUsesMPVAndNeedsRemuxForNativePlayer() {
         let url = URL(string: "https://media.example/Videos/abc/stream.mkv?static=true")
         guard let url else {
             return XCTFail("URL")
@@ -141,7 +141,7 @@ final class PlaybackPipelineTests: XCTestCase {
                 container: "mkv",
                 videoCodec: "hevc"
             ),
-            .directDecode
+            .mpv
         )
         XCTAssertTrue(
             PlaybackPipelineResolver.needsServerRemuxForNativePlayer(
@@ -175,7 +175,7 @@ final class PlaybackPipelineTests: XCTestCase {
         )
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(url: url, method: .directPlay, usesNativePlayer: false),
-            .directDecode
+            .mpv
         )
     }
 
@@ -189,7 +189,7 @@ final class PlaybackPipelineTests: XCTestCase {
         }
         XCTAssertEqual(
             PlaybackPipelineResolver.pipeline(url: url, method: .remux, usesNativePlayer: false),
-            .directDecode
+            .mpv
         )
     }
 }
@@ -411,11 +411,6 @@ final class DirectPlayEngineTests: XCTestCase {
         ))
     }
 
-    func testMKVDirectPlayUsesSampleBufferDecode() {
-        XCTAssertTrue(DirectPlayLoadOptions.usesSampleBufferDecode(for: .directDecode))
-        XCTAssertFalse(DirectPlayLoadOptions.usesSampleBufferDecode(for: .appleNative))
-    }
-
     func testServerHLSUsesNativeRemotePlaylist() {
         XCTAssertTrue(
             DirectPlayLoadOptions.shouldUseNativeRemoteHLS(
@@ -437,26 +432,6 @@ final class DirectPlayEngineTests: XCTestCase {
         )
     }
 
-    func testSubtitleSelectionMapsPlanIDsOntoEngineTracks() {
-        let plan = [
-            MediaTrack(id: 0, kind: .subtitle, language: "eng", title: "English", codec: "srt", isSelected: true, isDefault: true),
-            MediaTrack(id: 2, kind: .subtitle, language: "spa", title: "Spanish", codec: "srt", isSelected: false, isDefault: false)
-        ]
-        let engine = [
-            DirectPlayTrack(id: 100_000, name: "English", codec: "srt", language: "eng", isDefault: true, isExternal: true),
-            DirectPlayTrack(id: 100_001, name: "Spanish", codec: "srt", language: "spa", isDefault: false, isExternal: true)
-        ]
-        XCTAssertEqual(
-            PlaybackSubtitleSelection.engineIndex(requested: 0, planTracks: plan, engineTracks: engine),
-            100_000
-        )
-        XCTAssertEqual(
-            PlaybackSubtitleSelection.engineIndex(requested: 100_001, planTracks: plan, engineTracks: engine),
-            100_001
-        )
-        XCTAssertNil(PlaybackSubtitleSelection.engineIndex(requested: nil, planTracks: plan, engineTracks: engine))
-    }
-
     func testForegroundRestoreRunsAfterBackgroundNotControlCenter() {
         XCTAssertTrue(PlaybackForegroundRecovery.shouldRestore(wasBackgrounded: true, pictureInPictureActive: false))
         XCTAssertFalse(PlaybackForegroundRecovery.shouldRestore(wasBackgrounded: false, pictureInPictureActive: false))
@@ -474,8 +449,64 @@ final class DirectPlayEngineTests: XCTestCase {
         XCTAssertTrue(PlaybackPictureInPicturePolicy.shouldStopOnViewDismiss(pictureInPictureActive: false))
     }
 
+    func testAutoPictureInPictureRespectsPreference() {
+        XCTAssertTrue(PlaybackPictureInPicturePolicy.shouldAutoStart(preferenceEnabled: true))
+        XCTAssertFalse(PlaybackPictureInPicturePolicy.shouldAutoStart(preferenceEnabled: false))
+    }
+
+    func testAirPlayExternalVideoUsesPlayerFlag() {
+        XCTAssertFalse(AirPlayRoutePolicy.isExternalVideoActive(nil))
+    }
+
+    func testAirPlayRemuxesWhenSubtitlesAreOn() {
+        XCTAssertTrue(AirPlayHandoffPolicy.needsServerRemux(containerNeedsRemux: false, selectedSubtitleID: 3))
+        XCTAssertTrue(AirPlayHandoffPolicy.needsServerRemux(containerNeedsRemux: true, selectedSubtitleID: nil))
+        XCTAssertFalse(AirPlayHandoffPolicy.needsServerRemux(containerNeedsRemux: false, selectedSubtitleID: nil))
+    }
+
+    func testAirPlayExternalMetadataIncludesTitle() {
+        let movie = MediaItem(
+            id: "m1",
+            name: "Dune",
+            kind: .movie,
+            overview: nil,
+            year: 2021,
+            runtime: 100,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+        let items = AirPlayExternalMetadata.items(for: movie)
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[0].identifier, .commonIdentifierTitle)
+        XCTAssertEqual(items[0].stringValue, "Dune")
+        XCTAssertEqual(items[1].identifier, .commonIdentifierArtist)
+        XCTAssertEqual(items[1].stringValue, "2021")
+    }
+
     func testDirectPlayResumeSeekStaysOnNativePath() {
-        XCTAssertFalse(DirectPlaySeekPolicy.allowsAutomaticResumeSeek(.directDecode))
+        XCTAssertFalse(DirectPlaySeekPolicy.allowsAutomaticResumeSeek(.mpv))
         XCTAssertTrue(DirectPlaySeekPolicy.allowsAutomaticResumeSeek(.appleNative))
     }
 
@@ -571,25 +602,6 @@ final class DirectPlayEngineTests: XCTestCase {
         )
     }
 
-    func testDirectPlaySeeksKeepOnlyTheLatestTarget() {
-        var pending: TimeInterval?
-        XCTAssertTrue(DirectPlaySeekCoalesce.enqueue(pending: &pending, latest: 10, isDraining: false))
-        XCTAssertEqual(pending, 10)
-        XCTAssertFalse(DirectPlaySeekCoalesce.enqueue(pending: &pending, latest: 513, isDraining: true))
-        XCTAssertEqual(pending, 513)
-        XCTAssertFalse(DirectPlaySeekCoalesce.enqueue(pending: &pending, latest: 0, isDraining: true))
-        XCTAssertEqual(pending, 0)
-    }
-
-    func testJellyfinProgressWaitsUntilThePictureLands() {
-        XCTAssertFalse(DirectPlayProgressPolicy.shouldReport(playheadTrusted: false))
-        XCTAssertTrue(DirectPlayProgressPolicy.shouldReport(playheadTrusted: true))
-        XCTAssertFalse(DirectPlayProgressPolicy.playheadTrusted(after: .began))
-        XCTAssertFalse(DirectPlayProgressPolicy.playheadTrusted(after: .stalled))
-        XCTAssertFalse(DirectPlayProgressPolicy.playheadTrusted(after: .superseded))
-        XCTAssertTrue(DirectPlayProgressPolicy.playheadTrusted(after: .landed(renderedTime: 513)))
-        XCTAssertTrue(DirectPlayProgressPolicy.playheadTrusted(after: .rejected(.noActiveSession)))
-    }
 }
 
 final class HTTPRangeSupportTests: XCTestCase {
@@ -852,37 +864,7 @@ final class DirectPlayPictureLayoutTests: XCTestCase {
         XCTAssertEqual(frame.minY, 80 + 666.67, accuracy: 1.0)
     }
 
-    func testPrefetchWindowDoesNotDrawFutureCues() {
-        let retained = [
-            cue(id: 1, start: 55.298, end: 57.600),
-            cue(id: 2, start: 57.667, end: 59.235),
-            cue(id: 3, start: 62.605, end: 65.141),
-        ]
-        XCTAssertTrue(DirectPlayPictureLayout.visibleCues(in: retained, at: 3.233).isEmpty)
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 55.298).map(\.id), [1])
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 57.599).map(\.id), [1])
-        XCTAssertTrue(DirectPlayPictureLayout.visibleCues(in: retained, at: 57.600).isEmpty)
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 57.667).map(\.id), [2])
-    }
-
-    func testSeekPrefetchDoesNotDrawCuesAMinuteAhead() {
-        let retained = [
-            cue(id: 10, start: 4310.315, end: 4314.019),
-            cue(id: 11, start: 4316.088, end: 4319.091),
-            cue(id: 12, start: 4390.629, end: 4391.897),
-        ]
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 4310.097).map(\.id), [])
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 4310.400).map(\.id), [10])
-        XCTAssertTrue(DirectPlayPictureLayout.visibleCues(in: retained, at: 4314.019).isEmpty)
-        XCTAssertTrue(DirectPlayPictureLayout.visibleCues(in: retained, at: 4330.847).isEmpty)
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 4390.700).map(\.id), [12])
-    }
-
-    func testSubtitleSyncShiftsVisibleCues() {
-        let retained = [cue(id: 1, start: 10, end: 14)]
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 10).map(\.id), [1])
-        XCTAssertTrue(DirectPlayPictureLayout.visibleCues(in: retained, at: 10 - 1).isEmpty)
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 11 - 1).map(\.id), [1])
+    func testSubtitleSyncSnapsAndTitles() {
         XCTAssertEqual(SubtitleAppearance.snappedSync(0.13), 0.25, accuracy: 0.001)
         XCTAssertEqual(SubtitleAppearance.snappedSync(12), 10, accuracy: 0.001)
         XCTAssertEqual(SubtitleAppearance.syncTitle(0), "In Sync")
@@ -906,20 +888,6 @@ final class DirectPlayPictureLayoutTests: XCTestCase {
         XCTAssertGreaterThan(large.bottomMargin, medium.bottomMargin)
     }
 
-    func testOverlappingCuesStayStacked() {
-        let retained = [
-            cue(id: 1, start: 10, end: 14),
-            cue(id: 2, start: 12, end: 16),
-        ]
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 11).map(\.id), [1])
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 13).map(\.id), [1, 2])
-        XCTAssertEqual(DirectPlayPictureLayout.visibleCues(in: retained, at: 15).map(\.id), [2])
-        XCTAssertTrue(DirectPlayPictureLayout.visibleCues(in: retained, at: 16).isEmpty)
-    }
-
-    private func cue(id: Int, start: TimeInterval, end: TimeInterval) -> DirectPlaySubtitleCue {
-        DirectPlaySubtitleCue(id: id, startTime: start, endTime: end, body: .text("\(id)"))
-    }
 }
 
 final class ExternalSubtitleSidecarTests: XCTestCase {
@@ -955,20 +923,82 @@ final class ExternalSubtitleSidecarTests: XCTestCase {
     }
 }
 
-final class JellyfinByteRangeReaderTests: XCTestCase {
-    func testReadAfterCloseDoesNotAbort() {
-        let url = URL(string: "http://127.0.0.1:9/video.mkv")!
-        guard let reader = JellyfinByteRangeReader(url: url, headers: [:], knownSize: 4096, timeout: 1) else {
-            return XCTFail("reader")
-        }
-        reader.close()
-        var byte: UInt8 = 0
-        let count = withUnsafeMutablePointer(to: &byte) { reader.read($0, size: 1) }
-        XCTAssertEqual(count, -1)
-    }
-}
-
 final class MPVTrackMatchTests: XCTestCase {
+    func testJellyfinSubtitleIndexMapsExternalSidecarOrdinal() {
+        let embedded = track(1, .subtitle, index: 2, language: "eng")
+        let external = track(2, .subtitle, index: nil, language: "spa", external: true)
+        let item = MediaItem(
+            id: "1",
+            name: "Test",
+            kind: .movie,
+            overview: nil,
+            year: 2024,
+            runtime: 100,
+            officialRating: nil,
+            genres: [],
+            seriesName: nil,
+            seasonIndex: nil,
+            episodeIndex: nil,
+            playbackPosition: 0,
+            unplayedCount: nil,
+            isPlayed: false,
+            primaryImageTag: nil,
+            thumbImageTag: nil,
+            backdropImageTag: nil,
+            backdropImageTags: [],
+            logoImageTag: nil,
+            parentBackdropItemID: nil,
+            parentThumbItemID: nil,
+            parentThumbImageTag: nil,
+            parentLogoItemID: nil,
+            parentLogoImageTag: nil,
+            seriesThumbImageTag: nil,
+            seriesID: nil,
+            imageItemID: nil,
+            queueKind: .resume,
+            videoRange: .sdr,
+            audioFormat: .stereo
+        )
+        let plan = PlaybackPlan(
+            item: item,
+            streamURL: URL(string: "https://example.com/a.mkv")!,
+            playSessionID: nil,
+            mediaSourceID: "src",
+            method: .directPlay,
+            container: "mkv",
+            videoCodec: "hevc",
+            videoRange: .sdr,
+            audioFormat: .stereo,
+            startTime: 0,
+            byteSize: nil,
+            extraHTTPHeaders: [:],
+            audioTracks: [],
+            subtitleTracks: [
+                MediaTrack(id: 2, kind: .subtitle, language: "eng", title: "English", codec: "subrip", isSelected: true, isDefault: true),
+                MediaTrack(id: 5, kind: .subtitle, language: "spa", title: "Spanish", codec: "subrip", isSelected: false, isDefault: false)
+            ],
+            externalSubtitles: [
+                ExternalSubtitleSidecar(
+                    url: URL(string: "https://example.com/sub.srt")!,
+                    name: "Spanish",
+                    language: "spa",
+                    formatHint: "srt",
+                    isForced: false,
+                    isHearingImpaired: false,
+                    streamIndex: 5
+                )
+            ]
+        )
+        XCTAssertEqual(
+            MPVTrackMatch.jellyfinSubtitleIndex(for: embedded, in: plan, mpvTracks: [embedded, external]),
+            2
+        )
+        XCTAssertEqual(
+            MPVTrackMatch.jellyfinSubtitleIndex(for: external, in: plan, mpvTracks: [embedded, external]),
+            5
+        )
+    }
+
     private func track(
         _ id: Int,
         _ kind: MPVPlayback.Track.Kind,
@@ -1042,9 +1072,19 @@ final class PlayerEngineChoiceTests: XCTestCase {
 
     func testEarlierChoicesMoveToMPVOnce() {
         defaults.set(true, forKey: PlaybackPreferences.useNativeVideoPlayerKey)
-        defaults.set(PlayerEngineChoice.aether.rawValue, forKey: PlaybackPreferences.playerEngineKey)
+        defaults.set("aether", forKey: PlaybackPreferences.playerEngineKey)
         XCTAssertEqual(PlaybackPreferences.playerEngine, .mpv)
         XCTAssertFalse(PlaybackPreferences.useNativeVideoPlayer)
+    }
+
+    func testLegacyAetherUserDefaultsMapToMPVAfterMigration() {
+        defaults.set(true, forKey: PlaybackPreferences.movedToMPVKey)
+        defaults.set("aether", forKey: PlaybackPreferences.playerEngineKey)
+        XCTAssertEqual(PlaybackPreferences.playerEngine, .mpv)
+        XCTAssertEqual(
+            defaults.string(forKey: PlaybackPreferences.playerEngineKey),
+            PlayerEngineChoice.mpv.rawValue
+        )
     }
 
     func testAPickAfterTheMoveSticks() {
@@ -1099,6 +1139,36 @@ final class SubtitleAppearanceMPVTests: XCTestCase {
         // A letterboxed picture whose subtitles end above the bar stays put.
         let letterboxed = CGRect(x: 0, y: 100, width: 1000, height: 200)
         XCTAssertEqual(SubtitleAppearance.mpvSubtitlePosition(base: 100, video: letterboxed, ceiling: 330), 100)
+    }
+
+    func testFillScreenKeepsSubtitleSizeAndClearsTheCrop() {
+        let window = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let fourByThree = CGSize(width: 1440, height: 1080)
+        let fitted = SubtitleAppearance.mpvFillSubtitle(
+            userScale: 1, basePosition: 100, picture: fourByThree, window: window, fill: false, ceiling: nil
+        )
+        XCTAssertEqual(fitted.scale, 1)
+        XCTAssertEqual(fitted.position, 100)
+
+        let filled = SubtitleAppearance.mpvFillSubtitle(
+            userScale: 1, basePosition: 100, picture: fourByThree, window: window, fill: true, ceiling: nil
+        )
+        XCTAssertEqual(filled.scale, 0.75, accuracy: 0.001)
+        XCTAssertEqual(filled.position, 88)
+
+        let sameAspect = SubtitleAppearance.mpvFillSubtitle(
+            userScale: 1.28, basePosition: 100, picture: CGSize(width: 1920, height: 1080),
+            window: window, fill: true, ceiling: nil
+        )
+        XCTAssertEqual(sameAspect.scale, 1.28, accuracy: 0.001)
+        XCTAssertEqual(sameAspect.position, 100)
+
+        let wide = SubtitleAppearance.mpvFillSubtitle(
+            userScale: 1, basePosition: 100, picture: CGSize(width: 2400, height: 1000),
+            window: window, fill: true, ceiling: nil
+        )
+        XCTAssertLessThan(wide.scale, 1)
+        XCTAssertEqual(wide.position, 100)
     }
 
     func testPictureSubtitleCodecs() {

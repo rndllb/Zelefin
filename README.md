@@ -201,8 +201,9 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 | Tablet sidebar layout | ✅ | — | ✅ |
 | Live TV guide | ✅ | ✅ | — |
 | Picture in Picture · AirPlay | ✅ | — | — |
+| SharePlay | ✅ | — | — |
 | Review Demo | ✅ | ✅ | — |
-| Chromecast | — | — | ✅ |
+| Chromecast | ✅ | — | ✅ |
 | MPV (default) | ✅ | ✅ | ✅ |
 | ExoPlayer | — | — | ✅ |
 | AetherEngine | ✅ | — | — |

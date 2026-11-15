@@ -28,10 +28,10 @@ On Now, channels, listings, recordings already on the server.
 </td>
 <td width="50%" valign="top">
 
-🖼️ **PiP & AirPlay**  
-AVPlayer / VideoToolbox. HDR stays on Apple’s decoder.
+🖼️ **Picture in Picture**  
+Sample-buffer PiP on MPV; native PiP on Apple’s player.
 
-▶️ **MPV, AetherEngine, or Native**  
+▶️ **MPV or Native**  
 MPV by default: every audio and subtitle track, styled subtitles, hardware decoding.
 
 </td>
@@ -61,7 +61,6 @@ Jellyfin, Silo, and Emby, with home, library, search, Discover, downloads, SyncP
 The same app built for the Mac with Mac Catalyst, native on Intel and Apple silicon (M-series) Macs, macOS 15+. It runs as a Mac app ("Optimize Interface for Mac") with a fixed sidebar like the TV app, posters six across, and rows sized to the window.
 
 - **MPV** comes from upstream [MPVKit](https://github.com/mpvkit/MPVKit) on the Mac (the iPhone build's AVFoundation video output has no Mac Catalyst build) and draws through Vulkan on MoltenVK. `scripts/build-mpv.sh` links it into the Mac slice of `ZelefinMPV`.
-- **AetherEngine** isn’t on the Mac yet: its FFmpeg and LibDovi ship no Mac Catalyst builds ([AetherEngine#253](https://github.com/superuser404notfound/AetherEngine/issues/253)). The Mac plays with MPV or Apple’s player.
 - **ZelefinMacBridge** is a small AppKit bundle in the app’s PlugIns folder. It keeps the sidebar from collapsing or resizing and hides its sidebar button, which Catalyst’s split view can’t do.
 
 ---

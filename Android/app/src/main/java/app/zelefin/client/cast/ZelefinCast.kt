@@ -22,20 +22,23 @@ import java.util.concurrent.atomic.AtomicReference
 
 object ZelefinCast {
     private val cached = AtomicReference<CastContext?>()
+    private val warmExecutor = Executors.newSingleThreadExecutor { Thread(it, "zelefin-cast-warm") }
 
     fun warmup(context: Context) {
+        if (cached.get() != null) return
         val app = context.applicationContext
         runCatching {
-            CastContext.getSharedInstance(app, Executors.newSingleThreadExecutor())
+            // Async only — the Context overload of getSharedInstance can block for seconds on emulators.
+            CastContext.getSharedInstance(app, warmExecutor)
                 .addOnSuccessListener { cached.compareAndSet(null, it) }
         }
     }
 
+    /** Ready Cast context from [warmup], or null until that finishes. Never blocks. */
     fun context(context: Context): CastContext? {
         cached.get()?.let { return it }
-        val instance = runCatching { CastContext.getSharedInstance(context.applicationContext) }.getOrNull()
-        if (instance != null) cached.compareAndSet(null, instance)
-        return instance
+        warmup(context)
+        return cached.get()
     }
 
     fun session(context: Context): CastSession? =

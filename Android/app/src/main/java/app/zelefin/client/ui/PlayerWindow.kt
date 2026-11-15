@@ -40,6 +40,7 @@ object PlayerWindow {
     private var onDismiss: (() -> Unit)? = null
     private var aspect: Rational? = null
     private var playing = false
+    private var autoEnterOnLeave = false
     private var immersiveHolds = 0
     private var hdr = false
     private val main = Handler(Looper.getMainLooper())
@@ -53,6 +54,7 @@ object PlayerWindow {
         this.onDismiss = onDismiss
         aspect = null
         playing = false
+        autoEnterOnLeave = false
         apply(activity)
     }
 
@@ -64,10 +66,11 @@ object PlayerWindow {
         apply(activity)
     }
 
-    fun update(activity: Activity, owner: Any, aspect: Rational?, playing: Boolean) {
+    fun update(activity: Activity, owner: Any, aspect: Rational?, playing: Boolean, autoEnterOnLeave: Boolean = false) {
         if (this.owner !== owner) return
         this.aspect = aspect
         this.playing = playing
+        this.autoEnterOnLeave = autoEnterOnLeave
         apply(activity)
     }
 
@@ -78,6 +81,7 @@ object PlayerWindow {
 
     /** Android 12+ enters on its own through auto-enter params; older releases need the leave hint. */
     fun onUserLeaveHint(activity: Activity) {
+        if (!autoEnterOnLeave) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
         if (owner != null && playing) enter(activity)
     }
@@ -151,7 +155,7 @@ object PlayerWindow {
         aspect?.let { builder.setAspectRatio(clamp(it)) }
         builder.setActions(if (owner != null) listOf(toggleAction(activity)) else emptyList())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(owner != null && playing)
+            builder.setAutoEnterEnabled(owner != null && playing && autoEnterOnLeave)
             builder.setSeamlessResizeEnabled(true)
         }
         return builder.build()

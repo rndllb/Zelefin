@@ -25,7 +25,10 @@ import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -175,6 +178,7 @@ private fun adminCacheKey(model: ZelefinModel, page: String) = "${model.state.va
 @Composable
 internal fun UsersTopic() {
     val model: ZelefinModel = viewModel()
+    val ui by model.state.collectAsState()
     val cacheKey = adminCacheKey(model, "users")
     var users by remember { mutableStateOf(AdminCache.get<List<ServerUserAccount>>(cacheKey).orEmpty()) }
     var loading by remember { mutableStateOf(true) }
@@ -190,7 +194,7 @@ internal fun UsersTopic() {
             IOSSpinner(Modifier.size(24.dp))
         }
         users.isEmpty() -> SettingsCard {
-            Text(error ?: "This server did not return any users.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp)
+            SettingsUnavailable("No Users", error ?: "This server did not return any users.")
         }
         else -> {
             error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
@@ -202,6 +206,7 @@ internal fun UsersTopic() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
+                        UserAdminAvatar(ui.session, account, 48.dp)
                         Column(Modifier.weight(1f)) {
                             Text(account.name, style = SettingsRowText)
                             Text(account.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 13.sp)
@@ -210,7 +215,7 @@ internal fun UsersTopic() {
                     }
                 }
             }
-            SettingsFooter("Administrators can change photos, permissions, library access, and parental controls on this ${model.state.value.session?.serverTypeName ?: "Jellyfin"} server.")
+            SettingsFooter("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.")
         }
     }
 }
@@ -236,6 +241,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     var confirmDisable by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var confirmDemote by remember { mutableStateOf(false) }
+    val chrome = LocalSettingsChrome.current
 
     suspend fun reload() {
         val latest = model.adminUser(userId)
@@ -296,7 +302,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     if (confirmReset) {
         SettingsAlertDialog(
             title = "Reset this password?",
-            message = "The server clears the password. They set a new one the next time they sign in.",
+            message = "Jellyfin clears the password. They set a new one the next time they sign in.",
             confirmLabel = "Reset Password",
             destructive = true,
             onConfirm = {
@@ -309,7 +315,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     if (confirmDemote) {
         SettingsAlertDialog(
             title = "Remove administrator access?",
-            message = "This user will no longer be able to manage the server.",
+            message = "",
             confirmLabel = "Remove Access",
             destructive = true,
             onConfirm = {
@@ -342,6 +348,12 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
 
     val current = account
     val policy = draft
+    SideEffect {
+        current?.name?.let { chrome.title = it }
+    }
+    DisposableEffect(Unit) {
+        onDispose { chrome.title = null }
+    }
     if (current == null || policy == null) {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             if (status?.second == true) Text(status?.first.orEmpty(), color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp)
@@ -372,7 +384,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         }
         Spacer(Modifier.height(12.dp))
         Text(current.name, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 22.sp)
-        Text(current.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp)
+        Text(if (current.isDisabled) "Disabled" else current.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp)
         if (current.primaryImageTag != null) {
             Spacer(Modifier.height(10.dp))
             Text(
@@ -423,15 +435,15 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         values.map { SettingsChoice(it, RemoteBitrateLimit.title(it)) }
     }
     SettingsCard {
-        SettingsMenuPicker("Remote bitrate", bitrateChoices, policy.remoteClientBitrateLimit) { savePolicy(policy.copy(remoteClientBitrateLimit = it)) }
+        SettingsMenuPicker("Remote Bitrate", bitrateChoices, policy.remoteClientBitrateLimit) { savePolicy(policy.copy(remoteClientBitrateLimit = it)) }
     }
     SettingsFooter("Caps how fast this user can pull video from outside the local network. Unlimited leaves the client in charge.")
 
     SettingsHeader("Password")
     SettingsCard {
-        SettingsTextField(label = "NEW", value = newPassword, icon = Icons.Outlined.Lock, onChange = { newPassword = it }, placeholder = "New", password = true, keyboard = KeyboardType.Password)
+        SettingsTextField(label = "New Password", value = newPassword, icon = Icons.Outlined.Lock, onChange = { newPassword = it }, placeholder = "New Password", password = true, keyboard = KeyboardType.Password)
         SettingsCardDivider()
-        SettingsTextField(label = "CONFIRM", value = confirmPassword, icon = Icons.Outlined.Lock, onChange = { confirmPassword = it }, placeholder = "Confirm", password = true, keyboard = KeyboardType.Password)
+        SettingsTextField(label = "Confirm Password", value = confirmPassword, icon = Icons.Outlined.Lock, onChange = { confirmPassword = it }, placeholder = "Confirm Password", password = true, keyboard = KeyboardType.Password)
         if (confirmPassword.isNotEmpty() && newPassword != confirmPassword) {
             Text("The new passwords do not match.", color = AdminError, fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         }
@@ -451,7 +463,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     SettingsHeader("Parental Controls")
     val ratingChoices = listOf(SettingsChoice("none", "None")) + ratings.map { SettingsChoice(it.id, it.name) }
     SettingsCard {
-        SettingsMenuPicker("Maximum rating", ratingChoices, ratingId) { selected ->
+        SettingsMenuPicker("Maximum Rating", ratingChoices, ratingId) { selected ->
             if (!ratingsReady) return@SettingsMenuPicker
             ratingId = selected
             val value = ratings.firstOrNull { it.id == selected }?.value
@@ -468,7 +480,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
 
     SettingsHeader("Library Access")
     SettingsCard {
-        SettingsToggleRow("All libraries", policy.enableAllFolders, { savePolicy(policy.copy(enableAllFolders = it)) })
+        SettingsToggleRow("All Libraries", policy.enableAllFolders, { savePolicy(policy.copy(enableAllFolders = it)) })
         if (!policy.enableAllFolders) {
             folders.forEach { folder ->
                 SettingsCardDivider()
@@ -478,7 +490,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             }
         }
     }
-    SettingsFooter("Turn off All libraries to pick which folders this user can see.")
+    SettingsFooter("Turn off All Libraries to pick which folders this user can see.")
 
     status?.let { (text, isError) ->
         SettingsCard { Text(text, color = if (isError) AdminError else AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }
@@ -491,7 +503,7 @@ private fun UserAdminAvatar(session: SavedSession?, account: ServerUserAccount, 
         Modifier.size(diameter).clip(CircleShape).background(Color.White.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(account.name.take(1).uppercase(), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 36.sp)
+        Text(account.name.take(1).uppercase(), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.38f).sp)
         session?.let { userAvatarUrl(it, account.id, account.primaryImageTag) }?.let { url ->
             CachedArtwork(url = url, contentDescription = account.name, contentScale = ContentScale.Crop, modifier = Modifier.size(diameter).clip(CircleShape))
         }
@@ -534,7 +546,9 @@ internal fun ScheduledTasksTopic() {
         loading && tasks.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             IOSSpinner(Modifier.size(24.dp))
         }
-        tasks.isEmpty() -> SettingsCard { Text(error ?: "This server did not return any scheduled tasks.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp)) }
+        tasks.isEmpty() -> SettingsCard {
+            SettingsUnavailable("No Scheduled Tasks", error ?: "This server did not return any scheduled tasks.")
+        }
         else -> {
             error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
             val running = tasks.filter { it.isActive }
@@ -619,10 +633,16 @@ internal fun ScheduledTaskDetailTopic(taskId: String) {
         }
     }
     val current = task
+    val chrome = LocalSettingsChrome.current
+    SideEffect { current?.name?.let { chrome.title = it } }
+    DisposableEffect(Unit) { onDispose { chrome.title = null } }
     if (current == null) {
-        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            if (error != null) Text(error.orEmpty(), color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp)
-            else IOSSpinner(Modifier.size(24.dp))
+        if (error != null) {
+            SettingsCard { SettingsUnavailable("Can’t Load Task", error.orEmpty()) }
+        } else {
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                IOSSpinner(Modifier.size(24.dp))
+            }
         }
         return
     }
@@ -689,7 +709,9 @@ internal fun ActivityLogTopic() {
         loading && entries.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             IOSSpinner(Modifier.size(24.dp))
         }
-        entries.isEmpty() -> SettingsCard { Text(error ?: "This server has not logged any recent activity.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp)) }
+        entries.isEmpty() -> SettingsCard {
+            SettingsUnavailable("No Activity", error ?: "This server has not logged any recent activity.")
+        }
         else -> {
             error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
             SettingsCard {
@@ -805,21 +827,35 @@ internal fun BrandingTopic(state: ZelefinUiState) {
         }
     }
 
-    error?.let { SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }; Spacer(Modifier.height(12.dp)) }
+    val canEdit = !state.isEmbyServer
+    val serverLabel = state.session?.displayServer?.takeIf { it.isNotBlank() } ?: "This server"
+    SettingsCard { SettingsInfoRow("Server", serverLabel) }
+    error?.let { Spacer(Modifier.height(12.dp)); SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) } }
     SettingsHeader("Sign-In")
     SettingsCard {
-        SettingsFieldLabel("Login disclaimer")
-        Spacer(Modifier.height(8.dp))
-        AdminMultilineField(branding.loginDisclaimer, { branding = branding.copy(loginDisclaimer = it) }, "Shown on the sign-in screen")
-        SettingsCardDivider()
-        SettingsToggleRow("Show splashscreen", branding.splashscreenEnabled, { branding = branding.copy(splashscreenEnabled = it) })
+        AdminMultilineField(
+            branding.loginDisclaimer,
+            { branding = branding.copy(loginDisclaimer = it) },
+            "Login Disclaimer",
+            enabled = canEdit,
+        )
+        if (canEdit) {
+            SettingsCardDivider()
+            SettingsToggleRow("Show Splashscreen", branding.splashscreenEnabled, { on -> branding = branding.copy(splashscreenEnabled = on) })
+        }
     }
+    if (!canEdit) SettingsFooter("Emby's branding is read-only here. Change it in Emby's web dashboard.")
     SettingsHeader("Custom CSS")
     SettingsCard {
-        SettingsFieldLabel("CSS")
-        Spacer(Modifier.height(8.dp))
-        AdminMultilineField(branding.customCss, { branding = branding.copy(customCss = it) }, "CSS", monospaced = true)
+        AdminMultilineField(
+            branding.customCss,
+            { branding = branding.copy(customCss = it) },
+            "CSS",
+            monospaced = true,
+            enabled = canEdit,
+        )
     }
+    if (!canEdit) return
     SettingsHeader("Splash Image")
     SettingsCard {
         SettingsPrimaryButton("Upload Splashscreen", enabled = !loading) {
@@ -847,12 +883,19 @@ internal fun BrandingTopic(state: ZelefinUiState) {
 }
 
 @Composable
-private fun AdminMultilineField(value: String, onChange: (String) -> Unit, placeholder: String, monospaced: Boolean = false) {
+private fun AdminMultilineField(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    monospaced: Boolean = false,
+    enabled: Boolean = true,
+) {
     IOSTextField(
         value = value,
         onChange = onChange,
         placeholder = placeholder,
         singleLine = false,
+        enabled = enabled,
         style = if (monospaced) SettingsRowText.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp) else SettingsRowText,
         modifier = Modifier.fillMaxWidth().height(if (monospaced) 160.dp else 120.dp).padding(vertical = 12.dp),
     )

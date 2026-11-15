@@ -147,8 +147,8 @@ enum AdaptiveBitratePolicy {
 }
 
 /// When a Direct Play read that has stopped receiving bytes counts as rebuffering.
-/// AetherEngine keeps its audio clock running while the demuxer waits on the network, so the
-/// engine never reports buffering for this; the reader is the only place that sees it.
+/// MPV can keep its audio clock running while the demuxer waits on the network, so the
+/// engine may not report buffering for this; the reader is the only place that sees it.
 enum ReaderStallPolicy {
     /// No bytes for this long while a read waits: the link has stalled, not just slowed.
     static let silence: TimeInterval = 3

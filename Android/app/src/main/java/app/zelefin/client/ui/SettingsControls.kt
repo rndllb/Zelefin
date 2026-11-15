@@ -90,6 +90,34 @@ fun SettingsCardDivider() {
     )
 }
 
+/** iOS `ContentUnavailableView` inside a settings section: a title and a short description. */
+@Composable
+internal fun SettingsUnavailable(title: String, message: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            title,
+            color = Color.White,
+            fontFamily = ZelefinFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            textAlign = TextAlign.Center,
+        )
+        if (message.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                message,
+                color = IOSColors.secondaryLabel,
+                fontFamily = ZelefinFont,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
 /** `LabeledContent`: title on the leading side, the value in secondary text on the trailing side. */
 @Composable
 fun SettingsInfoRow(label: String, value: String) {
@@ -342,8 +370,13 @@ fun SettingsTextField(
     onIme: () -> Unit = {},
     underline: Boolean = false,
 ) {
-    val title = label.lowercase().split(" ").joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
-    val labeled = placeholder.isNotEmpty() && !placeholder.equals(title, ignoreCase = true)
+    val placeholderOnly = label.isBlank()
+    val title = if (placeholderOnly) {
+        placeholder
+    } else {
+        label.lowercase().split(" ").joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
+    }
+    val labeled = !placeholderOnly && placeholder.isNotEmpty() && !placeholder.equals(title, ignoreCase = true)
     Row(
         Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight).padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,

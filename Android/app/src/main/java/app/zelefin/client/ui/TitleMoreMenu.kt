@@ -20,39 +20,49 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.ConnectedTv
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.PlaylistAdd
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.StopCircle
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.StopCircle
-import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,23 +70,29 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.outlined.ClosedCaption
-import androidx.compose.material.icons.outlined.RemoveCircleOutline
-import app.zelefin.client.plugins.JellyfinEnhancedHomeHide
-import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.WatchLater
-import androidx.compose.ui.platform.LocalContext
+import app.zelefin.client.LanguageTrack
+import app.zelefin.client.PlaybackLaunchOptions
+import app.zelefin.client.PlaybackQuality
+import app.zelefin.client.plugins.JellyfinEnhancedHomeHide
+import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
+import kotlinx.coroutines.launch
 
 enum class TitleMenuContext { Featured, ContinueWatching, NextUp, Episode, Detail }
+
+private enum class TitleMorePage(val title: String) {
+    Root("More"),
+    Quality("Quality"),
+    Audio("Select Audio"),
+    Subtitles("Select Subtitles"),
+}
 
 internal data class MenuNotice(val title: String, val message: String)
 
@@ -96,6 +112,7 @@ internal fun TitleMoreOverlay(
     onToggleFavorite: (MediaItem) -> Unit,
     onToggleWatchlist: ((MediaItem) -> Unit)? = null,
     onToggleLike: ((MediaItem) -> Unit)? = null,
+    onToggleDislike: ((MediaItem) -> Unit)? = null,
     onIdentify: ((MediaItem) -> Unit)? = null,
     onEditMetadata: ((MediaItem) -> Unit)? = null,
     onDownloadSeason: ((MediaItem) -> Unit)? = null,
@@ -115,6 +132,9 @@ internal fun TitleMoreOverlay(
     onDeleteFromLibrary: (suspend (MediaItem) -> Unit)? = null,
     /** Opens the title's versions where the menu was, for a title with more than one file. */
     onChooseVersion: ((MediaItem, Rect) -> Unit)? = null,
+    launchOptions: PlaybackLaunchOptions = PlaybackLaunchOptions(),
+    onLaunchOptions: (PlaybackLaunchOptions) -> Unit = {},
+    loadStreamTracks: (suspend (MediaItem, String?) -> Pair<List<LanguageTrack>, List<LanguageTrack>>)? = null,
 ) {
     val haze = LocalZelefinHaze.current
     PresentZelefinOverlay(visible = (request != null || note != null) && haze != null) {
@@ -251,7 +271,16 @@ internal fun TitleMoreOverlay(
                         toggle(current.item)
                     }
                 },
+                onToggleDislike = onToggleDislike?.let { toggle ->
+                    {
+                        onDismiss()
+                        toggle(current.item)
+                    }
+                },
                 onToggleSkipCinema = onToggleSkipCinema,
+                launchOptions = launchOptions,
+                onLaunchOptions = onLaunchOptions,
+                loadStreamTracks = loadStreamTracks,
                 onCollections = onCollections,
                 onAddSubtitles = onAddSubtitles?.let { add ->
                     {
@@ -339,6 +368,7 @@ private fun TitleMorePanel(
     onToggleFavorite: () -> Unit,
     onToggleWatchlist: (() -> Unit)? = null,
     onToggleLike: (() -> Unit)? = null,
+    onToggleDislike: (() -> Unit)? = null,
     onToggleSkipCinema: () -> Unit,
     onCollections: (() -> Unit)?,
     onAddSubtitles: (() -> Unit)?,
@@ -352,6 +382,9 @@ private fun TitleMorePanel(
     onEditImages: (() -> Unit)? = null,
     onDeleteFromLibrary: (() -> Unit)? = null,
     onChooseVersion: (() -> Unit)? = null,
+    launchOptions: PlaybackLaunchOptions = PlaybackLaunchOptions(),
+    onLaunchOptions: (PlaybackLaunchOptions) -> Unit = {},
+    loadStreamTracks: (suspend (MediaItem, String?) -> Pair<List<LanguageTrack>, List<LanguageTrack>>)? = null,
 ) {
     val item = request.item
     val showGoTo = request.context != TitleMenuContext.Episode
@@ -361,6 +394,24 @@ private fun TitleMorePanel(
     val showRefresh = isAdmin && onRefreshMetadata != null
     val showAdminRemote = isAdmin && showRemote
     val showAdmin = showRefresh || showAdminRemote
+    val playbackMenus = library && (item.kind == MediaKind.Movie || item.kind == MediaKind.Episode)
+    var page by remember(request.item.id, request.anchor) { mutableStateOf(TitleMorePage.Root) }
+    var options by remember(request.item.id, request.anchor) { mutableStateOf(launchOptions) }
+    var audioTracks by remember(request.item.id, options.mediaSourceId) { mutableStateOf<List<LanguageTrack>>(emptyList()) }
+    var subtitleTracks by remember(request.item.id, options.mediaSourceId) { mutableStateOf<List<LanguageTrack>>(emptyList()) }
+    var tracksLoaded by remember(request.item.id, options.mediaSourceId) { mutableStateOf(false) }
+    LaunchedEffect(request.item.id, options.mediaSourceId, playbackMenus, loadStreamTracks) {
+        if (!playbackMenus || loadStreamTracks == null) return@LaunchedEffect
+        tracksLoaded = false
+        val loaded = runCatching { loadStreamTracks(item, options.mediaSourceId) }.getOrNull()
+        audioTracks = loaded?.first.orEmpty()
+        subtitleTracks = loaded?.second.orEmpty()
+        tracksLoaded = true
+    }
+    fun commit(next: PlaybackLaunchOptions) {
+        options = next
+        onLaunchOptions(next)
+    }
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     AnchoredMenuFrame(
         request.anchor,
@@ -396,6 +447,193 @@ private fun TitleMorePanel(
                     onSyncPlay = onSyncPlay,
                     onRefreshMetadata = onRefreshMetadata,
                 )
+                return@Column
+            }
+            // Detail More matches iOS TitleUserActions + TitlePlaybackMenus — no Play / Go to / Watched / Download.
+            if (library) {
+                if (page != TitleMorePage.Root) {
+                    MoreRow(
+                        page.title,
+                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        onClick = { page = TitleMorePage.Root },
+                        dismissOnClick = false,
+                    )
+                    MenuHairline()
+                }
+                when (page) {
+                    TitleMorePage.Root -> {
+                        MoreRow(
+                            if (item.isFavorite) "Remove from Favorites" else "Add to Favorites",
+                            if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            onToggleFavorite,
+                        )
+                        if (onToggleWatchlist != null && !isSiloServer) {
+                            MoreRow(
+                                if (item.isWatchlisted) "Remove from Watchlist" else "Add to Watchlist",
+                                Icons.Outlined.PlaylistAdd,
+                                onToggleWatchlist,
+                            )
+                        }
+                        if (onToggleLike != null && !isSiloServer) {
+                            MoreRow(
+                                if (item.likes == true) "Liked" else "Like",
+                                if (item.likes == true) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                onToggleLike,
+                            )
+                            if (onToggleDislike != null) {
+                                MoreRow(
+                                    if (item.likes == false) "Disliked" else "Dislike",
+                                    if (item.likes == false) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                                    onToggleDislike,
+                                )
+                            }
+                        }
+                        if (onCollections != null) {
+                            MoreRow("Add to Collection…", Icons.Outlined.Folder, onClick = onCollections)
+                        }
+                        if (showRemote && onPlayElsewhere != null) {
+                            MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = onPlayElsewhere)
+                        }
+                        if (showSync) {
+                            MoreRow("Play in SyncPlay…", Icons.Outlined.Groups, onClick = { onSyncPlay?.invoke() })
+                        }
+                        if (showAdmin) {
+                            MenuHairline()
+                            if (showRefresh) {
+                                MoreRow("Refresh Metadata", Icons.Outlined.Refresh, dismissOnClick = false, onClick = { onRefreshMetadata?.invoke() })
+                            }
+                            if (showAdminRemote) {
+                                if (onIdentify != null) {
+                                    MoreRow("Identify…", Icons.Outlined.Search, onClick = onIdentify)
+                                }
+                                if (onEditMetadata != null) {
+                                    MoreRow("Edit Metadata…", Icons.Outlined.Image, onClick = onEditMetadata)
+                                }
+                                MoreRow("Edit Images…", Icons.Outlined.Image, onClick = { onEditImages?.invoke() })
+                                MoreRow(
+                                    "Delete from Library…",
+                                    Icons.Outlined.Delete,
+                                    onClick = { onDeleteFromLibrary?.invoke() },
+                                    destructive = true,
+                                )
+                            }
+                        }
+                        if (playbackMenus) {
+                            MenuHairline()
+                            if (onChooseVersion != null) {
+                                MoreRow("Version", Icons.Outlined.Layers, onChooseVersion)
+                            }
+                            if (!isSiloServer) {
+                                MoreRow(
+                                    "Skip Cinema Intros",
+                                    if (skipCinemaIntros) Icons.Outlined.Check else null,
+                                    onClick = onToggleSkipCinema,
+                                    dismissOnClick = false,
+                                )
+                            }
+                            val quality = options.quality ?: PlaybackQuality.Auto
+                            MoreRow(
+                                "Quality",
+                                Icons.Outlined.Tune,
+                                onClick = { page = TitleMorePage.Quality },
+                                dismissOnClick = false,
+                                detail = quality.title,
+                            )
+                            val audioTitle = audioTracks.firstOrNull {
+                                it.index == options.audioIndex || (options.audioIndex == null && it.isSelected)
+                            }?.title?.ifBlank { null } ?: if (tracksLoaded && audioTracks.isEmpty()) "No audio tracks" else "Default"
+                            MoreRow(
+                                "Select Audio",
+                                Icons.Outlined.GraphicEq,
+                                onClick = { page = TitleMorePage.Audio },
+                                dismissOnClick = false,
+                                detail = audioTitle,
+                            )
+                            val subtitleTitle = when {
+                                options.subtitlesDisabled -> "Off"
+                                else -> subtitleTracks.firstOrNull {
+                                    it.index == options.subtitleIndex || (options.subtitleIndex == null && it.isSelected)
+                                }?.title?.ifBlank { null } ?: if (tracksLoaded && subtitleTracks.isEmpty()) "No subtitles" else "Off"
+                            }
+                            MoreRow(
+                                "Select Subtitles",
+                                Icons.Outlined.ClosedCaption,
+                                onClick = { page = TitleMorePage.Subtitles },
+                                dismissOnClick = false,
+                                detail = subtitleTitle,
+                            )
+                            if (onAddSubtitles != null) {
+                                MoreRow("Add Subtitles", Icons.Outlined.ClosedCaption, onAddSubtitles)
+                            }
+                        }
+                    }
+                    TitleMorePage.Quality -> {
+                        PlaybackQuality.entries.forEach { option ->
+                            val selected = (options.quality ?: PlaybackQuality.Auto) == option
+                            MoreRow(
+                                option.title,
+                                if (selected) Icons.Outlined.Check else null,
+                                onClick = {
+                                    commit(options.copy(quality = option))
+                                    page = TitleMorePage.Root
+                                },
+                                dismissOnClick = false,
+                            )
+                        }
+                    }
+                    TitleMorePage.Audio -> {
+                        if (!tracksLoaded) {
+                            MoreRow("Loading…", null, onClick = {}, dismissOnClick = false)
+                        } else if (audioTracks.isEmpty()) {
+                            MoreRow("No audio tracks", null, onClick = {}, dismissOnClick = false)
+                        } else {
+                            audioTracks.forEach { track ->
+                                val selected = options.audioIndex == track.index ||
+                                    (options.audioIndex == null && track.isSelected)
+                                MoreRow(
+                                    track.title.ifBlank { "Track ${track.index}" },
+                                    if (selected) Icons.Outlined.Check else null,
+                                    onClick = {
+                                        commit(options.copy(audioIndex = track.index))
+                                        page = TitleMorePage.Root
+                                    },
+                                    dismissOnClick = false,
+                                )
+                            }
+                        }
+                    }
+                    TitleMorePage.Subtitles -> {
+                        val offSelected = options.subtitlesDisabled
+                        MoreRow(
+                            "Off",
+                            if (offSelected) Icons.Outlined.Check else null,
+                            onClick = {
+                                commit(options.copy(subtitlesDisabled = true, subtitleIndex = null))
+                                page = TitleMorePage.Root
+                            },
+                            dismissOnClick = false,
+                        )
+                        if (!tracksLoaded) {
+                            MoreRow("Loading…", null, onClick = {}, dismissOnClick = false)
+                        } else if (subtitleTracks.isEmpty()) {
+                            MoreRow("No subtitles", null, onClick = {}, dismissOnClick = false)
+                        } else {
+                            subtitleTracks.forEach { track ->
+                                val selected = !options.subtitlesDisabled &&
+                                    (options.subtitleIndex == track.index || (options.subtitleIndex == null && track.isSelected))
+                                MoreRow(
+                                    track.title.ifBlank { "Track ${track.index}" },
+                                    if (selected) Icons.Outlined.Check else null,
+                                    onClick = {
+                                        commit(options.copy(subtitlesDisabled = false, subtitleIndex = track.index))
+                                        page = TitleMorePage.Root
+                                    },
+                                    dismissOnClick = false,
+                                )
+                            }
+                        }
+                    }
+                }
                 return@Column
             }
             MoreRow(if (item.kind == MediaKind.Episode) "Play Episode" else "Play", Icons.Filled.PlayArrow, onPlay)
@@ -443,13 +681,6 @@ private fun TitleMorePanel(
                     onToggleWatchlist,
                 )
             }
-            if (library && onToggleLike != null && !isSiloServer) {
-                MoreRow(
-                    if (item.likes == true) "Remove Like" else "Like",
-                    if (item.likes == true) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                    onToggleLike,
-                )
-            }
             if (onHideFromHome != null) {
                 val surface = if (request.context == TitleMenuContext.NextUp) {
                     JellyfinEnhancedHomeSurface.NextUp
@@ -460,47 +691,6 @@ private fun TitleMorePanel(
             }
             if (onAddSubtitles != null) {
                 MoreRow("Add Subtitles", Icons.Outlined.ClosedCaption, onAddSubtitles)
-            }
-            if (library && onCollections != null) {
-                MoreRow("Add to Collection…", Icons.Outlined.Folder, onClick = onCollections)
-                if (showRemote && onPlayElsewhere != null) {
-                    MoreRow("Play on Another Device…", Icons.Outlined.ConnectedTv, onClick = onPlayElsewhere)
-                }
-                if (showSync) {
-                    MoreRow("Play in SyncPlay…", Icons.Outlined.Groups, onClick = { onSyncPlay?.invoke() })
-                }
-                if (showAdmin) {
-                    MenuHairline()
-                    if (showRefresh) {
-                        MoreRow("Refresh Metadata", Icons.Outlined.Refresh, dismissOnClick = false, onClick = { onRefreshMetadata?.invoke() })
-                    }
-                    if (showAdminRemote) {
-                        if (onIdentify != null) {
-                            MoreRow("Identify…", Icons.Outlined.Search, onClick = onIdentify)
-                        }
-                        if (onEditMetadata != null) {
-                            MoreRow("Edit Metadata…", Icons.Outlined.Image, onClick = onEditMetadata)
-                        }
-                        MoreRow("Edit Images…", Icons.Outlined.Image, onClick = { onEditImages?.invoke() })
-                        MoreRow(
-                            "Delete from Library…",
-                            Icons.Outlined.Delete,
-                            onClick = { onDeleteFromLibrary?.invoke() },
-                            destructive = true,
-                        )
-                    }
-                }
-                if (showRemote) {
-                    MenuHairline()
-                    MoreRow(
-                        "Skip Cinema Intros",
-                        if (skipCinemaIntros) Icons.Outlined.Check else null,
-                        {
-                            onToggleSkipCinema()
-                            onDismiss()
-                        },
-                    )
-                }
             }
         }
     }

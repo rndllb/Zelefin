@@ -263,6 +263,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
     }
 
     /// Placeholder series item so the show hero paints before `getItem` returns.
+    /// Uses the show's own id for Primary art — never the episode still or `posterURL`.
     func seriesShowcasePreview() -> MediaItem {
         let showID = seriesDetailItemID ?? id
         return MediaItem(
@@ -292,7 +293,8 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             parentLogoImageTag: parentLogoImageTag,
             seriesThumbImageTag: seriesThumbImageTag,
             seriesID: showID,
-            imageItemID: parentBackdropItemID ?? showID,
+            // Primary art is on the series item itself, not a parent backdrop or episode still.
+            imageItemID: showID,
             queueKind: queueKind,
             videoRange: .sdr,
             audioFormat: .unknown,
@@ -304,7 +306,7 @@ struct MediaItem: Identifiable, Hashable, Sendable, Codable {
             isFavorite: isFavorite,
             likes: likes,
             premiereDate: premiereDate,
-            posterURL: posterURL,
+            posterURL: nil,
             backdropURL: backdropURL,
             bannerImageTag: bannerImageTag,
             youTubeID: youTubeID
@@ -1058,11 +1060,25 @@ struct HomeSection: Identifiable, Hashable, Sendable, Codable {
     let items: [MediaItem]
 
     var showsChevron: Bool {
-        style != .labeledPortrait
+        // Upcoming episodes only play from the row — no see-all page.
+        style != .labeledPortrait && id != "upcoming"
+    }
+
+    var isUpcomingEpisodes: Bool {
+        id == "upcoming"
     }
 
     var isCatalogBrowse: Bool {
-        id == "genres" || id == "collections"
+        id == "genres" || id == "collections" || isCustomHomeRow
+    }
+
+    var isCustomHomeRow: Bool {
+        id.hasPrefix(CustomHomeRows.sectionIDPrefix)
+    }
+
+    func customHomeRowID() -> String? {
+        guard isCustomHomeRow else { return nil }
+        return String(id.dropFirst(CustomHomeRows.sectionIDPrefix.count))
     }
 
     /// Items in the order cards show them: genres shuffled, everything else as the server sent it.
@@ -1294,6 +1310,36 @@ struct PlaybackPlan: Hashable, Sendable {
     /// Full-file remux keeps the playhead on the client.
     var clientOwnsPlayhead: Bool = false
     var sourceVideo: SourceVideoFacts? = nil
+
+    /// Same stream at a new playhead — used for AirPlay engine handoff.
+    func withStartTime(_ time: TimeInterval) -> PlaybackPlan {
+        PlaybackPlan(
+            item: item,
+            streamURL: streamURL,
+            playSessionID: playSessionID,
+            mediaSourceID: mediaSourceID,
+            method: method,
+            container: container,
+            videoCodec: videoCodec,
+            videoRange: videoRange,
+            audioFormat: audioFormat,
+            startTime: time,
+            byteSize: byteSize,
+            extraHTTPHeaders: extraHTTPHeaders,
+            audioTracks: audioTracks,
+            subtitleTracks: subtitleTracks,
+            externalSubtitles: externalSubtitles,
+            chapters: chapters,
+            trickplay: trickplay,
+            bifPreviewURL: bifPreviewURL,
+            skipSegments: skipSegments,
+            versions: versions,
+            isLive: isLive,
+            liveStreamID: liveStreamID,
+            clientOwnsPlayhead: clientOwnsPlayhead,
+            sourceVideo: sourceVideo
+        )
+    }
 }
 
 /// The file's video stream as the server describes it. Playback stats fall back to it when the
@@ -1313,6 +1359,8 @@ struct ExternalSubtitleSidecar: Hashable, Sendable {
     let formatHint: String
     let isForced: Bool
     let isHearingImpaired: Bool
+    /// Jellyfin / Emby `MediaStream.Index` — used to remux the same caption for AirPlay.
+    let streamIndex: Int
 }
 
 struct TitleTrailer: Identifiable, Hashable, Sendable, Codable {

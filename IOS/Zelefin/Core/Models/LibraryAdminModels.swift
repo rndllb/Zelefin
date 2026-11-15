@@ -130,6 +130,7 @@ enum DisplayPreferencesSync {
     static let libraryOrderKey = "libraryOrder"
     static let libraryHiddenKey = "libraryHidden"
     static let libraryPageHiddenKey = "libraryPageHidden"
+    static let customHomeRowsKey = CustomHomeRows.syncKey
 
     static func apply(_ prefs: [String: String]) {
         if let order = prefs[tabOrderKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
@@ -139,8 +140,14 @@ enum DisplayPreferencesSync {
             let enabled = merge == "true" || merge == "1"
             UserDefaults.standard.set(enabled, forKey: HomeLayoutPreferences.mergeContinueAndNextUpKey)
         }
+        // Custom rows first so `custom:<id>` tokens in home order can resolve.
+        if let customRows = prefs[customHomeRowsKey] {
+            CustomHomeRows.applySynced(customRows)
+        }
         if let order = prefs[homeRowOrderKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
-            UserDefaults.standard.set(HomeRowKind.raw(from: HomeRowKind.ordered(from: order)), forKey: HomeRowKind.orderStorageKey)
+            let customIDs = Set(CustomHomeRows.rows.map(\.id))
+            let slots = HomeRowSlot.ordered(from: order, customIDs: customIDs)
+            UserDefaults.standard.set(HomeRowSlot.rawOrder(slots), forKey: HomeRowKind.orderStorageKey)
         }
         if let hidden = prefs[homeRowHiddenKey] {
             UserDefaults.standard.set(
@@ -183,7 +190,8 @@ enum DisplayPreferencesSync {
             featuredHeroContentKey: FeaturedHeroContent.current.rawValue,
             libraryOrderKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.orderKey) ?? "",
             libraryHiddenKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.hiddenKey) ?? "",
-            libraryPageHiddenKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.pageHiddenKey) ?? ""
+            libraryPageHiddenKey: UserDefaults.standard.string(forKey: LibraryLayoutPreferences.pageHiddenKey) ?? "",
+            customHomeRowsKey: CustomHomeRows.encode()
         ]
     }
 }

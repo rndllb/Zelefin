@@ -13,23 +13,35 @@ struct ActivityLogView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if entries.isEmpty {
-                ContentUnavailableView(
-                    "No Activity",
-                    systemImage: "list.bullet.rectangle",
-                    description: Text(errorMessage ?? "This server has not logged any recent activity.")
-                )
+                List {
+                    Section {
+                        ContentUnavailableView(
+                            "No Activity",
+                            systemImage: "list.bullet.rectangle",
+                            description: Text(errorMessage ?? "This server has not logged any recent activity.")
+                        )
+                    }
+                    .zelefinRowBackground()
+                }
+                .listStyle(.insetGrouped)
             } else {
                 List {
                     if let errorMessage {
-                        SettingsStatusText(text: errorMessage, isError: true)
+                        Section {
+                            SettingsStatusText(text: errorMessage, isError: true)
+                        }
+                        .zelefinRowBackground()
                     }
-                    ForEach(entries) { entry in
-                        SettingsStackedRow(
-                            title: entry.title,
-                            subtitle: entry.subtitle,
-                            caption: entry.date?.formatted(date: .abbreviated, time: .shortened) ?? ""
-                        )
+                    Section {
+                        ForEach(entries) { entry in
+                            SettingsStackedRow(
+                                title: entry.title,
+                                subtitle: entry.subtitle,
+                                caption: entry.date?.formatted(date: .abbreviated, time: .shortened) ?? ""
+                            )
+                        }
                     }
+                    .zelefinRowBackground()
                 }
                 .listStyle(.insetGrouped)
                 .refreshable { await load(showProgress: false) }

@@ -815,7 +815,7 @@ internal object GenreOrder {
 internal fun GenreCard(title: String, aspect: Float = 2f / 3f, corner: Dp = 12.dp, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().aspectRatio(aspect),
+        modifier = Modifier.fillMaxWidth().aspectRatio(aspect).tvFocusScale(),
         shape = RoundedCornerShape(corner),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),

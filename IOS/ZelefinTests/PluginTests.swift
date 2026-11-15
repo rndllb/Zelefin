@@ -123,6 +123,23 @@ final class SkipSegmentTests: XCTestCase {
         XCTAssertEqual(PluginPresence.of({ $0 == "Open Subtitles" }, in: entries), .notInstalled)
     }
 
+    func testPluginPresenceProbeFillsInWhenCatalogIsEmpty() {
+        let empty: [JellyfinPluginCatalog.Entry] = []
+        XCTAssertEqual(
+            PluginPresence.resolving(from: empty, matches: { IntroSkipperPlugin.isInstalled(names: [$0]) }, reachable: true),
+            .enabled
+        )
+        XCTAssertEqual(
+            PluginPresence.resolving(from: empty, matches: { IntroSkipperPlugin.isInstalled(names: [$0]) }, reachable: false),
+            .notInstalled
+        )
+        let disabled = [JellyfinPluginCatalog.Entry(name: "Intro Skipper", isEnabled: false)]
+        XCTAssertEqual(
+            PluginPresence.resolving(from: disabled, matches: { IntroSkipperPlugin.isInstalled(names: [$0]) }, reachable: true),
+            .disabled
+        )
+    }
+
     func testOnlyTheOtherSkipPluginIsGreyedOut() {
         XCTAssertTrue(SkipPluginChoice.isGreyedOut(.disabled, other: .enabled))
         XCTAssertTrue(SkipPluginChoice.isGreyedOut(.notInstalled, other: .enabled))

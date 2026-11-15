@@ -2,6 +2,7 @@ package app.zelefin.client
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import kotlin.math.abs
 
 /** Player preferences stored in the shared "zelefin.playback" file so Settings can surface them. */
@@ -84,6 +85,27 @@ object PlaybackPreferences {
 
     fun usesMpv(context: Context): Boolean = playerEngine(context) == ENGINE_MPV
 
+    /** Soft-decode on emulators — MediaCodec + null/0x0 surfaces is a common black-video path there. */
+    fun isEmulator(): Boolean {
+        val fingerprint = Build.FINGERPRINT
+        val product = Build.PRODUCT
+        val model = Build.MODEL
+        val hardware = Build.HARDWARE
+        val manufacturer = Build.MANUFACTURER
+        return fingerprint.startsWith("generic") ||
+            fingerprint.contains("emulator", ignoreCase = true) ||
+            fingerprint.contains("sdk_gphone", ignoreCase = true) ||
+            fingerprint.contains("sdk_gtablet", ignoreCase = true) ||
+            product.contains("sdk", ignoreCase = true) ||
+            product.contains("emulator", ignoreCase = true) ||
+            model.contains("Emulator", ignoreCase = true) ||
+            model.contains("Android SDK", ignoreCase = true) ||
+            hardware.contains("goldfish", ignoreCase = true) ||
+            hardware.contains("ranchu", ignoreCase = true) ||
+            hardware.contains("emu", ignoreCase = true) ||
+            manufacturer.contains("Genymotion", ignoreCase = true)
+    }
+
     fun downloadWifiOnly(context: Context): Boolean = prefs(context).getBoolean(DOWNLOAD_WIFI_ONLY, false)
 
     fun setDownloadWifiOnly(context: Context, value: Boolean) = prefs(context).edit().putBoolean(DOWNLOAD_WIFI_ONLY, value).apply()
@@ -104,6 +126,25 @@ object PlaybackPreferences {
     fun setThemeVideoSound(context: Context, value: Boolean) =
         prefs(context).edit().putBoolean(THEME_VIDEO_SOUND, value).apply()
 
+    /** After several auto-advanced episodes, ask before starting the next one. On unless turned off. */
+    const val ASK_STILL_WATCHING = "ask-still-watching"
+
+    /** Auto-advanced episodes before the still-watching prompt. Matches iOS. */
+    const val STILL_WATCHING_THRESHOLD = 3
+
+    /** When leaving the app during playback, continue in Picture in Picture. Off unless chosen. */
+    const val AUTO_PIP_ON_LEAVE = "auto-pip-on-leave"
+
+    fun stillWatchingEnabled(context: Context): Boolean = prefs(context).getBoolean(ASK_STILL_WATCHING, true)
+
+    fun setStillWatchingEnabled(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(ASK_STILL_WATCHING, value).apply()
+
+    fun autoPipOnLeave(context: Context): Boolean = prefs(context).getBoolean(AUTO_PIP_ON_LEAVE, false)
+
+    fun setAutoPipOnLeave(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(AUTO_PIP_ON_LEAVE, value).apply()
+
     fun speedTitle(rate: Float): String {
         if (abs(rate - 1f) < 0.01f) return "1x"
         val whole = rate.toInt()
@@ -123,4 +164,58 @@ object PlaybackPreferences {
     }
 
     private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+}
+
+/**
+ * Consecutive auto-advanced episodes for the binge on screen.
+ * Each episode opens a new player, so the streak lives outside that composition.
+ * [armAuto] runs before the next episode opens; [onOpened] keeps the streak only for that episode.
+ */
+internal object StillWatchingSession {
+    internal var count: Int = 0
+        private set
+
+    private var pendingId: String? = null
+    private var arrival: Arrival? = null
+
+    /** The next open of [itemId] counts as one auto-advance. */
+    fun armAuto(itemId: String) {
+        count += 1
+        pendingId = itemId
+        arrival = Arrival.Auto
+    }
+
+    /** Play Now moves on without adding to the streak. */
+    fun armManual(itemId: String) {
+        pendingId = itemId
+        arrival = Arrival.Manual
+    }
+
+    fun onOpened(itemId: String) {
+        val armed = pendingId
+        val how = arrival
+        pendingId = null
+        arrival = null
+        val keep = armed == itemId && when (how) {
+            Arrival.Auto, Arrival.Manual -> true
+            null -> false
+        }
+        if (!keep) count = 0
+    }
+
+    /** Continue starts the streak over, then the next auto-advance counts as the first. */
+    fun continueWatching() {
+        count = 0
+    }
+
+    fun reset() {
+        count = 0
+        pendingId = null
+        arrival = null
+    }
+
+    fun shouldPrompt(enabled: Boolean, episode: Boolean): Boolean =
+        enabled && episode && count >= PlaybackPreferences.STILL_WATCHING_THRESHOLD
+
+    private enum class Arrival { Auto, Manual }
 }

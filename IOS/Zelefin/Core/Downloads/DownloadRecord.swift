@@ -316,6 +316,61 @@ enum DownloadPlaybackSelection {
     }
 }
 
+/// A show's downloaded episodes bucketed by season, for the downloads-only detail page.
+struct DownloadSeasonGroup: Identifiable, Equatable, Sendable {
+    var id: String
+    var seasonIndex: Int?
+    var title: String
+    var episodes: [DownloadedItem]
+
+    var episodeCount: Int { episodes.count }
+    var byteSize: Int64 { episodes.reduce(0) { $0 + $1.byteSize } }
+}
+
+enum DownloadSeasonLayout {
+    static func title(for seasonIndex: Int?) -> String {
+        guard let seasonIndex else { return "Episodes" }
+        if seasonIndex == 0 { return "Specials" }
+        return "Season \(seasonIndex)"
+    }
+
+    /// Real seasons sort ascending, Specials (season 0) after them, an unknown season last.
+    private static func sortKey(_ seasonIndex: Int?) -> Int {
+        guard let seasonIndex else { return .max }
+        if seasonIndex == 0 { return .max - 1 }
+        return seasonIndex
+    }
+
+    static func groups(from records: [DownloadedItem]) -> [DownloadSeasonGroup] {
+        var order: [Int?] = []
+        var buckets: [Int?: [DownloadedItem]] = [:]
+        for record in records {
+            let key = record.item.seasonIndex
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(record)
+        }
+        return order
+            .sorted { sortKey($0) < sortKey($1) }
+            .compactMap { key -> DownloadSeasonGroup? in
+                guard let episodes = buckets[key], !episodes.isEmpty else { return nil }
+                let sorted = episodes.sorted { lhs, rhs in
+                    let left = lhs.item.episodeIndex ?? .max
+                    let right = rhs.item.episodeIndex ?? .max
+                    if left == right {
+                        return lhs.item.name.localizedCaseInsensitiveCompare(rhs.item.name) == .orderedAscending
+                    }
+                    return left < right
+                }
+                return DownloadSeasonGroup(
+                    id: key.map(String.init) ?? "unknown",
+                    seasonIndex: key,
+                    title: title(for: key),
+                    episodes: sorted
+                )
+            }
+    }
+}
+
 enum DownloadLibraryLayout {
     static func rows(from records: [DownloadedItem]) -> [DownloadLibraryRow] {
         let sorted = records.sorted { lhs, rhs in
@@ -330,7 +385,7 @@ enum DownloadLibraryLayout {
         var seriesBuckets: [String: [DownloadedItem]] = [:]
 
         for record in sorted {
-            if record.item.kind == .episode, let seriesID = record.item.seriesID, !seriesID.isEmpty {
+            if let seriesID = seriesGroupingID(for: record.item) {
                 if seriesBuckets[seriesID] == nil {
                     seriesOrder.append(seriesID)
                 }
@@ -367,5 +422,66 @@ enum DownloadLibraryLayout {
             }
             return left > right
         }
+    }
+
+    /// Episodes that belong to a show collapse under one series poster on the Downloaded page.
+    static func seriesGroupingID(for item: MediaItem) -> String? {
+        guard item.kind == .episode, let seriesID = item.seriesID, !seriesID.isEmpty else { return nil }
+        return seriesID
+    }
+
+    /// Poster to show for an in-flight transfer: the show for an episode, otherwise the title itself.
+    static func posterItem(for transfer: DownloadProgress) -> MediaItem? {
+        guard let item = transfer.item else { return nil }
+        if seriesGroupingID(for: item) != nil {
+            return item.seriesShowcasePreview()
+        }
+        return item
+    }
+}
+
+/// One cell on the Downloaded grid: either an in-flight transfer or a finished row.
+enum DownloadLibraryEntry: Identifiable, Equatable {
+    case active(DownloadProgress, title: MediaItem)
+    case stored(DownloadLibraryRow)
+
+    var id: String {
+        switch self {
+        case .active(let progress, _): "active-\(progress.id)"
+        case .stored(let row): "row-\(row.id)"
+        }
+    }
+
+    var title: MediaItem {
+        switch self {
+        case .active(_, let title): title
+        case .stored(let row): row.title
+        }
+    }
+
+    /// Active episode downloads collapse under one series poster; finished rows for that show are
+    /// hidden while any of its episodes are still transferring (same as Android).
+    static func grid(active: [DownloadProgress], rows: [DownloadLibraryRow]) -> [DownloadLibraryEntry] {
+        var seenShowIDs = Set<String>()
+        var entries: [DownloadLibraryEntry] = []
+        for transfer in active {
+            guard let poster = DownloadLibraryLayout.posterItem(for: transfer) else { continue }
+            if seenShowIDs.contains(poster.id) { continue }
+            seenShowIDs.insert(poster.id)
+            entries.append(.active(transfer, title: poster))
+        }
+        for row in rows {
+            let blocked = active.contains { transfer in
+                guard let item = transfer.item else { return false }
+                if item.id == row.id { return true }
+                if let seriesID = DownloadLibraryLayout.seriesGroupingID(for: item) {
+                    return seriesID == row.id || item.seriesShowcasePreview().id == row.id
+                }
+                return false
+            }
+            if blocked { continue }
+            entries.append(.stored(row))
+        }
+        return entries
     }
 }

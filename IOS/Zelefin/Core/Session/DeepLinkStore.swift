@@ -61,6 +61,7 @@ final class DeepLinkStore {
             return
         }
         if let account = session.accounts.first(where: { TitleShare.fingerprint($0.serverURL) == key }) {
+            guard await AccountSwitchUnlock.unlockIfNeeded(account: account) else { return }
             await session.switchTo(account)
             presentedItemID = incoming.itemID
             return

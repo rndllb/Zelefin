@@ -1,0 +1,39 @@
+# Emails help@randll.com when a GitHub issue is opened.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   SMTP_HOST       e.g. smtp.example.com
+#   SMTP_PORT       e.g. 587
+#   SMTP_USER       SMTP username
+#   SMTP_PASSWORD   SMTP password / app password
+#   SMTP_FROM       From address (often same as SMTP_USER)
+name: Email new issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  email:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+    steps:
+      - name: Send issue notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Zelefin issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}"
+          to: help@randll.com
+          from: ${{ secrets.SMTP_FROM }}
+          body: |
+            A new issue was opened on rndllb/Zelefin.
+
+            Title: ${{ github.event.issue.title }}
+            URL: ${{ github.event.issue.html_url }}
+            Author: ${{ github.event.issue.user.login }}
+
+            ---
+            ${{ github.event.issue.body }}

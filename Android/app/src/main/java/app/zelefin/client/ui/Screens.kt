@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,8 +36,10 @@ import app.zelefin.client.AppTab
 import app.zelefin.client.LibraryRoom
 import app.zelefin.client.PlayerDirective
 import app.zelefin.client.Screen
+import app.zelefin.client.StillWatchingSession
 import app.zelefin.client.ZelefinUiState
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import app.zelefin.core.MediaItem
 import app.zelefin.core.MediaKind
 import app.zelefin.core.MediaVersion
@@ -263,6 +266,12 @@ fun PlayerScreen(
     onAdaptiveBitrate: ((Int, Double) -> Unit)? = null,
     onLoadVersions: suspend (MediaItem) -> List<MediaVersion> = { emptyList() },
     onChooseVersion: (String, Double) -> Unit = { _, _ -> },
+    onQualityChange: (app.zelefin.client.PlaybackQuality, Double) -> Unit = { _, _ -> },
+    syncPlayGroupId: String? = null,
+    syncPlayGroupName: String? = null,
+    syncPlayGroups: (suspend () -> List<app.zelefin.client.jellyfin.SyncPlayGroup>)? = null,
+    playInSyncPlay: suspend (MediaItem, String?, String?) -> Unit = { _, _, _ -> },
+    leaveSyncPlay: suspend () -> Unit = {},
 ) {
     val pluginState by plugins.state.collectAsState()
     var subtitleSearchAt by remember(plan.streamUrl) { mutableStateOf<Double?>(null) }
@@ -275,6 +284,7 @@ fun PlayerScreen(
     } else {
         null
     }
+    LaunchedEffect(plan.item.id) { StillWatchingSession.onOpened(plan.item.id) }
     var segments by remember(plan.item.id) { mutableStateOf(emptyList<app.zelefin.client.plugins.SkipSegment>()) }
     LaunchedEffect(plan.item.id) { segments = plugins.skipSegments(plan.item, onLoadItem) }
     var nextEpisode by remember(plan.item.id) { mutableStateOf<MediaItem?>(null) }
@@ -290,6 +300,33 @@ fun PlayerScreen(
         val playable = plan.item.kind == MediaKind.Movie || plan.item.kind == MediaKind.Episode
         if (remote && playable) versions = runCatching { onLoadVersions(plan.item) }.getOrDefault(emptyList())
     }
+    var showSyncPlay by remember(plan.item.id) { mutableStateOf(false) }
+    val syncSheet = rememberZelefinSheet(if (showSyncPlay) plan.item.id else null)
+    val scope = rememberCoroutineScope()
+    androidx.activity.compose.BackHandler(enabled = showSyncPlay) { showSyncPlay = false }
+    val syncActive = syncPlayGroupId != null
+    val syncTitle = when {
+        syncPlayGroups == null -> null
+        syncActive -> {
+            val name = syncPlayGroupName?.trim().orEmpty()
+            if (name.isNotEmpty()) "Leave SyncPlay ($name)" else "Leave SyncPlay"
+        }
+        else -> "SyncPlay"
+    }
+    val watchTogether = PlayerWatchTogether(
+        showCast = true,
+        syncPlayTitle = syncTitle,
+        syncPlayActive = syncActive,
+        onSyncPlay = syncTitle?.let {
+            {
+                if (syncActive) {
+                    scope.launch { leaveSyncPlay() }
+                } else {
+                    showSyncPlay = true
+                }
+            }
+        },
+    )
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         PlayerSurface(
             plan = plan,
@@ -303,7 +340,7 @@ fun PlayerScreen(
             nextArtwork = nextArtwork,
             onPlayNext = onPlayNext,
             onAddSubtitles = addSubtitles,
-            suspended = subtitleSearchAt != null,
+            suspended = subtitleSearchAt != null || showSyncPlay,
             onAdaptiveBitrate = onAdaptiveBitrate,
             onRecover = if (remote && sourceRetries < 1) {
                 { position ->
@@ -320,6 +357,8 @@ fun PlayerScreen(
             directives = directives,
             versions = versions,
             onChooseVersion = if (remote) onChooseVersion else null,
+            onQualityChange = if (remote) onQualityChange else null,
+            watchTogether = watchTogether,
         )
         if (subtitleSheet.displayed != null) {
             ZelefinSheetScrim(subtitleSheet.progress)
@@ -333,6 +372,18 @@ fun PlayerScreen(
                         if (subtitleSaved && position != null) onReload(position)
                     },
                     onSaved = { subtitleSaved = true },
+                )
+            }
+        }
+        if (syncSheet.displayed != null && syncPlayGroups != null) {
+            ZelefinSheetScrim(syncSheet.progress)
+            ZelefinSheetSurface(syncSheet.progress) {
+                SyncPlaySheet(
+                    item = plan.item,
+                    defaultGroupName = session?.userName?.let { "$it’s group" } ?: "Watch Together",
+                    onLoad = syncPlayGroups,
+                    onStart = playInSyncPlay,
+                    onClose = { showSyncPlay = false },
                 )
             }
         }

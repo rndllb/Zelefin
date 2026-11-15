@@ -1,6 +1,8 @@
 package app.zelefin.client.ui
 
 import app.zelefin.client.BrowsePage
+import app.zelefin.client.LanguageTrack
+import app.zelefin.client.PlaybackLaunchOptions
 import app.zelefin.client.jellyfin.RemoteArtworkKind
 import app.zelefin.client.jellyfin.RemoteImageChoice
 import app.zelefin.client.jellyfin.RemoteSession
@@ -22,9 +24,14 @@ class DetailTitleActions(
     val deleteFromLibrary: (suspend (MediaItem) -> Unit)? = null,
     val onToggleWatchlist: ((MediaItem) -> Unit)? = null,
     val onToggleLike: ((MediaItem) -> Unit)? = null,
+    val onToggleDislike: ((MediaItem) -> Unit)? = null,
     val identifyHits: (suspend (MediaItem) -> List<app.zelefin.client.jellyfin.RemoteIdentifyHit>)? = null,
     val applyIdentify: (suspend (MediaItem, app.zelefin.client.jellyfin.RemoteIdentifyHit) -> Unit)? = null,
     val saveMetadata: (suspend (MediaItem, app.zelefin.client.jellyfin.ItemMetadataDraft) -> Unit)? = null,
     val downloadRelated: ((MediaItem) -> Unit)? = null,
     val loadVersions: suspend (MediaItem) -> List<MediaVersion> = { it.versions },
+    val launchOptions: (String) -> PlaybackLaunchOptions = { PlaybackLaunchOptions() },
+    val updateLaunchOptions: (String, (PlaybackLaunchOptions) -> PlaybackLaunchOptions) -> Unit = { _, _ -> },
+    val chooseVersion: (String, String) -> Unit = { _, _ -> },
+    val loadStreamTracks: (suspend (MediaItem, String?) -> Pair<List<LanguageTrack>, List<LanguageTrack>>)? = null,
 )

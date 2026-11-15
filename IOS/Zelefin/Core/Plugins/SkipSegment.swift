@@ -128,6 +128,13 @@ enum IntroSkipperPlugin {
             return lower.contains("intro skip") || lower.contains("introskipper")
         }
     }
+
+    /// Routes that only exist when Intro Skipper is loaded. `/Plugins` is admin-only, so non-admins
+    /// get 404 for a missing plugin and 403/405 (or 200) when it is installed.
+    static let presenceProbePaths = [
+        "/IntroSkipper",
+        "/Intros/UserInterfaceConfiguration",
+    ]
 }
 
 /// Zelefin's settings treat Intro Skipper and TheIntroDB as alternatives: with one enabled, the other is
@@ -143,4 +150,10 @@ enum TheIntroDBPlugin {
     static func isInstalled(names: [String]) -> Bool {
         names.contains { $0.lowercased().filter(\.isLetter).contains("theintrodb") }
     }
+
+    /// Plugin-owned routes (not the admin `/Plugins` catalog). Missing → 404; installed → 405/403/200.
+    static let presenceProbePaths = [
+        "/Plugins/TheIntroDB/NotFoundCache/Clear",
+        "/Plugins/TheIntroDB/Validation/ApiKeyStats",
+    ]
 }

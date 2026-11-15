@@ -896,7 +896,9 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     func personImageURL(id: String, tag: String?, maxHeight: Int = 360) -> URL? {
-        artwork.image(itemID: id, type: "Primary", tag: tag, maxHeight: maxHeight)
+        // Always ask for JPEG — Jellyfin 12 can otherwise hand back WebP/AVIF that UIImage
+        // rejects, and ArtworkCache then permanently marks the portrait missing.
+        artwork.image(itemID: id, type: "Primary", tag: tag, maxHeight: maxHeight, format: "jpg")
     }
 
     func searchHitImageURL(_ hit: LibrarySearchHit) -> URL? {
@@ -1263,12 +1265,36 @@ class JellyfinLibraryClient: @unchecked Sendable {
 
     /// One row per kind across every library, newest first. `Items/Latest` brings a show back to the front
     /// when it gets new episodes; the server can mix other kinds into the answer, so each row keeps only its own.
+    ///
+    /// Jellyfin 12+ with `GroupItems=true` picks collection type from the *first* library, so a Shows-first
+    /// list makes Movie Latest empty (or TV-only). Movies prefer DateCreated Items; shows keep grouped Latest.
     private func recentlyAdded(_ kind: BaseItemKind) async -> HomeSection? {
         let wanted: MediaKind = kind == .movie ? .movie : .series
-        let latest = (try? await latestMedia(include: [kind], parentID: nil, fields: ItemMapper.homeFields, limit: 36)) ?? []
-        var items = Array(latest.filter { $0.kind == wanted && !$0.isYouTube }.prefix(24))
-        if items.isEmpty, kind == .series {
-            items = (try? await recentlyAddedShows(parentID: nil))?.items ?? []
+        var items: [MediaItem] = []
+        if kind == .movie {
+            items = (try? await itemsByDateCreated(include: kind, wanted: wanted, parentID: nil, limit: 24)) ?? []
+            if items.isEmpty {
+                let ungrouped = (try? await latestMedia(
+                    include: [kind],
+                    parentID: nil,
+                    fields: ItemMapper.homeFields,
+                    limit: 36,
+                    groupItems: false
+                )) ?? []
+                items = Array(ungrouped.filter { $0.kind == wanted && !$0.isYouTube }.prefix(24))
+            }
+        } else {
+            let latest = (try? await latestMedia(
+                include: [kind],
+                parentID: nil,
+                fields: ItemMapper.homeFields,
+                limit: 36,
+                groupItems: true
+            )) ?? []
+            items = Array(latest.filter { $0.kind == wanted && !$0.isYouTube }.prefix(24))
+            if items.isEmpty {
+                items = (try? await itemsByDateCreated(include: kind, wanted: wanted, parentID: nil, limit: 24)) ?? []
+            }
         }
         guard !items.isEmpty else { return nil }
         return kind == .movie
@@ -1311,16 +1337,28 @@ class JellyfinLibraryClient: @unchecked Sendable {
     }
 
     private func recentlyAddedShows(parentID: String?) async throws -> HomeSection? {
+        let items = try await itemsByDateCreated(include: .series, wanted: .series, parentID: parentID, limit: 12)
+        guard !items.isEmpty else { return nil }
+        return HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+    }
+
+    /// Date-added catalog when `Items/Latest` returns nothing. Matches Android `latestByDateAdded`.
+    private func itemsByDateCreated(
+        include: BaseItemKind,
+        wanted: MediaKind,
+        parentID: String?,
+        limit: Int
+    ) async throws -> [MediaItem] {
         let result = try await client.send(
             Paths.getItems(
                 parameters: .init(
                     userID: userID,
-                    limit: 12,
+                    limit: limit,
                     isRecursive: true,
                     sortOrder: [.descending],
                     parentID: parentID,
                     fields: ItemMapper.homeFields,
-                    includeItemTypes: [.series],
+                    includeItemTypes: [include],
                     sortBy: [.dateCreated],
                     enableUserData: true,
                     enableImageTypes: ItemMapper.listImageTypes,
@@ -1328,9 +1366,12 @@ class JellyfinLibraryClient: @unchecked Sendable {
                 )
             )
         ).value
-        let items = (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
-        guard !items.isEmpty else { return nil }
-        return HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+        return Array(
+            (result.items ?? [])
+                .compactMap(ItemMapper.mediaItem(from:))
+                .filter { $0.kind == wanted && !$0.isYouTube }
+                .prefix(limit)
+        )
     }
 
     private func collectionsSection() async throws -> HomeSection? {
@@ -1651,7 +1692,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
         include: [BaseItemKind]?,
         parentID: String?,
         fields: [ItemFields],
-        limit: Int
+        limit: Int,
+        groupItems: Bool = true
     ) async throws -> [MediaItem] {
         try await client.send(
             Paths.getLatestMedia(
@@ -1664,7 +1706,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
                     enableImageTypes: ItemMapper.listImageTypes,
                     enableUserData: true,
                     limit: limit,
-                    isGroupItems: true
+                    isGroupItems: groupItems
                 )
             )
         ).value.compactMap(ItemMapper.mediaItem(from:))
@@ -1919,7 +1961,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
             id: dto.id ?? id,
             name: name,
             roleLabel: "Cast & Crew",
-            imageTag: dto.imageTags?["Primary"],
+            imageTag: dto.imageTags?["Primary"]
+                ?? dto.imageBlurHashes?.primary?.keys.first,
             rank: 0,
             overview: dto.overview,
             birthYear: dto.productionYear ?? dto.premiereDate.flatMap {

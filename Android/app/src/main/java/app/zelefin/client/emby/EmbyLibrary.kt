@@ -16,6 +16,7 @@ import app.zelefin.client.LibraryGenre
 import app.zelefin.client.LibraryKind
 import app.zelefin.client.LibraryRoom
 import app.zelefin.client.NetworkTransport
+import app.zelefin.client.LanguageTrack
 import app.zelefin.client.PlaybackLanguage
 import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.SearchHit
@@ -199,19 +200,37 @@ class EmbyLibrary(
     }
 
     /**
-     * `Items/Latest` orders shows by their newest episode, so recently added seasons surface too.
-     * Emby still mixes movies into a `Series` request, so results are filtered to the asked-for kind.
+     * Movies prefer DateCreated (Jellyfin 12+ Latest grouping is unreliable for Movie when another
+     * library type is first). Shows keep Latest so new episodes bump the series.
      */
-    private suspend fun latest(kind: MediaKind): List<MediaItem> = runCatching {
-        api.get(
-            "/Users/$user/Items/Latest",
-            ListSerializer(EmbyItem.serializer()),
-            embyQuery {
-                this["IncludeItemTypes"] = kind.name
-                this["Limit"] = 36
-                listDefaults()
-            },
-        ).media().filter { it.kind == kind }.take(24)
+    private suspend fun latest(kind: MediaKind): List<MediaItem> {
+        if (kind == MediaKind.Movie) {
+            val byDate = latestByDateAdded(kind)
+            if (byDate.isNotEmpty()) return byDate
+        }
+        val newest = runCatching {
+            api.get(
+                "/Users/$user/Items/Latest",
+                ListSerializer(EmbyItem.serializer()),
+                embyQuery {
+                    this["IncludeItemTypes"] = kind.name
+                    this["Limit"] = 36
+                    listDefaults()
+                },
+            ).media().filter { it.kind == kind }.take(24)
+        }.getOrDefault(emptyList())
+        return newest.ifEmpty { latestByDateAdded(kind) }
+    }
+
+    private suspend fun latestByDateAdded(kind: MediaKind): List<MediaItem> = runCatching {
+        page("/Users/$user/Items") {
+            this["Recursive"] = true
+            this["IncludeItemTypes"] = kind.name
+            this["SortBy"] = "DateCreated"
+            this["SortOrder"] = "Descending"
+            this["Limit"] = 24
+            listDefaults()
+        }.items.media().filter { it.kind == kind }.take(24)
     }.getOrDefault(emptyList())
 
     private suspend fun movieRecommendations(): List<HomeSection> = runCatching {
@@ -800,11 +819,27 @@ class EmbyLibrary(
      * Mirrors [JellyfinLibrary.playback]: the user's Emby settings and the language picks choose the
      * starting streams, and [bitrate] turns the file bitrate into the stream cap for adaptive bitrate.
      */
+    /** Audio / subtitle rows for the detail More menu (iOS `streamTracks`). */
+    suspend fun streamTracks(
+        itemId: String,
+        mediaSourceId: String?,
+    ): Pair<List<LanguageTrack>, List<LanguageTrack>> = withContext(Dispatchers.IO) {
+        val dto = runCatching { item(itemId) }.getOrNull() ?: return@withContext emptyList<LanguageTrack>() to emptyList()
+        val source = dto.mediaSources.firstOrNull { it.id != null && it.id == mediaSourceId }
+            ?: dto.mediaSources.firstOrNull()
+        val streams = source?.mediaStreams ?: dto.mediaStreams
+        val scoped = source != null
+        EmbyPlayback.languageTracks(streams, subtitles = false, source?.defaultAudioStreamIndex, scoped) to
+            EmbyPlayback.languageTracks(streams, subtitles = true, source?.defaultSubtitleStreamIndex, scoped)
+    }
+
     suspend fun playback(
         item: MediaItem,
         audioLanguage: String = PlaybackPreferences.AUTOMATIC,
         subtitleLanguage: String = PlaybackPreferences.AUTOMATIC,
         preferSdh: Boolean = false,
+        audioStreamIndex: Int? = null,
+        subtitleStreamIndex: Int? = null,
         bitrate: suspend (sourceBitrate: Int?) -> Int = { JellyfinLibrary.MAX_BITRATE },
     ): PlaybackPlan = withContext(Dispatchers.IO) {
         val target = item
@@ -819,13 +854,14 @@ class EmbyLibrary(
             ?: streams.filter { it.isVideo || it.isAudio }.sumOf { it.bitRate ?: 0 }.takeIf { it > 0 }
         val audioTracks = EmbyPlayback.languageTracks(streams, subtitles = false, firstSource?.defaultAudioStreamIndex, scoped)
         val itemSubtitleTracks = EmbyPlayback.languageTracks(streams, subtitles = true, firstSource?.defaultSubtitleStreamIndex, scoped)
-        val audioIndex = PlaybackLanguage.audioIndex(audioTracks, audioLanguage)
+        val audioIndex = audioStreamIndex ?: PlaybackLanguage.audioIndex(audioTracks, audioLanguage)
         val subtitleIndex = PlaybackLanguage.subtitleIndex(itemSubtitleTracks, subtitleLanguage)
         val maxBitrate = bitrate(sourceBitrate).coerceIn(1, JellyfinLibrary.MAX_BITRATE)
         val off = subtitleLanguage == PlaybackPreferences.OFF
         val explicitSubtitle = subtitleLanguage != PlaybackPreferences.AUTOMATIC && subtitleLanguage.isNotEmpty()
         val preferences = runCatching { playbackPreferences() }.getOrNull()
         val plannedSubtitle = when {
+            subtitleStreamIndex != null -> subtitleStreamIndex
             off -> -1
             explicitSubtitle -> subtitleIndex
             else -> PlaybackLanguage.startingSubtitleIndex(
@@ -839,6 +875,7 @@ class EmbyLibrary(
             )
         }
         val requestedSubtitle = when {
+            subtitleStreamIndex != null -> subtitleStreamIndex
             off -> -1
             explicitSubtitle -> subtitleIndex
             else -> plannedSubtitle

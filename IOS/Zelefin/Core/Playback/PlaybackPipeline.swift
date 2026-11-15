@@ -9,6 +9,10 @@ enum PlaybackPreferences {
     static let maxBitrateKey = "zelefin.playback.max-bitrate"
     static let adaptiveBitrateKey = "zelefin.playback.adaptive-bitrate"
     static let autoPlayNextEpisodeKey = "zelefin.playback.autoplay-next-episode"
+    static let askStillWatchingKey = "zelefin.playback.ask-still-watching"
+    static let autoPictureInPictureOnLeaveKey = "zelefin.playback.auto-pip-on-leave"
+    /// Auto-advanced episodes before the still-watching prompt (starting the next one).
+    static let stillWatchingEpisodeThreshold = 3
     static let autoSkipIntroKey = "zelefin.playback.auto-skip-intro"
     static let autoSkipCreditsKey = "zelefin.playback.auto-skip-credits"
     static let autoSkipRecapKey = "zelefin.playback.auto-skip-recap"
@@ -27,13 +31,18 @@ enum PlaybackPreferences {
 
     static let movedToMPVKey = "zelefin.playback.moved-to-mpv"
 
-    /// MPV unless the user picked otherwise since moving to it.
+    /// MPV unless the user picked Native.
     static var playerEngine: PlayerEngineChoice {
         moveEveryoneToMPVOnce()
-        if let raw = UserDefaults.standard.string(forKey: playerEngineKey),
-           let choice = PlayerEngineChoice(rawValue: raw),
-           PlayerEngineChoice.available.contains(choice) {
-            return choice
+        if let raw = UserDefaults.standard.string(forKey: playerEngineKey) {
+            if raw == "aether" {
+                UserDefaults.standard.set(PlayerEngineChoice.mpv.rawValue, forKey: playerEngineKey)
+                return .mpv
+            }
+            if let choice = PlayerEngineChoice(rawValue: raw),
+               PlayerEngineChoice.available.contains(choice) {
+                return choice
+            }
         }
         return .mpv
     }
@@ -58,6 +67,16 @@ enum PlaybackPreferences {
 
     static var autoPlayNextEpisode: Bool {
         bool(for: autoPlayNextEpisodeKey, default: true)
+    }
+
+    /// After several auto-advanced episodes, ask before starting the next one.
+    static var askStillWatching: Bool {
+        bool(for: askStillWatchingKey, default: true)
+    }
+
+    /// When closing the player, continue in Picture in Picture if the system allows it.
+    static var autoPictureInPictureOnLeave: Bool {
+        bool(for: autoPictureInPictureOnLeaveKey, default: false)
     }
 
     /// Jellyfin theme songs behind title pages. Jellyfin keeps this per client; off until chosen.
@@ -321,7 +340,8 @@ struct SeriesTrackMemory: Codable, Hashable, Sendable {
 }
 
 enum PlaybackChromeIdlePolicy {
-    /// Controls stay up while loading or rebuffering, so a stall never looks like a frozen picture.
+    /// Don't auto-hide while already-visible chrome is loading or rebuffering.
+    /// Hidden chrome stays hidden on seek/skip rebuffers (spinner only), matching Android.
     static func shouldHide(
         controlsVisible: Bool,
         isPaused: Bool,
@@ -373,23 +393,14 @@ enum PlaybackEpisodeAdvance {
 /// The player the user picked in Playback settings.
 enum PlayerEngineChoice: String, CaseIterable, Identifiable, Sendable {
     case mpv
-    case aether
     case native
 
     var id: String { rawValue }
 
-    /// Mac Catalyst builds without AetherEngine (its FFmpeg ships no Catalyst slices).
-    static var available: [PlayerEngineChoice] {
-        #if targetEnvironment(macCatalyst)
-        allCases.filter { $0 != .aether }
-        #else
-        allCases
-        #endif
-    }
+    static var available: [PlayerEngineChoice] { allCases }
 
     var title: String {
         switch self {
-        case .aether: "AetherEngine"
         case .mpv: "MPV"
         case .native: "Native Player"
         }
@@ -400,9 +411,7 @@ enum PlayerEngineChoice: String, CaseIterable, Identifiable, Sendable {
 enum PlaybackPipeline: Equatable, Sendable {
     /// AVPlayer opens server HLS (remux / transcode).
     case appleNative
-    /// Zelefin Direct Play: FFmpeg demuxes the container, VideoToolbox decodes, and a sample-buffer layer paints.
-    case directDecode
-    /// libmpv opens the stream itself, the same Direct Play plan as `directDecode`.
+    /// libmpv opens the Direct Play (or remux) stream itself.
     case mpv
 }
 
@@ -411,7 +420,7 @@ enum PlaybackPipelineResolver {
         if PlaybackPreferences.playerEngine == .mpv {
             return .mpv
         }
-        let resolved = pipeline(
+        return pipeline(
             url: plan.streamURL,
             method: plan.method,
             container: plan.container,
@@ -421,11 +430,6 @@ enum PlaybackPipelineResolver {
                 hasSidecarSubtitles: !plan.externalSubtitles.isEmpty
             )
         )
-        #if targetEnvironment(macCatalyst)
-        // What AVPlayer can't open goes to MPV on the Mac, where there is no AetherEngine.
-        if resolved == .directDecode { return .mpv }
-        #endif
-        return resolved
     }
 
     /// AVPlayer cannot overlay Jellyfin sidecar SRT/VTT files.
@@ -448,7 +452,7 @@ enum PlaybackPipelineResolver {
         ) {
             return .appleNative
         }
-        return .directDecode
+        return .mpv
     }
 
     /// AVPlayer cannot demux MKV or MPEG-4 ASP. Native-on asks Jellyfin for HLS
@@ -498,9 +502,7 @@ enum PlaybackPipelineResolver {
     ]
 }
 
-/// Direct Play MKV often has Cues at EOF. A long `engine.seek` right after open can
-/// time out and black the screen. Resume instead goes through Aether `load(startPosition:)`.
-/// User skip / scrub still uses `engine.seek` once the session is running.
+/// Native HLS can seek to the resume point after open. MPV opens with `startPosition`.
 enum DirectPlaySeekPolicy {
     static func allowsAutomaticResumeSeek(_ pipeline: PlaybackPipeline) -> Bool {
         pipeline == .appleNative
@@ -554,39 +556,5 @@ enum StreamResumeURL {
         guard kept.count != items.count else { return url }
         components.queryItems = kept.isEmpty ? nil : kept
         return components.url ?? url
-    }
-}
-
-/// Latest-wins queue for Direct Play seeks. Rapid scrubs must not stack `engine.seek`
-/// calls: a superseded seek can tear down the session (`noActiveSession`) and reload
-/// from t=0.
-enum DirectPlaySeekCoalesce {
-    /// Stores `latest` as the pending target. Returns true when the caller should
-    /// start a drain loop; false when a drain is already in flight.
-    static func enqueue(
-        pending: inout TimeInterval?,
-        latest: TimeInterval,
-        isDraining: Bool
-    ) -> Bool {
-        pending = latest
-        return !isDraining
-    }
-}
-
-/// Jellyfin progress follows the on-screen frame. Direct Play jumps its clock to the
-/// scrub target before video lands; reporting that makes the server think the skip
-/// worked while the iPad is still on the previous picture.
-enum DirectPlayProgressPolicy {
-    static func shouldReport(playheadTrusted: Bool) -> Bool {
-        playheadTrusted
-    }
-
-    static func playheadTrusted(after outcome: DirectPlaySeekEvent.Outcome) -> Bool {
-        switch outcome {
-        case .landed, .rejected:
-            true
-        case .began, .stalled, .superseded:
-            false
-        }
     }
 }

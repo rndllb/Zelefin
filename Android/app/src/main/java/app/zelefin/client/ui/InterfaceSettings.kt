@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,7 +44,7 @@ import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.TheaterComedy
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.outlined.Tv
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -70,11 +73,15 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -86,29 +93,37 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.zelefin.client.CatalogBrowseQuery
+import app.zelefin.client.CatalogSortField
+import app.zelefin.client.CatalogStatusFilter
+import app.zelefin.client.CustomHomeRow
+import app.zelefin.client.CustomHomeRowScope
+import app.zelefin.client.CustomHomeRows
+import app.zelefin.client.HomeRowSlot
 import app.zelefin.client.ZelefinModel
 import app.zelefin.client.ZelefinUiState
 import app.zelefin.client.LibraryRoom
-import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private val InterfaceCaption = IOSColors.tertiaryLabel
-private val SwatchShape = RoundedCornerShape(9.7.dp)
-private const val DockFullNote = "The dock is full. Turn off a tab or library first."
+const val CustomHomeTopicPrefix = "custom-home:"
 
-/** Accent color. Used by the Appearance topic. */
+private val InterfaceCaption = IOSColors.tertiaryLabel
+
+/** Accent color. Interface leads with [AccentSection]; this remains for a caller that only wants the swatches. */
 @Composable
 fun AppearanceSettings() {
     AccentSection()
 }
 
-/** Mirrors iOS `TabCustomizationView`: merge, hero, Home rows, tabs, libraries, reset. */
+/** Mirrors iOS `TabCustomizationView`: accent, merge, hero, Home rows, tabs, libraries, reset. */
 @Composable
-fun InterfaceSettings(state: ZelefinUiState) {
+fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
     val model: ZelefinModel = viewModel()
     val context = LocalContext.current
     val noLiveTv = state.isSiloServer
     LaunchedEffect(Unit) { model.pullDisplayPreferences() }
+
+    AccentSection()
 
     val merged = HomeLayoutPreferences.mergeContinueAndNextUp
     SettingsCard {
@@ -139,52 +154,111 @@ fun InterfaceSettings(state: ZelefinUiState) {
                 model.refreshLibrary()
             },
         )
+        SettingsMenuPicker(
+            label = "Size",
+            choices = HeroSizePreference.entries.map { SettingsChoice(it, it.title) },
+            selected = HeroSizePreferences.size,
+            onSelect = { size ->
+                if (size == HeroSizePreferences.size) return@SettingsMenuPicker
+                HeroSizePreferences.setSize(context, size)
+            },
+        )
     }
-    SettingsFooter("What the Home hero cycles through. Recently Added is the default. Random picks a new set when Home refreshes.")
+    SettingsFooter("What the Home hero cycles through, and how tall the Featured and title-page backdrops run. Compact shows more of a landscape image; Tall is the previous full-bleed height. Recently Added is the default content.")
+
+    SettingsHeader("Poster Badges")
+    SettingsCard {
+        SettingsToggleRow("Community Rating", PosterBadgePreferences.showsRating, onChange = { on ->
+            PosterBadgePreferences.setShowsRating(context, on)
+        })
+        SettingsToggleRow("Quality Badges", PosterBadgePreferences.showsQuality, onChange = { on ->
+            PosterBadgePreferences.setShowsQuality(context, on)
+        })
+        SettingsToggleRow("Watched Mark", PosterBadgePreferences.showsWatched, onChange = { on ->
+            PosterBadgePreferences.setShowsWatched(context, on)
+        })
+    }
+    SettingsFooter("Rating stars, 4K/HDR/Atmos marks, and the watched check on posters. Turn any of them off to quiet the covers.")
 
     SettingsHeader("Home")
     ReorderableCards(
-        items = HomeLayoutPreferences.order,
+        items = HomeLayoutPreferences.slots,
         key = { it.raw },
-        enabled = true,
+        enabled = editing,
         onCommit = { next ->
-            HomeLayoutPreferences.setOrder(context, next)
+            HomeLayoutPreferences.setSlots(context, next)
             model.pushDisplayPreferences()
         },
-    ) { row, handle ->
-        ReorderRow(
-            icon = { Icon(homeRowIcon(row), contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
-            title = row.title,
-            checked = row !in HomeLayoutPreferences.hidden,
-            onCheckedChange = { on ->
-                HomeLayoutPreferences.setVisible(context, row, on)
+    ) { slot, handle ->
+        when (slot) {
+            is HomeRowSlot.BuiltIn -> {
+                val row = slot.kind
+                ReorderRow(
+                    icon = { Icon(homeRowIcon(row), contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
+                    title = row.title,
+                    checked = if (editing) null else row !in HomeLayoutPreferences.hidden,
+                    onCheckedChange = { on ->
+                        HomeLayoutPreferences.setVisible(context, row, on)
+                        model.pushDisplayPreferences()
+                    },
+                    handle = if (editing) handle else null,
+                )
+            }
+            is HomeRowSlot.Custom -> {
+                val row = CustomHomeRows.row(slot.id) ?: return@ReorderableCards
+                ReorderRow(
+                    icon = {
+                        Icon(Icons.Outlined.Tune, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
+                    },
+                    title = row.title,
+                    subtitle = CustomHomeRows.filterSummary(row),
+                    checked = if (editing) null else row.enabled,
+                    onCheckedChange = { on ->
+                        CustomHomeRows.update(context, row.copy(enabled = on))
+                        model.pushDisplayPreferences()
+                        model.refreshLibrary()
+                    },
+                    handle = if (editing) handle else null,
+                    onTitleClick = if (editing) {
+                        null
+                    } else {
+                        { model.openSettingsTopic("$CustomHomeTopicPrefix${row.id}") }
+                    },
+                    onDelete = {
+                        HomeLayoutPreferences.removeCustomSlot(context, row.id)
+                        CustomHomeRows.remove(context, row.id)
+                        model.pushDisplayPreferences()
+                        model.refreshLibrary()
+                    },
+                )
+            }
+        }
+    }
+    if (!editing) {
+        Spacer(Modifier.height(8.dp))
+        SettingsCard {
+            SettingsActionRow("Add Custom Row") {
+                val row = CustomHomeRows.add(context)
+                HomeLayoutPreferences.insertCustomSlot(context, row.id)
                 model.pushDisplayPreferences()
-            },
-            handle = handle,
-        )
+                model.refreshLibrary()
+                model.openSettingsTopic("$CustomHomeTopicPrefix${row.id}")
+            }
+        }
     }
     SettingsFooter(
-        if (merged) {
-            "Drag to reorder. Turn off a row to hide it from Home. Next Up only appears when Combine Continue Watching and Next Up is off."
-        } else {
-            "Drag to reorder. Turn off a row to hide it from Home."
+        buildString {
+            append("Custom rows use catalog filters and can sit between built-in rows. ")
+            append("Turn off a row to hide it from Home. Tap Edit to drag rows into a new order.")
+            if (merged) append(" Next Up only appears when Combine Continue Watching and Next Up is off.")
         },
     )
 
-    var dockNote by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(dockNote) {
-        if (dockNote != null) {
-            delay(3_000)
-            dockNote = null
-        }
-    }
     val pinnable = TabPreferences.pinnable(state.libraries)
     val canEnableAnother = PhoneDockLimit.canEnableAnother(
         TabPreferences.enabledTabCount(noLiveTv),
         TabPreferences.enabledLibraryCount(state.libraries),
     )
-
-    LiquidGlassSettings(state)
 
     SettingsHeader("Start Page")
     SettingsCard {
@@ -208,7 +282,7 @@ fun InterfaceSettings(state: ZelefinUiState) {
     ReorderableCards(
         items = visibleTabs,
         key = { it.raw },
-        enabled = true,
+        enabled = editing,
         onCommit = { next ->
             TabPreferences.setShownOrder(context, next)
             model.pushDisplayPreferences()
@@ -218,26 +292,26 @@ fun InterfaceSettings(state: ZelefinUiState) {
         ReorderRow(
             icon = { DockTabIcon(appTab, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
             title = tab.title,
-            checked = if (tab.canHide) TabPreferences.isShown(tab) else null,
+            checked = if (editing || !tab.canHide) null else TabPreferences.isShown(tab),
             onCheckedChange = { on ->
-                if (on && !canEnableAnother) {
-                    dockNote = DockFullNote
-                } else {
+                if (!on || canEnableAnother) {
                     TabPreferences.setShown(context, tab, on)
                     model.pushDisplayPreferences()
                 }
             },
-            handle = handle,
+            handle = if (editing) handle else null,
         )
     }
-    SettingsFooter(
-        if (TabPreferences.showsNames) {
-            "Each dock icon shows its name. The phone dock holds 5 tabs, including Search. Drag to reorder. Turn off a tab to hide it from the tab bar."
-        } else {
-            "The dock shows icons only. Turn Show Tab Names on to put a name under each icon. The phone dock holds 5 tabs, including Search. Drag to reorder. Turn off a tab to hide it from the tab bar."
-        },
-    )
-    dockNote?.let { DockNote(it) }
+    val tablet = LocalConfiguration.current.isLargeScreen()
+    val tabNames = if (tablet) {
+        ""
+    } else if (TabPreferences.showsNames) {
+        "Each dock icon shows its name. The phone dock holds 5 tabs, including Search. "
+    } else {
+        "The dock shows icons only. Turn Show Tab Names on to put a name under each icon. The phone dock holds 5 tabs, including Search. "
+    }
+    val sidebarEdit = if (tablet) " On tablets, you can also use Edit at the top of the sidebar." else ""
+    SettingsFooter(tabNames + "Turn off a tab to hide it from the tab bar. Tap Edit to drag rows into a new order." + sidebarEdit)
 
     if (pinnable.isNotEmpty()) {
         SettingsHeader("Libraries")
@@ -249,13 +323,19 @@ fun InterfaceSettings(state: ZelefinUiState) {
                     title = room.name,
                     checked = room.id in TabPreferences.dockLibraryIds,
                     onCheckedChange = { on ->
-                        if (on && !canEnableAnother) dockNote = DockFullNote else TabPreferences.setLibraryPinned(context, room.id, on)
+                        if (!on || canEnableAnother) TabPreferences.setLibraryPinned(context, room.id, on)
                     },
                     handle = null,
                 )
             }
         }
-        SettingsFooter("Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 phone spots.")
+        SettingsFooter(
+            if (tablet) {
+                "Turn on a custom library, such as Anime, to put it in the dock."
+            } else {
+                "Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 phone spots."
+            },
+        )
     }
 
     val animeRooms = pinnable.filter(LibraryIcons::canChoose)
@@ -366,17 +446,6 @@ private fun LibraryIconTile(@DrawableRes res: Int, title: String, selected: Bool
     }
 }
 
-@Composable
-private fun DockNote(text: String) {
-    Text(
-        text,
-        color = IOSColors.red,
-        fontFamily = ZelefinFont,
-        fontSize = 13.sp,
-        modifier = Modifier.padding(start = SettingsGroupMargin + SettingsContentInset, end = SettingsGroupMargin + SettingsContentInset, top = 6.dp),
-    )
-}
-
 private fun homeRowIcon(row: HomeRowKind): ImageVector = when (row) {
     HomeRowKind.Featured -> Icons.Outlined.AutoAwesome
     HomeRowKind.ContinueWatching -> Icons.Outlined.PlayCircle
@@ -398,16 +467,34 @@ private fun ReorderRow(
     checked: Boolean?,
     onCheckedChange: (Boolean) -> Unit,
     handle: Modifier?,
+    subtitle: String? = null,
+    onTitleClick: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     Row(Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         icon()
         Spacer(Modifier.width(14.dp))
-        Text(
-            title,
-            style = SettingsRowText,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
+        Column(
+            Modifier
+                .weight(1f)
+                .then(if (onTitleClick != null) Modifier.clickable(onClick = onTitleClick) else Modifier),
+        ) {
+            Text(title, style = SettingsRowText, maxLines = 1)
+            if (subtitle != null) {
+                Text(subtitle, color = InterfaceCaption, fontFamily = FontFamily.SansSerif, fontSize = 13.sp, maxLines = 1)
+            }
+        }
+        if (onDelete != null) {
+            Text(
+                "Delete",
+                color = Color(0xFFFF453A),
+                fontFamily = FontFamily.SansSerif,
+                fontSize = 15.sp,
+                modifier = Modifier
+                    .clickable(onClick = onDelete)
+                    .padding(horizontal = 8.dp),
+            )
+        }
         if (checked != null) {
             Box(Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)) {
                 IOSSwitch(checked)
@@ -418,6 +505,102 @@ private fun ReorderRow(
             Box(handle.size(32.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.DragHandle, contentDescription = "Reorder $title", tint = InterfaceCaption, modifier = Modifier.size(22.dp))
             }
+        }
+    }
+}
+
+/** Editor for a custom Home filter row (Interface → custom-home:&lt;id&gt;). */
+@Composable
+fun CustomHomeRowEditorTopic(rowId: String, onDeleted: () -> Unit) {
+    val model: ZelefinModel = viewModel()
+    val context = LocalContext.current
+    val existing = CustomHomeRows.row(rowId)
+    if (existing == null) {
+        Text("This custom row was removed.", color = InterfaceCaption, fontFamily = FontFamily.SansSerif)
+        return
+    }
+    var draft by remember(rowId) { mutableStateOf(existing) }
+    var query by remember(rowId) { mutableStateOf(existing.browseQuery) }
+
+    fun persist(next: CustomHomeRow, nextQuery: CatalogBrowseQuery = query) {
+        val saved = next.withQuery(nextQuery)
+        draft = saved
+        query = nextQuery
+        CustomHomeRows.update(context, saved)
+        model.pushDisplayPreferences()
+        model.refreshLibrary()
+    }
+
+    SettingsHeader("Name")
+    SettingsCard {
+        SettingsTextField(
+            label = "Title",
+            value = draft.title,
+            icon = Icons.Outlined.Tune,
+            onChange = { persist(draft.copy(title = it.ifBlank { "Custom Row" })) },
+            placeholder = "Custom Row",
+        )
+    }
+
+    SettingsHeader("Library")
+    SettingsCard {
+        SettingsMenuPicker(
+            label = "Scope",
+            choices = CustomHomeRowScope.entries.map { SettingsChoice(it, it.title) },
+            selected = draft.resolvedScope,
+            onSelect = { scope -> persist(draft.copy(scope = scope.raw)) },
+        )
+    }
+    SettingsFooter("Movies is the default. Shows and Movies & Shows browse those libraries with the same filters.")
+
+    SettingsHeader("Sort")
+    SettingsCard {
+        SettingsMenuPicker(
+            label = "Sort By",
+            choices = CatalogSortField.entries.map { SettingsChoice(it, it.title) },
+            selected = query.sort,
+            onSelect = { field ->
+                persist(
+                    draft,
+                    query.copy(
+                        sort = field,
+                        sortAscending = if (field.allowsDirection) query.sortAscending else true,
+                    ),
+                )
+            },
+        )
+        if (query.sort.allowsDirection) {
+            SettingsToggleRow("Ascending", query.sortAscending, onChange = { on ->
+                persist(draft, query.copy(sortAscending = on))
+            })
+        }
+    }
+
+    SettingsHeader("Filters")
+    SettingsCard {
+        CatalogStatusFilter.entries.forEach { status ->
+            SettingsToggleRow(status.title, status in query.statuses, onChange = { on ->
+                val next = if (on) query.statuses + status else query.statuses - status
+                persist(draft, query.copy(statuses = next))
+            })
+        }
+    }
+    SettingsFooter(
+        buildString {
+            append("Status filters apply on Home and when you open See All. ")
+            if (query.activeFilterCount > 0) append("${query.activeFilterCount} filters active. ")
+            append("Genre and other catalog filters can be refined from See All on Home.")
+        },
+    )
+
+    Spacer(Modifier.height(16.dp))
+    SettingsCard {
+        SettingsActionRow("Delete Custom Row", destructive = true) {
+            HomeLayoutPreferences.removeCustomSlot(context, rowId)
+            CustomHomeRows.remove(context, rowId)
+            model.pushDisplayPreferences()
+            model.refreshLibrary()
+            onDeleted()
         }
     }
 }
@@ -513,6 +696,7 @@ private fun <T> ReorderableCards(
     }
 }
 
+/** Identity strip + horizontal bead rail — mirrors iOS `AccentColorPickerGrid`. */
 @Composable
 internal fun AccentSection() {
     val context = LocalContext.current
@@ -520,53 +704,102 @@ internal fun AccentSection() {
     var pickerOpen by remember { mutableStateOf(false) }
     val selectedId = AccentPreferences.presetId
     val custom = selectedId == AccentPreferences.CUSTOM_ID
+    val active = AccentPreferences.preset(selectedId, AccentPreferences.customHex)
 
     SettingsHeader("Accent Color")
     SettingsCard {
-        val cells: List<AccentPreset?> = AccentPreferences.presets + null
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            cells.chunked(5).forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { preset ->
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
-                            if (preset != null) {
-                                AccentSwatch(preset.name, preset.color, selected = selectedId == preset.id, eyedropper = false) {
-                                    AccentPreferences.select(context, preset.id)
-                                }
-                            } else {
-                                AccentSwatch("Custom", AccentPreferences.customColor, selected = custom, eyedropper = true) {
-                                    AccentPreferences.selectCustom(context)
-                                }
-                            }
-                        }
-                    }
-                    repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(active.color.copy(alpha = 0.12f))
+                    .border(1.dp, active.color.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(54.dp)
+                            .background(active.color.copy(alpha = 0.28f), CircleShape),
+                    )
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .shadow(10.dp, CircleShape, ambientColor = active.color.copy(alpha = 0.45f), spotColor = active.color.copy(alpha = 0.45f))
+                            .background(active.color, CircleShape)
+                            .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape),
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        active.name,
+                        fontFamily = ZelefinFont,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 17.sp,
+                        color = Color.White,
+                    )
+                    Text(
+                        active.hex.uppercase(),
+                        fontFamily = ZelefinFont,
+                        fontSize = 12.sp,
+                        color = IOSColors.secondaryLabel,
+                    )
+                }
+                if (custom) {
+                    Icon(Icons.Outlined.Tune, contentDescription = null, tint = active.color, modifier = Modifier.size(22.dp))
                 }
             }
-        }
-        if (custom) {
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Color", style = SettingsRowText, modifier = Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Brush.sweepGradient(HueStops))
-                        .clickable { pickerOpen = true }
-                        .padding(4.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black)
-                        .padding(2.dp)
-                        .clip(CircleShape)
-                        .background(AccentPreferences.customColor),
-                )
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AccentPreferences.presets.forEach { preset ->
+                    AccentBead(
+                        name = preset.name,
+                        color = preset.color,
+                        selected = selectedId == preset.id,
+                        eyedropper = false,
+                    ) { AccentPreferences.select(context, preset.id) }
+                }
+                AccentBead(
+                    name = "Custom",
+                    color = AccentPreferences.customColor,
+                    selected = custom,
+                    eyedropper = true,
+                ) { AccentPreferences.selectCustom(context) }
             }
-            SettingsCardDivider()
-            HexRow(onDone = { focusManager.clearFocus() })
+
+            if (custom) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Mix your own", style = SettingsRowText, modifier = Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(Brush.sweepGradient(HueStops))
+                            .clickable { pickerOpen = true }
+                            .padding(4.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black)
+                            .padding(2.dp)
+                            .clip(CircleShape)
+                            .background(AccentPreferences.customColor),
+                    )
+                }
+                SettingsCardDivider()
+                HexRow(onDone = { focusManager.clearFocus() })
+            }
         }
     }
-    SettingsFooter("Accent color tints buttons, highlights, and icons throughout the app.")
+    SettingsFooter("Tints buttons, highlights, and icons throughout the app.")
 
     if (pickerOpen) {
         AccentColorPickerPanel(onDismiss = { pickerOpen = false })
@@ -574,63 +807,86 @@ internal fun AccentSection() {
 }
 
 @Composable
-private fun AccentSwatch(name: String, color: Color, selected: Boolean, eyedropper: Boolean, onClick: () -> Unit) {
-    Column(
-        Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
+private fun AccentBead(name: String, color: Color, selected: Boolean, eyedropper: Boolean, onClick: () -> Unit) {
+    val bead = if (selected) 34.dp else 28.dp
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
+        if (selected) {
+            Box(
+                Modifier
+                    .size(42.dp)
+                    .border(5.dp, color.copy(alpha = 0.35f), CircleShape)
+                    .border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape),
+            )
+        }
         Box(
             Modifier
-                .size(44.dp)
-                .background(color, SwatchShape)
-                .then(if (selected) Modifier.border(2.5.dp, Color.White, SwatchShape) else Modifier),
+                .size(bead)
+                .then(
+                    if (selected) {
+                        Modifier.shadow(8.dp, CircleShape, ambientColor = color.copy(alpha = 0.55f), spotColor = color.copy(alpha = 0.55f))
+                    } else {
+                        Modifier
+                    },
+                )
+                .background(color, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            when {
-                selected -> Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(20.dp))
-                eyedropper -> Icon(Icons.Outlined.Colorize, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            if (eyedropper) {
+                Icon(
+                    Icons.Outlined.Colorize,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.95f),
+                    modifier = Modifier.size(if (selected) 13.dp else 11.dp),
+                )
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            name,
-            fontFamily = ZelefinFont,
-            fontSize = 11.sp,
-            color = if (selected) Color.White else IOSColors.secondaryLabel,
-            maxLines = 1,
-        )
     }
 }
 
-/** Hex entry: saves while typing whenever the text is a valid hex; invalid text reverts when editing ends. */
+/** Hex entry: a leading #, digits only, saved while typing whenever the text is a valid hex. */
 @Composable
 private fun HexRow(onDone: () -> Unit) {
     val context = LocalContext.current
     val stored = AccentPreferences.customHex
-    var text by remember { mutableStateOf(stored) }
+    var text by remember { mutableStateOf(hexDigits(stored)) }
     LaunchedEffect(stored) {
-        if (AccentPreferences.normalizedHex(text) != stored) text = stored
+        val digits = hexDigits(stored)
+        if (!text.equals(digits, ignoreCase = true)) text = digits
     }
     val preview = AccentPreferences.colorFromHex(text) ?: AccentPreferences.customColor
     fun revertIfInvalid() {
-        if (AccentPreferences.normalizedHex(text) == null) text = AccentPreferences.customHex
+        if (AccentPreferences.normalizedHex(text) == null) text = hexDigits(AccentPreferences.customHex)
     }
     Row(Modifier.fillMaxWidth().heightIn(min = SettingsRowHeight).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("Hex", style = SettingsRowText)
-        Spacer(Modifier.width(16.dp))
+        Text(
+            "#",
+            style = SettingsRowText.copy(
+                color = IOSColors.secondaryLabel,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
+        Spacer(Modifier.width(8.dp))
         IOSTextField(
             value = text,
             onChange = { value ->
-                text = value.take(7)
-                AccentPreferences.normalizedHex(text)?.let { hex ->
+                val digits = value.filter { it != '#' }.uppercase().take(6)
+                text = digits
+                AccentPreferences.normalizedHex(digits)?.let { hex ->
                     if (hex != AccentPreferences.customHex) AccentPreferences.setCustomHex(context, hex)
                 }
             },
             modifier = Modifier
                 .weight(1f)
+                .semantics { contentDescription = "Hex code" }
                 .onFocusChanged { if (!it.isFocused) revertIfInvalid() },
-            placeholder = "Hex code",
-            textAlign = TextAlign.End,
+            placeholder = "RRGGBB",
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Characters,
                 autoCorrectEnabled = false,
@@ -645,12 +901,17 @@ private fun HexRow(onDone: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Box(
             Modifier
-                .size(24.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .size(28.dp)
+                .clip(RoundedCornerShape(7.dp))
                 .background(preview)
-                .border(0.5.dp, IOSColors.separator, RoundedCornerShape(6.dp)),
+                .border(0.5.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(7.dp)),
         )
     }
+}
+
+private fun hexDigits(hex: String): String {
+    val value = hex.trim().uppercase()
+    return if (value.startsWith("#")) value.drop(1) else value
 }
 
 private val HueStops = listOf(0f, 60f, 120f, 180f, 240f, 300f, 360f).map { Color.hsv(it, 1f, 1f) }
