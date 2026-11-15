@@ -3,7 +3,7 @@ import Foundation
 
 enum DeviceIdentity {
     static let clientName = "Zelefin"
-    static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     static let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     static var versionAndBuild: String { "\(version) (\(build))" }
     static var clientFamily: String {

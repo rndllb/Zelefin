@@ -58,7 +58,7 @@ body:
     attributes:
       label: Zelefin version
       description: Settings → About (version and build).
-      placeholder: 0.1.0 (22)
+      placeholder: 1.0.0 (22)
     validations:
       required: true
   - type: textarea
