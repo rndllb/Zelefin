@@ -164,7 +164,7 @@ enum AccountSwitchUnlock {
                 field.placeholder = "PIN"
                 field.textContentType = .oneTimeCode
             }
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            alert.addAction(UIAlertAction(title: AppLanguage.string("common.cancel", default: "Cancel"), style: .cancel) { _ in
                 continuation.resume(returning: false)
             })
             if AccountSwitchPIN.canUseBiometrics, AccountSwitchPIN.biometricsEnabled(for: accountID) {
@@ -200,7 +200,7 @@ enum AccountSwitchUnlock {
         guard let presenter = topViewController() else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let alert = UIAlertController(title: nil, message: "That PIN is incorrect.", preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            alert.addAction(UIAlertAction(title: AppLanguage.string("common.ok", default: "OK"), style: .default) { _ in
                 continuation.resume()
             })
             presenter.present(alert, animated: true)

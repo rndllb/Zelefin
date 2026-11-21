@@ -31,7 +31,7 @@ struct DownloadCoverBadge: View {
             .font(.system(size: markSize, weight: .semibold))
             .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
             .padding(padded ? markPadding : 0)
-            .accessibilityLabel("Downloaded")
+            .accessibilityLabel(AppLanguage.string("library.downloaded", default: "Downloaded"))
     }
 
     private var markSize: CGFloat {
@@ -65,7 +65,7 @@ struct DownloadProgressMeter: View {
         .padding(.vertical, compact ? 8 : 12)
         .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Downloading")
+        .accessibilityLabel(AppLanguage.string("ui.downloading", default: "Downloading"))
         .accessibilityValue(progress.percentLabel ?? progress.sizeLabel)
     }
 
@@ -122,7 +122,7 @@ struct DownloadStatusBanner: View {
                             .monospacedDigit()
                     }
                     Spacer(minLength: 8)
-                    Button("Cancel") {
+                    Button(AppLanguage.string("common.cancel", default: "Cancel")) {
                         downloads.cancelTransfer(for: item, account: session.session)
                     }
                     .font(.subheadline.weight(.semibold))
@@ -202,7 +202,7 @@ struct DetailDownloadSharePill: View {
             }
             ZelefinGlassPillDivider()
             ZelefinPillIconSegment(
-                accessibilityLabel: "Share",
+                accessibilityLabel: AppLanguage.string("common.share", default: "Share"),
                 action: share
             ) {
                 Image(systemName: "square.and.arrow.up")
@@ -212,11 +212,11 @@ struct DetailDownloadSharePill: View {
                     .foregroundStyle(.white)
             }
         }
-        .alert("Download", isPresented: Binding(
+        .alert(AppLanguage.string("ui.download", default: "Download"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
@@ -353,7 +353,7 @@ private struct ShowDownloadSeasonsMenu: View {
                     Button {
                         selected = selected == indexes ? [] : indexes
                     } label: {
-                        seasonRow(title: "Select All", isOn: !indexes.isEmpty && selected == indexes)
+                        seasonRow(title: AppLanguage.string("ui.select_all", default: "Select All"), isOn: !indexes.isEmpty && selected == indexes)
                     }
                     .buttonStyle(.plain)
                     ForEach(choices) { choice in
@@ -387,14 +387,14 @@ private struct ShowDownloadSeasonsMenu: View {
                 .frame(height: 0.5)
                 .padding(.horizontal, 16)
             Button(action: onCancel) {
-                menuRow(title: "Cancel", systemImage: "xmark", color: .red)
+                menuRow(title: AppLanguage.string("common.cancel", default: "Cancel"), systemImage: "xmark", color: .red)
             }
             .buttonStyle(.plain)
             Button {
                 onConfirm(selected)
             } label: {
                 menuRow(
-                    title: "Download",
+                    title: AppLanguage.string("ui.download", default: "Download"),
                     systemImage: "arrow.down.to.line",
                     color: .white,
                     enabled: !selected.isEmpty
@@ -469,7 +469,7 @@ private struct YouTubeDownloadMenu: View {
                     onDownload(videos)
                 } label: {
                     menuRow(
-                        title: videos.count == 1 ? "Download Video" : "All \(videos.count) Videos",
+                        title: videos.count == 1 ? AppLanguage.string("ui.download_video", default: "Download Video") : "All \(videos.count) Videos",
                         systemImage: "arrow.down.to.line"
                     )
                 }
@@ -480,7 +480,7 @@ private struct YouTubeDownloadMenu: View {
                 .frame(height: 0.5)
                 .padding(.horizontal, 16)
             Button(action: onCancel) {
-                menuRow(title: "Cancel", systemImage: "xmark", color: .red)
+                menuRow(title: AppLanguage.string("common.cancel", default: "Cancel"), systemImage: "xmark", color: .red)
             }
             .buttonStyle(.plain)
         }
@@ -523,11 +523,11 @@ struct DownloadActionButton: View {
         }
         .disabled(state == .unavailable)
         .accessibilityLabel(DownloadControlCopy.title(for: state))
-        .alert("Download", isPresented: Binding(
+        .alert(AppLanguage.string("ui.download", default: "Download"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
@@ -574,8 +574,8 @@ private struct DownloadRemovalConfirmation: ViewModifier {
             ),
             presenting: prompt
         ) { _ in
-            Button("Delete", role: .destructive, action: onConfirm)
-            Button("Cancel", role: .cancel) {}
+            Button(AppLanguage.string("common.delete", default: "Delete"), role: .destructive, action: onConfirm)
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {}
         } message: { item in
             Text(item.message)
         }

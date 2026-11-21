@@ -19,10 +19,10 @@ struct ReportIssueView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("What’s going wrong?", text: $summary, axis: .vertical)
+                    TextField(AppLanguage.string("ui.whats_going_wrong", default: "What’s going wrong?"), text: $summary, axis: .vertical)
                         .lineLimit(3...6)
                 } footer: {
-                    Text("Describe the problem in a sentence or two. The device log and diagnostics are included automatically.")
+                    Text(AppLanguage.string("Describe the problem in a sentence or two. The device log and diagnostics are included automatically.", default: "Describe the problem in a sentence or two. The device log and diagnostics are included automatically."))
                 }
                 .zelefinRowBackground()
 
@@ -37,11 +37,11 @@ struct ReportIssueView: View {
                     Button {
                         openGitHubIssue()
                     } label: {
-                        Label("Open GitHub Issue", systemImage: "link")
+                        Label(AppLanguage.string("ui.open_github_issue", default: "Open GitHub Issue"), systemImage: "link")
                     }
                     .disabled(!canSubmit)
                 } footer: {
-                    Text("Email attaches the full log. GitHub opens a prefilled issue; attach the log there if the form is too short, or send it by email.")
+                    Text(AppLanguage.string("Email attaches the full log. GitHub opens a prefilled issue; attach the log there if the form is too short, or send it by email.", default: "Email attaches the full log. GitHub opens a prefilled issue; attach the log there if the form is too short, or send it by email."))
                 }
                 .zelefinRowBackground()
 
@@ -52,10 +52,10 @@ struct ReportIssueView: View {
                     .zelefinRowBackground()
                 }
             }
-            .zelefinSettingsChrome(title: "Report Issue")
+            .zelefinSettingsChrome(title: AppLanguage.string("ui.report_issue", default: "Report Issue"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button(AppLanguage.string("common.close", default: "Close")) { dismiss() }
                 }
             }
             .task {

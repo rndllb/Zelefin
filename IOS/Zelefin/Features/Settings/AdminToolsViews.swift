@@ -47,7 +47,7 @@ struct ActivityLogView: View {
                 .refreshable { await load(showProgress: false) }
             }
         }
-        .zelefinSettingsChrome(title: "Activity Log")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.activity_log", default: "Activity Log"))
         .task { await load() }
     }
 
@@ -93,7 +93,7 @@ struct ServerBackupsView: View {
                             Task { await create() }
                         }
                     } footer: {
-                        Text("A backup archives this server’s database and metadata. Restoring one restarts Jellyfin.")
+                        Text(AppLanguage.string("A backup archives this server’s database and metadata. Restoring one restarts Jellyfin.", default: "A backup archives this server’s database and metadata. Restoring one restarts Jellyfin."))
                     }
                     .zelefinRowBackground()
                     Section {
@@ -117,7 +117,7 @@ struct ServerBackupsView: View {
                             }
                         }
                     } header: {
-                        Text("Archives")
+                        Text(AppLanguage.string("Archives", default: "Archives"))
                     }
                     .zelefinRowBackground()
                 }
@@ -125,7 +125,7 @@ struct ServerBackupsView: View {
                 .refreshable { await load(showProgress: false) }
             }
         }
-        .zelefinSettingsChrome(title: "Backups")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.backups", default: "Backups"))
         .task { await load() }
         .confirmationDialog(
             "Restore this backup?",
@@ -135,13 +135,13 @@ struct ServerBackupsView: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Restore and Restart Server", role: .destructive) {
+            Button(AppLanguage.string("ui.restore_and_restart_server", default: "Restore and Restart Server"), role: .destructive) {
                 guard let restoreTarget else { return }
                 Task { await restore(restoreTarget) }
             }
-            Button("Cancel", role: .cancel) { restoreTarget = nil }
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) { restoreTarget = nil }
         } message: {
-            Text("Jellyfin will restart and replace the current database with this archive. This cannot be undone from the app.")
+            Text(AppLanguage.string("Jellyfin will restart and replace the current database with this archive. This cannot be undone from the app.", default: "Jellyfin will restart and replace the current database with this archive. This cannot be undone from the app."))
         }
     }
 
@@ -208,16 +208,16 @@ struct ServerBrandingView: View {
             }
 
             Section {
-                TextField("Login Disclaimer", text: $branding.loginDisclaimer, axis: .vertical)
+                TextField(AppLanguage.string("ui.login_disclaimer", default: "Login Disclaimer"), text: $branding.loginDisclaimer, axis: .vertical)
                     .lineLimit(3...8)
                 if canEdit {
-                    Toggle("Show Splashscreen", isOn: $branding.splashscreenEnabled)
+                    Toggle(AppLanguage.string("ui.show_splashscreen", default: "Show Splashscreen"), isOn: $branding.splashscreenEnabled)
                 }
             } header: {
-                Text("Sign-In")
+                Text(AppLanguage.string("Sign-In", default: "Sign-In"))
             } footer: {
                 if !canEdit {
-                    Text("Emby's branding is read-only here. Change it in Emby's web dashboard.")
+                    Text(AppLanguage.string("Emby's branding is read-only here. Change it in Emby's web dashboard.", default: "Emby's branding is read-only here. Change it in Emby's web dashboard."))
                 }
             }
             .zelefinRowBackground()
@@ -228,7 +228,7 @@ struct ServerBrandingView: View {
                     .lineLimit(4...12)
                     .font(.footnote.monospaced())
             } header: {
-                Text("Custom CSS")
+                Text(AppLanguage.string("Custom CSS", default: "Custom CSS"))
             }
             .zelefinRowBackground()
             .disabled(!canEdit)
@@ -236,16 +236,16 @@ struct ServerBrandingView: View {
             if canEdit {
                 Section {
                     PhotosPicker("Upload Splashscreen", selection: $pickerItem, matching: .images)
-                    Button("Remove Custom Splashscreen", role: .destructive) {
+                    Button(AppLanguage.string("ui.remove_custom_splashscreen", default: "Remove Custom Splashscreen"), role: .destructive) {
                         Task { await deleteSplash() }
                     }
                 } header: {
-                    Text("Splash Image")
+                    Text(AppLanguage.string("Splash Image", default: "Splash Image"))
                 }
                 .zelefinRowBackground()
 
                 Section {
-                    Button("Save Branding") {
+                    Button(AppLanguage.string("ui.save_branding", default: "Save Branding")) {
                         Task { await save() }
                     }
                     .disabled(isSaving || isLoading)
@@ -253,7 +253,7 @@ struct ServerBrandingView: View {
                 .zelefinRowBackground()
             }
         }
-        .zelefinSettingsChrome(title: "Branding")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.branding", default: "Branding"))
         .task { await load() }
         .onChange(of: pickerItem) { _, item in
             guard let item else { return }

@@ -9,7 +9,7 @@ struct QuickConnectAuthorizeRows: View {
     @State private var statusIsError = false
 
     var body: some View {
-        TextField("Quick Connect code", text: $code)
+        TextField(AppLanguage.string("ui.quick_connect_code", default: "Quick Connect code"), text: $code)
             .keyboardType(.numberPad)
             .textContentType(.oneTimeCode)
             .textInputAutocapitalization(.never)

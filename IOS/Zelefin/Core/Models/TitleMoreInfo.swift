@@ -86,6 +86,8 @@ enum TitleMoreInfoMapper {
         if !studios.isEmpty {
             rows.append(.init(label: "Studio", value: studios.joined(separator: ", ")))
         }
+        // Same People rows jellyfin-web lists under details (Creator / Director / Writer).
+        rows.append(contentsOf: peopleRows(from: dto.people))
         if let original = dto.originalTitle?.trimmedNonEmpty, original != item.name {
             rows.append(.init(label: "Original Title", value: original))
         }
@@ -111,6 +113,42 @@ enum TitleMoreInfoMapper {
         }
         if let airTime = dto.airTime?.trimmedNonEmpty {
             rows.append(.init(label: "Airs", value: airTime))
+        }
+        return rows
+    }
+
+    /// Creator / Director / Writer lines from `People`, matching jellyfin-web’s metadata list.
+    static func peopleRows(from people: [BaseItemPerson]?) -> [TitleMoreRow] {
+        let credits = ItemMapper.credits(from: people)
+        var rows: [TitleMoreRow] = []
+        let creators = TitleDirectors.creators(from: credits)
+        if !creators.isEmpty {
+            rows.append(.init(
+                label: creators.count == 1 ? "Creator" : "Creators",
+                value: creators.map(\.name).joined(separator: ", ")
+            ))
+        }
+        let directors = TitleDirectors.directors(from: credits)
+        if !directors.isEmpty {
+            rows.append(.init(
+                label: directors.count == 1 ? "Director" : "Directors",
+                value: directors.map(\.name).joined(separator: ", ")
+            ))
+        }
+        let writers = credits.filter {
+            $0.rank == 3 || $0.roleLabel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("writer")
+        }
+        var seenWriters = Set<String>()
+        let writerNames = writers.compactMap { person -> String? in
+            let name = person.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, seenWriters.insert(name.lowercased()).inserted else { return nil }
+            return name
+        }
+        if !writerNames.isEmpty {
+            rows.append(.init(
+                label: writerNames.count == 1 ? "Writer" : "Writers",
+                value: writerNames.joined(separator: ", ")
+            ))
         }
         return rows
     }
@@ -307,7 +345,7 @@ enum TitleMoreInfoMapper {
             rows.append(.init(label: "Video", value: videoLine))
         }
         if let bitrate = sources.first?.bitrate ?? video?.bitRate, bitrate > 0 {
-            rows.append(.init(label: "Bitrate", value: bitrateLabel(bitrate)))
+            rows.append(.init(label: AppLanguage.string("ui.bitrate", default: "Bitrate"), value: bitrateLabel(bitrate)))
         }
         return rows
     }

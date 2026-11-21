@@ -22,7 +22,7 @@ struct SettingsView: View {
             deviceSection
             aboutSection
         }
-        .zelefinSettingsChrome(title: "Settings")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.title", default: "Settings"))
         .task {
             await session.detectIntroSkipper()
         }
@@ -32,16 +32,16 @@ struct SettingsView: View {
             }.value
         }
         .confirmationDialog(
-            "Scan every library?",
+            AppLanguage.string("settings.scan_libraries_confirm", default: "Scan every library?"),
             isPresented: $showsLibraryScanConfirm,
             titleVisibility: .visible
         ) {
-            Button("Scan Libraries") {
+            Button(AppLanguage.string("settings.scan_libraries", default: "Scan Libraries")) {
                 Task { await scanLibraries() }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {}
         } message: {
-            Text("Jellyfin will look for new files and refresh metadata. This can take a while on a large server.")
+            Text(AppLanguage.string("settings.scan_libraries_message", default: "Jellyfin will look for new files and refresh metadata. This can take a while on a large server."))
         }
     }
 
@@ -55,27 +55,27 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountDisplayName)
                             .font(.body.weight(.semibold))
-                        Text(session.isSiloServer ? "Silo account" : session.isEmbyServer ? "Emby account" : "Jellyfin account")
+                        Text(session.isSiloServer ? AppLanguage.string("settings.silo_account", default: "Silo account") : session.isEmbyServer ? AppLanguage.string("settings.emby_account", default: "Emby account") : AppLanguage.string("settings.jellyfin_account", default: "Jellyfin account"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 4)
             }
-            .accessibilityLabel("\(accountDisplayName), Account info")
+            .accessibilityLabel("\(accountDisplayName), \(AppLanguage.string("settings.account_info", default: "Account info"))")
 
             settingsRow(
-                session.isSiloServer ? "Accounts" : "Users",
+                session.isSiloServer ? AppLanguage.string("settings.accounts", default: "Accounts") : AppLanguage.string("settings.users", default: "Users"),
                 systemImage: "person.2",
                 subtitle: session.isSiloServer
-                    ? "Switch or add a login on this device"
-                    : "Switch or add a user on this device"
+                    ? AppLanguage.string("settings.accounts_subtitle", default: "Switch or add a login on this device")
+                    : AppLanguage.string("settings.users_subtitle", default: "Switch or add a user on this device")
             ) {
                 DeviceAccountsView()
             }
 
             if !session.lacksJellyfinOnlyFeatures {
-                settingsRow("SyncPlay", systemImage: "person.3", subtitle: "Watch together in a group") {
+                settingsRow(AppLanguage.string("settings.syncplay", default: "SyncPlay"), systemImage: "person.3", subtitle: AppLanguage.string("settings.syncplay_subtitle", default: "Watch together in a group")) {
                     SyncPlayView()
                 }
             }
@@ -91,16 +91,16 @@ struct SettingsView: View {
         Section {
             QuickConnectAuthorizeRows()
         } header: {
-            Text("Quick Connect")
+            Text(AppLanguage.string("connect.quick_connect", default: "Quick Connect"))
         } footer: {
-            Text("Enter the code shown on another device to sign it in as \(accountDisplayName).")
+            Text(String(format: AppLanguage.string("settings.quick_connect_footer", default: "Enter the code shown on another device to sign it in as %@."), accountDisplayName))
         }
         .zelefinRowBackground()
     }
 
     private var accountSection: some View {
-        Section("Account") {
-            settingsRow("Notifications", systemImage: "bell", subtitle: "Alerts from your server") {
+        Section(AppLanguage.string("settings.account", default: "Account")) {
+            settingsRow(AppLanguage.string("settings.notifications", default: "Notifications"), systemImage: "bell", subtitle: AppLanguage.string("settings.notifications_subtitle", default: "Alerts from your server")) {
                 NotificationSettingsView()
             }
         }
@@ -108,17 +108,17 @@ struct SettingsView: View {
     }
 
     private var playbackSection: some View {
-        Section("Playback") {
-            settingsRow("Playback", systemImage: "play", subtitle: "Languages, quality, speed, skipping") {
+        Section(AppLanguage.string("settings.playback", default: "Playback")) {
+            settingsRow(AppLanguage.string("settings.playback", default: "Playback"), systemImage: "play", subtitle: AppLanguage.string("settings.playback_subtitle", default: "Languages, quality, speed, skipping")) {
                 PlaybackSettingsView()
             }
-            settingsRow("Subtitles", systemImage: "captions.bubble", subtitle: "Size, color, and background") {
+            settingsRow(AppLanguage.string("player.subtitles", default: "Subtitles"), systemImage: "captions.bubble", subtitle: AppLanguage.string("settings.subtitles_subtitle", default: "Size, color, and background")) {
                 SubtitleAppearanceSettingsView()
             }
-            settingsRow("Plugins", systemImage: "puzzlepiece.extension", subtitle: "Intro Skipper, Seerr, Ombi, server plugins") {
+            settingsRow(AppLanguage.string("settings.plugins", default: "Plugins"), systemImage: "puzzlepiece.extension", subtitle: AppLanguage.string("settings.plugins_subtitle", default: "Intro Skipper, Seerr, Ombi, server plugins")) {
                 PluginSettingsView()
             }
-            settingsRow("Metadata", systemImage: "doc.text", subtitle: "Ratings and title details") {
+            settingsRow(AppLanguage.string("settings.metadata", default: "Metadata"), systemImage: "doc.text", subtitle: AppLanguage.string("settings.metadata_subtitle", default: "Ratings and title details")) {
                 MetadataSettingsView()
             }
         }
@@ -128,51 +128,51 @@ struct SettingsView: View {
     private var serverSection: some View {
         Section {
             if !session.isSiloServer {
-                settingsRow("Sessions", systemImage: "laptopcomputer.and.iphone", subtitle: "Devices signed in to \(serverProduct)") {
+                settingsRow(AppLanguage.string("settings.sessions", default: "Sessions"), systemImage: "laptopcomputer.and.iphone", subtitle: String(format: AppLanguage.string("settings.sessions_subtitle", default: "Devices signed in to %@"), serverProduct)) {
                     SessionsView()
                 }
             }
-            settingsRow("User Access", systemImage: "person.badge.key", subtitle: "Permissions, libraries, and parental controls") {
+            settingsRow(AppLanguage.string("settings.user_access", default: "User Access"), systemImage: "person.badge.key", subtitle: AppLanguage.string("settings.user_access_subtitle", default: "Permissions, libraries, and parental controls")) {
                 UserManagementView()
             }
-            settingsRow("Scheduled Tasks", systemImage: "clock", subtitle: "Start, cancel, and watch progress") {
+            settingsRow(AppLanguage.string("settings.scheduled_tasks", default: "Scheduled Tasks"), systemImage: "clock", subtitle: AppLanguage.string("settings.scheduled_tasks_subtitle", default: "Start, cancel, and watch progress")) {
                 ScheduledTasksView()
             }
-            settingsRow("Activity Log", systemImage: "list.bullet", subtitle: "Sign-ins, scans, and failures") {
+            settingsRow(AppLanguage.string("settings.activity_log", default: "Activity Log"), systemImage: "list.bullet", subtitle: AppLanguage.string("settings.activity_log_subtitle", default: "Sign-ins, scans, and failures")) {
                 ActivityLogView()
             }
             if !session.isEmbyServer {
-                settingsRow("Backups", systemImage: "archivebox", subtitle: "Archive and restore this server") {
+                settingsRow(AppLanguage.string("settings.backups", default: "Backups"), systemImage: "archivebox", subtitle: AppLanguage.string("settings.backups_subtitle", default: "Archive and restore this server")) {
                     ServerBackupsView()
                 }
             }
-            settingsRow("Branding", systemImage: "paintbrush", subtitle: "Login disclaimer and splashscreen") {
+            settingsRow(AppLanguage.string("settings.branding", default: "Branding"), systemImage: "paintbrush", subtitle: AppLanguage.string("settings.branding_subtitle", default: "Login disclaimer and splashscreen")) {
                 ServerBrandingView()
             }
             scanLibrariesRow
         } header: {
-            Text("Server")
+            Text(AppLanguage.string("settings.server", default: "Server"))
         } footer: {
-            Text("Administer this \(serverProduct) server.")
+            Text(String(format: AppLanguage.string("settings.server_admin_footer", default: "Administer this %@ server."), serverProduct))
         }
         .zelefinRowBackground()
     }
 
     private var deviceSection: some View {
-        Section("This Device") {
-            settingsRow("Server Info", systemImage: "server.rack", subtitle: "Name, version, OS, and address") {
+        Section(AppLanguage.string("settings.this_device", default: "This Device")) {
+            settingsRow(AppLanguage.string("settings.server_info", default: "Server Info"), systemImage: "server.rack", subtitle: AppLanguage.string("settings.server_info_subtitle", default: "Name, version, OS, and address")) {
                 ServerInfoView()
             }
-            settingsRow("Network", systemImage: "wifi", subtitle: networkSubtitle) {
+            settingsRow(AppLanguage.string("settings.network", default: "Network"), systemImage: "wifi", subtitle: networkSubtitle) {
                 NetworkSettingsView()
             }
-            settingsRow("Cache", systemImage: "internaldrive", subtitle: cacheSubtitle) {
+            settingsRow(AppLanguage.string("settings.cache", default: "Cache"), systemImage: "internaldrive", subtitle: cacheSubtitle) {
                 CacheSettingsView()
             }
-            settingsRow("Interface", systemImage: "rectangle.3.group", subtitle: interfaceSubtitle) {
+            settingsRow(AppLanguage.string("settings.interface", default: "Interface"), systemImage: "rectangle.3.group", subtitle: interfaceSubtitle) {
                 TabCustomizationView()
             }
-            settingsRow("Log", systemImage: "doc.text", subtitle: "What Zelefin did, to read or send") {
+            settingsRow(AppLanguage.string("settings.log", default: "Log"), systemImage: "doc.text", subtitle: AppLanguage.string("settings.log_subtitle", default: "What Zelefin did, to read or send")) {
                 LogView()
             }
         }
@@ -181,15 +181,15 @@ struct SettingsView: View {
 
     private var interfaceSubtitle: String {
         #if targetEnvironment(macCatalyst)
-        "Home, sidebar, accent color"
+        AppLanguage.string("settings.interface_subtitle_mac", default: "Home, sidebar, accent color")
         #else
-        "Home, tabs, accent color"
+        AppLanguage.string("settings.interface_subtitle_phone", default: "Home, tabs, accent color")
         #endif
     }
 
     private var aboutSection: some View {
-        Section("Zelefin") {
-            settingsRow("About", systemImage: "info.circle", subtitle: DeviceIdentity.versionAndBuild) {
+        Section(AppLanguage.string("settings.zelefin_section", default: "Zelefin")) {
+            settingsRow(AppLanguage.string("settings.about", default: "About"), systemImage: "info.circle", subtitle: DeviceIdentity.versionAndBuild) {
                 SettingsAboutView()
             }
         }
@@ -203,9 +203,9 @@ struct SettingsView: View {
             HStack(spacing: 14) {
                 settingsIcon("arrow.clockwise")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Scan Libraries")
+                    Text(AppLanguage.string("settings.scan_libraries", default: "Scan Libraries"))
                         .foregroundStyle(.primary)
-                    Text(libraryScanMessage ?? "Look for new files and refresh metadata")
+                    Text(libraryScanMessage ?? AppLanguage.string("settings.scan_libraries_subtitle", default: "Look for new files and refresh metadata"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -254,24 +254,24 @@ struct SettingsView: View {
 
     private var accountDisplayName: String {
         let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? "Account" : name
+        return name.isEmpty ? AppLanguage.string("settings.account", default: "Account") : name
     }
 
     private var networkSubtitle: String {
         let name = session.session?.displayServer ?? session.serverName ?? ""
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "How this device reaches the server" : trimmed
+        return trimmed.isEmpty ? AppLanguage.string("settings.network_how", default: "How this device reaches the server") : trimmed
     }
 
     private var cacheSubtitle: String {
-        guard let cacheBytes, cacheBytes > 0 else { return "Posters and saved home data" }
+        guard let cacheBytes, cacheBytes > 0 else { return AppLanguage.string("settings.cache_posters", default: "Posters and saved home data") }
         return CacheInventory.formatBytes(cacheBytes)
     }
 
     private func scanLibraries() async {
         do {
             try await session.library?.scanLibraries()
-            libraryScanMessage = "Scan started"
+            libraryScanMessage = AppLanguage.string("settings.scan_started", default: "Scan started")
         } catch {
             libraryScanMessage = error.localizedDescription
         }
@@ -310,7 +310,7 @@ struct SettingsAboutView: View {
             }
         }
         .zelefinSettingsCanvas()
-        .navigationTitle("About")
+        .navigationTitle(AppLanguage.string("detail.about", default: "About"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $legalPage) { page in
             SettingsSafariView(url: page.url)
@@ -323,14 +323,14 @@ struct SettingsAboutView: View {
                 .shadow(color: LoginPalette.lavender.opacity(0.35), radius: 28, y: 10)
 
             VStack(spacing: 10) {
-                Text("Zelefin")
+                Text(AppLanguage.string("settings.zelefin_section", default: "Zelefin"))
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
 
                 (
-                    Text("Your library, ")
+                    Text(AppLanguage.string("settings.about_tagline_prefix", default: "Your library, "))
                         .foregroundStyle(.white)
-                    + Text("beautifully native.")
+                    + Text(AppLanguage.string("settings.about_tagline_accent", default: "beautifully native."))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [LoginPalette.lavender, LoginPalette.sky],
@@ -343,7 +343,7 @@ struct SettingsAboutView: View {
                 .multilineTextAlignment(.center)
             }
 
-            Text("A native client for Jellyfin, Silo, and Emby — free, with no subscription and no ads.")
+            Text(AppLanguage.string("settings.about_body", default: "A native client for Jellyfin, Silo, and Emby — free, with no subscription and no ads."))
                 .font(.subheadline)
                 .foregroundStyle(LoginPalette.secondaryText)
                 .multilineTextAlignment(.center)
@@ -355,8 +355,8 @@ struct SettingsAboutView: View {
 
     private var aboutVersionCard: some View {
         HStack(spacing: 12) {
-            aboutStat(title: "Version", value: DeviceIdentity.version)
-            aboutStat(title: "Build", value: DeviceIdentity.build)
+            aboutStat(title: AppLanguage.string("settings.version", default: "Version"), value: DeviceIdentity.version)
+            aboutStat(title: AppLanguage.string("settings.build", default: "Build"), value: DeviceIdentity.build)
         }
     }
 
@@ -384,13 +384,13 @@ struct SettingsAboutView: View {
             aboutLinkButton(title: "zelefin.app", systemImage: "safari") {
                 openURL(ZelefinSite.home)
             }
-            aboutLinkButton(title: "Support", systemImage: "questionmark.circle") {
+            aboutLinkButton(title: AppLanguage.string("settings.support", default: "Support"), systemImage: "questionmark.circle") {
                 openURL(ZelefinSite.support)
             }
-            aboutLinkButton(title: "Privacy Policy", systemImage: "hand.raised") {
+            aboutLinkButton(title: AppLanguage.string("settings.privacy_policy", default: "Privacy Policy"), systemImage: "hand.raised") {
                 legalPage = .privacy
             }
-            aboutLinkButton(title: "Terms of Use", systemImage: "doc.text") {
+            aboutLinkButton(title: AppLanguage.string("settings.terms_of_use", default: "Terms of Use"), systemImage: "doc.text") {
                 legalPage = .terms
             }
         }
@@ -426,10 +426,10 @@ struct SettingsAboutView: View {
 
     private var aboutCredits: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Credits")
+            Text(AppLanguage.string("settings.credits", default: "Credits"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
-            Text("Tab icons are from Iconsax. Anime library icons are from PlainIcon’s Anime characters pack, licensed under CC BY 4.0.")
+            Text(AppLanguage.string("settings.credits_body", default: "Tab icons are from Iconsax. Anime library icons are from PlainIcon’s Anime characters pack, licensed under CC BY 4.0."))
                 .font(.footnote)
                 .foregroundStyle(LoginPalette.captionText)
                 .fixedSize(horizontal: false, vertical: true)

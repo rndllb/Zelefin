@@ -12,7 +12,7 @@ enum SyncPlayActivityPresenter {
             kind: .syncPlay,
             id: activityID,
             title: groupName,
-            subtitle: "SyncPlay",
+            subtitle: AppLanguage.string("account.syncplay", default: "SyncPlay"),
             fraction: nil,
             statusLine: statusLine,
             badgeLabel: "SYNCPLAY"

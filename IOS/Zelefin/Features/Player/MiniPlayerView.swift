@@ -107,10 +107,10 @@ private struct MiniPlayerAccessory: View {
                 }
             }
             Spacer(minLength: 8)
-            transportButton(systemImage: "play.fill", label: "Play") {
+            transportButton(systemImage: "play.fill", label: AppLanguage.string("common.play", default: "Play")) {
                 session.presentNowPlaying()
             }
-            transportButton(systemImage: "forward.fill", label: "Next") {
+            transportButton(systemImage: "forward.fill", label: AppLanguage.string("common.next", default: "Next")) {
                 session.presentNowPlaying()
             }
         }
@@ -122,8 +122,8 @@ private struct MiniPlayerAccessory: View {
             session.presentNowPlaying()
         }
         .contextMenu {
-            Button("Play") { session.presentNowPlaying() }
-            Button("Stop", role: .destructive) { session.clearNowPlaying() }
+            Button(AppLanguage.string("common.play", default: "Play")) { session.presentNowPlaying() }
+            Button(AppLanguage.string("player.stop", default: "Stop"), role: .destructive) { session.clearNowPlaying() }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: item))
@@ -137,7 +137,7 @@ private struct MiniPlayerAccessory: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Spacer(minLength: 6)
-            transportButton(systemImage: "play.fill", label: "Play") {
+            transportButton(systemImage: "play.fill", label: AppLanguage.string("common.play", default: "Play")) {
                 session.presentNowPlaying()
             }
         }

@@ -7,11 +7,11 @@ struct EmbyAlertCategory: Identifiable, Hashable, Sendable {
     let events: [String]
 
     static let all: [EmbyAlertCategory] = [
-        EmbyAlertCategory(id: "library", title: "New Media", events: ["library.new"]),
-        EmbyAlertCategory(id: "playback", title: "Playback", events: ["playback.start", "playback.stop"]),
+        EmbyAlertCategory(id: "library", title: AppLanguage.string("ui.new_media", default: "New Media"), events: ["library.new"]),
+        EmbyAlertCategory(id: "playback", title: AppLanguage.string("settings.playback", default: "Playback"), events: ["playback.start", "playback.stop"]),
         EmbyAlertCategory(id: "livetv", title: "Live TV Recordings", events: ["livetv.recordingstarted", "livetv.recordingended", "livetv.recordingerror"]),
         EmbyAlertCategory(id: "users", title: "Sign-ins", events: ["user.authenticated", "user.authenticationfailed", "user.lockedout"]),
-        EmbyAlertCategory(id: "tasks", title: "Scheduled Tasks", events: ["scheduledtasks.completed", "scheduledtasks.failed"]),
+        EmbyAlertCategory(id: "tasks", title: AppLanguage.string("settings.scheduled_tasks", default: "Scheduled Tasks"), events: ["scheduledtasks.completed", "scheduledtasks.failed"]),
         EmbyAlertCategory(id: "server", title: "Server Updates and Backups", events: ["system.updateavailable", "system.updated", "system.serverrestartrequired", "system.backupcompleted", "system.backupfailed"]),
     ]
 

@@ -221,7 +221,7 @@ struct AVKitPlaybackChrome: View {
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            iconButton("xmark", label: "Close", size: 17) {
+            iconButton("xmark", label: AppLanguage.string("common.close", default: "Close"), size: 17) {
                 onClose()
             }
             Spacer(minLength: 8)
@@ -237,7 +237,7 @@ struct AVKitPlaybackChrome: View {
                     watchTogetherMenu(watchTogether)
                 }
                 if model.canUsePictureInPicture {
-                    iconButton("pip.enter", label: "Picture in Picture", size: 18) {
+                    iconButton("pip.enter", label: AppLanguage.string("ui.picture_in_picture", default: "Picture in Picture"), size: 18) {
                         model.togglePictureInPicture()
                     }
                 }
@@ -320,7 +320,7 @@ struct AVKitPlaybackChrome: View {
         .tint(.white)
         .foregroundStyle(.white)
         .avkitGlassCircle()
-        .accessibilityLabel("Watch together")
+        .accessibilityLabel(AppLanguage.string("player.watch_together", default: "Watch together"))
     }
 
     private var centerTransport: some View {
@@ -352,7 +352,7 @@ struct AVKitPlaybackChrome: View {
             }
             .buttonStyle(.plain)
             .avkitGlassCircle()
-            .accessibilityLabel(model.isBuffering ? "Loading" : (model.isPaused ? "Play" : "Pause"))
+            .accessibilityLabel(model.isBuffering ? AppLanguage.string("common.loading", default: "Loading") : (model.isPaused ? AppLanguage.string("common.play", default: "Play") : AppLanguage.string("common.pause", default: "Pause")))
             iconButton(
                 PlaybackSkipInterval.resolved(Int(PlaybackPreferences.skipForward)).forwardSymbol,
                 label: "Skip forward \(Int(PlaybackPreferences.skipForward)) seconds",
@@ -482,25 +482,25 @@ struct AVKitPlaybackChrome: View {
                 onUp: { changeVolume(by: 0.1) },
                 onDown: { changeVolume(by: -0.1) }
             )
-            keyButton("Play or Pause", .space, action: playPauseFromKeyboard)
-            keyButton("Play or Pause", "k", action: playPauseFromKeyboard)
-            keyButton("Skip Back", "j") { skip(by: -PlaybackPreferences.skipBackward) }
-            keyButton("Skip Forward", "l") { skip(by: PlaybackPreferences.skipForward) }
-            keyButton("Mute", "m", action: toggleMute)
-            keyButton("Subtitles", "c", action: toggleSubtitles)
-            keyButton("Slower", "[") { stepSpeed(by: -1) }
-            keyButton("Faster", "]") { stepSpeed(by: 1) }
-            keyButton("Fill or Fit", "z") {
+            keyButton(AppLanguage.string("player.play_or_pause", default: "Play or Pause"), .space, action: playPauseFromKeyboard)
+            keyButton(AppLanguage.string("player.play_or_pause", default: "Play or Pause"), "k", action: playPauseFromKeyboard)
+            keyButton(AppLanguage.string("player.skip_back", default: "Skip Back"), "j") { skip(by: -PlaybackPreferences.skipBackward) }
+            keyButton(AppLanguage.string("player.skip_forward", default: "Skip Forward"), "l") { skip(by: PlaybackPreferences.skipForward) }
+            keyButton(AppLanguage.string("player.mute", default: "Mute"), "m", action: toggleMute)
+            keyButton(AppLanguage.string("player.subtitles", default: "Subtitles"), "c", action: toggleSubtitles)
+            keyButton(AppLanguage.string("player.slower", default: "Slower"), "[") { stepSpeed(by: -1) }
+            keyButton(AppLanguage.string("player.faster", default: "Faster"), "]") { stepSpeed(by: 1) }
+            keyButton(AppLanguage.string("player.fillcreen", default: "Fill or Fit"), "z") {
                 model.toggleFillScreen()
                 showHint(model.fillsScreen ? "Fill Screen" : "Fit to Screen")
             }
-            keyButton("Playback Info", "i") { model.togglePlaybackStats() }
-            keyButton("Skip Intro", "s", action: skipFromKeyboard)
-            keyButton("Skip Intro", .return, action: skipFromKeyboard)
+            keyButton(AppLanguage.string("player.playback_info", default: "Playback Info"), "i") { model.togglePlaybackStats() }
+            keyButton(AppLanguage.string("player.skip_intro", default: "Skip Intro"), "s", action: skipFromKeyboard)
+            keyButton(AppLanguage.string("player.skip_intro", default: "Skip Intro"), .return, action: skipFromKeyboard)
             if let onNext {
-                keyButton("Next Episode", "n", action: onNext)
+                keyButton(AppLanguage.string("player.next_episode", default: "Next Episode"), "n", action: onNext)
             }
-            keyButton("Close", .escape, action: escapeFromKeyboard)
+            keyButton(AppLanguage.string("common.close", default: "Close"), .escape, action: escapeFromKeyboard)
             ForEach(0 ..< 10, id: \.self) { digit in
                 keyButton("Jump to \(digit * 10)%", KeyEquivalent(Character(String(digit)))) {
                     model.seek(toFraction: Double(digit) / 10)
@@ -699,7 +699,7 @@ private struct AVKitPlaybackSettingsMenuButton: View {
         }
         .buttonStyle(.plain)
         .avkitGlassCircle()
-        .accessibilityLabel("More")
+        .accessibilityLabel(AppLanguage.string("common.more", default: "More"))
         .accessibilityAddTraits(isOpen ? .isSelected : [])
     }
 }
@@ -750,20 +750,20 @@ private struct AVKitPlaybackSettingsPanel: View {
         .frame(maxHeight: maxHeight, alignment: .top)
         .foregroundStyle(.white)
         .avkitSettingsCard()
-        .accessibilityLabel("Playback settings")
+        .accessibilityLabel(AppLanguage.string("player.playback_settings", default: "Playback settings"))
     }
 
     private var header: some View {
         HStack(spacing: 8) {
             if page != .root {
                 Button(action: { page = .root }) {
-                    Image(systemName: "chevron.left")
+                    Image(systemName: "chevron.backward")
                         .font(.body.weight(.semibold))
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Back")
+                .accessibilityLabel(AppLanguage.string("common.back", default: "Back"))
             }
             Text(title)
                 .font(.headline)
@@ -775,7 +775,7 @@ private struct AVKitPlaybackSettingsPanel: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            .accessibilityLabel(AppLanguage.string("common.close", default: "Close"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -783,7 +783,7 @@ private struct AVKitPlaybackSettingsPanel: View {
 
     private var title: String {
         switch page {
-        case .root: "More"
+        case .root: AppLanguage.string("common.more", default: "More")
         case .quality: "Quality"
         case .version: "Version"
         case .speed: "Playback Speed"
@@ -799,7 +799,7 @@ private struct AVKitPlaybackSettingsPanel: View {
     @ViewBuilder
     private var rootRows: some View {
         settingsRow(
-            title: "Quality",
+            title: AppLanguage.string("player.quality", default: "Quality"),
             value: quality.title,
             systemImage: "slider.horizontal.3"
         ) {
@@ -807,7 +807,7 @@ private struct AVKitPlaybackSettingsPanel: View {
         }
         if versions.count > 1 {
             settingsRow(
-                title: "Version",
+                title: AppLanguage.string("settings.version", default: "Version"),
                 value: selectedVersion?.title ?? "Default",
                 systemImage: "square.stack"
             ) {
@@ -815,35 +815,35 @@ private struct AVKitPlaybackSettingsPanel: View {
             }
         }
         settingsRow(
-            title: "Playback Speed",
+            title: AppLanguage.string("player.playback_speed", default: "Playback Speed"),
             value: AVKitPlaybackSpeed.title(model.playbackRate),
             systemImage: "gauge.with.needle"
         ) {
             page = .speed
         }
         settingsRow(
-            title: "Select Audio",
+            title: AppLanguage.string("player.select_audio", default: "Select Audio"),
             value: selectedAudioTitle,
             systemImage: "waveform"
         ) {
             page = .audio
         }
         settingsRow(
-            title: "Select Subtitles",
+            title: AppLanguage.string("player.select_subtitles", default: "Select Subtitles"),
             value: selectedSubtitleTitle,
             systemImage: "captions.bubble"
         ) {
             page = .subtitles
         }
         settingsRow(
-            title: "Subtitle Style",
+            title: AppLanguage.string("player.subtitle_style", default: "Subtitle Style"),
             value: SubtitleAppearance.size.title,
             systemImage: "textformat.size"
         ) {
             page = .subtitleStyle
         }
         settingsRow(
-            title: "Subtitle Sync",
+            title: AppLanguage.string("player.subtitle_sync", default: "Subtitle Sync"),
             value: SubtitleAppearance.syncTitle(),
             systemImage: "clock.arrow.2.circlepath"
         ) {
@@ -851,7 +851,7 @@ private struct AVKitPlaybackSettingsPanel: View {
         }
         if !model.plan.chapters.isEmpty {
             settingsRow(
-                title: "Chapters",
+                title: AppLanguage.string("player.chapters", default: "Chapters"),
                 value: "\(model.plan.chapters.count)",
                 systemImage: "list.bullet"
             ) {
@@ -860,7 +860,7 @@ private struct AVKitPlaybackSettingsPanel: View {
         }
         if !model.plan.isLive {
             settingsRow(
-                title: "Sleep Timer",
+                title: AppLanguage.string("player.sleep_timer", default: "Sleep Timer"),
                 value: sleepTimerValue,
                 systemImage: "moon.zzz"
             ) {
@@ -871,8 +871,8 @@ private struct AVKitPlaybackSettingsPanel: View {
             model.toggleFillScreen()
         } label: {
             rowLabel(
-                title: "Fill screen",
-                value: model.fillsScreen ? "On" : "Off",
+                title: AppLanguage.string("ui.fill_screen", default: "Fill screen"),
+                value: model.fillsScreen ? AppLanguage.string("common.on", default: "On") : AppLanguage.string("player.subtitles_off", default: "Off"),
                 systemImage: "arrow.up.left.and.arrow.down.right",
                 showsChevron: false,
                 selected: model.fillsScreen
@@ -883,8 +883,8 @@ private struct AVKitPlaybackSettingsPanel: View {
             model.togglePlaybackStats()
         } label: {
             rowLabel(
-                title: "Stats",
-                value: model.showsPlaybackStats ? "On" : "Off",
+                title: AppLanguage.string("ui.stats", default: "Stats"),
+                value: model.showsPlaybackStats ? AppLanguage.string("common.on", default: "On") : AppLanguage.string("player.subtitles_off", default: "Off"),
                 systemImage: "info.circle",
                 showsChevron: false,
                 selected: model.showsPlaybackStats
@@ -995,7 +995,7 @@ private struct AVKitPlaybackSettingsPanel: View {
     @ViewBuilder
     private var audioRows: some View {
         if model.audioOptions.isEmpty {
-            Text("No audio tracks")
+            Text(AppLanguage.string("player.no_audio", default: "No audio tracks"))
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.6))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1018,7 +1018,7 @@ private struct AVKitPlaybackSettingsPanel: View {
         Group {
             if canAddSubtitles {
                 Button(action: onAddSubtitles) {
-                    rowLabel(title: "Add Subtitles", value: nil, systemImage: "plus.bubble", showsChevron: false)
+                    rowLabel(title: AppLanguage.string("search.add_subtitles", default: "Add Subtitles"), value: nil, systemImage: "plus.bubble", showsChevron: false)
                 }
                 .buttonStyle(.plain)
             }
@@ -1043,7 +1043,7 @@ private struct AVKitPlaybackSettingsPanel: View {
 
     @ViewBuilder
     private var subtitleStyleRows: some View {
-        menuSection("Font Size")
+        menuSection(AppLanguage.string("player.font_size", default: "Font Size"))
         ForEach(SubtitleAppearance.Size.allCases) { option in
             choiceRow(option.title, selected: (SubtitleAppearance.Size(rawValue: sizeRaw) ?? .medium) == option) {
                 sizeRaw = option.rawValue
@@ -1051,7 +1051,7 @@ private struct AVKitPlaybackSettingsPanel: View {
             }
         }
         if model.showsPictureSubtitles {
-            Text("These subtitles are pictures (PGS or VobSub), so only their size can change.")
+            Text(AppLanguage.string("player.image_subtitles_note", default: "These subtitles are pictures (PGS or VobSub), so only their size can change."))
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.55))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1064,14 +1064,14 @@ private struct AVKitPlaybackSettingsPanel: View {
 
     @ViewBuilder
     private var textLookRows: some View {
-        menuSection("Text Color")
+        menuSection(AppLanguage.string("player.text_color", default: "Text Color"))
         ForEach(SubtitleAppearance.TextColor.allCases) { option in
             choiceRow(option.title, selected: (SubtitleAppearance.TextColor(rawValue: colorRaw) ?? .white) == option) {
                 colorRaw = option.rawValue
                 model.applySubtitleAppearance()
             }
         }
-        menuSection("Background")
+        menuSection(AppLanguage.string("player.background", default: "Background"))
         ForEach(SubtitleAppearance.Background.allCases) { option in
             choiceRow(option.title, selected: (SubtitleAppearance.Background(rawValue: backgroundRaw) ?? .dropShadow) == option) {
                 backgroundRaw = option.rawValue
@@ -1125,7 +1125,7 @@ private struct AVKitPlaybackSettingsPanel: View {
                 step: SubtitleAppearance.syncStep
             )
             .tint(.white)
-            Button("Reset") {
+            Button(AppLanguage.string("common.reset", default: "Reset")) {
                 syncSeconds = 0
                 model.applySubtitleAppearance()
             }
@@ -1202,7 +1202,7 @@ private struct AVKitPlaybackSettingsPanel: View {
                     .font(.caption.weight(.semibold))
             }
             if showsChevron {
-                Image(systemName: "chevron.right")
+                Image(systemName: "chevron.forward")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.45))
             }
@@ -1408,7 +1408,7 @@ private struct AVKitScrubber: View {
                     }
             )
             .animation(.easeInOut(duration: 0.12), value: isDragging)
-            .accessibilityLabel("Timeline")
+            .accessibilityLabel(AppLanguage.string("player.timeline", default: "Timeline"))
             .accessibilityValue(PlaybackTimeFormatting.elapsed(shown))
         }
     }

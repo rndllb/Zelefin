@@ -57,6 +57,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -484,8 +486,7 @@ fun DownloadStatusBanner(progress: DownloadProgress, onCancel: () -> Unit, modif
             Text(progress.bannerTitle, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(progress.sizeLabel(context), color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 13.sp, maxLines = 1)
         }
-        Text(
-            "Cancel",
+        Text(stringResource(R.string.common_cancel),
             color = ZelefinCyan,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.SemiBold,
@@ -604,8 +605,7 @@ internal fun DownloadedJumpTile(modifier: Modifier, onClick: () -> Unit) {
     ) {
         Icon(Icons.Filled.ArrowCircleDown, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
         Spacer(Modifier.height(8.dp))
-        Text(
-            "Downloaded",
+        Text(stringResource(R.string.downloads_title),
             color = Color.White,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
@@ -696,10 +696,10 @@ internal fun DownloadedPage(
             ) {
                 Icon(Icons.Filled.ArrowCircleDown, contentDescription = null, tint = ZelefinMuted, modifier = Modifier.size(44.dp))
                 Spacer(Modifier.height(14.dp))
-                Text("No Downloads", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text(stringResource(R.string.downloads_empty), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Movies and episodes you download will show up here for offline playback.",
+                    stringResource(R.string.ui_movies_and_episodes_you_download_will_show),
                     color = ZelefinMuted,
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center,
@@ -757,8 +757,7 @@ internal fun DownloadedPage(
         ) {
             GlassBackDisc("downloaded-back", shown = true, onBack = onBack)
             Spacer(Modifier.width(12.dp))
-            Text(
-                "Downloaded",
+            Text(stringResource(R.string.downloads_title),
                 color = Color.White,
                 fontFamily = ZelefinFont,
                 fontWeight = FontWeight.SemiBold,

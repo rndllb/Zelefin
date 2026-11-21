@@ -217,37 +217,100 @@ object CreditRoles {
         "composer" -> 5
         else -> 8
     }
+
+    /** Crew keeps a stable Type label; cast keeps the character `Role` when present. */
+    fun displayLabel(type: String, role: String?): String {
+        val kind = type.lowercase()
+        if (kind in setOf("director", "creator", "writer", "producer", "composer")) {
+            return label(type)
+        }
+        val trimmed = role?.trim().orEmpty()
+        if (trimmed.isNotEmpty()) return trimmed
+        return label(type)
+    }
 }
 
-/** Directors pulled out of cast & crew for the title page, matching iOS `TitleDirectors`. */
+/**
+ * “Directed by …” / “Created by …” for the title page, matching iOS `TitleDirectors`.
+ * Series use Jellyfin `Creator`; movies use `Director`.
+ */
 object TitleDirectors {
-    fun people(people: List<CreditPerson>): List<CreditPerson> {
-        val seen = linkedSetOf<String>()
-        val directors = mutableListOf<CreditPerson>()
-        for (person in people) {
-            if (!isDirector(person)) continue
-            val name = person.name.trim()
-            if (name.isEmpty() || !seen.add(name.lowercase())) continue
-            directors += person
-        }
-        return directors
+    data class Byline(val label: String, val people: List<CreditPerson>) {
+        val lineText: String?
+            get() {
+                val names = people.map { it.name }
+                if (names.isEmpty()) return null
+                return when (names.size) {
+                    1 -> "$label ${names[0]}"
+                    2 -> "$label ${names[0]} and ${names[1]}"
+                    else -> "$label ${names.dropLast(1).joinToString(", ")}, and ${names.last()}"
+                }
+            }
     }
+
+    fun people(people: List<CreditPerson>): List<CreditPerson> =
+        byline(people, MediaKind.Movie)?.people.orEmpty()
+
+    fun directors(people: List<CreditPerson>): List<CreditPerson> = matching(people, ::isDirector)
+
+    fun creators(people: List<CreditPerson>): List<CreditPerson> = matching(people, ::isCreator)
 
     fun names(people: List<CreditPerson>): List<String> = people(people).map { it.name }
 
-    fun line(people: List<CreditPerson>): String? {
-        val names = names(people)
-        if (names.isEmpty()) return null
-        return when (names.size) {
-            1 -> "Directed by ${names[0]}"
-            2 -> "Directed by ${names[0]} and ${names[1]}"
-            else -> "Directed by ${names.dropLast(1).joinToString(", ")}, and ${names.last()}"
+    fun line(people: List<CreditPerson>): String? = byline(people, MediaKind.Movie)?.lineText
+
+    fun byline(people: List<CreditPerson>, itemKind: MediaKind): Byline? {
+        val directors = directors(people)
+        val creators = creators(people)
+        return when (itemKind) {
+            MediaKind.Series, MediaKind.Season -> when {
+                creators.isNotEmpty() -> Byline("Created by", creators)
+                directors.isNotEmpty() -> Byline("Directed by", directors)
+                else -> null
+            }
+            else -> when {
+                directors.isNotEmpty() -> Byline("Directed by", directors)
+                creators.isNotEmpty() -> Byline("Created by", creators)
+                else -> null
+            }
         }
     }
 
+    private fun matching(
+        people: List<CreditPerson>,
+        matches: (CreditPerson) -> Boolean,
+    ): List<CreditPerson> {
+        val seen = linkedSetOf<String>()
+        val out = mutableListOf<CreditPerson>()
+        for (person in people) {
+            if (!matches(person)) continue
+            val name = person.name.trim()
+            if (name.isEmpty() || !seen.add(name.lowercase())) continue
+            out += person
+        }
+        return out
+    }
+
     private fun isDirector(person: CreditPerson): Boolean {
-        val role = person.roleLabel.trim().lowercase()
-        return role == "director" || role.startsWith("director")
+        if (person.rank == 1) return true
+        return roleMatches(person.roleLabel, "director")
+    }
+
+    private fun isCreator(person: CreditPerson): Boolean {
+        if (person.rank == 2) return true
+        return roleMatches(person.roleLabel, "creator")
+    }
+
+    private fun roleMatches(roleLabel: String, stem: String): Boolean {
+        val role = roleLabel.trim().lowercase()
+        if (role.isEmpty()) return false
+        // "Director", "Director of …", "Film Director", and hyphenated "Co-Director".
+        return role == stem ||
+            role.startsWith(stem) ||
+            role.endsWith(" $stem") ||
+            role.contains(" $stem") ||
+            role.endsWith("-$stem") ||
+            role.contains("-$stem")
     }
 }
 

@@ -34,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -188,7 +190,7 @@ private fun ReviewsSection(
     val mine = reviews.firstOrNull(isOwn)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            "Reviews",
+            stringResource(R.string.ui_reviews),
             color = Color.White,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.SemiBold,
@@ -209,7 +211,7 @@ private fun ReviewsSection(
                 }
                 reviews.isNotEmpty() ->
                     Text(if (reviews.size == 1) "1 review" else "${reviews.size} reviews", color = ExtrasFaint, fontFamily = ZelefinFont, fontSize = 13.sp)
-                else -> Text("No reviews yet", color = ExtrasFaint, fontFamily = ZelefinFont, fontSize = 13.sp)
+                else -> Text(stringResource(R.string.detail_no_reviews), color = ExtrasFaint, fontFamily = ZelefinFont, fontSize = 13.sp)
             }
             Spacer(Modifier.weight(1f))
             Text(
@@ -233,8 +235,7 @@ private fun ReviewsSection(
                             Text(review.content, color = Color.White.copy(alpha = 0.86f), fontFamily = ZelefinFont, fontSize = 16.sp)
                         }
                         if (isOwn(review) || isAdministrator) {
-                            Text(
-                                "Delete",
+                            Text(stringResource(R.string.common_delete),
                                 color = Destructive,
                                 fontFamily = ZelefinFont,
                                 fontWeight = FontWeight.SemiBold,
@@ -344,7 +345,7 @@ internal fun TitleReviewEditor(
                     .defaultMinSize(minHeight = 110.dp),
                 decorationBox = { inner ->
                     Box {
-                        if (content.isEmpty()) Text("What did you think?", style = style, color = ExtrasFaint)
+                        if (content.isEmpty()) Text(stringResource(R.string.ui_what_did_you_think), style = style, color = ExtrasFaint)
                         inner()
                     }
                 },
@@ -359,7 +360,7 @@ internal fun TitleReviewEditor(
                         .clickable(enabled = !busy, onClick = onDelete)
                         .padding(16.dp),
                 ) {
-                    Text("Delete Review", color = Destructive, fontFamily = ZelefinFont, fontSize = 17.sp)
+                    Text(stringResource(R.string.ui_delete_review), color = Destructive, fontFamily = ZelefinFont, fontSize = 17.sp)
                 }
             }
             error?.let {

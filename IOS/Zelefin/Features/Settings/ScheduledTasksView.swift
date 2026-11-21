@@ -38,7 +38,7 @@ struct ScheduledTasksView: View {
                         .zelefinRowBackground()
                     }
                     if !running.isEmpty {
-                        Section("Running") {
+                        Section(AppLanguage.string("ui.running", default: "Running")) {
                             ForEach(running) { task in
                                 taskNavigation(task)
                             }
@@ -58,7 +58,7 @@ struct ScheduledTasksView: View {
                 .refreshable { await load(showProgress: false) }
             }
         }
-        .zelefinSettingsChrome(title: "Scheduled Tasks")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.scheduled_tasks", default: "Scheduled Tasks"))
         .task { await monitor() }
     }
 
@@ -144,12 +144,12 @@ struct ScheduledTaskRow: View {
                 if isBusy {
                     ProgressView()
                 } else if task.canCancel {
-                    Button("Cancel", role: .destructive) {
+                    Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .destructive) {
                         Task { await cancel() }
                     }
                     .buttonStyle(.borderless)
                 } else if task.canStart {
-                    Button("Start") {
+                    Button(AppLanguage.string("ui.start", default: "Start")) {
                         Task { await start() }
                     }
                     .buttonStyle(.borderless)
@@ -220,7 +220,7 @@ struct ScheduledTaskDetailView: View {
                                 .font(.body.weight(.medium))
                                 .foregroundStyle(LoginPalette.secondaryText)
                         } header: {
-                            Text("About")
+                            Text(AppLanguage.string("detail.about", default: "About"))
                         }
                         .zelefinRowBackground()
                     }
@@ -244,7 +244,7 @@ struct ScheduledTaskDetailView: View {
                                 }
                             }
                         } header: {
-                            Text("Last run")
+                            Text(AppLanguage.string("Last run", default: "Last run"))
                         }
                         .zelefinRowBackground()
                     }

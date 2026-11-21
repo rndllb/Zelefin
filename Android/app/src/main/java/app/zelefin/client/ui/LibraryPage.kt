@@ -92,6 +92,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -101,7 +103,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -118,7 +119,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.ColorUtils
-import app.zelefin.client.R
 import app.zelefin.client.CatalogBrowseQuery
 import app.zelefin.client.LibraryCounts
 import app.zelefin.client.LibraryGenre
@@ -164,7 +164,7 @@ fun LibraryTabPage(
     onSessions: () -> Unit,
     onSettings: () -> Unit,
     onSignOut: () -> Unit,
-    onRandom: () -> Unit = {},
+    onRandom: suspend () -> Unit = {},
 ) {
     val motion = rememberZelefinPush(state.libraryPath) { from, to ->
         when {
@@ -230,7 +230,7 @@ private fun LibraryHome(
     onSessions: () -> Unit,
     onSettings: () -> Unit,
     onSignOut: () -> Unit,
-    onRandom: () -> Unit,
+    onRandom: suspend () -> Unit,
 ) {
     var arranging by remember { mutableStateOf(false) }
     val sheet = rememberZelefinSheet(if (arranging) Unit else null)
@@ -267,7 +267,7 @@ private fun LibraryHome(
                             Modifier.fillMaxSize().padding(top = headerHeight + 40.dp, start = 32.dp, end = 32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Text("Couldn’t Load Library", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                            Text(stringResource(R.string.alert_couldnt_load_library), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                             Spacer(Modifier.height(8.dp))
                             Text(state.message, color = ZelefinMuted, fontSize = 16.sp)
                         }
@@ -365,8 +365,7 @@ private fun LibraryHome(
                             }
                             if (collections.isNotEmpty()) {
                                 item(key = "collections-title") {
-                                    Text(
-                                        "Collections",
+                                    Text(stringResource(R.string.library_collections),
                                         color = Color.White,
                                         fontFamily = ZelefinFont,
                                         fontWeight = FontWeight.SemiBold,
@@ -416,7 +415,7 @@ private fun LibraryHeader(
     arrangeShown: Boolean,
     session: SavedSession?,
     onArrange: () -> Unit,
-    onRandom: () -> Unit,
+    onRandom: suspend () -> Unit,
     onProfile: () -> Unit,
     onSessions: () -> Unit,
     onSettings: () -> Unit,
@@ -424,7 +423,6 @@ private fun LibraryHeader(
 ) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(180), label = "libraryHeader")
     val shift by animateDpAsState(if (visible) 0.dp else (-120).dp, tween(180), label = "libraryHeaderShift")
-    val diceFive = ImageVector.vectorResource(R.drawable.iconsax_dice_five)
     Row(
         Modifier
             .fillMaxWidth()
@@ -435,7 +433,7 @@ private fun LibraryHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "Library",
+            stringResource(R.string.library_title),
             color = Color.White,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
@@ -449,7 +447,7 @@ private fun LibraryHeader(
                 .size(45.dp)
                 .then(
                     if (visible && arrangeShown) {
-                        Modifier.zelefinGlassDisc("library-random", "Pick something", diceFive, onRandom)
+                        Modifier.zelefinRandomDiceDisc("library-random", "Pick something", onRandom)
                     } else {
                         Modifier
                     },
@@ -483,9 +481,9 @@ private fun ServerStats(counts: LibraryCounts) {
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatFact(counts.movies, "Movies", Modifier.weight(1f))
+        StatFact(counts.movies, stringResource(R.string.tab_movies), Modifier.weight(1f))
         StatDivider()
-        StatFact(counts.shows, "Shows", Modifier.weight(1f))
+        StatFact(counts.shows, stringResource(R.string.tab_shows), Modifier.weight(1f))
         StatDivider()
         StatFact(counts.episodes, "Episodes", Modifier.weight(1f))
         if (counts.videos > 0) {
@@ -751,10 +749,10 @@ private fun GenresPage(
 ) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         TopAppBar(
-            title = { Text("Genres") },
+            title = { Text(stringResource(R.string.library_genres)) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.common_back))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -771,9 +769,9 @@ private fun GenresPage(
                 Modifier.fillMaxSize().padding(top = 40.dp, start = 32.dp, end = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("No Genres", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text(stringResource(R.string.library_no_genres), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("Genres from your libraries will show up here.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
+                Text(stringResource(R.string.library_no_genres_body), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
             }
             else -> BoxWithConstraints(Modifier.fillMaxSize()) {
                 val gridState = rememberLazyGridState()
@@ -959,11 +957,11 @@ private fun ArrangeSheet(
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         TopAppBar(
-            title = { Text("Arrange") },
+            title = { Text(stringResource(R.string.library_arrange_title)) },
             windowInsets = WindowInsets(0, 0, 0, 0),
             actions = {
                 TextButton(onClick = onDone) {
-                    Text("Done", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.common_done), fontWeight = FontWeight.SemiBold)
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -979,7 +977,7 @@ private fun ArrangeSheet(
                 .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
         ) {
             Text(
-                "Hold a room and drag it up or down. The eye hides it from Library.",
+                stringResource(R.string.library_arrange_footer),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 15.sp,
             )
@@ -1055,7 +1053,7 @@ private fun ArrangeSheet(
                     }
                     Column(Modifier.weight(1f).fillMaxHeight().then(dragModifier), verticalArrangement = Arrangement.Center) {
                         Text(room.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 1)
-                        if (!shown) Text("Hidden", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                        if (!shown) Text(stringResource(R.string.library_hidden), color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                     }
                     EyeButton(shown) {
                         val hidden = layout.resolvedHidden(rooms).toMutableSet()
@@ -1066,9 +1064,9 @@ private fun ArrangeSheet(
                 }
             } }
             Spacer(Modifier.height(18.dp))
-            Text("Also on Library", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Text(stringResource(R.string.library_also_on), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
             Spacer(Modifier.height(12.dp))
-            Text("These stay under your rooms. Hide any you don’t need.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
+            Text(stringResource(R.string.library_also_on_body), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
             Spacer(Modifier.height(16.dp))
             LibraryPageBlock.entries.forEach { block ->
                 val shown = block !in layout.hiddenBlocks
@@ -1103,7 +1101,7 @@ private fun ArrangeSheet(
                 onClick = onReset,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
             ) {
-                Text("Reset arrangement", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Text(stringResource(R.string.library_reset_arrangement), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             }
         }
     }

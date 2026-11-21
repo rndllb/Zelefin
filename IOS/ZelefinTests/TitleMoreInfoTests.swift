@@ -102,6 +102,21 @@ final class TitleMoreInfoTests: XCTestCase {
         XCTAssertEqual(info.file.first { $0.label == "Bitrate" }?.value, "45 Mbps")
     }
 
+    func testSeriesListsCreatorInInformation() {
+        let show = movie(name: "Silo", year: 2023, runtime: 0, rating: "TV-MA")
+        let dto = BaseItemDto(
+            people: [
+                BaseItemPerson(id: "1", name: "Actor", role: "Juliette", type: .actor),
+                BaseItemPerson(id: "2", name: "Graham Yost", type: .creator),
+            ],
+            studios: [NameGuidPair(name: "Apple")],
+            type: .series
+        )
+        let info = TitleMoreInfoMapper.info(from: dto, item: show)
+        XCTAssertEqual(info.information.first { $0.label == "Creator" }?.value, "Graham Yost")
+        XCTAssertEqual(info.information.first { $0.label == "Studio" }?.value, "Apple")
+    }
+
     func testSeriesWithoutStreamsNeedsEpisodeMedia() {
         let show = movie(name: "Silo", year: 2023, runtime: 0, rating: "TV-MA")
         let dto = BaseItemDto(studios: [NameGuidPair(name: "Apple")], type: .series)

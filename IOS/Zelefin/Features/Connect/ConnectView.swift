@@ -64,10 +64,10 @@ struct ConnectView: View {
             cancelQuickConnect()
         }
         .task(id: address) { await loadBranding() }
-        .alert("Password help", isPresented: $showsPasswordHelp) {
-            Button("OK", role: .cancel) {}
+        .alert(AppLanguage.string("ui.password_help", default: "Password help"), isPresented: $showsPasswordHelp) {
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
-            Text("Reset your password on the server, or ask the person who runs it.")
+            Text(AppLanguage.string("connect.reset_password_help", default: "Reset your password on the server, or ask the person who runs it."))
         }
     }
 
@@ -89,7 +89,7 @@ struct ConnectView: View {
                 }
 
                 if serverType == .silo {
-                    Text("Enter Silo's address and your Silo sign-in, then pick who's watching.")
+                    Text(AppLanguage.string("connect.silo_help", default: "Enter Silo's address and your Silo sign-in, then pick who's watching."))
                         .font(.footnote)
                         .foregroundStyle(LoginPalette.captionText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -131,13 +131,13 @@ struct ConnectView: View {
         VStack(spacing: 22) {
             VStack(spacing: 14) {
                 ConnectBrandMark(size: horizontalSizeClass == .regular ? 196 : 168)
-                Text("Zelefin")
+                Text(AppLanguage.string("settings.zelefin_section", default: "Zelefin"))
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(LoginPalette.primaryText)
                     .accessibilityAddTraits(.isHeader)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Zelefin")
+            .accessibilityLabel(AppLanguage.string("settings.zelefin_section", default: "Zelefin"))
 
             ConnectBackendPicker(
                 selection: serverTypeBinding,
@@ -180,7 +180,7 @@ struct ConnectView: View {
                 .submitLabel(.next)
                 .focused($focusedField, equals: .server)
                 .onSubmit { focusedField = .username }
-                .accessibilityLabel("Server URL")
+                .accessibilityLabel(AppLanguage.string("connect.server_url", default: "Server URL"))
             }
 
             cardDivider
@@ -204,7 +204,7 @@ struct ConnectView: View {
                 .submitLabel(.next)
                 .focused($focusedField, equals: .username)
                 .onSubmit { focusedField = .password }
-                .accessibilityLabel(serverType == .silo ? "Username or email" : "Username")
+                .accessibilityLabel(serverType == .silo ? AppLanguage.string("connect.username_or_email", default: "Username or email") : AppLanguage.string("connect.username", default: "Username"))
             }
 
             cardDivider
@@ -237,7 +237,7 @@ struct ConnectView: View {
     @ViewBuilder
     private var accessGatewayFields: some View {
         labeledField(label: "CLIENT ID", systemImage: "key.fill") {
-            TextField("Client ID or token ID", text: $gatewayClientID)
+            TextField(AppLanguage.string("connect.client_id", default: "Client ID or token ID"), text: $gatewayClientID)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
                 .textContentType(.username)
@@ -249,14 +249,14 @@ struct ConnectView: View {
         cardDivider
 
         labeledField(label: "CLIENT SECRET", systemImage: "lock.square.fill") {
-            SecureField("Client secret or access token", text: $gatewayClientSecret)
+            SecureField(AppLanguage.string("connect.client_secret", default: "Client secret or access token"), text: $gatewayClientSecret)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
                 .textContentType(.password)
                 .focused($focusedField, equals: .gatewaySecret)
         }
 
-        Text("Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin.")
+        Text(AppLanguage.string("connect.gateway_needed", default: "Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin."))
             .font(.caption)
             .foregroundStyle(LoginPalette.captionText)
             .padding(.top, 8)
@@ -266,7 +266,7 @@ struct ConnectView: View {
     private var passwordRow: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("PASSWORD")
+                Text(AppLanguage.string("connect.password_caps", default: "PASSWORD"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(LoginPalette.captionText)
                     .tracking(0.6)
@@ -274,7 +274,7 @@ struct ConnectView: View {
                 Button {
                     showsPasswordHelp = true
                 } label: {
-                    Text("FORGOT")
+                    Text(AppLanguage.string("connect.forgot", default: "FORGOT"))
                         .font(.caption.weight(.bold))
                         .tracking(0.8)
                         .foregroundStyle(LoginPalette.periwinkle)
@@ -289,7 +289,7 @@ struct ConnectView: View {
                     .foregroundStyle(LoginPalette.iconTint)
                     .frame(width: 22, alignment: .center)
 
-                SecureField("Password", text: $password)
+                SecureField(AppLanguage.string("connect.password", default: "Password"), text: $password)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoginPalette.fieldValue)
                     .textContentType(.password)
@@ -369,7 +369,7 @@ struct ConnectView: View {
                         .controlSize(.small)
                         .tint(LoginPalette.actionLabel)
                 }
-                Text(signingIn ? "SIGNING IN…" : "SIGN IN")
+                Text(signingIn ? AppLanguage.string("ui.signing_in", default: "SIGNING IN…") : AppLanguage.string("ui.sign_in", default: "SIGN IN"))
                     .font(.caption.weight(.bold))
                     .tracking(0.9)
             }
@@ -378,7 +378,7 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(!canSubmit || isBusy)
         .opacity((!canSubmit || isBusy) ? 0.42 : 1)
-        .accessibilityLabel("Sign in with \(serverType.title)")
+        .accessibilityLabel(String(format: AppLanguage.string("connect.sign_in_with", default: "Sign in with %@"), serverType.title))
     }
 
     private var testConnectionButton: some View {
@@ -391,7 +391,7 @@ struct ConnectView: View {
                         .controlSize(.small)
                         .tint(.white)
                 }
-                Text(isCheckingConnection ? "TESTING…" : "TEST CONNECTION")
+                Text(isCheckingConnection ? AppLanguage.string("ui.testing", default: "TESTING…") : AppLanguage.string("ui.test_connection", default: "TEST CONNECTION"))
                     .font(.caption.weight(.bold))
                     .tracking(0.9)
             }
@@ -400,7 +400,7 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(trimmedAddress.isEmpty || isBusy)
         .opacity((trimmedAddress.isEmpty || isBusy) ? 0.42 : 1)
-        .accessibilityLabel("Test server connection")
+        .accessibilityLabel(AppLanguage.string("connect.test_connection", default: "Test server connection"))
     }
 
     private var quickConnectButton: some View {
@@ -413,7 +413,7 @@ struct ConnectView: View {
                         .controlSize(.small)
                         .tint(.white)
                 }
-                Text(isStartingQuickConnect ? "STARTING…" : "JELLYFIN QUICK CONNECT")
+                Text(isStartingQuickConnect ? AppLanguage.string("ui.starting", default: "STARTING…") : "JELLYFIN QUICK CONNECT")
                     .font(.caption.weight(.bold))
                     .tracking(0.9)
             }
@@ -422,14 +422,14 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(trimmedAddress.isEmpty || isBusy)
         .opacity((trimmedAddress.isEmpty || isBusy && !isUsingQuickConnect) ? 0.42 : 1)
-        .accessibilityLabel("Jellyfin Quick Connect")
+        .accessibilityLabel(AppLanguage.string("connect.jellyfin_qc", default: "Jellyfin Quick Connect"))
     }
 
     private var reviewDemoButton: some View {
         Button {
             session.connectReviewDemo()
         } label: {
-            Text("TRY REVIEW DEMO")
+            Text(AppLanguage.string("connect.try_demo_caps", default: "TRY REVIEW DEMO"))
                 .font(.caption.weight(.bold))
                 .tracking(0.9)
                 .modifier(LoginSecondaryButtonStyle())
@@ -437,13 +437,13 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(isBusy)
         .opacity(isBusy ? 0.42 : 1)
-        .accessibilityLabel("Try Review Demo")
+        .accessibilityLabel(AppLanguage.string("connect.try_demo", default: "Try Review Demo"))
         .accessibilityHint("Opens a sample library for App Review. No server required.")
     }
 
     private var quickConnectPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("QUICK CONNECT")
+            Text(AppLanguage.string("connect.quick_connect_caps", default: "QUICK CONNECT"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(LoginPalette.captionText)
                 .tracking(0.6)
@@ -455,7 +455,7 @@ struct ConnectView: View {
                     .foregroundStyle(LoginPalette.primaryText)
                     .frame(maxWidth: .infinity)
                     .accessibilityAddTraits(.updatesFrequently)
-                    .accessibilityLabel("Quick Connect code \(quickConnectCode)")
+                    .accessibilityLabel(String(format: AppLanguage.string("connect.qc_code_a11y", default: "Quick Connect code %@"), quickConnectCode))
             } else {
                 ProgressView()
                     .tint(.white)
@@ -463,7 +463,7 @@ struct ConnectView: View {
                     .padding(.vertical, 8)
             }
 
-            Text("Open Jellyfin on another signed-in device and enter this code under Quick Connect.")
+            Text(AppLanguage.string("connect.quick_connect_help", default: "Open Jellyfin on another signed-in device and enter this code under Quick Connect."))
                 .font(.subheadline)
                 .foregroundStyle(LoginPalette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -472,12 +472,12 @@ struct ConnectView: View {
                 ProgressView()
                     .controlSize(.small)
                     .tint(.white)
-                Text("Waiting for approval…")
+                Text(AppLanguage.string("connect.waiting_approval", default: "Waiting for approval…"))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(LoginPalette.captionText)
             }
 
-            Button("Cancel") {
+            Button(AppLanguage.string("common.cancel", default: "Cancel")) {
                 cancelQuickConnect()
             }
             .font(.caption.weight(.bold))

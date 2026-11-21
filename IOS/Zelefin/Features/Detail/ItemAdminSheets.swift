@@ -11,18 +11,18 @@ struct IdentifySheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        TitleSheet(title: "Identify", closeDisabled: applying != nil, onClose: onClose) {
+        TitleSheet(title: AppLanguage.string("ui.identify", default: "Identify"), closeDisabled: applying != nil, onClose: onClose) {
             List {
                 Section {
                     if loading {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text("Searching…").foregroundStyle(.secondary)
+                            Text(AppLanguage.string("ui.searching", default: "Searching…")).foregroundStyle(.secondary)
                         }
                     } else if let errorMessage {
                         SettingsStatusText(text: errorMessage, isError: true)
                     } else if hits.isEmpty {
-                        Text("No matches found.").foregroundStyle(.secondary)
+                        Text(AppLanguage.string("ui.no_matches_found", default: "No matches found.")).foregroundStyle(.secondary)
                     } else {
                         ForEach(hits) { hit in
                             Button {
@@ -47,7 +47,7 @@ struct IdentifySheet: View {
                 } header: {
                     Text("Matches for \(item.name)")
                 } footer: {
-                    Text("Choosing a match replaces this title's metadata and artwork with the provider's.")
+                    Text(AppLanguage.string("Choosing a match replaces this title's metadata and artwork with the provider's.", default: "Choosing a match replaces this title's metadata and artwork with the provider's."))
                         .font(TitleSheetFont.note)
                 }
                 .zelefinRowBackground()
@@ -91,7 +91,7 @@ struct EditMetadataSheet: View {
 
     var body: some View {
         TitleSheet(
-            title: "Edit Metadata",
+            title: AppLanguage.string("ui.edit_metadata", default: "Edit Metadata"),
             closeDisabled: busy,
             confirmTitle: busy ? "Saving…" : "Save",
             confirmDisabled: busy,
@@ -105,7 +105,7 @@ struct EditMetadataSheet: View {
                     }
                     .zelefinRowBackground()
                 }
-                Section("Title") {
+                Section(AppLanguage.string("settings.title_field", default: "Title")) {
                     TitleSheetField(label: "Name", text: $draft.name)
                     TitleSheetField(label: "Year", text: $draft.year, prompt: "2021")
                     TitleSheetField(label: "Rating", text: $draft.officialRating, prompt: "PG-13")
@@ -115,13 +115,13 @@ struct EditMetadataSheet: View {
                     TitleSheetField(label: "Genres", text: $draft.genres, prompt: "Drama, Science Fiction")
                     TitleSheetField(label: "Tags", text: $draft.tags)
                 } header: {
-                    Text("Categories")
+                    Text(AppLanguage.string("ui.categories", default: "Categories"))
                 } footer: {
-                    Text("Separate genres and tags with commas.")
+                    Text(AppLanguage.string("Separate genres and tags with commas.", default: "Separate genres and tags with commas."))
                         .font(TitleSheetFont.note)
                 }
                 .zelefinRowBackground()
-                Section("Overview") {
+                Section(AppLanguage.string("ui.overview", default: "Overview")) {
                     TitleSheetField(label: "Description", text: $draft.overview, multiline: true)
                 }
                 .zelefinRowBackground()

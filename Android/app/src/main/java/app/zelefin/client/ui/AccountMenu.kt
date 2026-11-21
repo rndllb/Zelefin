@@ -45,9 +45,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import app.zelefin.client.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -180,24 +182,30 @@ private fun DockGlassMenu(
                 .zelefinMenuWidth()
                 .padding(vertical = 4.dp),
         ) {
-            GlassMenuRow("Profile", Icons.Outlined.AccountCircle, onProfile)
-            if (showSessions) GlassMenuRow("Sessions", Icons.Outlined.LiveTv, onSessions)
-            if (showSyncPlay) GlassMenuRow("SyncPlay", Icons.Outlined.Groups, onSyncPlay)
+            GlassMenuRow(stringResource(R.string.account_profile), Icons.Outlined.AccountCircle, onProfile)
+            if (showSessions) GlassMenuRow(stringResource(R.string.account_sessions), Icons.Outlined.LiveTv, onSessions)
+            if (showSyncPlay) GlassMenuRow(stringResource(R.string.account_syncplay), Icons.Outlined.Groups, onSyncPlay)
             if (profiles.isNotEmpty()) {
                 GlassMenuDivider()
-                GlassMenuCaption("Switch Profile")
+                GlassMenuCaption(stringResource(R.string.account_switch_profile))
                 profiles.forEach { profile -> GlassProfileRow(profile) { onSwitchProfile(profile) } }
             }
             if (others.isNotEmpty()) {
                 GlassMenuDivider()
-                GlassMenuCaption(if (silo) "Switch Account" else "Switch User")
+                GlassMenuCaption(
+                    if (silo) stringResource(R.string.account_switch_account) else stringResource(R.string.account_switch_user),
+                )
                 others.forEach { account -> GlassAccountRow(account) { onSwitch(account) } }
                 GlassMenuDivider()
             }
-            GlassMenuRow(if (silo) "Add Account" else "Add User", Icons.Outlined.PersonAdd, onAdd)
-            GlassMenuRow("Settings", Icons.Outlined.Settings, onSettings)
+            GlassMenuRow(
+                if (silo) stringResource(R.string.account_add_account) else stringResource(R.string.account_add_user),
+                Icons.Outlined.PersonAdd,
+                onAdd,
+            )
+            GlassMenuRow(stringResource(R.string.common_settings), Icons.Outlined.Settings, onSettings)
             GlassMenuDivider()
-            GlassMenuRow("Sign Out", Icons.AutoMirrored.Outlined.Logout, onSignOut, destructive = true)
+            GlassMenuRow(stringResource(R.string.common_sign_out), Icons.AutoMirrored.Outlined.Logout, onSignOut, destructive = true)
         }
     }
 }
@@ -249,7 +257,7 @@ private fun GlassAccountRow(account: SavedSession, onClick: () -> Unit) {
             Text(account.displayServer, color = DockInactive.copy(alpha = 0.6f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (viewModel<ZelefinModel>().accountHasPin(account.accountId)) {
-            Icon(Icons.Outlined.Lock, contentDescription = "PIN", tint = DockInactive.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+            Icon(Icons.Outlined.Lock, contentDescription = stringResource(R.string.connect_pin), tint = DockInactive.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -277,7 +285,7 @@ private fun GlassProfileRow(profile: SiloProfile, onClick: () -> Unit) {
             Text(siloProfileCaption(profile), color = DockInactive.copy(alpha = 0.6f), fontFamily = ZelefinFont, fontSize = 12.sp, maxLines = 1)
         }
         if (profile.hasPin) {
-            Icon(Icons.Outlined.Lock, contentDescription = "PIN", tint = DockInactive.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+            Icon(Icons.Outlined.Lock, contentDescription = stringResource(R.string.connect_pin), tint = DockInactive.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -365,7 +373,7 @@ fun AccountAvatar(
     /** Page headers float the avatar on the dock's liquid glass, drawn above the page. */
     floating: Boolean = false,
 ) {
-    val inset = maxOf(3.dp, diameter * 0.08f)
+    val inset = maxOf(2.dp, diameter * 0.07f)
     val photo = diameter - inset * 2
     val model: ZelefinModel = viewModel()
     val revision by remember(model) { model.state.map { it.avatarRevision }.distinctUntilChanged() }

@@ -39,6 +39,13 @@ struct PlayerGestureOverlay: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // Keep a live MPVolumeView in the hierarchy so system volume writes work.
+                DeviceVolumeHost()
+                    .frame(width: 1, height: 1)
+                    .position(x: -100, y: -100)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
                 HStack(spacing: 0) {
                     Color.clear
                         .contentShape(Rectangle())
@@ -91,7 +98,8 @@ struct PlayerGestureOverlay: View {
                 }
                 if activePan == nil {
                     activePan = kind
-                    panStartVolume = model.volume
+                    model.refreshDeviceVolume()
+                    panStartVolume = DeviceVolume.level
                     #if !targetEnvironment(macCatalyst)
                     panStartBrightness = UIScreen.main.brightness
                     #endif

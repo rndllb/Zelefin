@@ -38,6 +38,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -124,8 +126,7 @@ fun CollectionSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(Modifier.size(46.dp))
-                Text(
-                    "Collections",
+                Text(stringResource(R.string.library_collections),
                     color = Color.White,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
@@ -154,7 +155,7 @@ fun CollectionSheet(
                     .navigationBarsPadding(),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Text("New Collection", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text(stringResource(R.string.ui_new_collection), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     BasicTextField(
                         value = name,
@@ -169,7 +170,7 @@ fun CollectionSheet(
                             Column {
                                 Box(Modifier.padding(vertical = 10.dp)) {
                                     if (name.isEmpty()) {
-                                        Text("Name", color = Color.White.copy(alpha = 0.4f), fontFamily = ZelefinFont, fontSize = 16.sp)
+                                        Text(stringResource(R.string.ui_name), color = Color.White.copy(alpha = 0.4f), fontFamily = ZelefinFont, fontSize = 16.sp)
                                     }
                                     inner()
                                 }
@@ -179,7 +180,7 @@ fun CollectionSheet(
                     )
                     val canCreate = name.isNotBlank() && !busy
                     Text(
-                        "Create",
+                        stringResource(R.string.common_create),
                         color = if (canCreate) ZelefinCyan else Color.White.copy(alpha = 0.35f),
                         fontFamily = ZelefinFont,
                         fontWeight = FontWeight.SemiBold,
@@ -187,14 +188,14 @@ fun CollectionSheet(
                         modifier = Modifier.clickable(enabled = canCreate, onClick = ::create),
                     )
                 }
-                Text("Collections", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text(stringResource(R.string.library_collections), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 error?.let {
                     Text(it, color = Color(0xFFFF453A), fontFamily = ZelefinFont, fontSize = 14.sp)
                 }
                 when {
                     loading && editor == null -> CircularProgressIndicator(color = ZelefinCyan, modifier = Modifier.size(28.dp))
                     editor?.collections.isNullOrEmpty() -> Text(
-                        "No collections yet.",
+                        stringResource(R.string.detail_no_collections),
                         color = Color.White.copy(alpha = 0.55f),
                         fontFamily = ZelefinFont,
                         fontSize = 16.sp,

@@ -139,6 +139,8 @@ final class PlayerModel {
             switch pipeline {
             case .appleNative:
                 await PlaybackAudioSession.activate()
+                refreshDeviceVolume()
+                applyVolume()
                 await seekNativeToResumeIfNeeded()
                 player?.play()
                 setPlaybackRate(PlaybackPreferences.defaultRate)
@@ -151,6 +153,8 @@ final class PlayerModel {
                 await waitUntilSurfaceReady()
                 try Task.checkCancellation()
                 startMPV()
+                refreshDeviceVolume()
+                applyVolume()
                 setPlaybackRate(PlaybackPreferences.defaultRate)
             }
             await reportPlaybackStarted()
@@ -447,7 +451,7 @@ final class PlayerModel {
         isPaused = false
     }
 
-    /// The app's own volume (0–1), on top of the device's. It starts full each time.
+    /// Mirrors device media volume (0–1). Gestures and keyboard change the system level.
     private(set) var volume: Float = 1
     private(set) var isMuted = false
 
@@ -461,15 +465,24 @@ final class PlayerModel {
     }
 
     func setVolumeLevel(_ level: Float) {
-        volume = min(1, max(0, level))
+        let clamped = min(1, max(0, level))
+        DeviceVolume.set(clamped)
+        // Optimistic UI — outputVolume can lag a frame behind the slider write.
+        volume = clamped
         if volume > 0 { isMuted = false }
         applyVolume()
     }
 
+    /// Syncs `volume` from the hardware level (e.g. at the start of a volume pan).
+    func refreshDeviceVolume() {
+        volume = DeviceVolume.level
+    }
+
     private func applyVolume() {
-        let level = isMuted ? 0 : volume
+        // Keep the player at full gain so gestures control the device volume only.
+        let level: Float = isMuted ? 0 : 1
         mpv?.setVolume(level)
-        player?.volume = volume
+        player?.volume = level
         player?.isMuted = isMuted
     }
 
@@ -1187,20 +1200,20 @@ final class PlayerModel {
             let ahead = PlaybackStats.bufferedAhead(ranges: indicated, playhead: playhead)
             let size = item.presentationSize
             let facts = plan.sourceVideo
-            sections.append(PlaybackStatsSection(title: "Video", rows: [
+            sections.append(PlaybackStatsSection(title: AppLanguage.string("ui.video", default: "Video"), rows: [
                 .init(label: "Codec", value: (facts?.codec ?? plan.videoCodec)?.uppercased() ?? "—"),
                 .init(label: "Size", value: facts.map { "\($0.width)×\($0.height)" } ?? "—"),
                 .init(label: "Display", value: size.width > 0 ? "\(Int(size.width))×\(Int(size.height))" : "—"),
                 .init(label: "Aspect", value: PlaybackStats.aspectName(width: size.width, height: size.height)),
-                .init(label: "Frame rate", value: frameRateLabel(facts?.frameRate)),
-                .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(Int64(facts?.bitrate ?? plan.item.sourceBitrate ?? 0))),
+                .init(label: AppLanguage.string("ui.frame_rate", default: "Frame rate"), value: frameRateLabel(facts?.frameRate)),
+                .init(label: AppLanguage.string("ui.bitrate", default: "Bitrate"), value: PlaybackStats.bitrateLabel(Int64(facts?.bitrate ?? plan.item.sourceBitrate ?? 0))),
                 .init(label: "Range", value: plan.videoRange.displayName),
                 .init(label: "Audio", value: plan.audioFormat.displayName),
                 .init(label: "Container", value: plan.container.uppercased())
             ]))
-            sections.append(PlaybackStatsSection(title: "Network", rows: [
+            sections.append(PlaybackStatsSection(title: AppLanguage.string("settings.network", default: "Network"), rows: [
                 .init(label: "Host", value: plan.streamURL.host ?? "—"),
-                .init(label: "File", value: PlaybackStats.bytesLabel(plan.byteSize ?? 0)),
+                .init(label: AppLanguage.string("detail.file", default: "File"), value: PlaybackStats.bytesLabel(plan.byteSize ?? 0)),
                 .init(label: "Buffer", value: isBuffering ? "Rebuffering" : String(format: "%.1fs ahead", ahead)),
                 .init(label: "Indicated", value: PlaybackStats.bitrateLabel(Int64((log?.indicatedBitrate ?? 0).rounded()))),
                 .init(label: "Observed", value: PlaybackStats.bitrateLabel(Int64((log?.observedBitrate ?? 0).rounded())))
@@ -1226,18 +1239,18 @@ final class PlayerModel {
         let sourceBitrate = Int64(facts?.bitrate ?? plan.item.sourceBitrate ?? 0)
         var videoRows: [PlaybackStatsRow] = [
             .init(label: "Codec", value: (stats.videoCodec ?? facts?.codec ?? plan.videoCodec)?.uppercased() ?? "—"),
-            .init(label: "Size", value: pixelLabel(width: Int32(width), height: Int32(height))),
-            .init(label: "Display", value: pixelLabel(width: Int32(displayWidth), height: Int32(displayHeight))),
+            .init(label: AppLanguage.string("settings.size", default: "Size"), value: pixelLabel(width: Int32(width), height: Int32(height))),
+            .init(label: AppLanguage.string("ui.display", default: "Display"), value: pixelLabel(width: Int32(displayWidth), height: Int32(displayHeight))),
             .init(label: "Aspect", value: PlaybackStats.aspectName(width: CGFloat(displayWidth), height: CGFloat(displayHeight))),
-            .init(label: "Frame rate", value: frameRateLabel(stats.frameRate ?? facts?.frameRate)),
-            .init(label: "Average bitrate", value: PlaybackStats.bitrateLabel(sourceBitrate)),
+            .init(label: AppLanguage.string("ui.frame_rate", default: "Frame rate"), value: frameRateLabel(stats.frameRate ?? facts?.frameRate)),
+            .init(label: AppLanguage.string("ui.average_bitrate", default: "Average bitrate"), value: PlaybackStats.bitrateLabel(sourceBitrate)),
             .init(label: "Live bitrate", value: stats.videoBitrate.map { PlaybackStats.bitrateLabel(Int64($0)) } ?? "—"),
             .init(label: "Range", value: stats.rangeLabel),
             .init(label: "Pixels", value: [stats.hardwarePixelFormat, stats.pixelFormat].compactMap { $0 }.joined(separator: " → ").nonEmpty ?? "—"),
             .init(label: "Container", value: (stats.container ?? plan.container).uppercased())
         ]
         if plan.method != .directPlay, let stream = Self.transcodeBitrate(in: plan.streamURL) {
-            videoRows.append(.init(label: "Stream", value: PlaybackStats.bitrateLabel(Int64(stream))))
+            videoRows.append(.init(label: AppLanguage.string("ui.stream", default: "Stream"), value: PlaybackStats.bitrateLabel(Int64(stream))))
         }
 
         let audioTrack = [NativeLanguage.displayName(stats.audioLanguage), stats.audioTitle]
@@ -1247,7 +1260,7 @@ final class PlayerModel {
             .init(label: "Track", value: audioTrack.nonEmpty ?? "—"),
             .init(label: "Codec", value: stats.audioCodec?.uppercased() ?? "—"),
             .init(label: "Layout", value: [stats.channelLabel, sampleRate].compactMap { $0 }.joined(separator: " · ").nonEmpty ?? "—"),
-            .init(label: "Bitrate", value: PlaybackStats.bitrateLabel(Int64(stats.audioBitrate ?? 0))),
+            .init(label: AppLanguage.string("ui.bitrate", default: "Bitrate"), value: PlaybackStats.bitrateLabel(Int64(stats.audioBitrate ?? 0))),
             .init(label: "Output", value: stats.audioOutput ?? "—")
         ]
 
@@ -1266,18 +1279,18 @@ final class PlayerModel {
 
         let networkRows: [PlaybackStatsRow] = [
             .init(label: "Host", value: plan.streamURL.host ?? "Local file"),
-            .init(label: "File", value: PlaybackStats.bytesLabel(plan.byteSize ?? 0)),
+            .init(label: AppLanguage.string("detail.file", default: "File"), value: PlaybackStats.bytesLabel(plan.byteSize ?? 0)),
             .init(label: "Buffer", value: stats.isBuffering ? "Rebuffering" : String(format: "%.1fs ahead", stats.cacheSeconds ?? 0)),
-            .init(label: "Speed", value: PlaybackStats.bitrateLabel(Int64((stats.cacheSpeed ?? 0) * 8))),
+            .init(label: AppLanguage.string("ui.speed", default: "Speed"), value: PlaybackStats.bitrateLabel(Int64((stats.cacheSpeed ?? 0) * 8))),
             .init(label: "Seeking", value: stats.isSeeking ? "Yes" : "No"),
             .init(label: "Live", value: plan.isLive ? "Yes" : "No")
         ]
 
         return [
-            PlaybackStatsSection(title: "Video", rows: videoRows),
-            PlaybackStatsSection(title: "Audio", rows: audioRows),
+            PlaybackStatsSection(title: AppLanguage.string("ui.video", default: "Video"), rows: videoRows),
+            PlaybackStatsSection(title: AppLanguage.string("player.audio", default: "Audio"), rows: audioRows),
             PlaybackStatsSection(title: "Decode", rows: decodeRows),
-            PlaybackStatsSection(title: "Network", rows: networkRows)
+            PlaybackStatsSection(title: AppLanguage.string("settings.network", default: "Network"), rows: networkRows)
         ]
     }
 

@@ -1967,14 +1967,17 @@ internal fun BaseItemDto.toSnapshot(): JellyfinItemSnapshot {
             .mapNotNull { person ->
                 val personName = person.name?.trim().orEmpty()
                 if (personName.isEmpty()) return@mapNotNull null
+                val typeName = person.type.serialName
                 CreditPerson(
                     id = person.id.toString(),
                     name = personName,
-                    roleLabel = person.role?.trim()?.ifEmpty { null } ?: CreditRoles.label(person.type.serialName),
+                    roleLabel = CreditRoles.displayLabel(typeName, person.role),
                     imageTag = person.primaryImageTag,
+                    rank = CreditRoles.rank(typeName),
                 )
             }
-            .distinctBy { it.id },
+            // Keep actor + director rows for the same person (id alone dropped directors).
+            .distinctBy { "${it.id}#${it.rank}" },
         streams = mediaStreams.orEmpty().map { stream ->
             JellyfinStreamSnapshot(
                 type = stream.type.serialName,

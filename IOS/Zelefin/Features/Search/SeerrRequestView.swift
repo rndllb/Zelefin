@@ -137,7 +137,7 @@ struct SeerrRequestView: View {
         }
         .background(surfaces.canvas.ignoresSafeArea())
         .preferredColorScheme(.dark)
-        .navigationTitle(isAwaitingApproval ? "Review" : "Request")
+        .navigationTitle(isAwaitingApproval ? AppLanguage.string("ui.review", default: "Review") : AppLanguage.string("ui.request", default: "Request"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(surfaces.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -189,7 +189,7 @@ struct SeerrRequestView: View {
     }
 
     private var reviewMessage: some View {
-        Text("Waiting for approval.")
+        Text(AppLanguage.string("ui.waiting_for_approval", default: "Waiting for approval."))
             .font(.subheadline)
             .foregroundStyle(.white.opacity(0.7))
     }
@@ -210,7 +210,7 @@ struct SeerrRequestView: View {
                 summaryRow("Drive", value: rootFolder.isEmpty ? "Default" : rootFolder)
             }
             if title.kind == .tv {
-                summaryRow("Seasons", value: seasonSummary)
+                summaryRow(AppLanguage.string("ui.seasons", default: "Seasons"), value: seasonSummary)
             }
         }
         .background(surfaces.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -249,14 +249,14 @@ struct SeerrRequestView: View {
             Button {
                 Task { await decide(approve: true) }
             } label: {
-                decisionLabel(isSubmitting ? "Approving…" : "Approve", filled: true)
+                decisionLabel(isSubmitting ? AppLanguage.string("ui.approving", default: "Approving…") : AppLanguage.string("ui.approve", default: "Approve"), filled: true)
             }
             .buttonStyle(.plain)
             .disabled(isSubmitting || (isEditingRequest && !canSubmit))
             Button {
                 Task { await decide(approve: false) }
             } label: {
-                decisionLabel("Decline", filled: false, destructive: true)
+                decisionLabel(AppLanguage.string("ui.decline", default: "Decline"), filled: false, destructive: true)
             }
             .buttonStyle(.plain)
             .disabled(isSubmitting)
@@ -266,7 +266,7 @@ struct SeerrRequestView: View {
                         isEditingRequest.toggle()
                     }
                 } label: {
-                    decisionLabel(isEditingRequest ? "Done Editing" : "Edit Request", filled: false)
+                    decisionLabel(isEditingRequest ? AppLanguage.string("ui.done_editing", default: "Done Editing") : "Edit Request", filled: false)
                 }
                 .buttonStyle(.plain)
                 .disabled(isSubmitting)
@@ -291,7 +291,7 @@ struct SeerrRequestView: View {
 
     private var destinationSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Download")
+            Text(AppLanguage.string("ui.download", default: "Download"))
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.white)
             if servers.isEmpty {
@@ -317,7 +317,7 @@ struct SeerrRequestView: View {
                         if !usesServiceDefaults { divider }
                         menuRow("Quality", value: selectedProfileName) {
                             if usesServiceDefaults {
-                                Button("Default") { profileID = nil }
+                                Button(AppLanguage.string("settings.default", default: "Default")) { profileID = nil }
                             }
                             ForEach(details.profiles) { profile in
                                 Button(profile.name) { profileID = profile.id }
@@ -328,7 +328,7 @@ struct SeerrRequestView: View {
                         divider
                         menuRow("Drive", value: rootFolder.isEmpty ? "Default" : rootFolder) {
                             if usesServiceDefaults {
-                                Button("Default") { rootFolder = "" }
+                                Button(AppLanguage.string("settings.default", default: "Default")) { rootFolder = "" }
                             }
                             ForEach(details.rootFolders) { folder in
                                 Button(folder.pickerTitle) { rootFolder = folder.path }
@@ -339,7 +339,7 @@ struct SeerrRequestView: View {
                         divider
                         menuRow("Language", value: languages.first { $0.id == languageProfileID }?.name ?? "Default") {
                             if usesServiceDefaults {
-                                Button("Default") { languageProfileID = nil }
+                                Button(AppLanguage.string("settings.default", default: "Default")) { languageProfileID = nil }
                             }
                             ForEach(languages) { profile in
                                 Button(profile.name) { languageProfileID = profile.id }
@@ -384,12 +384,12 @@ struct SeerrRequestView: View {
     private var seasonSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Seasons")
+                Text(AppLanguage.string("ui.seasons", default: "Seasons"))
                     .font(.title3.weight(.bold))
                     .foregroundStyle(.white)
                 Spacer()
                 if !requestableSeasonNumbers.isEmpty {
-                    Button(selectedSeasonNumbers.isSuperset(of: requestableSeasonNumbers) ? "Deselect All" : "Select All") {
+                    Button(selectedSeasonNumbers.isSuperset(of: requestableSeasonNumbers) ? AppLanguage.string("ui.deselect_all", default: "Deselect All") : AppLanguage.string("ui.select_all", default: "Select All")) {
                         if selectedSeasonNumbers.isSuperset(of: requestableSeasonNumbers) {
                             selectedSeasonNumbers.subtract(requestableSeasonNumbers)
                         } else {
@@ -410,7 +410,7 @@ struct SeerrRequestView: View {
                 }
             }
             .background(surfaces.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            Text("Already requested or available seasons stay off. Specials stay off unless you turn them on.")
+            Text(AppLanguage.string("Already requested or available seasons stay off. Specials stay off unless you turn them on.", default: "Already requested or available seasons stay off. Specials stay off unless you turn them on."))
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.45))
         }
@@ -420,7 +420,7 @@ struct SeerrRequestView: View {
         Button {
             Task { await submit() }
         } label: {
-            Text(isSubmitting ? "Requesting…" : "Request")
+            Text(isSubmitting ? AppLanguage.string("ui.requesting", default: "Requesting…") : AppLanguage.string("ui.request", default: "Request"))
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.actionLabel)
                 .frame(maxWidth: .infinity)

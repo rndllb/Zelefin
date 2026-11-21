@@ -97,6 +97,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -167,17 +168,17 @@ private const val UpNextWindowSeconds = 30.0
 private const val UpNextOutroCountdown = 10.0
 private const val UpNextMinimumRuntime = 60.0
 
-internal enum class PlayerMenuPage(val title: String) {
-    Root("More"),
-    Quality("Quality"),
-    Version("Version"),
-    Speed("Playback Speed"),
-    Audio("Select Audio"),
-    Subtitles("Select Subtitles"),
-    SubtitleStyle("Subtitle Style"),
-    SubtitleSync("Subtitle Sync"),
-    Chapters("Chapters"),
-    Sleep("Sleep Timer"),
+internal enum class PlayerMenuPage(@androidx.annotation.StringRes val titleRes: Int) {
+    Root(R.string.player_more),
+    Quality(R.string.player_quality),
+    Version(R.string.player_version),
+    Speed(R.string.player_playback_speed),
+    Audio(R.string.player_select_audio),
+    Subtitles(R.string.player_select_subtitles),
+    SubtitleStyle(R.string.player_subtitle_style),
+    SubtitleSync(R.string.player_subtitle_sync),
+    Chapters(R.string.player_chapters),
+    Sleep(R.string.player_sleep_timer),
 }
 
 internal data class OverlayTrack(
@@ -517,7 +518,10 @@ fun PlayerSurface(
     val skipBack = remember { PlaybackPreferences.skipBackward(context) }
     val skipForward = remember { PlaybackPreferences.skipForward(context) }
     val autoplayPreference = remember { PlaybackPreferences.autoplayNext(context) }
-    var playerVolume by remember(player) { mutableFloatStateOf(player.volume) }
+    var playerVolume by remember(player) {
+        mutableFloatStateOf(context.findActivity()?.musicVolumeFraction() ?: 1f)
+    }
+    LaunchedEffect(player) { player.volume = 1f }
 
     var chromeVisible by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
@@ -736,8 +740,9 @@ fun PlayerSurface(
             onSkip = seekBy,
             volume = playerVolume,
             onVolume = { level ->
+                // Device volume is set by the gesture overlay; keep the player at full gain.
                 playerVolume = level
-                player.volume = level
+                player.volume = 1f
             },
         )
         if ((recovering || (buffering && !showChrome)) && !inPip) {
@@ -848,7 +853,7 @@ fun PlayerSurface(
                     status = when {
                         finishing -> "Starting…"
                         countdown != null -> "Starts in ${countdown.coerceAtLeast(0.0).roundToInt()}s"
-                        else -> "Next Episode"
+                        else -> stringResource(R.string.player_next_episode)
                     },
                     onPlay = { advance(false) },
                     onCancel = {
@@ -1420,10 +1425,9 @@ internal fun UpNextCard(item: MediaItem, artwork: List<String>, status: String, 
                 ) {
                     Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Play Now", color = Color.Black, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(stringResource(R.string.player_play_now), color = Color.Black, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
-                Text(
-                    "Cancel",
+                Text(stringResource(R.string.common_cancel),
                     color = Color.White,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
@@ -1488,7 +1492,7 @@ private fun PlaybackErrorCard(message: String, onRetry: () -> Unit, onClose: () 
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Playback stopped", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+        Text(stringResource(R.string.player_playback_stopped), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
         Spacer(Modifier.height(6.dp))
         Text(
             message,
@@ -1591,10 +1595,12 @@ internal fun PlayerMenuPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (page != PlayerMenuPage.Root) {
-                    MenuIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") { onPage(PlayerMenuPage.Root) }
+                    MenuIcon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.common_back)) {
+                        onPage(PlayerMenuPage.Root)
+                    }
                 }
                 Text(
-                    page.title,
+                    stringResource(page.titleRes),
                     color = Color.White,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.SemiBold,
@@ -1603,7 +1609,7 @@ internal fun PlayerMenuPanel(
                         .weight(1f)
                         .padding(horizontal = 6.dp),
                 )
-                MenuIcon(Icons.Rounded.Close, "Close", onClick = onClose)
+                MenuIcon(Icons.Rounded.Close, stringResource(R.string.common_close), onClick = onClose)
             }
             Box(
                 Modifier
@@ -1621,32 +1627,54 @@ internal fun PlayerMenuPanel(
                     PlayerMenuPage.Root -> {
                         // Same order as iOS AVKitPlaybackSettingsPanel.rootRows.
                         if (onQuality != null) {
-                            MenuRow("Quality", selectedQuality.title, Icons.Rounded.Tune) { onPage(PlayerMenuPage.Quality) }
+                            MenuRow(stringResource(R.string.player_quality), selectedQuality.title, Icons.Rounded.Tune) {
+                                onPage(PlayerMenuPage.Quality)
+                            }
                         }
                         if (onVersion != null && versions.size > 1) {
-                            MenuRow("Version", shownVersion?.title ?: "Default", Icons.Rounded.Layers) { onPage(PlayerMenuPage.Version) }
+                            MenuRow(
+                                stringResource(R.string.player_version),
+                                shownVersion?.title ?: stringResource(R.string.settings_default),
+                                Icons.Rounded.Layers,
+                            ) { onPage(PlayerMenuPage.Version) }
                         }
-                        MenuRow("Playback Speed", PlaybackPreferences.speedTitle(speed), Icons.Rounded.Speed) { onPage(PlayerMenuPage.Speed) }
-                        MenuRow("Select Audio", audio.firstOrNull { it.selected }?.title ?: "Default", Icons.Rounded.GraphicEq) {
+                        MenuRow(
+                            stringResource(R.string.player_playback_speed),
+                            PlaybackPreferences.speedTitle(speed),
+                            Icons.Rounded.Speed,
+                        ) { onPage(PlayerMenuPage.Speed) }
+                        MenuRow(
+                            stringResource(R.string.player_select_audio),
+                            audio.firstOrNull { it.selected }?.title ?: stringResource(R.string.settings_default),
+                            Icons.Rounded.GraphicEq,
+                        ) {
                             onPage(PlayerMenuPage.Audio)
                         }
-                        MenuRow("Select Subtitles", subtitles.firstOrNull { it.selected }?.title ?: "Off", Icons.Rounded.ClosedCaption) {
+                        MenuRow(
+                            stringResource(R.string.player_select_subtitles),
+                            subtitles.firstOrNull { it.selected }?.title ?: stringResource(R.string.player_subtitles_off),
+                            Icons.Rounded.ClosedCaption,
+                        ) {
                             onPage(PlayerMenuPage.Subtitles)
                         }
-                        MenuRow("Subtitle Style", appearance.sizeTitle(), Icons.Rounded.TextFields) {
+                        MenuRow(stringResource(R.string.player_subtitle_style), appearance.sizeTitle(), Icons.Rounded.TextFields) {
                             onPage(PlayerMenuPage.SubtitleStyle)
                         }
-                        MenuRow("Subtitle Sync", appearance.syncTitle(), Icons.Rounded.Sync) {
+                        MenuRow(stringResource(R.string.player_subtitle_sync), appearance.syncTitle(), Icons.Rounded.Sync) {
                             onPage(PlayerMenuPage.SubtitleSync)
                         }
                         if (chapters.isNotEmpty()) {
-                            MenuRow("Chapters", chapters.size.toString(), Icons.AutoMirrored.Rounded.FormatListBulleted) {
+                            MenuRow(
+                                stringResource(R.string.player_chapters),
+                                chapters.size.toString(),
+                                Icons.AutoMirrored.Rounded.FormatListBulleted,
+                            ) {
                                 onPage(PlayerMenuPage.Chapters)
                             }
                         }
                         if (showSleepTimer) {
                             MenuRow(
-                                "Sleep Timer",
+                                stringResource(R.string.player_sleep_timer),
                                 sleepRemaining?.let { clockText(it) } ?: sleepTitle(sleep),
                                 Icons.Rounded.Bedtime,
                             ) { onPage(PlayerMenuPage.Sleep) }
@@ -1665,7 +1693,9 @@ internal fun PlayerMenuPanel(
                         }
                     }
                     PlayerMenuPage.Sleep -> {
-                        ChoiceRow("Off", selected = sleep == SleepTimer.Off) { onSleep(SleepTimer.Off) }
+                        ChoiceRow(stringResource(R.string.player_subtitles_off), selected = sleep == SleepTimer.Off) {
+                            onSleep(SleepTimer.Off)
+                        }
                         SleepTimer.durations.forEach { minutes ->
                             val timer = SleepTimer.Minutes(minutes)
                             ChoiceRow(sleepTitle(timer), selected = sleep == timer) { onSleep(timer) }
@@ -1694,7 +1724,9 @@ internal fun PlayerMenuPanel(
                     }
                     PlayerMenuPage.Subtitles -> {
                         onAddSubtitles?.let { add -> ActionRow("Add Subtitles", Icons.Rounded.AddComment, add) }
-                        ChoiceRow("Off", selected = subtitles.none { it.selected }) { onSubtitle(null) }
+                        ChoiceRow(stringResource(R.string.player_subtitles_off), selected = subtitles.none { it.selected }) {
+                            onSubtitle(null)
+                        }
                         subtitles.forEach { track -> ChoiceRow(track.title, selected = track.selected) { onSubtitle(track) } }
                     }
                     PlayerMenuPage.SubtitleStyle -> {
@@ -1785,8 +1817,7 @@ internal fun PlayerMenuPanel(
                                     inactiveTrackColor = Color.White.copy(alpha = 0.22f),
                                 ),
                             )
-                            Text(
-                                "Reset",
+                            Text(stringResource(R.string.common_reset),
                                 color = Color.White.copy(alpha = 0.72f),
                                 fontFamily = ZelefinFont,
                                 modifier = Modifier
@@ -1878,7 +1909,12 @@ private fun ToggleRow(title: String, icon: ImageVector, on: Boolean, onClick: ()
         Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
         Text(title, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp, modifier = Modifier.weight(1f))
-        Text(if (on) "On" else "Off", color = Color.White.copy(alpha = 0.62f), fontFamily = ZelefinFont, fontSize = 14.sp)
+        Text(
+            if (on) stringResource(R.string.player_on) else stringResource(R.string.player_subtitles_off),
+            color = Color.White.copy(alpha = 0.62f),
+            fontFamily = ZelefinFont,
+            fontSize = 14.sp,
+        )
         if (on) {
             Spacer(Modifier.width(6.dp))
             Icon(Icons.Rounded.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))

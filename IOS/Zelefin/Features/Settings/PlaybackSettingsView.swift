@@ -35,7 +35,7 @@ struct PlaybackSettingsView: View {
             watchingSection
             themeMediaSection
         }
-        .zelefinSettingsChrome(title: "Playback")
+        .zelefinSettingsChrome(title: AppLanguage.string("home.playback", default: "Playback"))
         .task { await loadServerPreferences() }
         .onChange(of: useNativeVideoPlayer) {
             if !useNativeVideoPlayer {
@@ -52,18 +52,18 @@ struct PlaybackSettingsView: View {
 
     private var serverAudioSection: some View {
         Section {
-            Picker("Preferred Language", selection: serverBinding(\.audioLanguage)) {
+            Picker(AppLanguage.string("ui.preferred_language", default: "Preferred Language"), selection: serverBinding(\.audioLanguage)) {
                 ForEach(serverLanguageChoices(including: serverPreferences?.audioLanguage), id: \.self) { code in
                     Text(PlaybackLanguage.displayName(for: code)).tag(code)
                 }
             }
-            Toggle("Play Default Audio Track", isOn: serverBinding(\.playDefaultAudioTrack))
+            Toggle(AppLanguage.string("ui.play_default_audio_track", default: "Play Default Audio Track"), isOn: serverBinding(\.playDefaultAudioTrack))
             if let serverPreferencesError {
                 SettingsStatusText(text: serverPreferencesError, isError: true)
             }
         } header: {
             HStack {
-                Text("Audio")
+                Text(AppLanguage.string("player.audio", default: "Audio"))
                 if isLoadingServerPreferences {
                     ProgressView().controlSize(.mini)
                 }
@@ -81,26 +81,26 @@ struct PlaybackSettingsView: View {
 
     private var serverSubtitleSection: some View {
         Section {
-            Picker("Preferred Language", selection: serverBinding(\.subtitleLanguage)) {
+            Picker(AppLanguage.string("ui.preferred_language", default: "Preferred Language"), selection: serverBinding(\.subtitleLanguage)) {
                 ForEach(serverLanguageChoices(including: serverPreferences?.subtitleLanguage), id: \.self) { code in
                     Text(PlaybackLanguage.displayName(for: code)).tag(code)
                 }
             }
-            Picker("Subtitle Mode", selection: serverBinding(\.subtitleMode)) {
+            Picker(AppLanguage.string("ui.subtitle_mode", default: "Subtitle Mode"), selection: serverBinding(\.subtitleMode)) {
                 ForEach(SubtitlePlaybackMode.choices, id: \.self) { mode in
                     Text(mode.title).tag(mode)
                 }
             }
-            Toggle("Prefer SDH Subtitles", isOn: $preferSDH)
+            Toggle(AppLanguage.string("ui.prefer_sdh_subtitles", default: "Prefer SDH Subtitles"), isOn: $preferSDH)
             NavigationLink {
                 SubtitleAppearanceSettingsView()
             } label: {
-                LabeledContent("Style & Sync") {
+                LabeledContent(AppLanguage.string("ui.style_sync", default: "Style & Sync")) {
                     Text(SubtitleAppearance.size.title)
                 }
             }
         } header: {
-            Text("Subtitles")
+            Text(AppLanguage.string("player.subtitles", default: "Subtitles"))
         } footer: {
             Text((serverPreferences?.subtitleMode ?? .default).summary + " SDH prefers captions that describe music and sound. Style & Sync change how captions look and when they appear.")
         }
@@ -153,26 +153,26 @@ struct PlaybackSettingsView: View {
 
     private var qualitySection: some View {
         Section {
-            Toggle("Adaptive Bitrate", isOn: $adaptiveBitrate)
-            Picker(adaptiveBitrate ? "Maximum Quality" : "Quality", selection: $maxBitrate) {
+            Toggle(AppLanguage.string("ui.adaptive_bitrate", default: "Adaptive Bitrate"), isOn: $adaptiveBitrate)
+            Picker(adaptiveBitrate ? "Maximum Quality" : AppLanguage.string("player.quality", default: "Quality"), selection: $maxBitrate) {
                 ForEach(PlaybackQuality.allCases) { quality in
                     Text(quality.title).tag(quality.rawValue)
                 }
             }
-            LabeledContent("Connection", value: session.adaptiveBitrate.path.transport.title)
+            LabeledContent(AppLanguage.string("ui.connection", default: "Connection"), value: session.adaptiveBitrate.path.transport.title)
             if let testResult {
-                LabeledContent("Measured", value: PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
-                LabeledContent("Recommended", value: recommendedTitle(for: testResult))
+                LabeledContent(AppLanguage.string("ui.measured", default: "Measured"), value: PlaybackStats.bitrateLabel(Int64(testResult.bitsPerSecond)))
+                LabeledContent(AppLanguage.string("ui.recommended", default: "Recommended"), value: recommendedTitle(for: testResult))
             }
             if let testError {
                 SettingsStatusText(text: testError, isError: true)
             }
-            Button("Test Connection") {
+            Button(AppLanguage.string("connect.test_connection", default: "Test Connection")) {
                 Task { await runDemoTest() }
             }
             .disabled(isTesting || session.library == nil)
         } header: {
-            Text("Quality")
+            Text(AppLanguage.string("player.quality", default: "Quality"))
         } footer: {
             Text(qualityFooter)
         }
@@ -181,16 +181,16 @@ struct PlaybackSettingsView: View {
 
     private var themeMediaSection: some View {
         Section {
-            Toggle("Theme Songs", isOn: $themeSongs)
+            Toggle(AppLanguage.string("ui.theme_songs", default: "Theme Songs"), isOn: $themeSongs)
             // Silo's Jellyfin-compatible API serves theme songs but never theme videos.
             if !session.isSiloServer {
-                Toggle("Theme Videos", isOn: $themeVideos)
+                Toggle(AppLanguage.string("ui.theme_videos", default: "Theme Videos"), isOn: $themeVideos)
                 if themeVideos {
-                    Toggle("Theme Video Sound", isOn: $themeVideoSound)
+                    Toggle(AppLanguage.string("ui.theme_video_sound", default: "Theme Video Sound"), isOn: $themeVideoSound)
                 }
             }
         } header: {
-            Text("Theme Media")
+            Text(AppLanguage.string("Theme Media", default: "Theme Media"))
         } footer: {
             Text(session.isSiloServer
                  ? "Plays a title's theme song on its page."
@@ -201,38 +201,38 @@ struct PlaybackSettingsView: View {
 
     private var watchingSection: some View {
         Section {
-            Picker("Playback Speed", selection: $defaultRate) {
+            Picker(AppLanguage.string("player.playback_speed", default: "Playback Speed"), selection: $defaultRate) {
                 ForEach(AVKitPlaybackSpeed.options, id: \.self) { rate in
                     Text(AVKitPlaybackSpeed.title(rate)).tag(Double(rate))
                 }
             }
-            Toggle("Auto Play Next Episode", isOn: $autoPlayNextEpisode)
+            Toggle(AppLanguage.string("ui.auto_play_next_episode", default: "Auto Play Next Episode"), isOn: $autoPlayNextEpisode)
             if autoPlayNextEpisode {
-                Toggle("Ask If Still Watching", isOn: $askStillWatching)
+                Toggle(AppLanguage.string("ui.ask_if_still_watching", default: "Ask If Still Watching"), isOn: $askStillWatching)
             }
-            Toggle("Picture in Picture When Leaving", isOn: $autoPictureInPictureOnLeave)
-            Picker("Skip Backward", selection: $skipBackward) {
+            Toggle(AppLanguage.string("ui.picture_in_picture_when_leaving", default: "Picture in Picture When Leaving"), isOn: $autoPictureInPictureOnLeave)
+            Picker(AppLanguage.string("ui.skip_backward", default: "Skip Backward"), selection: $skipBackward) {
                 ForEach(PlaybackSkipInterval.allCases) { interval in
                     Text(interval.title).tag(interval.rawValue)
                 }
             }
-            Picker("Skip Forward", selection: $skipForward) {
+            Picker(AppLanguage.string("player.skip_forward", default: "Skip Forward"), selection: $skipForward) {
                 ForEach(PlaybackSkipInterval.allCases) { interval in
                     Text(interval.title).tag(interval.rawValue)
                 }
             }
-            Picker("Player Engine", selection: $playerEngine) {
+            Picker(AppLanguage.string("ui.player_engine", default: "Player Engine"), selection: $playerEngine) {
                 ForEach(PlayerEngineChoice.available) { choice in
                     Text(choice.title).tag(choice)
                 }
             }
             .pickerStyle(.menu)
             if useNativeVideoPlayer {
-                Toggle("Prefer fMP4 in HLS", isOn: preferFMP4Binding)
+                Toggle(AppLanguage.string("ui.prefer_fmp4_in_hls", default: "Prefer fMP4 in HLS"), isOn: preferFMP4Binding)
             }
-            Toggle("Wi-Fi Only Downloads", isOn: $downloadWifiOnly)
+            Toggle(AppLanguage.string("ui.wi_fi_only_downloads", default: "Wi-Fi Only Downloads"), isOn: $downloadWifiOnly)
         } header: {
-            Text("Watching")
+            Text(AppLanguage.string("Watching", default: "Watching"))
         } footer: {
             Text(
                 "Speed, skip distance, and whether the next episode starts when this one ends. "

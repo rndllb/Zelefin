@@ -115,8 +115,10 @@ enum ItemMapper {
             if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
             return false
         }
+        // Keep actor + director rows for the same person. Collapsing by id alone
+        // dropped director credits when someone was also listed as cast.
         var seen = Set<String>()
-        return sorted.filter { seen.insert($0.id).inserted }
+        return sorted.filter { seen.insert("\($0.id)#\($0.rank)").inserted }
     }
 
     private static func creditRank(_ type: PersonKind?) -> Int {
@@ -131,16 +133,23 @@ enum ItemMapper {
     }
 
     private static func creditRoleLabel(type: PersonKind?, role: String?) -> String {
-        let trimmed = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmed.isEmpty { return trimmed }
+        // Crew kinds keep a stable Type label (Creator/Director/…) so the cast
+        // row and “Created by” line still match when Role is blank or odd.
         switch type {
         case .director: return "Director"
         case .writer: return "Writer"
         case .producer: return "Producer"
         case .creator: return "Creator"
         case .composer: return "Composer"
-        case .guestStar: return "Guest Star"
-        default: return "Cast"
+        case .guestStar:
+            let trimmed = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? "Guest Star" : trimmed
+        case .actor:
+            let trimmed = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? "Cast" : trimmed
+        default:
+            let trimmed = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? "Cast" : trimmed
         }
     }
 
@@ -653,7 +662,7 @@ enum ItemMapper {
         case .title(.liveTV): subtitleParts.append("Live TV")
         case .title(.book): subtitleParts.append("Book")
         case .title(.photo): subtitleParts.append("Photo")
-        case .title: subtitleParts.append("Title")
+        case .title: subtitleParts.append(AppLanguage.string("settings.title_field", default: "Title"))
         case .person: subtitleParts.append("Person")
         case .genre: subtitleParts.append("Genre")
         case .studio: subtitleParts.append("Studio")

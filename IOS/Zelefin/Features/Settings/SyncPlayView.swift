@@ -18,24 +18,24 @@ struct SyncPlayView: View {
             }
             if let name = session.syncPlayGroupName, session.syncPlayGroupID != nil {
                 Section {
-                    LabeledContent("Joined", value: name)
-                    Button("Leave Group", role: .destructive) {
+                    LabeledContent(AppLanguage.string("ui.joined", default: "Joined"), value: name)
+                    Button(AppLanguage.string("ui.leave_group", default: "Leave Group"), role: .destructive) {
                         Task { await leave() }
                     }
                     .disabled(isWorking)
                 } header: {
-                    Text("This Device")
+                    Text(AppLanguage.string("settings.this_device", default: "This Device"))
                 }
                 .zelefinRowBackground()
             }
             Section {
-                TextField("Name", text: $newName)
-                Button("Create") {
+                TextField(AppLanguage.string("ui.name", default: "Name"), text: $newName)
+                Button(AppLanguage.string("common.create", default: "Create")) {
                     Task { await create() }
                 }
                 .disabled(isWorking || newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } header: {
-                Text("New Group")
+                Text(AppLanguage.string("ui.new_group", default: "New Group"))
             }
             .zelefinRowBackground()
             Section {
@@ -43,7 +43,7 @@ struct SyncPlayView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                 } else if groups.isEmpty {
-                    SettingsStackedRow(title: "No SyncPlay groups are running.")
+                    SettingsStackedRow(title: AppLanguage.string("ui.no_syncplay_groups_are_running", default: "No SyncPlay groups are running."))
                 } else {
                     ForEach(groups) { group in
                         Button {
@@ -57,13 +57,13 @@ struct SyncPlayView: View {
                     }
                 }
             } header: {
-                Text("Groups")
+                Text(AppLanguage.string("ui.groups", default: "Groups"))
             }
             .zelefinRowBackground()
         }
         .listStyle(.insetGrouped)
         .refreshable { await load(showProgress: false) }
-        .zelefinSettingsChrome(title: "SyncPlay")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.syncplay", default: "SyncPlay"))
         .task { await load() }
     }
 
@@ -132,24 +132,24 @@ struct SyncPlayPlaySheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        TitleSheet(title: "SyncPlay", onClose: onClose) {
+        TitleSheet(title: AppLanguage.string("settings.syncplay", default: "SyncPlay"), onClose: onClose) {
             List {
                 if let errorMessage {
                     SettingsStatusText(text: errorMessage, isError: true)
                 }
                 Section {
-                    TextField("Name", text: $newName)
-                    Button("Start") {
+                    TextField(AppLanguage.string("ui.name", default: "Name"), text: $newName)
+                    Button(AppLanguage.string("ui.start", default: "Start")) {
                         Task { await createAndPlay() }
                     }
                     .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 } header: {
-                    Text("New Group")
+                    Text(AppLanguage.string("ui.new_group", default: "New Group"))
                 }
                 .zelefinRowBackground()
                 Section {
                     if groups.isEmpty {
-                        SettingsStackedRow(title: "No groups yet. Create one to watch together.")
+                        SettingsStackedRow(title: AppLanguage.string("ui.no_groups_yet_create_one_to_watch_together", default: "No groups yet. Create one to watch together."))
                     } else {
                         ForEach(groups) { group in
                             Button {
@@ -161,7 +161,7 @@ struct SyncPlayPlaySheet: View {
                         }
                     }
                 } header: {
-                    Text("Join and Play")
+                    Text(AppLanguage.string("ui.join_and_play", default: "Join and Play"))
                 }
                 .zelefinRowBackground()
             }

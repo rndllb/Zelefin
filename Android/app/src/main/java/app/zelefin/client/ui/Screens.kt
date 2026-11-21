@@ -30,11 +30,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.zelefin.client.AppTab
 import app.zelefin.client.LibraryRoom
 import app.zelefin.client.PlayerDirective
+import app.zelefin.client.R
 import app.zelefin.client.Screen
 import app.zelefin.client.StillWatchingSession
 import app.zelefin.client.ZelefinUiState
@@ -68,7 +70,7 @@ fun LibraryScreen(
     onToggleWatched: (MediaItem) -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
     onToggleWatchlist: (MediaItem) -> Unit = {},
-    onRandom: () -> Unit,
+    onRandom: suspend () -> Unit,
     onCatalogQuery: (AppTab, app.zelefin.client.CatalogBrowseQuery) -> Unit,
     onCatalogRefresh: (AppTab) -> Unit,
     onCatalogFilters: (AppTab) -> Unit,
@@ -127,7 +129,7 @@ fun LibraryScreen(
                     onSignOut = onSignOut,
                 )
                 AppTab.Movies -> CatalogBrowsePage(
-                    title = "Movies",
+                    title = stringResource(R.string.tab_movies),
                     items = state.movies,
                     query = state.movieQuery,
                     options = state.movieFilters,
@@ -146,7 +148,7 @@ fun LibraryScreen(
                     onSignOut = onSignOut,
                 )
                 AppTab.Shows -> CatalogBrowsePage(
-                    title = "Shows",
+                    title = stringResource(R.string.tab_shows),
                     items = state.shows,
                     query = state.showQuery,
                     options = state.showFilters,

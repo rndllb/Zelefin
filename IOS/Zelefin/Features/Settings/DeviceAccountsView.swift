@@ -33,7 +33,7 @@ struct DeviceAccountsView: View {
     }
 
     private var title: String {
-        session.isSiloServer ? "Accounts" : "Users"
+        session.isSiloServer ? AppLanguage.string("settings.accounts", default: "Accounts") : AppLanguage.string("settings.users", default: "Users")
     }
 
     private var addUserTitle: String {
@@ -55,7 +55,7 @@ struct DeviceAccountsView: View {
         HStack(spacing: 14) {
             SettingsPersonRow(
                 name: account.userName,
-                subtitle: isCurrent ? "Signed in" : accountSubtitle(account),
+                subtitle: isCurrent ? AppLanguage.string("ui.signed_in", default: "Signed in") : accountSubtitle(account),
                 avatarURL: session.avatarURL(for: account),
                 localImage: isCurrent ? localAvatar : nil,
                 showsChevron: false

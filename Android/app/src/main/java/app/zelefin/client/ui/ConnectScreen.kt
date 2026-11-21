@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -163,7 +164,7 @@ fun ConnectScreen(
                     contentScale = ContentScale.Fit,
                 )
                 Text(
-                    "Zelefin",
+                    stringResource(R.string.settings_zelefin_section),
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 34.sp,
@@ -186,7 +187,7 @@ fun ConnectScreen(
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                 ) {
                     LoginField(
-                        label = "SERVER URL",
+                        label = stringResource(R.string.connect_server_url).uppercase(),
                         value = url,
                         icon = Icons.Outlined.Link,
                         placeholder = "https://media.example.com",
@@ -198,7 +199,7 @@ fun ConnectScreen(
                     )
                     LoginDivider(inset = true)
                     LoginField(
-                        label = if (silo) "USERNAME OR EMAIL" else "USERNAME",
+                        label = stringResource(R.string.connect_username).uppercase(),
                         value = username,
                         icon = Icons.Filled.Person,
                         placeholder = if (silo) "username or you@example.com" else "username",
@@ -210,10 +211,10 @@ fun ConnectScreen(
                     )
                     LoginDivider(inset = true)
                     LoginField(
-                        label = "PASSWORD",
+                        label = stringResource(R.string.connect_password).uppercase(),
                         value = password,
                         icon = Icons.Filled.Lock,
-                        placeholder = "Password",
+                        placeholder = stringResource(R.string.connect_password),
                         password = true,
                         forgot = { passwordHelp = true },
                         keyboard = KeyboardType.Password,
@@ -267,7 +268,7 @@ fun ConnectScreen(
                             onChange = { gatewaySecret = it },
                         )
                         Text(
-                            "Needed when Jellyfin sits behind Cloudflare Zero Trust or Pangolin.",
+                            stringResource(R.string.connect_gateway_needed),
                             color = Caption,
                             fontFamily = ZelefinFont,
                             fontSize = 12.sp,
@@ -318,11 +319,16 @@ fun ConnectScreen(
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    LoginButton("CANCEL", filled = false, enabled = true, onClick = onCancelQuickConnect)
+                    LoginButton(
+                        stringResource(R.string.common_cancel).uppercase(),
+                        filled = false,
+                        enabled = true,
+                        onClick = onCancelQuickConnect,
+                    )
                 } else {
                     val canSignIn = !state.busy && url.isNotBlank() && username.isNotBlank()
                     LoginButton(
-                        title = if (state.busy) "" else "SIGN IN",
+                        title = if (state.busy) "" else stringResource(R.string.connect_sign_in).uppercase(),
                         filled = true,
                         enabled = canSignIn,
                         busy = state.busy,
@@ -330,7 +336,7 @@ fun ConnectScreen(
                     )
                     Spacer(Modifier.height(10.dp))
                     LoginButton(
-                        title = "TEST CONNECTION",
+                        title = stringResource(R.string.connect_test_connection).uppercase(),
                         filled = false,
                         enabled = url.isNotBlank() && !state.busy,
                         onClick = { onTest(url) },
@@ -347,7 +353,7 @@ fun ConnectScreen(
                 }
                 if (silo) {
                     Text(
-                        "Enter Silo's address and your Silo sign-in, then pick who's watching.",
+                        stringResource(R.string.connect_silo_help),
                         color = Caption,
                         fontFamily = ZelefinFont,
                         fontSize = 12.sp,
@@ -453,7 +459,7 @@ internal fun LoginField(
             if (forgot != null) {
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "FORGOT",
+                    stringResource(R.string.connect_forgot).uppercase(),
                     color = LoginPalette.Periwinkle,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.Bold,

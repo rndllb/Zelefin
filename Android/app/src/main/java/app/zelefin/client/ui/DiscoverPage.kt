@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +35,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -181,7 +187,7 @@ private fun DiscoverShelf(
         ) {
             Text(section.title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
             if (query != null) {
-                Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Faint, modifier = Modifier.size(16.dp))
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Faint, modifier = Modifier.size(16.dp))
             }
         }
         val rowState = rememberLazyListState()
@@ -597,7 +603,7 @@ internal fun SeerrRequestSheet(
                 loading -> Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = ZelefinCyan)
                 }
-                awaitingApproval && !canManage -> Text("Waiting for approval.", color = Color.White.copy(alpha = 0.7f), fontFamily = ZelefinFont, fontSize = 15.sp)
+                awaitingApproval && !canManage -> Text(stringResource(R.string.ui_waiting_for_approval), color = Color.White.copy(alpha = 0.7f), fontFamily = ZelefinFont, fontSize = 15.sp)
                 !awaitingApproval && alreadyRequested -> Text(
                     if (current.review == SeerrTitle.Review.Approved || current.availability == SeerrTitle.Availability.Processing) {
                         "Approved. It appears in your library once it downloads."
@@ -738,7 +744,7 @@ private fun DestinationSection(
     // Ombi's Default leaves the choice to Ombi.
     val defaultOption = if (usesDefaults) listOf("" to "Default") else emptyList()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Download", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text(stringResource(R.string.ui_download), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 20.sp)
         if (servers.isEmpty()) {
             Text(
                 "No ${if (kind == SeerrTitle.Kind.Movie) "Radarr" else "Sonarr"} server is set up in $serviceName. The request is still saved for an admin to see, but nothing downloads.",
@@ -816,7 +822,7 @@ private fun SeasonSection(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Seasons", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+            Text(stringResource(R.string.ui_seasons), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
             if (requestable.isNotEmpty()) {
                 val all = selected.containsAll(requestable)
                 Text(
@@ -842,7 +848,7 @@ private fun SeasonSection(
             }
         }
         Text(
-            "Already requested or available seasons stay off. Specials stay off unless you turn them on.",
+            stringResource(R.string.ui_already_requested_or_available_seasons_stay_off),
             color = Faint,
             fontFamily = ZelefinFont,
             fontSize = 13.sp,

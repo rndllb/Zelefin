@@ -217,14 +217,14 @@ final class EmbyLibraryClient: @unchecked Sendable {
         }
         guard !items.isEmpty else { return nil }
         return kind == .movie
-            ? HomeSection(id: "library-movies", title: "Recently Added Movies", style: .portrait, items: items)
-            : HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+            ? HomeSection(id: "library-movies", title: AppLanguage.string("home.recently_added_movies", default: "Recently Added Movies"), style: .portrait, items: items)
+            : HomeSection(id: "library-shows", title: AppLanguage.string("home.recently_added_shows", default: "Recently Added Shows"), style: .portrait, items: items)
     }
 
     func collectionsSectionIgnoringErrors() async -> HomeSection? {
         let items = await boxSets(limit: 24)
         guard !items.isEmpty else { return nil }
-        return HomeSection(id: "collections", title: "Browse by Collection", style: .labeledPortrait, items: items)
+        return HomeSection(id: "collections", title: AppLanguage.string("ui.browse_by_collection", default: "Browse by Collection"), style: .labeledPortrait, items: items)
     }
 
     func genresSectionIgnoringErrors() async -> HomeSection? {
@@ -253,7 +253,7 @@ final class EmbyLibraryClient: @unchecked Sendable {
             ])
             return HomeSection(
                 id: "genres",
-                title: "Browse by Genre",
+                title: AppLanguage.string("ui.browse_by_genre", default: "Browse by Genre"),
                 style: .labeledPortrait,
                 items: HomeLayoutPreferences.applyGenreCovers(genres, covers: covers)
             )
@@ -334,7 +334,7 @@ final class EmbyLibraryClient: @unchecked Sendable {
     private func recentlyAddedShows(parentID: String?) async throws -> HomeSection? {
         let items = try await itemsByDateCreated(include: .series, wanted: .series, parentID: parentID, limit: 12)
         guard !items.isEmpty else { return nil }
-        return HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+        return HomeSection(id: "library-shows", title: AppLanguage.string("home.recently_added_shows", default: "Recently Added Shows"), style: .portrait, items: items)
     }
 
     /// Date-added catalog when `Items/Latest` returns nothing. Matches Android `latestByDateAdded`.

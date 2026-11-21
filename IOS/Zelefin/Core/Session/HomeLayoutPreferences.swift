@@ -22,16 +22,16 @@ enum HomeRowKind: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .featured: "Featured"
-        case .continueWatching: "Continue Watching"
-        case .nextUp: "Next Up"
-        case .upcoming: "Upcoming Episodes"
-        case .recommendations: "Recommendations"
-        case .recentlyAddedMovies: "Recently Added Movies"
-        case .recentlyAddedShows: "Recently Added Shows"
-        case .collections: "Collections"
-        case .genres: "Genres"
-        case .recentlyWatched: "Recently Watched"
+        case .featured: AppLanguage.string("home.featured", default: "Featured")
+        case .continueWatching: AppLanguage.string("home.continue_watching", default: "Continue Watching")
+        case .nextUp: AppLanguage.string("home.next_up", default: "Next Up")
+        case .upcoming: AppLanguage.string("home.upcoming", default: "Upcoming Episodes")
+        case .recommendations: AppLanguage.string("home.recommendations", default: "Recommendations")
+        case .recentlyAddedMovies: AppLanguage.string("home.recently_added_movies", default: "Recently Added Movies")
+        case .recentlyAddedShows: AppLanguage.string("home.recently_added_shows", default: "Recently Added Shows")
+        case .collections: AppLanguage.string("library.collections", default: "Collections")
+        case .genres: AppLanguage.string("library.genres", default: "Genres")
+        case .recentlyWatched: AppLanguage.string("home.recently_watched", default: "Recently Watched")
         }
     }
 
@@ -122,13 +122,13 @@ enum FeaturedHeroContent: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .recentlyAdded: "Recently Added"
-        case .random: "Random"
-        case .continueWatching: "Continue Watching"
-        case .nextUp: "Next Up"
-        case .recommendations: "Recommendations"
-        case .recentlyWatched: "Recently Watched"
-        case .favorites: "Favorites"
+        case .recentlyAdded: AppLanguage.string("home.recently_added", default: "Recently Added")
+        case .random: AppLanguage.string("home.random", default: "Random")
+        case .continueWatching: AppLanguage.string("home.continue_watching", default: "Continue Watching")
+        case .nextUp: AppLanguage.string("home.next_up", default: "Next Up")
+        case .recommendations: AppLanguage.string("home.recommendations", default: "Recommendations")
+        case .recentlyWatched: AppLanguage.string("home.recently_watched", default: "Recently Watched")
+        case .favorites: AppLanguage.string("library.favorites", default: "Favorites")
         }
     }
 
@@ -150,15 +150,15 @@ enum HomeLayoutPreferences {
         if merge {
             let items = mergedQueue(resume: resume, nextUp: nextUp)
             guard !items.isEmpty else { return [] }
-            return [HomeSection(id: "continue", title: "Continue Watching", style: .landscape, items: items)]
+            return [HomeSection(id: "continue", title: AppLanguage.string("home.continue_watching", default: "Continue Watching"), style: .landscape, items: items)]
         }
 
         var sections: [HomeSection] = []
         if !resume.isEmpty {
-            sections.append(HomeSection(id: "continue", title: "Continue Watching", style: .landscape, items: resume))
+            sections.append(HomeSection(id: "continue", title: AppLanguage.string("home.continue_watching", default: "Continue Watching"), style: .landscape, items: resume))
         }
         if !nextUp.isEmpty {
-            sections.append(HomeSection(id: "next-up", title: "Next Up", style: .landscape, items: nextUp))
+            sections.append(HomeSection(id: "next-up", title: AppLanguage.string("home.next_up", default: "Next Up"), style: .landscape, items: nextUp))
         }
         return sections
     }
@@ -177,7 +177,7 @@ enum HomeLayoutPreferences {
         var sections = playbackQueueSections(resume: resume, nextUp: nextUp, merge: merge)
         if !upcoming.isEmpty {
             sections.append(
-                HomeSection(id: "upcoming", title: "Upcoming Episodes", style: .landscape, items: upcoming)
+                HomeSection(id: "upcoming", title: AppLanguage.string("home.upcoming", default: "Upcoming Episodes"), style: .landscape, items: upcoming)
             )
         }
         sections.append(contentsOf: recommendations)
@@ -188,7 +188,7 @@ enum HomeLayoutPreferences {
             sections.append(
                 HomeSection(
                     id: "recently-watched",
-                    title: "Recently Watched",
+                    title: AppLanguage.string("home.recently_watched", default: "Recently Watched"),
                     style: .replayLandscape,
                     items: recentlyWatched
                 )
@@ -490,17 +490,19 @@ enum LibraryPageBlock: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .favorites: "Favorites"
-        case .watchlist: "Watchlist"
-        case .downloaded: "Downloaded"
-        case .genres: "Genres"
-        case .collections: "Collections"
+        case .favorites: AppLanguage.string("library.favorites", default: "Favorites")
+        case .watchlist: AppLanguage.string("library.watchlist", default: "Watchlist")
+        case .downloaded: AppLanguage.string("library.downloaded", default: "Downloaded")
+        case .genres: AppLanguage.string("library.genres", default: "Genres")
+        case .collections: AppLanguage.string("library.collections", default: "Collections")
         }
     }
 
     /// The Mac sidebar's name for the row.
     var sidebarTitle: String {
-        self == .downloaded ? "Downloads" : title
+        self == .downloaded
+            ? AppLanguage.string("library.downloads", default: "Downloads")
+            : title
     }
 
     var systemImage: String {

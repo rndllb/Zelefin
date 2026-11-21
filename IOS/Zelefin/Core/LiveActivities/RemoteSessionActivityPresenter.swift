@@ -19,14 +19,14 @@ enum RemoteSessionActivityPresenter {
                 statusLine: status,
                 badgeLabel: "SESSIONS",
                 title: title,
-                subtitle: "Now playing elsewhere"
+                subtitle: AppLanguage.string("ui.now_playing_elsewhere", default: "Now playing elsewhere")
             )
         } else {
             ZelefinLiveActivityController.shared.start(
                 kind: .remoteSession,
                 id: activityID,
                 title: title,
-                subtitle: "Now playing elsewhere",
+                subtitle: AppLanguage.string("ui.now_playing_elsewhere", default: "Now playing elsewhere"),
                 fraction: nil,
                 statusLine: status,
                 badgeLabel: "SESSIONS"

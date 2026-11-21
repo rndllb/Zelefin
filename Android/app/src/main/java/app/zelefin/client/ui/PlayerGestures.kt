@@ -1,6 +1,10 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import android.app.Activity
+import android.content.Context
+import android.media.AudioManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
@@ -70,7 +74,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Full-screen touch layer for both players: single tap toggles chrome, double-tap skips,
- * and a vertical swipe on the left sets window brightness while the right sets player volume.
+ * and a vertical swipe on the left sets window brightness while the right sets device volume.
  */
 @Composable
 internal fun PlayerGestureOverlay(
@@ -174,7 +178,11 @@ internal fun PlayerGestureOverlay(
                                 val inBottomChrome = start.y > size.height - bottomGuard
                                 if (!mostlyHorizontal && !inBottomChrome && abs(deltaY) > slop) {
                                     val brightness = start.x < size.width / 2f
-                                    origin = if (brightness) activity?.playerBrightness() ?: 0.5f else volumeLevel
+                                    origin = if (brightness) {
+                                        activity?.playerBrightness() ?: 0.5f
+                                    } else {
+                                        activity?.musicVolumeFraction() ?: volumeLevel
+                                    }
                                     pan = if (brightness) EdgePan.Brightness else EdgePan.Volume
                                 }
                             }
@@ -185,7 +193,10 @@ internal fun PlayerGestureOverlay(
                                 val next = (origin + travel).coerceIn(0f, 1f)
                                 when (active) {
                                     EdgePan.Brightness -> activity?.setPlayerBrightness(next)
-                                    EdgePan.Volume -> volumeAction(next)
+                                    EdgePan.Volume -> {
+                                        activity?.setMusicVolumeFraction(next)
+                                        volumeAction(next)
+                                    }
                                 }
                                 hudToken += 1
                                 hud = GestureHud(active == EdgePan.Brightness, next, hudToken)
@@ -244,7 +255,7 @@ internal fun StillWatchingOverlay(onContinue: () -> Unit, onStop: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "Are you still watching?",
+                stringResource(R.string.player_still_watching),
                 color = Color.White,
                 fontFamily = ZelefinFont,
                 fontWeight = FontWeight.SemiBold,
@@ -409,4 +420,23 @@ private fun Activity.setPlayerBrightness(level: Float) {
     val attrs = window.attributes
     attrs.screenBrightness = level.coerceIn(0.01f, 1f)
     window.attributes = attrs
+}
+
+/** Device media volume as 0–1 (STREAM_MUSIC). */
+internal fun Activity.musicVolumeFraction(): Float {
+    volumeControlStream = AudioManager.STREAM_MUSIC
+    val am = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    return am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / max
+}
+
+/** Sets device media volume without showing the system volume panel (we draw our own HUD). */
+internal fun Activity.setMusicVolumeFraction(level: Float) {
+    volumeControlStream = AudioManager.STREAM_MUSIC
+    val am = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    val index = (level.coerceIn(0f, 1f) * max).roundToInt().coerceIn(0, max)
+    // FLAG_SHOW_UI = 0 keeps our gesture HUD as the only feedback.
+    @Suppress("DEPRECATION")
+    am.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0)
 }

@@ -62,6 +62,12 @@ class EmbyModelsTest {
         )
         val item = ItemMapper.mediaItem(EmbyJson.parser.decodeFromString(EmbyItem.serializer(), movie).toSnapshot())!!
         assertEquals("Directed by David Gordon Green", TitleDirectors.line(item.people))
+        val created = TitleDirectors.byline(
+            listOf(CreditPerson("3", "Gilligan", "Creator", rank = 2)),
+            MediaKind.Series,
+        )
+        assertEquals("Created by", created?.label)
+        assertEquals("Created by Gilligan", created?.lineText)
     }
 
     @Test

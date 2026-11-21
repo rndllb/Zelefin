@@ -433,6 +433,8 @@ data class CreditPerson(
     val imageUrl: String? = null,
     val overview: String? = null,
     val birthYear: Int? = null,
+    /** Jellyfin/Emby person Type rank; 1 is Director (matches iOS `CreditPerson.rank`). */
+    val rank: Int = 8,
 )
 
 @Serializable

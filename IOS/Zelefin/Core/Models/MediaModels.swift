@@ -644,7 +644,7 @@ struct SeasonDownloadChoice: Identifiable, Hashable, Sendable {
         let numbers = seasonNumbers(seasons: seasons, episodes: episodes)
         if numbers.isEmpty {
             return episodes.contains(where: { $0.kind == .episode })
-                ? [SeasonDownloadChoice(title: "All Episodes", seasonIndex: nil)]
+                ? [SeasonDownloadChoice(title: AppLanguage.string("ui.all_episodes", default: "All Episodes"), seasonIndex: nil)]
                 : []
         }
         return numbers.map { SeasonDownloadChoice(title: seasonTitle($0), seasonIndex: $0) }

@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,10 +81,10 @@ fun IdentifySheet(
                 when {
                     loading -> Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         CircularProgressIndicator(color = ZelefinCyan, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                        Text("Searching…", color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 16.sp)
+                        Text(stringResource(R.string.ui_searching), color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 16.sp)
                     }
                     error != null -> Text(error!!, color = ErrorRed, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(16.dp))
-                    hits.isEmpty() -> Text("No matches found.", color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 16.sp, modifier = Modifier.padding(16.dp))
+                    hits.isEmpty() -> Text(stringResource(R.string.ui_no_matches_found), color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 16.sp, modifier = Modifier.padding(16.dp))
                     else -> hits.forEachIndexed { index, hit ->
                         if (index > 0) Box(Modifier.fillMaxWidth().padding(start = 82.dp).height(0.5.dp).background(RowHairline))
                         IdentifyHitRow(hit, applying = applying == hit, enabled = applying == null) {
@@ -178,7 +180,7 @@ fun EditMetadataSheet(
                 MetadataField("Year", draft.year, prompt = "2021") { draft = draft.copy(year = it) }
                 MetadataField("Rating", draft.officialRating, prompt = "PG-13", last = true) { draft = draft.copy(officialRating = it) }
             }
-            SheetSectionTitle("Categories")
+            SheetSectionTitle(stringResource(R.string.ui_categories))
             SheetFieldGroup {
                 MetadataField("Genres", draft.genres, prompt = "Drama, Science Fiction") { draft = draft.copy(genres = it) }
                 MetadataField("Tags", draft.tags, last = true) { draft = draft.copy(tags = it) }

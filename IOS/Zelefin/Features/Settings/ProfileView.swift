@@ -38,9 +38,9 @@ struct ProfileView: View {
                             .foregroundStyle(.red)
                     }
                 } header: {
-                    Text("Who’s watching")
+                    Text(AppLanguage.string("ui.whos_watching", default: "Who’s watching"))
                 } footer: {
-                    Text("Continue Watching, recommendations, and watched flags follow the selected profile.")
+                    Text(AppLanguage.string("Continue Watching, recommendations, and watched flags follow the selected profile.", default: "Continue Watching, recommendations, and watched flags follow the selected profile."))
                 }
                 .zelefinRowBackground()
             }
@@ -49,7 +49,7 @@ struct ProfileView: View {
                 Section {
                     HStack {
                         ProgressView()
-                        Text("Loading account…")
+                        Text(AppLanguage.string("ui.loading_account", default: "Loading account…"))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -74,16 +74,16 @@ struct ProfileView: View {
 
             if session.session != nil, !accessToken.isEmpty {
                 Section {
-                    LabeledContent("Device Token", value: tokenVisible ? accessToken : maskedToken)
-                    Button(tokenVisible ? "Hide Token" : "Show Token") {
+                    LabeledContent(AppLanguage.string("ui.device_token", default: "Device Token"), value: tokenVisible ? accessToken : maskedToken)
+                    Button(tokenVisible ? AppLanguage.string("ui.hide_token", default: "Hide Token") : AppLanguage.string("ui.show_token", default: "Show Token")) {
                         tokenVisible.toggle()
                     }
-                    Button(tokenCopied ? "Copied" : "Copy Token") {
+                    Button(tokenCopied ? "Copied" : AppLanguage.string("ui.copy_token", default: "Copy Token")) {
                         copyAccessToken()
                     }
                     .disabled(accessToken.isEmpty)
                 } header: {
-                    Text("Device Token")
+                    Text(AppLanguage.string("ui.device_token", default: "Device Token"))
                 } footer: {
                     Text("This token signs this device into \(serverLabel). Copy it only into apps you trust.")
                 }
@@ -91,7 +91,7 @@ struct ProfileView: View {
             }
 
         }
-        .zelefinSettingsChrome(title: "Profile")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.profile", default: "Profile"))
         .onChange(of: pickerItem) { _, item in
             guard let item else { return }
             Task { await uploadPhoto(item) }
@@ -103,19 +103,19 @@ struct ProfileView: View {
                 set: { if !$0 { pinProfile = nil; profilePIN = "" } }
             )
         ) {
-            SecureField("PIN", text: $profilePIN)
+            SecureField(AppLanguage.string("connect.pin", default: "PIN"), text: $profilePIN)
                 .keyboardType(.numberPad)
-            Button("Cancel", role: .cancel) {
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {
                 pinProfile = nil
                 profilePIN = ""
             }
-            Button("Switch") {
+            Button(AppLanguage.string("common.switch", default: "Switch")) {
                 guard let profile = pinProfile else { return }
                 let pin = profilePIN
                 Task { await switchProfile(profile, pin: pin) }
             }
         } message: {
-            Text("This profile is locked.")
+            Text(AppLanguage.string("settings.profile_locked", default: "This profile is locked."))
         }
         .task {
             if session.hasSiloLink { await session.refreshSiloProfiles() }
@@ -133,17 +133,17 @@ struct ProfileView: View {
         Section {
             AccountPINControls(status: $status, statusIsError: $statusIsError)
             if let overview {
-                LabeledContent("Name", value: overview.displayName)
-                LabeledContent("Role", value: overview.role)
+                LabeledContent(AppLanguage.string("ui.name", default: "Name"), value: overview.displayName)
+                LabeledContent(AppLanguage.string("ui.role", default: "Role"), value: overview.role)
                 LabeledContent("Password", value: overview.hasPassword ? "Set" : "Not set")
-                LabeledContent("Last sign-in", value: ProfileAccountFormatting.absolute(overview.lastLogin))
-                LabeledContent("Last active", value: ProfileAccountFormatting.relative(overview.lastActivity))
+                LabeledContent(AppLanguage.string("ui.last_sign_in", default: "Last sign-in"), value: ProfileAccountFormatting.absolute(overview.lastLogin))
+                LabeledContent(AppLanguage.string("ui.last_active", default: "Last active"), value: ProfileAccountFormatting.relative(overview.lastActivity))
             }
             if let status {
                 SettingsStatusText(text: status, isError: statusIsError)
             }
         } header: {
-            Text("Account")
+            Text(AppLanguage.string("settings.account", default: "Account"))
         } footer: {
             Text(
                 "A 4–6 digit PIN locks this account on this device so others can’t sign into it. "
@@ -155,20 +155,20 @@ struct ProfileView: View {
 
     private func librariesSection(_ overview: ProfileAccountOverview) -> some View {
         Section {
-            LabeledContent("Access", value: overview.librariesSummary)
+            LabeledContent(AppLanguage.string("ui.access", default: "Access"), value: overview.librariesSummary)
         } header: {
-            Text("Libraries")
+            Text(AppLanguage.string("settings.libraries", default: "Libraries"))
         }
         .zelefinRowBackground()
     }
 
     private func limitsSection(_ overview: ProfileAccountOverview) -> some View {
         Section {
-            LabeledContent("Maximum rating", value: overview.maxRatingLabel)
-            LabeledContent("Unrated titles", value: overview.unratedLabel)
-            LabeledContent("Allowed time", value: overview.accessScheduleLabel)
+            LabeledContent(AppLanguage.string("ui.maximum_rating", default: "Maximum rating"), value: overview.maxRatingLabel)
+            LabeledContent(AppLanguage.string("ui.unrated_titles", default: "Unrated titles"), value: overview.unratedLabel)
+            LabeledContent(AppLanguage.string("ui.allowed_time", default: "Allowed time"), value: overview.accessScheduleLabel)
         } header: {
-            Text("Limits")
+            Text(AppLanguage.string("ui.limits", default: "Limits"))
         } footer: {
             Text(overview.limitsFooter)
         }
@@ -181,7 +181,7 @@ struct ProfileView: View {
                 ProfileCapabilityRow(title: capability.title, isAllowed: capability.isAllowed)
             }
         } header: {
-            Text("Capabilities")
+            Text(AppLanguage.string("ui.capabilities", default: "Capabilities"))
         } footer: {
             Text("What this login is allowed to do on \(serverLabel).")
         }
@@ -190,21 +190,21 @@ struct ProfileView: View {
 
     private func preferencesSection(_ overview: ProfileAccountOverview) -> some View {
         Section {
-            LabeledContent("Audio language", value: overview.audioLanguageLabel)
+            LabeledContent(AppLanguage.string("ui.audio_language", default: "Audio language"), value: overview.audioLanguageLabel)
             ProfileCapabilityRow(title: "Play the default audio track", isAllowed: overview.playDefaultAudio)
-            LabeledContent("Subtitle language", value: overview.subtitleLanguageLabel)
+            LabeledContent(AppLanguage.string("ui.subtitle_language", default: "Subtitle language"), value: overview.subtitleLanguageLabel)
             LabeledContent("Subtitles", value: overview.subtitleModeLabel)
-            ProfileCapabilityRow(title: "Play next episode automatically", isAllowed: overview.autoPlayNextEpisode)
-            ProfileCapabilityRow(title: "Remember audio choices", isAllowed: overview.rememberAudio)
-            ProfileCapabilityRow(title: "Remember subtitle choices", isAllowed: overview.rememberSubtitles)
-            ProfileCapabilityRow(title: "Hide watched titles in Latest", isAllowed: overview.hideWatchedInLatest)
+            ProfileCapabilityRow(title: AppLanguage.string("ui.play_next_episode_automatically", default: "Play next episode automatically"), isAllowed: overview.autoPlayNextEpisode)
+            ProfileCapabilityRow(title: AppLanguage.string("ui.remember_audio_choices", default: "Remember audio choices"), isAllowed: overview.rememberAudio)
+            ProfileCapabilityRow(title: AppLanguage.string("ui.remember_subtitle_choices", default: "Remember subtitle choices"), isAllowed: overview.rememberSubtitles)
+            ProfileCapabilityRow(title: AppLanguage.string("ui.hide_watched_titles_in_latest", default: "Hide watched titles in Latest"), isAllowed: overview.hideWatchedInLatest)
             NavigationLink("Edit in Playback") {
                 PlaybackSettingsView()
             }
         } header: {
-            Text("Preferences")
+            Text(AppLanguage.string("ui.preferences", default: "Preferences"))
         } footer: {
-            Text("Language and autoplay defaults live on the server. Caps and library access are changed from the dashboard.")
+            Text(AppLanguage.string("Language and autoplay defaults live on the server. Caps and library access are changed from the dashboard.", default: "Language and autoplay defaults live on the server. Caps and library access are changed from the dashboard."))
         }
         .zelefinRowBackground()
     }
@@ -348,7 +348,7 @@ struct ProfileView: View {
                         .foregroundStyle(.secondary)
                 }
                 if canRemovePhoto {
-                    Button("Remove Photo", role: .destructive) {
+                    Button(AppLanguage.string("ui.remove_photo", default: "Remove Photo"), role: .destructive) {
                         Task { await removePhoto() }
                     }
                     .font(.footnote)
@@ -382,7 +382,7 @@ struct ProfileView: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Change Profile Picture")
+            .accessibilityLabel(AppLanguage.string("ui.change_profile_picture", default: "Change Profile Picture"))
         } else {
             ZStack(alignment: .bottomTrailing) {
                 profileAvatar
@@ -391,7 +391,7 @@ struct ProfileView: View {
                 }
                 .disabled(isUpdatingPhoto)
                 .offset(x: 2, y: 2)
-                .accessibilityLabel("Change Profile Picture")
+                .accessibilityLabel(AppLanguage.string("ui.change_profile_picture", default: "Change Profile Picture"))
             }
         }
     }
@@ -508,19 +508,19 @@ struct AddAccountView: View {
             .zelefinRowBackground()
 
             Section {
-                TextField(session.isSiloServer ? "username#profile" : "Username", text: $username)
+                TextField(session.isSiloServer ? "username#profile" : AppLanguage.string("connect.username", default: "Username"), text: $username)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                SecureField("Password", text: $password)
+                SecureField(AppLanguage.string("connect.password", default: "Password"), text: $password)
                     .textContentType(.password)
             } header: {
-                Text("Sign In")
+                Text(AppLanguage.string("connect.sign_in", default: "Sign In"))
             }
             .zelefinRowBackground()
 
             Section {
-                Button(session.isSiloServer ? "Add Account" : "Add User") {
+                Button(session.isSiloServer ? AppLanguage.string("settings.add_account", default: "Add Account") : AppLanguage.string("settings.add_user", default: "Add User")) {
                     Task { await add() }
                 }
                 .disabled(!canSubmit || isConnecting)
@@ -534,7 +534,7 @@ struct AddAccountView: View {
                 .zelefinRowBackground()
             }
         }
-        .zelefinSettingsChrome(title: session.isSiloServer ? "Add Account" : "Add User")
+        .zelefinSettingsChrome(title: session.isSiloServer ? AppLanguage.string("settings.add_account", default: "Add Account") : AppLanguage.string("settings.add_user", default: "Add User"))
     }
 
     private var serverLabel: String {

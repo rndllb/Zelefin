@@ -63,15 +63,15 @@ struct FirstRunSetupView: View {
     private var header: some View {
         HStack {
             if stepIndex > 0 {
-                Button("BACK") { stepIndex -= 1 }
+                Button(AppLanguage.string("connect.back_caps", default: "BACK")) { stepIndex -= 1 }
                     .font(.caption.weight(.bold))
                     .tracking(0.8)
                     .foregroundStyle(.tint)
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Back")
+                    .accessibilityLabel(AppLanguage.string("common.back", default: "Back"))
             }
             Spacer(minLength: 0)
-            Button(isLastStep ? "DONE" : "SKIP") {
+            Button(isLastStep ? AppLanguage.string("ui.done", default: "DONE") : AppLanguage.string("ui.skip", default: "SKIP")) {
                 if isLastStep {
                     finish()
                 } else {
@@ -82,7 +82,7 @@ struct FirstRunSetupView: View {
             .tracking(0.8)
             .foregroundStyle(.tint)
             .buttonStyle(.plain)
-            .accessibilityLabel(isLastStep ? "Done" : "Skip")
+            .accessibilityLabel(isLastStep ? AppLanguage.string("common.done", default: "Done") : "Skip")
         }
         .padding(.horizontal, 26)
         .padding(.top, 10)
@@ -102,7 +102,7 @@ struct FirstRunSetupView: View {
     private var welcomeStep: some View {
         VStack(spacing: 18) {
             ConnectBrandMark(size: horizontalSizeClass == .regular ? 168 : 148)
-            Text("Welcome to Zelefin")
+            Text(AppLanguage.string("connect.welcome", default: "Welcome to Zelefin"))
                 .font(.system(size: 30, weight: .bold))
                 .foregroundStyle(LoginPalette.primaryText)
                 .multilineTextAlignment(.center)
@@ -119,13 +119,13 @@ struct FirstRunSetupView: View {
     private var languagesStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             stepHeading(
-                title: "Languages",
+                title: AppLanguage.string("detail.languages", default: "Languages"),
                 subtitle: "Zelefin picks matching audio and subtitles when a title has them."
             )
             VStack(alignment: .leading, spacing: 0) {
-                SettingsFieldLabel(title: "Audio")
+                SettingsFieldLabel(title: AppLanguage.string("player.audio", default: "Audio"))
                     .padding(.bottom, 8)
-                Picker("Audio", selection: $audioCode) {
+                Picker(AppLanguage.string("player.audio", default: "Audio"), selection: $audioCode) {
                     ForEach(audioChoices, id: \.self) { code in
                         Text(PlaybackLanguage.displayName(for: code)).tag(code)
                     }
@@ -133,9 +133,9 @@ struct FirstRunSetupView: View {
                 .pickerStyle(.menu)
                 .tint(AccentPreferences.current)
                 SettingsCardDivider()
-                SettingsFieldLabel(title: "Subtitles")
+                SettingsFieldLabel(title: AppLanguage.string("player.subtitles", default: "Subtitles"))
                     .padding(.bottom, 8)
-                Picker("Subtitles", selection: $subtitleCode) {
+                Picker(AppLanguage.string("player.subtitles", default: "Subtitles"), selection: $subtitleCode) {
                     ForEach(subtitleChoices, id: \.self) { code in
                         Text(PlaybackLanguage.displayName(for: code)).tag(code)
                     }
@@ -151,14 +151,14 @@ struct FirstRunSetupView: View {
     private var seerrStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             stepHeading(
-                title: "Requests",
+                title: AppLanguage.string("ui.requests", default: "Requests"),
                 subtitle: "Optional. Request movies and shows that are not on this server yet. Skip if you do not use Seerr or Ombi."
             )
             VStack(alignment: .leading, spacing: 0) {
                 if PluginSettings.isSeerrConfigured {
                     SettingsInfoRow(label: "Signed in as", value: PluginSettings.requestDisplayName ?? requestService.name)
                 } else {
-                    Picker("Service", selection: $requestService) {
+                    Picker(AppLanguage.string("connect.service", default: "Service"), selection: $requestService) {
                         ForEach(RequestService.allCases) { service in
                             Text(service.name).tag(service)
                         }
@@ -174,18 +174,18 @@ struct FirstRunSetupView: View {
                     }
                     SettingsCardDivider()
                     SettingsLabeledField(label: "Username", systemImage: "person.fill") {
-                        TextField("Username or email", text: $seerrUsername)
+                        TextField(AppLanguage.string("connect.username_or_email", default: "Username or email"), text: $seerrUsername)
                             .textContentType(.username)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
                     SettingsCardDivider()
                     SettingsLabeledField(label: "Password", systemImage: "lock.fill") {
-                        SecureField("Password", text: $seerrPassword)
+                        SecureField(AppLanguage.string("connect.password", default: "Password"), text: $seerrPassword)
                             .textContentType(.password)
                     }
                     SettingsPrimaryButton(
-                        title: "Sign In",
+                        title: AppLanguage.string("connect.sign_in", default: "Sign In"),
                         isBusy: isSigningInToSeerr,
                         enabled: canSignInToSeerr,
                         prominent: true
@@ -195,7 +195,7 @@ struct FirstRunSetupView: View {
                     .padding(.top, 16)
                 }
                 if let seerrStatus {
-                    SettingsStatusText(text: seerrStatus, isError: !seerrStatus.contains("Signed in"))
+                    SettingsStatusText(text: seerrStatus, isError: !seerrStatus.contains(AppLanguage.string("ui.signed_in", default: "Signed in")))
                         .padding(.top, 12)
                 }
             }
@@ -214,7 +214,7 @@ struct FirstRunSetupView: View {
             )
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("Zelefin")
+                    Text(AppLanguage.string("settings.zelefin_section", default: "Zelefin"))
                         .font(.body.weight(.semibold))
                         .foregroundStyle(LoginPalette.primaryText)
                     Spacer(minLength: 8)
@@ -280,9 +280,9 @@ struct FirstRunSetupView: View {
                         .frame(width: index == stepIndex ? 18 : 7, height: 7)
                 }
             }
-            .accessibilityLabel("Step \(stepIndex + 1) of \(steps.count)")
+            .accessibilityLabel(String(format: AppLanguage.string("connect.step_of", default: "Step %d of %d"), stepIndex + 1, steps.count))
 
-            SettingsPrimaryButton(title: isLastStep ? "Finish Setup" : "Continue", prominent: true) {
+            SettingsPrimaryButton(title: isLastStep ? "Finish Setup" : AppLanguage.string("common.continue", default: "Continue"), prominent: true) {
                 if isLastStep {
                     finish()
                 } else {

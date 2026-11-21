@@ -68,6 +68,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -465,6 +466,8 @@ private fun SidebarEditList(onReorder: (List<DockTab>) -> Unit, onSetShown: (Doc
 @Composable
 private fun SidebarEditRow(tab: DockTab, shown: Boolean, onShown: (Boolean) -> Unit, handle: Modifier, modifier: Modifier) {
     val appTab = tab.appTab ?: return
+    val context = LocalContext.current
+    val title = tab.title(context)
     val tint = if (shown) Color.White else ZelefinMuted
     Row(
         modifier
@@ -486,14 +489,14 @@ private fun SidebarEditRow(tab: DockTab, shown: Boolean, onShown: (Boolean) -> U
                         .size(22.dp)
                         .clip(CircleShape)
                         .toggleable(value = shown, role = Role.Checkbox, onValueChange = onShown)
-                        .semantics { contentDescription = if (shown) "Hide ${tab.title}" else "Show ${tab.title}" },
+                        .semantics { contentDescription = if (shown) "Hide $title" else "Show $title" },
                 )
             }
         }
         DockTabIcon(appTab, selected = false, description = null, tint = tint, modifier = Modifier.size(22.dp))
-        Text(tab.title, color = tint, fontFamily = ZelefinFont, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(title, color = tint, fontFamily = ZelefinFont, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Box(handle.size(36.dp), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.DragHandle, contentDescription = "Reorder ${tab.title}", tint = ZelefinMuted, modifier = Modifier.size(22.dp))
+            Icon(Icons.Rounded.DragHandle, contentDescription = "Reorder $title", tint = ZelefinMuted, modifier = Modifier.size(22.dp))
         }
     }
 }

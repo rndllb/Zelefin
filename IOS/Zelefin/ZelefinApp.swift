@@ -232,15 +232,21 @@ struct ZelefinApp: App {
     @State private var downloads = DownloadStore()
     @State private var deepLinks = DeepLinkStore()
     @State private var sharePlay = SharePlayManager()
+    @AppStorage(AppLanguage.storageKey) private var appLanguageRaw = AppLanguage.system.rawValue
 
     init() {
         PlaybackPreferences.moveEveryoneToMPVOnce()
+    }
+
+    private var appLanguage: AppLanguage {
+        AppLanguage.stored(from: appLanguageRaw)
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .background(Color.zelefinPage)
+                .appLanguage(appLanguage)
                 .environment(session)
                 .environment(\.libraryArtworkRevision, session.artworkRevision)
                 .environment(downloads)
@@ -271,7 +277,7 @@ struct ZelefinApp: App {
                         set: { if !$0 { sharePlay.notice = nil } }
                     )
                 ) {
-                    Button("OK", role: .cancel) { sharePlay.notice = nil }
+                    Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) { sharePlay.notice = nil }
                 } message: {
                     Text(sharePlay.notice ?? "")
                 }

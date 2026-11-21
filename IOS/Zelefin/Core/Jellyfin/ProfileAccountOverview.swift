@@ -91,11 +91,11 @@ struct ProfileAccountOverview: Equatable, Sendable {
 
         let capabilities: [Capability] = [
             .init(id: "playback", title: "Play media", isAllowed: policy?.enableMediaPlayback ?? true),
-            .init(id: "download", title: "Download", isAllowed: policy?.enableContentDownloading ?? false),
+            .init(id: "download", title: AppLanguage.string("ui.download", default: "Download"), isAllowed: policy?.enableContentDownloading ?? false),
             .init(id: "subtitles", title: "Search for subtitles", isAllowed: policy?.enableSubtitleManagement == true),
-            .init(id: "syncplay", title: "Watch together", isAllowed: syncPlayAllowed),
+            .init(id: "syncplay", title: AppLanguage.string("player.watch_together", default: "Watch together"), isAllowed: syncPlayAllowed),
             .init(id: "remote", title: "Remote access", isAllowed: policy?.enableRemoteAccess ?? true),
-            .init(id: "livetv", title: "Live TV", isAllowed: policy?.enableLiveTvAccess ?? false),
+            .init(id: "livetv", title: AppLanguage.string("tab.live_tv", default: "Live TV"), isAllowed: policy?.enableLiveTvAccess ?? false),
             .init(id: "video-transcode", title: "Video transcoding", isAllowed: policy?.enableVideoPlaybackTranscoding ?? true),
             .init(id: "audio-transcode", title: "Audio transcoding", isAllowed: policy?.enableAudioPlaybackTranscoding ?? true),
             .init(id: "remux", title: "Remuxing", isAllowed: policy?.enablePlaybackRemuxing ?? true),
@@ -105,7 +105,7 @@ struct ProfileAccountOverview: Equatable, Sendable {
                 isAllowed: policy?.isForceRemoteSourceTranscoding ?? false
             ),
             .init(id: "public-share", title: "Public sharing", isAllowed: policy?.enablePublicSharing ?? false),
-            .init(id: "collections", title: "Manage collections", isAllowed: policy?.enableCollectionManagement == true),
+            .init(id: "collections", title: AppLanguage.string("ui.manage_collections", default: "Manage collections"), isAllowed: policy?.enableCollectionManagement == true),
             .init(id: "delete", title: "Delete media", isAllowed: policy?.enableContentDeletion ?? false)
         ]
 

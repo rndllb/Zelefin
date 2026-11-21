@@ -5,7 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
-import androidx.fragment.app.FragmentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -129,7 +129,7 @@ import app.zelefin.client.ui.ZelefinTabletSidebar
 import app.zelefin.client.ui.ZelefinTabletTopBar
 import app.zelefin.client.ui.ZelefinTabletMiniPlayer
 
-class MainActivity : FragmentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         app.zelefin.client.ui.PlayerWindow.onUserLeaveHint(this)
@@ -245,7 +245,7 @@ class MainActivity : FragmentActivity() {
                 val topBarVisible = tablet && showDock && !sidebarVisible
                 val sidebarNarrows = sidebarNarrowsPage(configuration.screenWidthDp)
                 val pageStart by animateDpAsState(if (sidebarVisible && sidebarNarrows) TabletSidebarWidth else 0.dp, label = "sidebarInset")
-                val tabEntries = app.zelefin.client.ui.TabPreferences.tabletEntries(state.libraries)
+                val tabEntries = app.zelefin.client.ui.TabPreferences.tabletEntries(this, state.libraries)
                 val selectEntry: (DockEntry) -> Unit = { entry -> entry.room?.let(model::selectDockRoom) ?: model.selectTab(entry.tab) }
                 // A covering sidebar closes once it's been used, the way iPad's does in portrait.
                 val leaveSidebar = { if (!sidebarNarrows) sidebarOpen = false }
@@ -432,7 +432,7 @@ class MainActivity : FragmentActivity() {
                             chrome = dockChrome,
                             currentTab = state.tab,
                             currentRoomId = state.dockRoomId,
-                            entries = app.zelefin.client.ui.TabPreferences.dockEntries(state.libraries),
+                            entries = app.zelefin.client.ui.TabPreferences.dockEntries(this@MainActivity, state.libraries),
                             showsNames = app.zelefin.client.ui.TabPreferences.showsNames,
                             nowPlaying = state.nowPlaying,
                             session = state.session,

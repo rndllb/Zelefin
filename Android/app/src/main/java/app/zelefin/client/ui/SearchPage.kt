@@ -92,6 +92,8 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -470,7 +472,7 @@ private fun SearchChrome(
         ) {
             Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Search",
+                    stringResource(R.string.search_title),
                     color = Color.White,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.Bold,
@@ -486,7 +488,7 @@ private fun SearchChrome(
             SearchField(
                 glass = glass,
                 term = term,
-                prompt = scope.prompt,
+                prompt = stringResource(scope.promptRes),
                 focusRequester = focusRequester,
                 modifier = Modifier.weight(1f),
                 onFocus = onFocus,
@@ -498,7 +500,20 @@ private fun SearchChrome(
                 enter = fadeIn(SearchSessionMotion()) + scaleIn(SearchSessionMotion(), initialScale = 0.6f) + expandHorizontally(SearchSessionMotion()),
                 exit = fadeOut(SearchSessionMotion()) + scaleOut(SearchSessionMotion(), targetScale = 0.6f) + shrinkHorizontally(SearchSessionMotion()),
             ) {
-                Box(Modifier.size(46.dp).then(if (visible) Modifier.zelefinGlassDisc("search-cancel", "Cancel", Icons.Filled.Close, onCancel) else Modifier))
+                Box(
+                    Modifier.size(46.dp).then(
+                        if (visible) {
+                            Modifier.zelefinGlassDisc(
+                                "search-cancel",
+                                stringResource(R.string.search_cancel),
+                                Icons.Filled.Close,
+                                onCancel,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+                )
             }
         }
         AnimatedVisibility(
@@ -559,7 +574,7 @@ private fun SearchField(
             Spacer(Modifier.width(8.dp))
             Icon(
                 Icons.Filled.Cancel,
-                contentDescription = "Clear",
+                contentDescription = stringResource(R.string.common_clear),
                 tint = FieldIcon,
                 modifier = Modifier
                     .size(20.dp)
@@ -733,7 +748,7 @@ private fun RecentList(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Recently Searched",
+                    stringResource(R.string.search_recently_searched),
                     color = Color.White,
                     fontFamily = ZelefinFont,
                     fontWeight = FontWeight.Bold,
@@ -741,8 +756,7 @@ private fun RecentList(
                     modifier = Modifier.weight(1f),
                 )
                 if (recents.isNotEmpty()) {
-                    Text(
-                        "Clear",
+                    Text(stringResource(R.string.common_clear),
                         color = ZelefinCyan,
                         fontFamily = ZelefinFont,
                         fontWeight = FontWeight.SemiBold,
@@ -758,7 +772,7 @@ private fun RecentList(
         if (recents.isEmpty()) {
             item(key = "recent-empty") {
                 Text(
-                    "Titles you open from Search show up here.",
+                    stringResource(R.string.search_recent_empty),
                     color = ZelefinMuted,
                     fontFamily = ZelefinFont,
                     fontSize = 15.sp,
@@ -853,7 +867,7 @@ private fun DiscoverUnavailable(topInset: Dp) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Sign In to Seerr or Ombi",
+            stringResource(R.string.search_sign_in_request),
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
             fontSize = 22.sp,
@@ -861,7 +875,7 @@ private fun DiscoverUnavailable(topInset: Dp) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Add Seerr or Ombi in Settings → Plugins to request movies and shows.",
+            stringResource(R.string.search_request_setup),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 16.sp,
             textAlign = TextAlign.Center,
@@ -878,7 +892,7 @@ private fun NoResults(term: String, topInset: Dp) {
         Icon(Icons.Filled.Search, contentDescription = null, tint = ZelefinMuted, modifier = Modifier.size(44.dp))
         Spacer(Modifier.height(12.dp))
         Text(
-            "No Results for “${term.trim()}”",
+            stringResource(R.string.search_no_results_for, term.trim()),
             color = Color.White,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
@@ -887,7 +901,7 @@ private fun NoResults(term: String, topInset: Dp) {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Check the spelling or try a new search.",
+            stringResource(R.string.search_no_results_body),
             color = ZelefinMuted,
             fontFamily = ZelefinFont,
             fontSize = 15.sp,

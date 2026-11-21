@@ -49,22 +49,22 @@ struct SubtitleAppearanceSettingsView: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 140)
             } header: {
-                Text("Style")
+                Text(AppLanguage.string("Style", default: "Style"))
             }
             .zelefinRowBackground()
 
             Section {
-                Picker("Font Size", selection: size) {
+                Picker(AppLanguage.string("player.font_size", default: "Font Size"), selection: size) {
                     ForEach(SubtitleAppearance.Size.allCases) { option in
                         Text(option.title).tag(option)
                     }
                 }
-                Picker("Text Color", selection: color) {
+                Picker(AppLanguage.string("player.text_color", default: "Text Color"), selection: color) {
                     ForEach(SubtitleAppearance.TextColor.allCases) { option in
                         Text(option.title).tag(option)
                     }
                 }
-                Picker("Background", selection: background) {
+                Picker(AppLanguage.string("player.background", default: "Background"), selection: background) {
                     ForEach(SubtitleAppearance.Background.allCases) { option in
                         Text(option.title).tag(option)
                     }
@@ -72,7 +72,7 @@ struct SubtitleAppearanceSettingsView: View {
                 sliderRow("Brightness", value: $brightness, range: SubtitleAppearance.brightnessRange) {
                     "\(Int(brightness.rounded()))"
                 }
-                Picker("Position", selection: position) {
+                Picker(AppLanguage.string("ui.position", default: "Position"), selection: position) {
                     ForEach(SubtitleAppearance.Position.allCases) { option in
                         Text(option.title).tag(option)
                     }
@@ -84,11 +84,11 @@ struct SubtitleAppearanceSettingsView: View {
                     SubtitleAppearance.syncTitle(syncSeconds)
                 }
             } footer: {
-                Text("Raise captions from the bottom of the picture. Style applies to text subtitles in Zelefin’s player. Positive sync shows captions later; negative shows them earlier.")
+                Text(AppLanguage.string("Raise captions from the bottom of the picture. Style applies to text subtitles in Zelefin’s player. Positive sync shows captions later; negative shows them earlier.", default: "Raise captions from the bottom of the picture. Style applies to text subtitles in Zelefin’s player. Positive sync shows captions later; negative shows them earlier."))
             }
             .zelefinRowBackground()
         }
-        .zelefinSettingsChrome(title: "Subtitles")
+        .zelefinSettingsChrome(title: AppLanguage.string("player.subtitles", default: "Subtitles"))
         .onChange(of: brightness) { _, value in
             brightness = min(SubtitleAppearance.brightnessRange.upperBound, max(SubtitleAppearance.brightnessRange.lowerBound, value))
         }
@@ -143,7 +143,7 @@ struct SubtitleAppearancePreview: View {
         ZStack(alignment: .bottom) {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.black.opacity(0.55))
-            Text("Sample subtitle text")
+            Text(AppLanguage.string("Sample subtitle text", default: "Sample subtitle text"))
                 .font(.system(size: 17 * size.scale, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .modifier(SubtitleTextChrome(color: color, background: background, brightness: brightness))

@@ -31,7 +31,7 @@ struct PlaylistDetailView: View {
                 ContentUnavailableView(
                     "Empty Playlist",
                     systemImage: "list.bullet.rectangle",
-                    description: Text(errorMessage ?? "Add titles from a movie or show page.")
+                    description: Text(errorMessage ?? AppLanguage.string("ui.add_titles_from_a_movie_or_show_page", default: "Add titles from a movie or show page."))
                 )
                 .padding(.top, 40)
             } else {
@@ -79,7 +79,7 @@ struct PlaylistPickerSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        TitleSheet(title: "Add to Playlist", onClose: onClose) {
+        TitleSheet(title: AppLanguage.string("ui.add_to_playlist", default: "Add to Playlist"), onClose: onClose) {
             List {
                 if let errorMessage {
                     Section {
@@ -87,20 +87,20 @@ struct PlaylistPickerSheet: View {
                     }
                     .zelefinRowBackground()
                 }
-                Section("New Playlist") {
+                Section(AppLanguage.string("ui.new_playlist", default: "New Playlist")) {
                     HStack {
-                        TextField("Name", text: $newName)
+                        TextField(AppLanguage.string("ui.name", default: "Name"), text: $newName)
                             .textFieldStyle(.plain)
-                        Button("Create") {
+                        Button(AppLanguage.string("common.create", default: "Create")) {
                             Task { await create() }
                         }
                         .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
                 .zelefinRowBackground()
-                Section("Playlists") {
+                Section(AppLanguage.string("ui.playlists", default: "Playlists")) {
                     if playlists.isEmpty {
-                        Text("No playlists yet.")
+                        Text(AppLanguage.string("ui.no_playlists_yet", default: "No playlists yet."))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(playlists) { playlist in
@@ -178,7 +178,7 @@ struct RemoteImagePickerView: View {
     @State private var busyID: String?
 
     var body: some View {
-        TitleSheet(title: "Edit Images", closeDisabled: busyID != nil, onClose: onClose) {
+        TitleSheet(title: AppLanguage.string("ui.edit_images", default: "Edit Images"), closeDisabled: busyID != nil, onClose: onClose) {
             List {
                 heroSection
                 kindSection
@@ -207,11 +207,11 @@ struct RemoteImagePickerView: View {
     private var kindSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
-                SettingsFieldLabel(title: "Artwork")
+                SettingsFieldLabel(title: AppLanguage.string("ui.artwork", default: "Artwork"))
                 kindButtons
             }
         } header: {
-            Text("Type")
+            Text(AppLanguage.string("ui.type", default: "Type"))
         }
         .zelefinRowBackground()
     }

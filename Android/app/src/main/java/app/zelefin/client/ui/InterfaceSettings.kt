@@ -32,6 +32,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -78,6 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
@@ -93,6 +98,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.zelefin.client.R
 import app.zelefin.client.CatalogBrowseQuery
 import app.zelefin.client.CatalogSortField
 import app.zelefin.client.CatalogStatusFilter
@@ -125,9 +131,30 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
 
     AccentSection()
 
+    SettingsHeader(stringResource(R.string.settings_language_header))
+    SettingsCard {
+        SettingsMenuPicker(
+            label = stringResource(R.string.settings_language_app),
+            choices = AppLanguage.entries.map { language ->
+                val label = if (language == AppLanguage.SYSTEM) {
+                    stringResource(R.string.settings_language_system)
+                } else {
+                    language.nativeName
+                }
+                SettingsChoice(language, label)
+            },
+            selected = AppLanguage.current,
+            onSelect = { language ->
+                if (language == AppLanguage.current) return@SettingsMenuPicker
+                AppLanguage.set(context, language)
+            },
+        )
+    }
+    SettingsFooter(stringResource(R.string.settings_language_footer))
+
     val merged = HomeLayoutPreferences.mergeContinueAndNextUp
     SettingsCard {
-        SettingsToggleRow("Combine Continue Watching and Next Up", merged, onChange = { on ->
+        SettingsToggleRow(stringResource(R.string.settings_combine_continue), merged, onChange = { on ->
             HomeLayoutPreferences.setMergeContinueAndNextUp(context, on)
             model.pushDisplayPreferences()
             model.refreshLibrary()
@@ -135,17 +162,17 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
     }
     SettingsFooter(
         if (merged) {
-            "In-progress titles and the next episode after you finish one appear in a single Continue Watching row. Each title is still labeled CONTINUE or NEXT."
+            stringResource(R.string.settings_home_footer_merged)
         } else {
-            "Keep in-progress titles in Continue Watching and the next episode after you finish one in Next Up."
+            stringResource(R.string.settings_home_footer_split)
         },
     )
 
-    SettingsHeader("Featured Hero")
+    SettingsHeader(stringResource(R.string.settings_featured_hero))
     SettingsCard {
         SettingsMenuPicker(
-            label = "Content",
-            choices = FeaturedHeroContent.entries.map { SettingsChoice(it, it.title) },
+            label = stringResource(R.string.settings_content),
+            choices = FeaturedHeroContent.entries.map { SettingsChoice(it, it.title(context)) },
             selected = HomeLayoutPreferences.heroContent,
             onSelect = { content ->
                 if (content == HomeLayoutPreferences.heroContent) return@SettingsMenuPicker
@@ -155,8 +182,8 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
             },
         )
         SettingsMenuPicker(
-            label = "Size",
-            choices = HeroSizePreference.entries.map { SettingsChoice(it, it.title) },
+            label = stringResource(R.string.settings_size),
+            choices = HeroSizePreference.entries.map { SettingsChoice(it, it.title(context)) },
             selected = HeroSizePreferences.size,
             onSelect = { size ->
                 if (size == HeroSizePreferences.size) return@SettingsMenuPicker
@@ -164,23 +191,23 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
             },
         )
     }
-    SettingsFooter("What the Home hero cycles through, and how tall the Featured and title-page backdrops run. Compact shows more of a landscape image; Tall is the previous full-bleed height. Recently Added is the default content.")
+    SettingsFooter(stringResource(R.string.settings_featured_hero_footer))
 
-    SettingsHeader("Poster Badges")
+    SettingsHeader(stringResource(R.string.settings_poster_badges))
     SettingsCard {
-        SettingsToggleRow("Community Rating", PosterBadgePreferences.showsRating, onChange = { on ->
+        SettingsToggleRow(stringResource(R.string.settings_community_rating), PosterBadgePreferences.showsRating, onChange = { on ->
             PosterBadgePreferences.setShowsRating(context, on)
         })
-        SettingsToggleRow("Quality Badges", PosterBadgePreferences.showsQuality, onChange = { on ->
+        SettingsToggleRow(stringResource(R.string.settings_quality_badges), PosterBadgePreferences.showsQuality, onChange = { on ->
             PosterBadgePreferences.setShowsQuality(context, on)
         })
-        SettingsToggleRow("Watched Mark", PosterBadgePreferences.showsWatched, onChange = { on ->
+        SettingsToggleRow(stringResource(R.string.settings_watched_mark), PosterBadgePreferences.showsWatched, onChange = { on ->
             PosterBadgePreferences.setShowsWatched(context, on)
         })
     }
-    SettingsFooter("Rating stars, 4K/HDR/Atmos marks, and the watched check on posters. Turn any of them off to quiet the covers.")
+    SettingsFooter(stringResource(R.string.settings_poster_badges_footer))
 
-    SettingsHeader("Home")
+    SettingsHeader(stringResource(R.string.settings_home))
     ReorderableCards(
         items = HomeLayoutPreferences.slots,
         key = { it.raw },
@@ -195,7 +222,7 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
                 val row = slot.kind
                 ReorderRow(
                     icon = { Icon(homeRowIcon(row), contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
-                    title = row.title,
+                    title = row.title(context),
                     checked = if (editing) null else row !in HomeLayoutPreferences.hidden,
                     onCheckedChange = { on ->
                         HomeLayoutPreferences.setVisible(context, row, on)
@@ -260,20 +287,20 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
         TabPreferences.enabledLibraryCount(state.libraries),
     )
 
-    SettingsHeader("Start Page")
+    SettingsHeader(stringResource(R.string.settings_start_page))
     SettingsCard {
         SettingsMenuPicker(
-            label = "Page",
-            choices = StartPagePreferences.choices.map { SettingsChoice(it, it.title) },
+            label = stringResource(R.string.settings_page),
+            choices = StartPagePreferences.choices.map { SettingsChoice(it, it.title(context)) },
             selected = StartPagePreferences.tab,
             onSelect = { page -> StartPagePreferences.setTab(context, page) },
         )
     }
-    SettingsFooter("The page Zelefin opens to when you launch it. Home is the default.")
+    SettingsFooter(stringResource(R.string.settings_start_page_footer))
 
-    SettingsHeader("Tabs")
+    SettingsHeader(stringResource(R.string.settings_tabs))
     SettingsCard {
-        SettingsToggleRow("Show Tab Names", TabPreferences.showsNames, onChange = { on ->
+        SettingsToggleRow(stringResource(R.string.settings_show_tab_names), TabPreferences.showsNames, onChange = { on ->
             TabPreferences.setShowsNames(context, on)
         })
     }
@@ -291,7 +318,7 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
         val appTab = tab.appTab ?: return@ReorderableCards
         ReorderRow(
             icon = { DockTabIcon(appTab, selected = false, description = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp)) },
-            title = tab.title,
+            title = tab.title(context),
             checked = if (editing || !tab.canHide) null else TabPreferences.isShown(tab),
             onCheckedChange = { on ->
                 if (!on || canEnableAnother) {
@@ -314,7 +341,7 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
     SettingsFooter(tabNames + "Turn off a tab to hide it from the tab bar. Tap Edit to drag rows into a new order." + sidebarEdit)
 
     if (pinnable.isNotEmpty()) {
-        SettingsHeader("Libraries")
+        SettingsHeader(stringResource(R.string.settings_libraries))
         SettingsCard {
             pinnable.forEachIndexed { index, room ->
                 if (index > 0) SettingsCardDivider()
@@ -331,7 +358,7 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
         }
         SettingsFooter(
             if (tablet) {
-                "Turn on a custom library, such as Anime, to put it in the dock."
+                stringResource(R.string.settings_library_dock_footer)
             } else {
                 "Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 phone spots."
             },
@@ -340,25 +367,25 @@ fun InterfaceSettings(state: ZelefinUiState, editing: Boolean = false) {
 
     val animeRooms = pinnable.filter(LibraryIcons::canChoose)
     if (animeRooms.isNotEmpty()) {
-        SettingsHeader("Anime Icons")
+        SettingsHeader(stringResource(R.string.settings_anime_icons))
         SettingsCard {
             animeRooms.forEachIndexed { index, room ->
                 if (index > 0) SettingsCardDivider()
                 LibraryIconRow(room) { model.openSettingsTopic("$LibraryIconTopicPrefix${room.id}") }
             }
         }
-        SettingsFooter("Pick the icon a library with Anime in its name shows when it's in the dock.")
+        SettingsFooter(stringResource(R.string.settings_anime_icons_footer_phone))
     }
 
     Spacer(Modifier.height(22.dp))
     SettingsCard {
-        SettingsSecondaryButton("Reset Home Rows") {
+        SettingsSecondaryButton(stringResource(R.string.settings_reset_home_rows)) {
             HomeLayoutPreferences.reset(context)
             model.pushDisplayPreferences()
             model.refreshLibrary()
         }
         SettingsCardDivider()
-        SettingsSecondaryButton("Reset Tabs") {
+        SettingsSecondaryButton(stringResource(R.string.settings_reset_tabs)) {
             TabPreferences.reset(context)
             model.pushDisplayPreferences()
         }
@@ -377,13 +404,17 @@ private fun LibraryIconRow(room: LibraryRoom, onClick: () -> Unit) {
         Spacer(Modifier.width(14.dp))
         Text(room.name, style = SettingsRowText, maxLines = 1, modifier = Modifier.weight(1f))
         Text(
-            if (LibraryIcons.chosen(room) == null) "Default" else "Custom",
+            if (LibraryIcons.chosen(room) == null) {
+                stringResource(R.string.settings_default)
+            } else {
+                stringResource(R.string.settings_custom)
+            },
             color = InterfaceCaption,
             fontFamily = ZelefinFont,
             fontSize = 17.sp,
         )
         Spacer(Modifier.width(6.dp))
-        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = InterfaceCaption)
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = InterfaceCaption)
     }
 }
 
@@ -403,7 +434,7 @@ internal fun LibraryIconPicker(roomId: String, state: ZelefinUiState) {
                         row.forEach { choice ->
                             LibraryIconTile(
                                 res = choice?.res ?: LibraryIcons.defaultIcon(room, selected = false),
-                                title = choice?.title ?: "Default",
+                                title = choice?.title ?: stringResource(R.string.settings_default),
                                 selected = choice?.key == chosen?.key,
                                 modifier = Modifier.weight(1f),
                             ) { LibraryIcons.setChoice(context, room.id, choice?.key) }
@@ -414,7 +445,7 @@ internal fun LibraryIconPicker(roomId: String, state: ZelefinUiState) {
             }
         }
     }
-    SettingsFooter("Icons by PlainIcon (Anime characters), licensed under CC BY 4.0.")
+    SettingsFooter(stringResource(R.string.settings_anime_icons_credit))
 }
 
 @Composable
@@ -486,7 +517,7 @@ private fun ReorderRow(
         }
         if (onDelete != null) {
             Text(
-                "Delete",
+                stringResource(R.string.common_delete),
                 color = Color(0xFFFF453A),
                 fontFamily = FontFamily.SansSerif,
                 fontSize = 15.sp,
@@ -531,7 +562,7 @@ fun CustomHomeRowEditorTopic(rowId: String, onDeleted: () -> Unit) {
         model.refreshLibrary()
     }
 
-    SettingsHeader("Name")
+    SettingsHeader(stringResource(R.string.ui_name))
     SettingsCard {
         SettingsTextField(
             label = "Title",
@@ -542,7 +573,7 @@ fun CustomHomeRowEditorTopic(rowId: String, onDeleted: () -> Unit) {
         )
     }
 
-    SettingsHeader("Library")
+    SettingsHeader(stringResource(R.string.library_title))
     SettingsCard {
         SettingsMenuPicker(
             label = "Scope",
@@ -553,7 +584,7 @@ fun CustomHomeRowEditorTopic(rowId: String, onDeleted: () -> Unit) {
     }
     SettingsFooter("Movies is the default. Shows and Movies & Shows browse those libraries with the same filters.")
 
-    SettingsHeader("Sort")
+    SettingsHeader(stringResource(R.string.settings_sort))
     SettingsCard {
         SettingsMenuPicker(
             label = "Sort By",
@@ -570,13 +601,13 @@ fun CustomHomeRowEditorTopic(rowId: String, onDeleted: () -> Unit) {
             },
         )
         if (query.sort.allowsDirection) {
-            SettingsToggleRow("Ascending", query.sortAscending, onChange = { on ->
+            SettingsToggleRow(stringResource(R.string.ui_ascending), query.sortAscending, onChange = { on ->
                 persist(draft, query.copy(sortAscending = on))
             })
         }
     }
 
-    SettingsHeader("Filters")
+    SettingsHeader(stringResource(R.string.settings_filters))
     SettingsCard {
         CatalogStatusFilter.entries.forEach { status ->
             SettingsToggleRow(status.title, status in query.statuses, onChange = { on ->
@@ -706,7 +737,7 @@ internal fun AccentSection() {
     val custom = selectedId == AccentPreferences.CUSTOM_ID
     val active = AccentPreferences.preset(selectedId, AccentPreferences.customHex)
 
-    SettingsHeader("Accent Color")
+    SettingsHeader(stringResource(R.string.settings_accent_color))
     SettingsCard {
         Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(
@@ -770,7 +801,7 @@ internal fun AccentSection() {
                     ) { AccentPreferences.select(context, preset.id) }
                 }
                 AccentBead(
-                    name = "Custom",
+                    name = stringResource(R.string.settings_custom),
                     color = AccentPreferences.customColor,
                     selected = custom,
                     eyedropper = true,
@@ -779,7 +810,7 @@ internal fun AccentSection() {
 
             if (custom) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Mix your own", style = SettingsRowText, modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.ui_mix_your_own), style = SettingsRowText, modifier = Modifier.weight(1f))
                     Box(
                         Modifier
                             .size(30.dp)
@@ -799,7 +830,7 @@ internal fun AccentSection() {
             }
         }
     }
-    SettingsFooter("Tints buttons, highlights, and icons throughout the app.")
+    SettingsFooter(stringResource(R.string.settings_accent_footer))
 
     if (pickerOpen) {
         AccentColorPickerPanel(onDismiss = { pickerOpen = false })
@@ -947,8 +978,8 @@ private fun AccentColorPickerPanel(onDismiss: () -> Unit) {
                         .border(0.5.dp, IOSColors.separator, RoundedCornerShape(8.dp)),
                 )
                 Spacer(Modifier.width(12.dp))
-                Text("Color", style = SettingsRowText.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
-                IOSCapsuleButton("Done", onDismiss, prominent = true, height = 36.dp)
+                Text(stringResource(R.string.settings_accent_color), style = SettingsRowText.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+                IOSCapsuleButton(stringResource(R.string.common_done), onDismiss, prominent = true, height = 36.dp)
             }
             BoxWithConstraints(
                 Modifier

@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +109,7 @@ internal fun RemotePlaySheet(
                         CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                     }
                     targets.isEmpty() -> Text(
-                        "No other devices are connected right now.",
+                        stringResource(R.string.detail_no_devices),
                         color = RemoteCaption,
                         fontFamily = ZelefinFont,
                         fontSize = 16.sp,

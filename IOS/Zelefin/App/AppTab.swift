@@ -35,13 +35,13 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .home: "Home"
-        case .movies: "Movies"
-        case .shows: "Shows"
-        case .liveTV: "Live TV"
-        case .collections: "Collections"
-        case .library: "Library"
-        case .favorites: "Favorites"
+        case .home: AppLanguage.string("tab.home", default: "Home")
+        case .movies: AppLanguage.string("tab.movies", default: "Movies")
+        case .shows: AppLanguage.string("tab.shows", default: "Shows")
+        case .liveTV: AppLanguage.string("tab.live_tv", default: "Live TV")
+        case .collections: AppLanguage.string("tab.collections", default: "Collections")
+        case .library: AppLanguage.string("tab.library", default: "Library")
+        case .favorites: AppLanguage.string("tab.favorites", default: "Favorites")
         }
     }
 

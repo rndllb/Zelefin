@@ -9,9 +9,9 @@ enum CustomHomeRowScope: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .movies: "Movies"
-        case .shows: "Shows"
-        case .both: "Movies & Shows"
+        case .movies: AppLanguage.string("tab.movies", default: "Movies")
+        case .shows: AppLanguage.string("tab.shows", default: "Shows")
+        case .both: AppLanguage.string("home.movies_and_shows", default: "Movies & Shows")
         }
     }
 
@@ -94,7 +94,7 @@ struct CustomHomeRow: Identifiable, Codable, Hashable, Sendable {
 
     init(
         id: String = UUID().uuidString,
-        title: String = "Custom Row",
+        title: String = AppLanguage.string("settings.custom_row", default: "Custom Row"),
         scope: String = CustomHomeRowScope.movies.rawValue,
         query: CatalogBrowseQueryDto = CatalogBrowseQueryDto(),
         enabled: Bool = true

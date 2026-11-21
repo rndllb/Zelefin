@@ -30,6 +30,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
@@ -63,6 +67,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.rememberCoroutineScope
 import app.zelefin.client.BrowsePage
 import app.zelefin.client.HomeShelf
+import app.zelefin.client.R
 import app.zelefin.client.plugins.JellyfinEnhancedHomeSurface
 import app.zelefin.core.ArtworkUrls
 import app.zelefin.core.HomeFeed
@@ -103,6 +110,7 @@ fun HomeFeedPage(
 ) {
     var more by remember { mutableStateOf<TitleMoreRequest?>(null) }
     var note by remember { mutableStateOf<MenuNotice?>(null) }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val refreshState = rememberPullToRefreshState()
@@ -195,7 +203,7 @@ fun HomeFeedPage(
                     }
                     HomeRowKind.ContinueWatching -> item(key = slot.raw) {
                         HomeRow(
-                            "Continue Watching", continueWatching, session, landscape = true, onOpen,
+                            stringResource(R.string.home_continue_watching), continueWatching, session, landscape = true, onOpen,
                             onSeeAll = { onSeeAll(HomeShelf.ContinueWatching) },
                         ) { item, anchor ->
                             val fromNextUp = item.queueKind == app.zelefin.core.PlaybackQueueKind.NextUp ||
@@ -204,13 +212,13 @@ fun HomeFeedPage(
                         }
                     }
                     HomeRowKind.NextUp -> item(key = slot.raw) {
-                        HomeRow("Next Up", feed.nextUp, session, landscape = true, onOpen, onSeeAll = { onSeeAll(HomeShelf.NextUp) }) { item, anchor ->
+                        HomeRow(stringResource(R.string.home_next_up), feed.nextUp, session, landscape = true, onOpen, onSeeAll = { onSeeAll(HomeShelf.NextUp) }) { item, anchor ->
                             more = TitleMoreRequest(item, TitleMenuContext.NextUp, anchor)
                         }
                     }
                     HomeRowKind.Upcoming -> item(key = slot.raw) {
                         // No see-all: cards play the episode, same as Continue Watching on iOS.
-                        HomeRow(row.title, feed.upcoming, session, landscape = true, onPlay)
+                        HomeRow(row.title(context), feed.upcoming, session, landscape = true, onPlay)
                     }
                     HomeRowKind.Recommendations -> feed.recommendations.filter { it.items.isNotEmpty() }.forEach { section ->
                         item(key = "${slot.raw}-${section.id}") {
@@ -221,14 +229,14 @@ fun HomeFeedPage(
                         }
                     }
                     HomeRowKind.RecentlyAddedMovies -> item(key = slot.raw) {
-                        HomeRow(row.title, feed.recentMovies, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentMovies) })
+                        HomeRow(row.title(context), feed.recentMovies, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentMovies) })
                     }
                     HomeRowKind.RecentlyAddedShows -> item(key = slot.raw) {
-                        HomeRow(row.title, feed.recentShows, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentShows) })
+                        HomeRow(row.title(context), feed.recentShows, session, landscape = false, onOpen, onSeeAll = { onSeeAll(HomeShelf.RecentShows) })
                     }
                     HomeRowKind.Collections -> item(key = slot.raw) {
                         HomeRow(
-                            "Browse by Collection", feed.collections, session, landscape = false, onOpen,
+                            stringResource(R.string.library_collections), feed.collections, session, landscape = false, onOpen,
                             onSeeAll = { onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.AllCollections)) },
                             card = { item ->
                                 LabeledPortrait(item.name, artworkCandidates(item, session, landscape = false), Modifier.width(124.dp), item, session) {
@@ -239,7 +247,7 @@ fun HomeFeedPage(
                     }
                     HomeRowKind.Genres -> item(key = slot.raw) {
                         HomeRow(
-                            "Browse by Genre", GenreOrder.shuffled(feed.genres) { it.name }, session, landscape = false, onOpen,
+                            stringResource(R.string.library_genres), GenreOrder.shuffled(feed.genres) { it.name }, session, landscape = false, onOpen,
                             onSeeAll = { onBrowse(BrowsePage.Library(app.zelefin.client.LibraryRoute.Genres)) },
                             card = { item ->
                                 val genre = app.zelefin.client.LibraryGenre(item.id, item.name)
@@ -252,9 +260,10 @@ fun HomeFeedPage(
                         )
                     }
                     HomeRowKind.RecentlyWatched -> item(key = slot.raw) {
+                        val watchedTitle = row.title(context)
                         HomeRow(
-                            row.title, feed.recentlyWatched, session, landscape = true, onOpen,
-                            onSeeAll = { onBrowse(BrowsePage.Shelf(row.title, feed.recentlyWatched)) },
+                            watchedTitle, feed.recentlyWatched, session, landscape = true, onOpen,
+                            onSeeAll = { onBrowse(BrowsePage.Shelf(watchedTitle, feed.recentlyWatched)) },
                         )
                     }
                 }
@@ -310,8 +319,8 @@ private fun HomeRowsHidden() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Home Rows Hidden", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, textAlign = TextAlign.Center)
-        Text("Turn rows back on in Interface settings.", color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 15.sp, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.home_rows_hidden), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.home_rows_hidden_body), color = ZelefinMuted, fontFamily = ZelefinFont, fontSize = 15.sp, textAlign = TextAlign.Center)
     }
 }
 
@@ -336,7 +345,7 @@ private fun HomeTitleBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "Home",
+            stringResource(R.string.tab_home),
             color = Color.White,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
@@ -462,7 +471,7 @@ private fun FeaturedHero(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                        Text("Play", color = Color.Black, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                        Text(stringResource(R.string.common_play), color = Color.Black, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     }
                 }
                 val moreAnchor = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
@@ -618,7 +627,7 @@ private fun HomeRow(
             Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
             if (onSeeAll != null) {
                 Icon(
-                    Icons.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
                     tint = Color.White.copy(alpha = 0.45f),
                     modifier = Modifier.size(16.dp),

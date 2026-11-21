@@ -175,7 +175,7 @@ struct ItemDetailView: View {
                     PhotoViewerView(item: photo)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") { viewingPhoto = nil }
+                                Button(AppLanguage.string("common.done", default: "Done")) { viewingPhoto = nil }
                             }
                         }
                 }
@@ -185,12 +185,12 @@ struct ItemDetailView: View {
                 "Delete this title from the library?",
                 isPresented: $showsDeleteConfirm
             ) {
-                Button("Delete Files", role: .destructive) {
+                Button(AppLanguage.string("detail.delete_files", default: "Delete Files"), role: .destructive) {
                     Task { await deleteFromLibrary() }
                 }
-                Button("Cancel", role: .cancel) {}
+                Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {}
             } message: {
-                Text("Jellyfin will remove this item and its files from the server. This cannot be undone.")
+                Text(AppLanguage.string("detail.delete_files_message", default: "Jellyfin will remove this item and its files from the server. This cannot be undone."))
             }
             .sheet(isPresented: $showsMoreInfo) {
                 if let item {
@@ -210,11 +210,11 @@ struct ItemDetailView: View {
                     .presentationBackground(TitleMoreInfoView.sheetBackground)
                 }
             }
-            .alert("Playback", isPresented: Binding(
+            .alert(AppLanguage.string("settings.playback", default: "Playback"), isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
-                Button("OK", role: .cancel) {}
+                Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
             } message: {
                 Text(errorMessage ?? "")
             }
@@ -306,17 +306,17 @@ struct ItemDetailView: View {
                             TitleEnhancedExtras(item: item)
 
                             if !moreInfo.information.isEmpty {
-                                TitleFactsSection(title: "Information", rows: moreInfo.information)
+                                TitleFactsSection(title: AppLanguage.string("detail.information", default: "Information"), rows: moreInfo.information)
                                     .padding(.bottom, 20)
                             }
 
                             if !moreInfo.languages.isEmpty {
-                                TitleFactsSection(title: "Languages", rows: moreInfo.languages)
+                                TitleFactsSection(title: AppLanguage.string("detail.languages", default: "Languages"), rows: moreInfo.languages)
                                     .padding(.bottom, 20)
                             }
 
                             if !moreInfo.file.isEmpty {
-                                TitleFactsSection(title: "File", rows: moreInfo.file)
+                                TitleFactsSection(title: AppLanguage.string("detail.file", default: "File"), rows: moreInfo.file)
                                     .padding(.bottom, 20)
                             }
                         }
@@ -327,7 +327,7 @@ struct ItemDetailView: View {
                     .zelefinScrollEdgeHidden()
                     .zelefinPinnedBottomEdge()
                 } else {
-                    ContentUnavailableView("Title Unavailable", systemImage: "film")
+                    ContentUnavailableView(AppLanguage.string("detail.title_unavailable", default: "Title Unavailable"), systemImage: "film")
                 }
             }
             .onAppear { heroLock.lock(geo.size) }
@@ -421,7 +421,7 @@ struct ItemDetailView: View {
             }
             .buttonStyle(.plain)
             .zelefinLiquidGlassCircle()
-            .accessibilityLabel("More")
+            .accessibilityLabel(AppLanguage.string("common.more", default: "More"))
             DetailDownloadSharePill(item: item, seasons: seasons, episodes: episodes)
         }
     }
@@ -450,13 +450,13 @@ struct ItemDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     overviewBlock(overview)
                     TitleSpecsRow(item: item)
-                    TitleDirectorsLine(people: credits)
+                    TitleDirectorsLine(people: credits, itemKind: item.kind)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     TitleSpecsRow(item: item)
-                    TitleDirectorsLine(people: credits)
+                    TitleDirectorsLine(people: credits, itemKind: item.kind)
                     if moreInfo.hasDetails {
                         moreInfoButton
                     }
@@ -535,7 +535,7 @@ struct ItemDetailView: View {
                 Button {
                     viewingPhoto = title
                 } label: {
-                    Label("View", systemImage: "photo")
+                    Label(AppLanguage.string("detail.view", default: "View"), systemImage: "photo")
                         .font(.headline)
                         .foregroundStyle(.black)
                         .frame(width: 175, height: 45)
@@ -581,13 +581,13 @@ struct ItemDetailView: View {
             .background(Color.white, in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(item.playbackPosition > 5 ? "Resume" : "Play")
+        .accessibilityLabel(item.playbackPosition > 5 ? "Resume" : AppLanguage.string("common.play", default: "Play"))
         .accessibilityValue(item.playActionDurationLabel ?? "")
     }
 
     @ViewBuilder
     private func playButtonLabel(for item: MediaItem) -> some View {
-        Text(item.playActionDurationLabel ?? "Play")
+        Text(item.playActionDurationLabel ?? AppLanguage.string("common.play", default: "Play"))
             .font(PlayButtonLayout.labelFont)
             .monospacedDigit()
             .lineLimit(1)
@@ -635,7 +635,7 @@ struct ItemDetailView: View {
         Button {
             showsMoreInfo = true
         } label: {
-            Text("MORE")
+            Text(AppLanguage.string("detail.more_caps", default: "MORE"))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
@@ -643,7 +643,7 @@ struct ItemDetailView: View {
                 .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("More information")
+        .accessibilityLabel(AppLanguage.string("detail.more_information", default: "More information"))
     }
 
     private func showsOverviewMore(_ overview: String) -> Bool {
@@ -681,7 +681,7 @@ struct ItemDetailView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(selectedSeasonTitle)
-            .accessibilityHint("Choose a season")
+            .accessibilityHint(AppLanguage.string("ui.choose_a_season", default: "Choose a season"))
 
             if !episodeStrip.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -740,7 +740,7 @@ struct ItemDetailView: View {
 
     private var additionalPartsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Additional Parts", showsChevron: false)
+            SectionHeader(title: AppLanguage.string("ui.additional_parts", default: "Additional Parts"), showsChevron: false)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(additionalParts) { part in
@@ -773,7 +773,7 @@ struct ItemDetailView: View {
                     onPlay: playTrailer
                 )
             } label: {
-                SectionHeader(title: "Trailers")
+                SectionHeader(title: AppLanguage.string("detail.trailers", default: "Trailers"))
             }
             .buttonStyle(.plain)
 
@@ -801,7 +801,7 @@ struct ItemDetailView: View {
 
     private func extrasSection(for item: MediaItem) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Extras", showsChevron: false)
+            SectionHeader(title: AppLanguage.string("ui.extras", default: "Extras"), showsChevron: false)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(extras) { extra in
@@ -830,10 +830,10 @@ struct ItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             NavigationLink {
                 SectionGridView(
-                    section: HomeSection(id: "related", title: "Related", style: .portrait, items: related)
+                    section: HomeSection(id: "related", title: AppLanguage.string("detail.related", default: "Related"), style: .portrait, items: related)
                 )
             } label: {
-                SectionHeader(title: "Related")
+                SectionHeader(title: AppLanguage.string("detail.related", default: "Related"))
             }
             .buttonStyle(.plain)
 
@@ -846,13 +846,13 @@ struct ItemDetailView: View {
             NavigationLink {
                 CastCrewListView(people: credits)
             } label: {
-                SectionHeader(title: "Cast & Crew")
+                SectionHeader(title: AppLanguage.string("detail.cast_crew", default: "Cast & Crew"))
             }
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: DetailRowLayout.spacing) {
-                    ForEach(credits) { person in
+                    ForEach(credits, id: \.self) { person in
                         NavigationLink {
                             PersonDetailView(
                                 personID: person.id,
@@ -899,7 +899,7 @@ struct ItemDetailView: View {
             NavigationLink {
                 LibraryItemRoute(item: membership.collection)
             } label: {
-                SectionHeader(title: collections.count > 1 ? membership.collection.browsingCardTitle : "Collection")
+                SectionHeader(title: collections.count > 1 ? membership.collection.browsingCardTitle : AppLanguage.string("detail.collection", default: "Collection"))
             }
             .buttonStyle(.plain)
 
@@ -1528,7 +1528,7 @@ private struct TrailerListView: View {
             .padding(16)
         }
         .background(Color.zelefinPage.ignoresSafeArea())
-        .navigationTitle("Trailers")
+        .navigationTitle(AppLanguage.string("detail.trailers", default: "Trailers"))
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
         .toolbar(.visible, for: .navigationBar)
@@ -1545,7 +1545,7 @@ private struct CastCrewListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                ForEach(people) { person in
+                ForEach(people, id: \.self) { person in
                     NavigationLink {
                         PersonDetailView(
                             personID: person.id,
@@ -1571,7 +1571,7 @@ private struct CastCrewListView: View {
                                     .foregroundStyle(.white.opacity(0.6))
                             }
                             Spacer()
-                            Image(systemName: "chevron.right")
+                            Image(systemName: "chevron.forward")
                                 .font(.footnote.weight(.bold))
                                 .foregroundStyle(.white.opacity(0.35))
                         }
@@ -1582,7 +1582,7 @@ private struct CastCrewListView: View {
             .padding(16)
         }
         .background(Color.zelefinPage.ignoresSafeArea())
-        .navigationTitle("Cast & Crew")
+        .navigationTitle(AppLanguage.string("detail.cast_crew", default: "Cast & Crew"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Color.zelefinPage, for: .navigationBar)
@@ -1619,10 +1619,10 @@ private struct CollectionMemberGroup: Identifiable {
         let episodes = members.filter { $0.kind == .episode }
         let other = members.filter { ![.movie, .series, .season, .episode].contains($0.kind) }
         return [
-            CollectionMemberGroup(title: "Movies", items: movies),
-            CollectionMemberGroup(title: "Shows", items: shows),
-            CollectionMemberGroup(title: "Episodes", items: episodes),
-            CollectionMemberGroup(title: other.count == members.count ? "Titles" : "More", items: other)
+            CollectionMemberGroup(title: AppLanguage.string("tab.movies", default: "Movies"), items: movies),
+            CollectionMemberGroup(title: AppLanguage.string("tab.shows", default: "Shows"), items: shows),
+            CollectionMemberGroup(title: AppLanguage.string("ui.episodes", default: "Episodes"), items: episodes),
+            CollectionMemberGroup(title: other.count == members.count ? "Titles" : AppLanguage.string("common.more", default: "More"), items: other)
         ].filter { !$0.items.isEmpty }
     }
 

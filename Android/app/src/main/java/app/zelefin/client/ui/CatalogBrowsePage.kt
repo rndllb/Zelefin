@@ -64,6 +64,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -273,7 +275,11 @@ private fun CatalogGrid(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        if (query.isDefault) "No Titles Yet" else "No Matches",
+                        if (query.isDefault) {
+                            stringResource(R.string.library_no_titles)
+                        } else {
+                            stringResource(R.string.library_no_matches)
+                        },
                         color = Color.White,
                         fontFamily = ZelefinFont,
                         fontWeight = FontWeight.Bold,
@@ -282,9 +288,9 @@ private fun CatalogGrid(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         if (query.isDefault) {
-                            emptyMessage ?: if (title == "Shows") "Shows from this server will show up here." else "Movies from this server will show up here."
+                            emptyMessage ?: stringResource(R.string.library_no_titles_body)
                         } else {
-                            "No titles match these filters."
+                            stringResource(R.string.library_no_matches_body)
                         },
                         color = ZelefinMuted,
                         fontSize = 16.sp,
@@ -647,7 +653,7 @@ private fun FilterChoices(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             decorationBox = { inner ->
-                if (search.isEmpty()) Text("Search", color = ZelefinMuted, fontSize = 17.sp)
+                if (search.isEmpty()) Text(stringResource(R.string.common_search), color = ZelefinMuted, fontSize = 17.sp)
                 inner()
             },
         )

@@ -29,7 +29,7 @@ struct SiloWhoIsWatchingView: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
 
-                Text("Who's watching?")
+                Text(AppLanguage.string("connect.who_is_watching_alt", default: "Who's watching?"))
                     .font(.system(size: horizontalSizeClass == .regular ? 40 : 32, weight: .semibold))
                     .foregroundStyle(LoginPalette.primaryText)
                     .multilineTextAlignment(.center)
@@ -46,7 +46,7 @@ struct SiloWhoIsWatchingView: View {
                 }
 
                 if profiles.isEmpty {
-                    Text("This account has no household profiles yet.")
+                    Text(AppLanguage.string("connect.no_profiles", default: "This account has no household profiles yet."))
                         .font(.subheadline)
                         .foregroundStyle(LoginPalette.secondaryText)
                         .multilineTextAlignment(.center)
@@ -136,7 +136,7 @@ struct SiloWhoIsWatchingView: View {
                 .foregroundStyle(LoginPalette.captionText)
                 .tracking(0.6)
 
-            SecureField("PIN", text: $pin)
+            SecureField(AppLanguage.string("connect.pin", default: "PIN"), text: $pin)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(LoginPalette.fieldValue)
                 .keyboardType(.numberPad)
@@ -147,7 +147,7 @@ struct SiloWhoIsWatchingView: View {
             } label: {
                 HStack {
                     Spacer(minLength: 0)
-                    Text("Continue")
+                    Text(AppLanguage.string("common.continue", default: "Continue"))
                         .font(.caption.weight(.bold))
                         .tracking(0.8)
                     Spacer(minLength: 0)
@@ -175,7 +175,7 @@ struct SiloWhoIsWatchingView: View {
 
     private func accessibilityLabel(for profile: SiloProfile) -> String {
         var parts = [profile.name]
-        if profile.isChild { parts.append("Kids") }
+        if profile.isChild { parts.append(AppLanguage.string("connect.kids", default: "Kids")) }
         if profile.hasPin { parts.append("PIN required") }
         if profile.id == currentID { parts.append("Current") }
         return parts.joined(separator: ", ")
@@ -284,7 +284,7 @@ struct HouseholdProfileTile: View {
                     .lineLimit(1)
                     .multilineTextAlignment(.center)
                 if profile.isChild {
-                    Text("Kids")
+                    Text(AppLanguage.string("connect.kids", default: "Kids"))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(LoginPalette.captionText)
                 }

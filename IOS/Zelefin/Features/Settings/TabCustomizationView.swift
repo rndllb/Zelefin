@@ -21,8 +21,20 @@ struct TabCustomizationView: View {
     @AppStorage(LibraryLayoutPreferences.pageHiddenKey) private var libraryPageHiddenRaw = ""
     @AppStorage(AccentPreferences.presetIdKey) private var accentPresetId = AccentPreferences.defaultId
     @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
+    @AppStorage(AppLanguage.storageKey) private var appLanguageRaw = AppLanguage.system.rawValue
 
     @Environment(\.editMode) private var editMode
+
+    private var appLanguage: Binding<AppLanguage> {
+        Binding(
+            get: { AppLanguage.stored(from: appLanguageRaw) },
+            set: { next in
+                // Write through AppStorage only — do not rebuild the root view identity
+                // (that was popping this Settings stack and crashing the picker).
+                appLanguageRaw = next.rawValue
+            }
+        )
+    }
 
     private var isEditing: Bool {
         editMode?.wrappedValue.isEditing == true
@@ -48,45 +60,58 @@ struct TabCustomizationView: View {
                 .padding(.vertical, 4)
                 .animation(.spring(response: 0.34, dampingFraction: 0.84), value: accentPresetId)
             } header: {
-                Text("Accent Color")
+                Text(AppLanguage.string("settings.accent_color", default: "Accent Color"))
             } footer: {
-                Text("Tints buttons, highlights, and icons throughout the app.")
+                Text(AppLanguage.string("settings.accent_footer", default: "Tints buttons, highlights, and icons throughout the app."))
             }
             .zelefinRowBackground()
 
             Section {
-                Toggle("Combine Continue Watching and Next Up", isOn: gatedMergeBinding)
+                Picker(AppLanguage.string("settings.language.app", default: "App Language"), selection: appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.nativeName).tag(language)
+                    }
+                }
+            } header: {
+                Text(AppLanguage.string("settings.language.header", default: "Language"))
+            } footer: {
+                Text(AppLanguage.string("settings.language.footer", default: "Controls Zelefin’s menus and labels. Audio and subtitle language stay under Playback. System follows the device language."))
+            }
+            .zelefinRowBackground()
+
+            Section {
+                Toggle(AppLanguage.string("settings.combine_continue", default: "Combine Continue Watching and Next Up"), isOn: gatedMergeBinding)
             } footer: {
                 Text(homeFooterCopy)
             }
             .zelefinRowBackground()
 
             Section {
-                Picker("Content", selection: $featuredHeroContent) {
+                Picker(AppLanguage.string("settings.content", default: "Content"), selection: $featuredHeroContent) {
                     ForEach(FeaturedHeroContent.allCases) { option in
                         Text(option.title).tag(option.rawValue)
                     }
                 }
-                Picker("Size", selection: $heroSizeRaw) {
+                Picker(AppLanguage.string("settings.size", default: "Size"), selection: $heroSizeRaw) {
                     ForEach(HeroSizePreferences.allCases) { option in
                         Text(option.title).tag(option.rawValue)
                     }
                 }
             } header: {
-                Text("Featured Hero")
+                Text(AppLanguage.string("settings.featured_hero", default: "Featured Hero"))
             } footer: {
-                Text("What the Home hero cycles through, and how tall the Featured and title-page backdrops run. Compact shows more of a landscape image; Tall is the previous full-bleed height. Recently Added is the default content.")
+                Text(AppLanguage.string("settings.featured_hero_footer", default: "What the Home hero cycles through, and how tall the Featured and title-page backdrops run. Compact shows more of a landscape image; Tall is the previous full-bleed height. Recently Added is the default content."))
             }
             .zelefinRowBackground()
 
             Section {
-                Toggle("Community Rating", isOn: $showsPosterRating)
-                Toggle("Quality Badges", isOn: $showsPosterQuality)
-                Toggle("Watched Mark", isOn: $showsPosterWatched)
+                Toggle(AppLanguage.string("settings.community_rating", default: "Community Rating"), isOn: $showsPosterRating)
+                Toggle(AppLanguage.string("settings.quality_badges", default: "Quality Badges"), isOn: $showsPosterQuality)
+                Toggle(AppLanguage.string("settings.watched_mark", default: "Watched Mark"), isOn: $showsPosterWatched)
             } header: {
-                Text("Poster Badges")
+                Text(AppLanguage.string("settings.poster_badges", default: "Poster Badges"))
             } footer: {
-                Text("Rating stars, 4K/HDR/Atmos marks, and the watched check on posters. Turn any of them off to quiet the covers.")
+                Text(AppLanguage.string("settings.poster_badges_footer", default: "Rating stars, 4K/HDR/Atmos marks, and the watched check on posters. Turn any of them off to quiet the covers."))
             }
             .zelefinRowBackground()
 
@@ -99,26 +124,26 @@ struct TabCustomizationView: View {
                     Button {
                         addCustomHomeRow()
                     } label: {
-                        Label("Add Custom Row", systemImage: "plus.circle.fill")
+                        Label(AppLanguage.string("settings.add_custom_row", default: "Add Custom Row"), systemImage: "plus.circle.fill")
                     }
                 }
             } header: {
-                Text("Home")
+                Text(AppLanguage.string("settings.home", default: "Home"))
             } footer: {
                 Text(homeRowsFooterCopy)
             }
             .zelefinRowBackground()
 
             Section {
-                Picker("Page", selection: $startTabRaw) {
+                Picker(AppLanguage.string("settings.page", default: "Page"), selection: $startTabRaw) {
                     ForEach(startPageChoices) { tab in
                         Text(tab.title).tag(tab.rawValue)
                     }
                 }
             } header: {
-                Text("Start Page")
+                Text(AppLanguage.string("settings.start_page", default: "Start Page"))
             } footer: {
-                Text("The page Zelefin opens to when you launch it. Home is the default.")
+                Text(AppLanguage.string("settings.start_page_footer", default: "The page Zelefin opens to when you launch it. Home is the default."))
             }
             .zelefinRowBackground()
 
@@ -127,7 +152,7 @@ struct TabCustomizationView: View {
             #else
             if !UIDevice.current.userInterfaceIdiom.isLargeScreen {
                 Section {
-                    Toggle("Show Tab Names", isOn: $showsTabNames)
+                    Toggle(AppLanguage.string("settings.show_tab_names", default: "Show Tab Names"), isOn: $showsTabNames)
                 }
                 .zelefinRowBackground()
             }
@@ -147,7 +172,7 @@ struct TabCustomizationView: View {
                 }
                 .onMove(perform: moveTabs)
             } header: {
-                Text("Tabs")
+                Text(AppLanguage.string("settings.tabs", default: "Tabs"))
             } footer: {
                 Text(tabFooterCopy)
             }
@@ -161,7 +186,7 @@ struct TabCustomizationView: View {
                         }
                     }
                 } header: {
-                    Text("Libraries")
+                    Text(AppLanguage.string("settings.libraries", default: "Libraries"))
                 } footer: {
                     Text(libraryDockFooter)
                 }
@@ -184,13 +209,13 @@ struct TabCustomizationView: View {
                                 .foregroundStyle(.tint)
                                 Text(library.name)
                                 Spacer(minLength: 8)
-                                Text(LibraryIcon.chosen(for: library, raw: libraryIconsRaw) == nil ? "Default" : "Custom")
+                                Text(LibraryIcon.chosen(for: library, raw: libraryIconsRaw) == nil ? AppLanguage.string("settings.default", default: "Default") : AppLanguage.string("settings.custom", default: "Custom"))
                                     .foregroundStyle(.secondary)
                             }
                         }
                     }
                 } header: {
-                    Text("Anime Icons")
+                    Text(AppLanguage.string("settings.anime_icons", default: "Anime Icons"))
                 } footer: {
                     Text(animeIconsFooter)
                 }
@@ -198,7 +223,7 @@ struct TabCustomizationView: View {
             }
 
             Section {
-                Button("Reset Home Rows") {
+                Button(AppLanguage.string("settings.reset_home_rows", default: "Reset Home Rows")) {
                     let customIDs = Set(CustomHomeRows.rows.map(\.id))
                     homeRowOrder = HomeRowSlot.rawOrder(
                         HomeRowSlot.ordered(from: HomeRowKind.defaultOrderRaw, customIDs: customIDs)
@@ -207,13 +232,13 @@ struct TabCustomizationView: View {
                     featuredHeroContent = FeaturedHeroContent.recentlyAdded.rawValue
                 }
                 #if targetEnvironment(macCatalyst)
-                Button("Reset Sidebar") {
+                Button(AppLanguage.string("settings.reset_sidebar", default: "Reset Sidebar")) {
                     libraryOrderRaw = ""
                     libraryHiddenRaw = ""
                     libraryPageHiddenRaw = ""
                 }
                 #else
-                Button("Reset Tabs") {
+                Button(AppLanguage.string("settings.reset_tabs", default: "Reset Tabs")) {
                     tabOrderRaw = AppTab.defaultOrderRaw
                     tabCustomization = AppTab.defaultCustomization()
                 }
@@ -221,7 +246,7 @@ struct TabCustomizationView: View {
             }
             .zelefinRowBackground()
         }
-        .zelefinSettingsChrome(title: "Interface")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.interface", default: "Interface"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 EditButton()
@@ -287,9 +312,9 @@ struct TabCustomizationView: View {
             }
             .onMove(perform: moveSidebarLibraries)
         } header: {
-            Text("Sidebar")
+            Text(AppLanguage.string("settings.sidebar", default: "Sidebar"))
         } footer: {
-            Text("Search, Home, Discover, and Recently Added always stay at the top. Turn off a library to hide it from the sidebar. Click Edit to drag libraries into a new order.")
+            Text(AppLanguage.string("settings.sidebar_footer", default: "Search, Home, Discover, and Recently Added always stay at the top. Turn off a library to hide it from the sidebar. Click Edit to drag libraries into a new order."))
         }
         .zelefinRowBackground()
 
@@ -300,7 +325,7 @@ struct TabCustomizationView: View {
                 }
             }
         } footer: {
-            Text("These follow your libraries in the sidebar.")
+            Text(AppLanguage.string("settings.sidebar_blocks_footer", default: "These follow your libraries in the sidebar."))
         }
         .zelefinRowBackground()
     }
@@ -382,17 +407,17 @@ struct TabCustomizationView: View {
 
     private var animeIconsFooter: String {
         #if targetEnvironment(macCatalyst)
-        "Pick the icon a library with Anime in its name shows in the sidebar."
+        AppLanguage.string("settings.anime_icons_footer_mac", default: "Pick the icon a library with Anime in its name shows in the sidebar.")
         #else
-        "Pick the icon a library with Anime in its name shows when it's in the dock."
+        AppLanguage.string("settings.anime_icons_footer_phone", default: "Pick the icon a library with Anime in its name shows when it's in the dock.")
         #endif
     }
 
     private var libraryDockFooter: String {
         if UIDevice.current.userInterfaceIdiom.isLargeScreen {
-            "Turn on a custom library, such as Anime, to put it in the dock."
+            AppLanguage.string("settings.library_dock_footer", default: "Turn on a custom library, such as Anime, to put it in the dock.")
         } else {
-            "Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 iPhone spots."
+            AppLanguage.string("settings.library_dock_footer_phone", default: "Turn on a custom library, such as Anime, to put it in the dock. It uses one of the 5 iPhone spots.")
         }
     }
 
@@ -400,29 +425,29 @@ struct TabCustomizationView: View {
         let names = UIDevice.current.userInterfaceIdiom.isLargeScreen
             ? ""
             : (showsTabNames
-                ? "Each dock icon shows its name. The iPhone dock holds 5 tabs, including Search. "
-                : "The dock shows icons only. Turn Show Tab Names on to put a name under each icon. The iPhone dock holds 5 tabs, including Search. ")
-        return names + "Turn off a tab to hide it from the tab bar. Tap Edit to drag rows into a new order. On iPad, you can also tap Edit at the top of the sidebar."
+                ? AppLanguage.string("settings.tab_footer_names_on", default: "Each dock icon shows its name. The iPhone dock holds 5 tabs, including Search. ")
+                : AppLanguage.string("settings.tab_footer_names_off", default: "The dock shows icons only. Turn Show Tab Names on to put a name under each icon. The iPhone dock holds 5 tabs, including Search. "))
+        return names + AppLanguage.string("settings.tab_footer_base", default: "Turn off a tab to hide it from the tab bar. Tap Edit to drag rows into a new order. On iPad, you can also tap Edit at the top of the sidebar.")
     }
 
     private var homeFooterCopy: String {
         if mergeContinueAndNextUp {
-            "In-progress titles and the next episode after you finish one appear in a single Continue Watching row. Each title is still labeled CONTINUE or NEXT."
+            AppLanguage.string("settings.home_footer_merged", default: "In-progress titles and the next episode after you finish one appear in a single Continue Watching row. Each title is still labeled CONTINUE or NEXT.")
         } else {
-            "Keep in-progress titles in Continue Watching and the next episode after you finish one in Next Up."
+            AppLanguage.string("settings.home_footer_split", default: "Keep in-progress titles in Continue Watching and the next episode after you finish one in Next Up.")
         }
     }
 
     private var homeRowsFooterCopy: String {
         #if targetEnvironment(macCatalyst)
-        let edit = "Click Edit to drag rows into a new order."
+        let edit = AppLanguage.string("settings.home_rows_edit_click", default: "Click Edit to drag rows into a new order.")
         #else
-        let edit = "Tap Edit to drag rows into a new order."
+        let edit = AppLanguage.string("settings.home_rows_edit_tap", default: "Tap Edit to drag rows into a new order.")
         #endif
-        let custom = "Custom rows use catalog filters and can sit between built-in rows. "
-        let rows = custom + "Turn off a row to hide it from Home. \(edit)"
+        let custom = AppLanguage.string("settings.home_rows_footer_custom", default: "Custom rows use catalog filters and can sit between built-in rows. ")
+        let rows = custom + String(format: AppLanguage.string("settings.home_rows_footer_base", default: "Turn off a row to hide it from Home. %@"), edit)
         return mergeContinueAndNextUp
-            ? rows + " Next Up only appears when Combine Continue Watching and Next Up is off."
+            ? rows + AppLanguage.string("settings.home_rows_footer_next_up", default: " Next Up only appears when Combine Continue Watching and Next Up is off.")
             : rows
     }
 
@@ -459,7 +484,7 @@ struct TabCustomizationView: View {
                                 }
                             }
                             Spacer(minLength: 8)
-                            Toggle("Visible", isOn: customHomeRowEnabledBinding(for: row))
+                            Toggle(AppLanguage.string("settings.visible", default: "Visible"), isOn: customHomeRowEnabledBinding(for: row))
                                 .labelsHidden()
                         }
                     }
@@ -468,7 +493,7 @@ struct TabCustomizationView: View {
                     Button(role: .destructive) {
                         deleteCustomHomeRow(id: id)
                     } label: {
-                        Label("Delete", systemImage: "trash")
+                        Label(AppLanguage.string("common.delete", default: "Delete"), systemImage: "trash")
                     }
                 }
             }
@@ -621,8 +646,8 @@ struct CustomHomeRowEditorView: View {
     var body: some View {
         List {
             Section {
-                TextField("Title", text: $draft.title)
-                Picker("Scope", selection: $draft.scope) {
+                TextField(AppLanguage.string("settings.title_field", default: "Title"), text: $draft.title)
+                Picker(AppLanguage.string("settings.scope", default: "Scope"), selection: $draft.scope) {
                     ForEach(CustomHomeRowScope.allCases) { scope in
                         Text(scope.title).tag(scope.rawValue)
                     }
@@ -633,24 +658,24 @@ struct CustomHomeRowEditorView: View {
             Section {
                 Text(CustomHomeRows.filterSummary(draft.withQuery(browseQuery)))
                     .foregroundStyle(.secondary)
-                Button("Filters") { showFilters = true }
-                Button("Sort") { showSort = true }
+                Button(AppLanguage.string("settings.filters", default: "Filters")) { showFilters = true }
+                Button(AppLanguage.string("settings.sort", default: "Sort")) { showSort = true }
             } header: {
-                Text("Catalog Filters")
+                Text(AppLanguage.string("settings.catalog_filters", default: "Catalog Filters"))
             }
             .zelefinRowBackground()
 
             Section {
-                Button("Delete Custom Row", role: .destructive) {
+                Button(AppLanguage.string("settings.delete_custom_row", default: "Delete Custom Row"), role: .destructive) {
                     confirmDelete = true
                 }
             }
             .zelefinRowBackground()
         }
-        .zelefinSettingsChrome(title: "Custom Row")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.custom_row", default: "Custom Row"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") { save() }
+                Button(AppLanguage.string("common.save", default: "Save")) { save() }
                     .fontWeight(.semibold)
             }
         }
@@ -660,9 +685,9 @@ struct CustomHomeRowEditorView: View {
             showFilters: $showFilters,
             showSort: $showSort
         )
-        .confirmationDialog("Delete this custom row?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { deleteRow() }
-            Button("Cancel", role: .cancel) {}
+        .confirmationDialog(AppLanguage.string("settings.delete_custom_row_confirm", default: "Delete this custom row?"), isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button(AppLanguage.string("common.delete", default: "Delete"), role: .destructive) { deleteRow() }
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {}
         }
         .task { await loadOptions() }
         .onChange(of: browseQuery) { _, _ in
@@ -720,7 +745,7 @@ struct LibraryIconPickerView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 12)], spacing: 14) {
                     tile(
                         asset: LibraryIcon.defaultAsset(for: library),
-                        title: "Default",
+                        title: AppLanguage.string("settings.default", default: "Default"),
                         isSelected: chosen == nil
                     ) {
                         choose(nil)
@@ -733,7 +758,7 @@ struct LibraryIconPickerView: View {
                 }
                 .padding(.vertical, 4)
             } footer: {
-                Text("Icons by PlainIcon (Anime characters), licensed under CC BY 4.0.")
+                Text(AppLanguage.string("settings.anime_icons_credit", default: "Icons by PlainIcon (Anime characters), licensed under CC BY 4.0."))
             }
             .zelefinRowBackground()
         }

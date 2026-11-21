@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -121,7 +123,7 @@ internal fun SyncPlaySheet(
                     decorationBox = { inner ->
                         Column {
                             Box(Modifier.padding(vertical = 10.dp)) {
-                                if (name.isEmpty()) Text("Name", color = Color.White.copy(alpha = 0.4f), fontFamily = ZelefinFont, fontSize = 16.sp)
+                                if (name.isEmpty()) Text(stringResource(R.string.ui_name), color = Color.White.copy(alpha = 0.4f), fontFamily = ZelefinFont, fontSize = 16.sp)
                                 inner()
                             }
                             Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = 0.16f)))
@@ -134,7 +136,7 @@ internal fun SyncPlaySheet(
                     CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
                 } else {
                     Text(
-                        "Start",
+                        stringResource(R.string.ui_start),
                         color = if (canStart) ZelefinCyan else ZelefinMuted,
                         fontFamily = ZelefinFont,
                         fontWeight = FontWeight.SemiBold,
@@ -157,7 +159,7 @@ internal fun SyncPlaySheet(
                         CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                     }
                     groups.isEmpty() -> Text(
-                        "No groups yet. Create one to watch together.",
+                        stringResource(R.string.ui_no_groups_yet_create_one_to_watch_together),
                         color = SyncCaption,
                         fontFamily = ZelefinFont,
                         fontSize = 16.sp,

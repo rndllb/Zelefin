@@ -11,14 +11,14 @@ struct CatalogFilterSortButtons: View {
         ZelefinGlassPillCluster {
             ZelefinPillIconSegment(
                 systemImage: "arrow.up.arrow.down",
-                accessibilityLabel: "Sort",
+                accessibilityLabel: AppLanguage.string("settings.sort", default: "Sort"),
                 accessibilityValue: sortTitle,
                 action: onSort
             )
             ZelefinGlassPillDivider()
             ZelefinPillIconSegment(
                 systemImage: "line.3.horizontal.decrease",
-                accessibilityLabel: "Filters",
+                accessibilityLabel: AppLanguage.string("settings.filters", default: "Filters"),
                 accessibilityValue: filterCount == 0 ? "Off" : "\(filterCount) selected",
                 badge: filterCount,
                 action: onFilter
@@ -35,7 +35,7 @@ struct CatalogFilterButton: View {
         ZelefinGlassPillCluster {
             ZelefinPillIconSegment(
                 systemImage: "line.3.horizontal.decrease",
-                accessibilityLabel: "Filters",
+                accessibilityLabel: AppLanguage.string("settings.filters", default: "Filters"),
                 accessibilityValue: filterCount == 0 ? "Off" : "\(filterCount) selected",
                 badge: filterCount,
                 action: onFilter
@@ -336,16 +336,16 @@ struct CatalogFilterSheet: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Color.zelefinPage.ignoresSafeArea())
-            .navigationTitle("Filters")
+            .navigationTitle(AppLanguage.string("settings.filters", default: "Filters"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Clear") { query.clearFilters() }
+                    Button(AppLanguage.string("common.clear", default: "Clear")) { query.clearFilters() }
                         .disabled(query.activeFilterCount == 0)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(AppLanguage.string("common.done", default: "Done")) { dismiss() }
                         .fontWeight(.semibold)
                 }
             }
@@ -405,7 +405,7 @@ struct CatalogFilterSheet: View {
                 Section {
                     NavigationLink {
                         CatalogChoiceList(
-                            title: "Years",
+                            title: AppLanguage.string("ui.years", default: "Years"),
                             choices: options.years,
                             selected: Binding(
                                 get: { Set(query.years.map(String.init)) },
@@ -480,7 +480,7 @@ struct CatalogChoiceList: View {
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Clear") { selected = [] }
+                Button(AppLanguage.string("common.clear", default: "Clear")) { selected = [] }
                     .disabled(selected.isEmpty)
             }
         }
@@ -499,7 +499,7 @@ struct CatalogSortSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Sort By") {
+                Section(AppLanguage.string("ui.sort_by", default: "Sort By")) {
                     ForEach(sortFields) { field in
                         Button {
                             query.sort = field
@@ -522,21 +522,21 @@ struct CatalogSortSheet: View {
                     }
                 }
                 if query.sort.allowsDirection {
-                    Section("Order") {
-                        sortOrderRow(title: "Ascending", ascending: true)
-                        sortOrderRow(title: "Descending", ascending: false)
+                    Section(AppLanguage.string("ui.order", default: "Order")) {
+                        sortOrderRow(title: AppLanguage.string("ui.ascending", default: "Ascending"), ascending: true)
+                        sortOrderRow(title: AppLanguage.string("ui.descending", default: "Descending"), ascending: false)
                     }
                 }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Color.zelefinPage.ignoresSafeArea())
-            .navigationTitle("Sort")
+            .navigationTitle(AppLanguage.string("settings.sort", default: "Sort"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(AppLanguage.string("common.done", default: "Done")) { dismiss() }
                         .fontWeight(.semibold)
                 }
             }

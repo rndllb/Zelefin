@@ -21,7 +21,7 @@ struct TitleAboutRow: View {
     var body: some View {
         if !cards.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "About", showsChevron: false)
+                SectionHeader(title: AppLanguage.string("detail.about", default: "About"), showsChevron: false)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: PosterMetrics.rowSpacing) {
@@ -93,7 +93,7 @@ struct TitleAboutRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("About \(title)")
-            .accessibilityHint("Shows the full description")
+            .accessibilityHint(AppLanguage.string("ui.shows_the_full_description", default: "Shows the full description"))
         } else {
             synopsisCardChrome(title: title, genres: genres, overview: nil)
         }
@@ -139,7 +139,7 @@ struct TitleAboutRow: View {
                     endPoint: .trailing
                 )
                 .frame(width: 36, height: 18)
-                Text("MORE")
+                Text(AppLanguage.string("detail.more_caps", default: "MORE"))
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.white.opacity(0.55))
                     .accessibilityHidden(true)

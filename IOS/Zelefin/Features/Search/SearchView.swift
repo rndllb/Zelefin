@@ -166,7 +166,7 @@ struct MacSearchPill: View {
                         .foregroundStyle(.white.opacity(0.45))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear")
+                .accessibilityLabel(AppLanguage.string("common.clear", default: "Clear"))
             }
         }
         .padding(.horizontal, 12)
@@ -221,7 +221,7 @@ private struct SearchTabChrome: View {
         VStack(spacing: 10) {
             if showsTitleRow {
                 HStack(spacing: 12) {
-                    Text("Search")
+                    Text(AppLanguage.string("search.title", default: "Search"))
                         .font(.largeTitle.weight(.bold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
@@ -266,7 +266,7 @@ private struct SearchTabChrome: View {
                                 .contentShape(Rectangle().inset(by: -10))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Clear")
+                        .accessibilityLabel(AppLanguage.string("common.clear", default: "Clear"))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -288,7 +288,7 @@ private struct SearchTabChrome: View {
                     .buttonStyle(.plain)
                     .zelefinLiquidGlassCircle()
                     .zIndex(1)
-                    .accessibilityLabel("Cancel search")
+                    .accessibilityLabel(AppLanguage.string("search.cancel_search", default: "Cancel search"))
                     .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
 
@@ -359,7 +359,7 @@ private struct SearchScopeBar: View {
         .zelefinLiquidGlassCapsule(interactive: false)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Search source")
+        .accessibilityLabel(AppLanguage.string("search.source", default: "Search source"))
     }
 }
 
@@ -459,7 +459,7 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .library: "Library"
+        case .library: AppLanguage.string("library.title", default: "Library")
         case .discover: "Discover"
         }
     }
@@ -575,9 +575,9 @@ private struct SearchPage: View {
                             discoverContent
                         } else {
                             ContentUnavailableView(
-                                "Sign In to Seerr or Ombi",
+                                AppLanguage.string("search.sign_in_request", default: "Sign In to Seerr or Ombi"),
                                 systemImage: "sparkles.rectangle.stack",
-                                description: Text("Add Seerr or Ombi in Settings → Plugins to request movies and shows.")
+                                description: Text(AppLanguage.string("search.request_setup", default: "Add Seerr or Ombi in Settings → Plugins to request movies and shows."))
                             )
                             .padding(.top, 24)
                         }
@@ -646,11 +646,11 @@ private struct SearchPage: View {
         }
         .presentsPlayerFromRoot($playingItem)
         .openSubtitlesSearch(item: $subtitleSearchItem)
-        .alert("Playback", isPresented: Binding(
+        .alert(AppLanguage.string("settings.playback", default: "Playback"), isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(playbackError ?? "")
         }
@@ -688,7 +688,7 @@ private struct SearchPage: View {
                 .padding(.top, 40)
         } else if let discoverError {
             ContentUnavailableView(
-                "Couldn’t Search",
+                AppLanguage.string("search.couldnt_search", default: "Couldn’t Search"),
                 systemImage: "exclamationmark.triangle",
                 description: Text(discoverError)
             )
@@ -710,12 +710,12 @@ private struct SearchPage: View {
     private var recentsSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Recently Searched")
+                Text(AppLanguage.string("search.recently_searched", default: "Recently Searched"))
                     .font(.title3.weight(.bold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 8)
                 if !recents.isEmpty {
-                    Button("Clear") {
+                    Button(AppLanguage.string("common.clear", default: "Clear")) {
                         SearchHistoryStore.clear()
                         recents = []
                     }
@@ -728,7 +728,7 @@ private struct SearchPage: View {
             .padding(.bottom, 8)
 
             if recents.isEmpty {
-                Text("Titles you open from Search show up here.")
+                Text(AppLanguage.string("search.recent_empty", default: "Titles you open from Search show up here."))
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.45))
                     .padding(.horizontal, 16)
@@ -785,7 +785,7 @@ private struct SearchPage: View {
             .buttonStyle(.plain)
 
             Menu {
-                Button("Play", systemImage: "play.fill") {
+                Button(AppLanguage.string("common.play", default: "Play"), systemImage: "play.fill") {
                     play(item)
                 }
                 NavigationLink("View Details") {
@@ -797,12 +797,12 @@ private struct SearchPage: View {
                         onAddSubtitles: { subtitleSearchItem = item }
                     )
                 } else if session.shouldShowAddSubtitles(for: item) {
-                    Button("Add Subtitles", systemImage: "captions.bubble") {
+                    Button(AppLanguage.string("search.add_subtitles", default: "Add Subtitles"), systemImage: "captions.bubble") {
                         subtitleSearchItem = item
                     }
                 }
                 if isRecent {
-                    Button("Remove", systemImage: "trash", role: .destructive) {
+                    Button(AppLanguage.string("common.remove", default: "Remove"), systemImage: "trash", role: .destructive) {
                         SearchHistoryStore.remove(id: item.id)
                         recents = SearchHistoryStore.load()
                     }
@@ -1059,7 +1059,7 @@ struct SeerrRequestRow: View {
     }
 
     private var pill: some View {
-        Text(isFullyOnServer ? "In Library" : (title.review == .pendingApproval ? "Pending" : title.availability.buttonTitle))
+        Text(isFullyOnServer ? AppLanguage.string("ui.in_library", default: "In Library") : (title.review == .pendingApproval ? AppLanguage.string("ui.pending", default: "Pending") : title.availability.buttonTitle))
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(canRequestNow ? LoginPalette.actionLabel : .white.opacity(0.7))
             .padding(.horizontal, 12)

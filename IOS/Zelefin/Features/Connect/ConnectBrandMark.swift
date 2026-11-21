@@ -33,7 +33,7 @@ struct ZelefinLoadingView: View {
         }
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(message ?? "Loading")
+        .accessibilityLabel(message ?? AppLanguage.string("common.loading", default: "Loading"))
     }
 }
 
@@ -112,6 +112,6 @@ struct ConnectBackendPicker: View {
         .buttonStyle(.plain)
         .accessibilityLabel(backend.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityHint("Use this server type to sign in")
+        .accessibilityHint(AppLanguage.string("ui.use_this_server_type_to_sign_in", default: "Use this server type to sign in"))
     }
 }

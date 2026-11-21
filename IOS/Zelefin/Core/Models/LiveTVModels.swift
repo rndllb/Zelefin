@@ -29,11 +29,11 @@ enum LiveTVProgramFilter: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .movies: "Movies"
-        case .sports: "Sports"
-        case .news: "News"
-        case .kids: "Kids"
-        case .series: "Series"
+        case .movies: AppLanguage.string("tab.movies", default: "Movies")
+        case .sports: AppLanguage.string("ui.sports", default: "Sports")
+        case .news: AppLanguage.string("ui.news", default: "News")
+        case .kids: AppLanguage.string("connect.kids", default: "Kids")
+        case .series: AppLanguage.string("ui.series", default: "Series")
         }
     }
 }
@@ -164,7 +164,7 @@ struct LiveProgram: Identifiable, Hashable, Sendable {
     func startTimeLabel(at date: Date = .now) -> String {
         guard let startDate else { return "Scheduled" }
         if isOnNow(at: date) {
-            return remainingLabel(at: date) ?? "On Now"
+            return remainingLabel(at: date) ?? AppLanguage.string("ui.on_now", default: "On Now")
         }
         return LiveTVTime.airTimeLabel(startDate, relativeTo: date)
     }

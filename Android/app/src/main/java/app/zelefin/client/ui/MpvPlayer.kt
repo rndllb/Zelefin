@@ -47,6 +47,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.zelefin.client.PlaybackPreferences
 import app.zelefin.client.PlaybackQuality
+import app.zelefin.client.R
 import app.zelefin.client.StillWatchingSession
 import app.zelefin.client.TrackPick
 import app.zelefin.client.PlayerDirective
@@ -664,7 +666,9 @@ fun MpvPlayerSurface(
     val skipBack = remember { PlaybackPreferences.skipBackward(context) }
     val skipForward = remember { PlaybackPreferences.skipForward(context) }
     val autoplayPreference = remember { PlaybackPreferences.autoplayNext(context) }
-    var playerVolume by remember(plan.streamUrl) { mutableFloatStateOf(1f) }
+    var playerVolume by remember(plan.streamUrl) {
+        mutableFloatStateOf(context.findActivity()?.musicVolumeFraction() ?: 1f)
+    }
 
     var chromeVisible by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
@@ -855,7 +859,10 @@ fun MpvPlayerSurface(
                     currentOnClose()
                 }
             },
-            onReady = { controller = it },
+            onReady = {
+                controller = it
+                it.setVolume(1f)
+            },
         )
         PlayerGestureOverlay(
             enabled = !inPip && !stillWatching && menuPage == null,
@@ -866,8 +873,9 @@ fun MpvPlayerSurface(
             onSkip = seekBy,
             volume = playerVolume,
             onVolume = { level ->
+                // Device volume is set by the gesture overlay; keep MPV at full gain.
                 playerVolume = level
-                controller?.setVolume(level)
+                controller?.setVolume(1f)
             },
         )
         if (state.buffering && !showChrome && !inPip) {
@@ -980,7 +988,7 @@ fun MpvPlayerSurface(
                     status = when {
                         finishing -> "Starting…"
                         countdown != null -> "Starts in ${countdown.coerceAtLeast(0.0).toInt()}s"
-                        else -> "Next Episode"
+                        else -> stringResource(R.string.player_next_episode)
                     },
                     onPlay = { advance(false) },
                     onCancel = {

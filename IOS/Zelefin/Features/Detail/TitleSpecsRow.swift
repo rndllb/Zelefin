@@ -10,7 +10,7 @@ struct TitleSpecsRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Title details")
+        .accessibilityLabel(AppLanguage.string("ui.title_details", default: "Title details"))
     }
 
     @ViewBuilder
@@ -43,7 +43,7 @@ struct TitleSpecsRow: View {
                     Text(audience <= 10 ? String(format: "%.1f", audience) : "\(Int(audience.rounded()))%")
                 }
                 .fixedSize()
-                .accessibilityLabel("Audience score")
+                .accessibilityLabel(AppLanguage.string("ui.audience_score", default: "Audience score"))
             }
             if let age = item.ageGateLabel {
                 HStack(spacing: 3) {

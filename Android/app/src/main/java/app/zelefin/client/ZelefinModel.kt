@@ -1320,16 +1320,14 @@ class ZelefinModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun pickRandomTitle() {
-        viewModelScope.launch {
-            runCatching {
-                pick({ it.randomTitle() }, { it.randomTitle(userUuid()) }) ?: throw ZelefinException.server("Nothing to pick yet.")
-            }.onSuccess { openItem(it) }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    _state.update { it.copy(message = error.message) }
-                }
-        }
+    suspend fun pickRandomTitle() {
+        runCatching {
+            pick({ it.randomTitle() }, { it.randomTitle(userUuid()) }) ?: throw ZelefinException.server("Nothing to pick yet.")
+        }.onSuccess { openItem(it) }
+            .onFailure { error ->
+                if (error is CancellationException) throw error
+                _state.update { it.copy(message = error.message) }
+            }
     }
 
     suspend fun identifyHits(item: MediaItem) = pick({ it.searchIdentify(item) }, { it.searchIdentify(item) })

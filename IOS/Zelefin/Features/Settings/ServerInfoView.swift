@@ -11,14 +11,14 @@ struct ServerInfoView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Server name", value: display(snapshot.serverName))
-                LabeledContent("Product", value: display(snapshot.product))
+                LabeledContent(AppLanguage.string("ui.server_name", default: "Server name"), value: display(snapshot.serverName))
+                LabeledContent(AppLanguage.string("ui.product", default: "Product"), value: display(snapshot.product))
                 LabeledContent("Version", value: display(snapshot.version))
-                LabeledContent("Operating system", value: display(snapshot.operatingSystem))
-                LabeledContent("Active URL", value: display(snapshot.activeURL))
-                LabeledContent("Local address", value: display(snapshot.localAddress))
+                LabeledContent(AppLanguage.string("ui.operating_system", default: "Operating system"), value: display(snapshot.operatingSystem))
+                LabeledContent(AppLanguage.string("ui.active_url", default: "Active URL"), value: display(snapshot.activeURL))
+                LabeledContent(AppLanguage.string("ui.local_address", default: "Local address"), value: display(snapshot.localAddress))
             } footer: {
-                Text("Pulled from this device’s connection and the server’s public system info. Some servers hide OS or local address.")
+                Text(AppLanguage.string("Pulled from this device’s connection and the server’s public system info. Some servers hide OS or local address.", default: "Pulled from this device’s connection and the server’s public system info. Some servers hide OS or local address."))
             }
             .zelefinRowBackground()
 
@@ -29,7 +29,7 @@ struct ServerInfoView: View {
                 .zelefinRowBackground()
             }
         }
-        .zelefinSettingsChrome(title: "Server Info")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.server_info", default: "Server Info"))
         .overlay {
             if isLoading, snapshot == .empty {
                 ProgressView()

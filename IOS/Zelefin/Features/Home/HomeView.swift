@@ -33,21 +33,21 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if let errorMessage = session.homeError, !hasHomeCatalog {
                         ContentUnavailableView(
-                            "Couldn’t Load Home",
+                            AppLanguage.string("home.couldnt_load", default: "Couldn’t Load Home"),
                             systemImage: "wifi.exclamationmark",
                             description: Text(errorMessage)
                         )
                     } else if !hasHomeCatalog {
                         ContentUnavailableView(
-                            "No Titles Yet",
+                            AppLanguage.string("library.no_titles", default: "No Titles Yet"),
                             systemImage: "play.rectangle.on.rectangle",
-                            description: Text("Movies and shows from this server will show up here.")
+                            description: Text(AppLanguage.string("home.no_titles_body", default: "Movies and shows from this server will show up here."))
                         )
                     } else if homeFeed.isEmpty {
                         ContentUnavailableView(
-                            "Home Rows Hidden",
+                            AppLanguage.string("home.rows_hidden", default: "Home Rows Hidden"),
                             systemImage: "rectangle.3.group",
-                            description: Text("Turn rows back on in Interface settings.")
+                            description: Text(AppLanguage.string("home.rows_hidden_body", default: "Turn rows back on in Interface settings."))
                         )
                     } else {
                         ScrollView {
@@ -79,7 +79,7 @@ struct HomeView: View {
                     }
                 }
 
-                FloatingPageHeader(title: "Home", isVisible: RootPageChrome.showsTitle ? headerVisible : true)
+                FloatingPageHeader(title: AppLanguage.string("tab.home", default: "Home"), isVisible: RootPageChrome.showsTitle ? headerVisible : true)
                     .padding(.top, ScreenInsets.top)
                     .transition(.opacity)
             }
@@ -138,11 +138,11 @@ struct MediaRow: View {
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
         .presentsPlayerFromRoot($playingItem)
-        .alert("Playback", isPresented: Binding(
+        .alert(AppLanguage.string("home.playback", default: "Playback"), isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(playbackError ?? "")
         }
@@ -349,7 +349,7 @@ struct SectionGridView: View {
 
 struct ContinueWatchingListView: View {
     @Environment(SessionStore.self) private var session
-    var title: String = "Continue Watching"
+    var title: String = AppLanguage.string("home.continue_watching", default: "Continue Watching")
     let items: [MediaItem]
     var mode: Mode = .upNext
     var menuContext: PlaybackQueueMenuContext = .continueWatching
@@ -363,7 +363,7 @@ struct ContinueWatchingListView: View {
     }
 
     init(
-        title: String = "Continue Watching",
+        title: String = AppLanguage.string("home.continue_watching", default: "Continue Watching"),
         items: [MediaItem],
         mode: Mode = .upNext,
         menuContext: PlaybackQueueMenuContext = .continueWatching
@@ -420,11 +420,11 @@ struct ContinueWatchingListView: View {
         .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinPushedChrome(title: title) { EmptyView() }
         .presentsPlayerFromRoot($playingItem)
-        .alert("Playback", isPresented: Binding(
+        .alert(AppLanguage.string("home.playback", default: "Playback"), isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(playbackError ?? "")
         }
@@ -571,9 +571,9 @@ struct CatalogGridView: View {
                         PageLoadingIndicator()
                     } else if items.isEmpty {
                         ContentUnavailableView(
-                            browseQuery.isDefault ? "No Titles" : "No Matches",
+                            browseQuery.isDefault ? AppLanguage.string("detail.no_titles", default: "No Titles") : AppLanguage.string("library.no_matches", default: "No Matches"),
                             systemImage: "rectangle.stack",
-                            description: Text(browseQuery.isDefault ? "Nothing in this category yet." : "No titles match these filters.")
+                            description: Text(browseQuery.isDefault ? AppLanguage.string("home.nothing_in_category", default: "Nothing in this category yet.") : AppLanguage.string("library.no_matches_body", default: "No titles match these filters."))
                         )
                         .padding(.top, 40)
                     } else {

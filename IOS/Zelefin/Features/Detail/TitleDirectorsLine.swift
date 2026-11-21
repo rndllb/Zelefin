@@ -1,35 +1,36 @@
 import SwiftUI
 
-/// “Directed by …” with each name opening that person’s page.
+/// “Directed by …” / “Created by …” with each name opening that person’s page.
 struct TitleDirectorsLine: View {
     let people: [CreditPerson]
+    var itemKind: MediaKind = .movie
 
-    private var directors: [CreditPerson] {
-        TitleDirectors.people(from: people)
+    private var byline: TitleDirectors.Byline? {
+        TitleDirectors.byline(from: people, itemKind: itemKind)
     }
 
     var body: some View {
-        if !directors.isEmpty {
+        if let byline, !byline.people.isEmpty {
             ViewThatFits(in: .horizontal) {
-                line(spacing: 5)
-                line(spacing: 3)
+                line(byline, spacing: 5)
+                line(byline, spacing: 3)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
-            .accessibilityLabel(TitleDirectors.line(from: directors) ?? "Directors")
+            .accessibilityLabel(byline.accessibilityLabel)
         }
     }
 
     @ViewBuilder
-    private func line(spacing: CGFloat) -> some View {
+    private func line(_ byline: TitleDirectors.Byline, spacing: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: spacing) {
-            Text("Directed by")
+            Text(byline.label)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.88))
                 .fixedSize()
-            ForEach(Array(directors.enumerated()), id: \.element.id) { index, person in
+            ForEach(Array(byline.people.enumerated()), id: \.offset) { index, person in
                 if index > 0 {
-                    Text(separator(before: index, count: directors.count))
+                    Text(separator(before: index, count: byline.people.count))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.88))
                         .fixedSize()

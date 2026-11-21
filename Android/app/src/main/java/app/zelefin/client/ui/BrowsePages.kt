@@ -45,6 +45,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -170,7 +172,7 @@ fun BrowseScreen(
 }
 
 @Composable
-private fun BrowseHeader(title: String, onBack: () -> Unit) {
+private fun BrowseHeader(title: String, onBack: () -> Unit, backKey: String = title) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -179,18 +181,20 @@ private fun BrowseHeader(title: String, onBack: () -> Unit) {
             .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlassBackDisc("browse-back-$title", true, onBack)
-        Spacer(Modifier.width(12.dp))
-        Text(
-            title,
-            color = Color.White,
-            fontFamily = ZelefinFont,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 22.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).clearOfTabletTopBar(),
-        )
+        GlassBackDisc("browse-back-$backKey", true, onBack)
+        if (title.isNotBlank()) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                title,
+                color = Color.White,
+                fontFamily = ZelefinFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).clearOfTabletTopBar(),
+            )
+        }
     }
 }
 
@@ -343,7 +347,7 @@ private fun PersonDetailPage(
     var profile by remember(route.id) { mutableStateOf<CreditPerson?>(null) }
     LaunchedEffect(route) { onEnsureGrid() }
     LaunchedEffect(route.id) { profile = model.loadPerson(route.id) }
-    val shown = profile ?: CreditPerson(id = route.id, name = route.name, roleLabel = "Cast & Crew")
+    val shown = profile ?: CreditPerson(id = route.id, name = route.name, roleLabel = stringResource(R.string.detail_cast_crew))
     val photo = session?.serverUrl?.let { ArtworkUrls.person(it, shown, session.accessToken) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = 16.dp
@@ -398,8 +402,7 @@ private fun PersonDetailPage(
                         Text(overview, color = Color.White.copy(alpha = 0.88f), fontFamily = ZelefinFont, fontSize = 16.sp)
                     }
                     if (!grid.loading && grid.items.isEmpty()) {
-                        Text(
-                            "Nothing for this person in your library.",
+                        Text(stringResource(R.string.detail_no_titles_person),
                             color = BrowseCaption,
                             fontFamily = ZelefinFont,
                             fontSize = 16.sp,
@@ -427,7 +430,8 @@ private fun PersonDetailPage(
             }
         }
     }
-    BrowseHeader(route.name, onBack)
+    // Name is the large title beside the photo — keep the top bar as back only.
+    BrowseHeader("", onBack, backKey = "person-${route.id}")
 }
 
 @Composable
@@ -505,7 +509,7 @@ private fun TrailerListPage(
             }
         }
     }
-    BrowseHeader("Trailers", onBack)
+    BrowseHeader(stringResource(R.string.detail_trailers), onBack)
 }
 
 @Composable
@@ -559,5 +563,5 @@ private fun CastListPage(
             }
         }
     }
-    BrowseHeader("Cast & Crew", onBack)
+    BrowseHeader(stringResource(R.string.detail_cast_crew), onBack)
 }

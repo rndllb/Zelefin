@@ -63,7 +63,7 @@ struct RequestTitleDetailView: View {
                                 .padding(.bottom, 20)
                         }
                         if !details.facts.isEmpty {
-                            TitleFactsSection(title: "Information", rows: details.facts)
+                            TitleFactsSection(title: AppLanguage.string("detail.information", default: "Information"), rows: details.facts)
                                 .padding(.bottom, 20)
                         }
                     } else if isLoading {
@@ -196,14 +196,14 @@ struct RequestTitleDetailView: View {
     private var requestButton: some View {
         if isFullyOnServer, libraryItemID != nil {
             Button { showsLibraryItem = true } label: {
-                actionLabel("View in Library", systemImage: "play.rectangle", enabled: true)
+                actionLabel(AppLanguage.string("ui.view_in_library", default: "View in Library"), systemImage: "play.rectangle", enabled: true)
             }
             .buttonStyle(.plain)
         } else if isFullyOnServer {
-            actionLabel("In Library", systemImage: "checkmark", enabled: false)
+            actionLabel(AppLanguage.string("ui.in_library", default: "In Library"), systemImage: "checkmark", enabled: false)
         } else if awaitsReview {
             Button { showsRequest = true } label: {
-                actionLabel("Review", systemImage: "checkmark.seal", enabled: true)
+                actionLabel(AppLanguage.string("ui.review", default: "Review"), systemImage: "checkmark.seal", enabled: true)
             }
             .buttonStyle(.plain)
         } else if current.canRequest && current.review != .pendingApproval {
@@ -212,7 +212,7 @@ struct RequestTitleDetailView: View {
             }
             .buttonStyle(.plain)
         } else {
-            actionLabel(current.review == .approved || current.availability == .processing ? "Approved" : "Requested", systemImage: "clock", enabled: false)
+            actionLabel(current.review == .approved || current.availability == .processing ? AppLanguage.string("ui.approved", default: "Approved") : AppLanguage.string("ui.requested", default: "Requested"), systemImage: "clock", enabled: false)
         }
     }
 
@@ -242,7 +242,7 @@ struct RequestTitleDetailView: View {
                     LinearGradient(colors: [.clear, Color.zelefinPage.opacity(0.92)], startPoint: .leading, endPoint: .trailing)
                         .frame(width: 28, height: 22)
                     Button { showsOverview = true } label: {
-                        Text("MORE")
+                        Text(AppLanguage.string("detail.more_caps", default: "MORE"))
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10)
@@ -250,7 +250,7 @@ struct RequestTitleDetailView: View {
                             .background(.ultraThinMaterial, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Full description")
+                    .accessibilityLabel(AppLanguage.string("ui.full_description", default: "Full description"))
                 }
             }
         }
@@ -261,24 +261,24 @@ struct RequestTitleDetailView: View {
     private var moreMenu: some View {
         Menu {
             if libraryItemID != nil, !isFullyOnServer {
-                Button("View in Library", systemImage: "play.rectangle") { showsLibraryItem = true }
+                Button(AppLanguage.string("ui.view_in_library", default: "View in Library"), systemImage: "play.rectangle") { showsLibraryItem = true }
             }
             if let trailer = details?.trailers.first {
-                Button("Watch Trailer", systemImage: "play.rectangle") { playingVideo = trailer }
+                Button(AppLanguage.string("ui.watch_trailer", default: "Watch Trailer"), systemImage: "play.rectangle") { playingVideo = trailer }
             }
             if let client, let url = client.webURL(for: current) {
                 Button("Open in \(client.service.name)", systemImage: "safari") { openURL(url) }
             }
             if let imdb = details?.imdbID, let url = URL(string: "https://www.imdb.com/title/\(imdb)") {
-                Button("Open in IMDb", systemImage: "film") { openURL(url) }
+                Button(AppLanguage.string("ui.open_in_imdb", default: "Open in IMDb"), systemImage: "film") { openURL(url) }
             }
             if let homepage = details?.homepage {
-                Button("Official Website", systemImage: "globe") { openURL(homepage) }
+                Button(AppLanguage.string("ui.official_website", default: "Official Website"), systemImage: "globe") { openURL(homepage) }
             }
             if let url = tmdbURL {
                 Divider()
                 ShareLink(item: url, subject: Text(current.name)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                    Label(AppLanguage.string("common.share", default: "Share"), systemImage: "square.and.arrow.up")
                 }
             }
         } label: {
@@ -290,7 +290,7 @@ struct RequestTitleDetailView: View {
         }
         .buttonStyle(.plain)
         .zelefinLiquidGlassCircle()
-        .accessibilityLabel("More")
+        .accessibilityLabel(AppLanguage.string("common.more", default: "More"))
     }
 
     private var tmdbURL: URL? {
@@ -317,7 +317,7 @@ struct RequestTitleDetailView: View {
 
     private func trailersSection(_ videos: [RequestVideo]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Trailers", showsChevron: false)
+            SectionHeader(title: AppLanguage.string("detail.trailers", default: "Trailers"), showsChevron: false)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(videos) { video in
@@ -340,7 +340,7 @@ struct RequestTitleDetailView: View {
 
     private func castSection(_ cast: [RequestCastMember]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Cast", showsChevron: false)
+            SectionHeader(title: AppLanguage.string("ui.cast", default: "Cast"), showsChevron: false)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: DetailRowLayout.spacing) {
                     ForEach(cast) { member in
@@ -358,7 +358,7 @@ struct RequestTitleDetailView: View {
 
     private func relatedSection(_ titles: [SeerrTitle]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "More Like This", showsChevron: false)
+            SectionHeader(title: AppLanguage.string("ui.more_like_this", default: "More Like This"), showsChevron: false)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: DetailRowLayout.spacing) {
                     ForEach(titles) { related in

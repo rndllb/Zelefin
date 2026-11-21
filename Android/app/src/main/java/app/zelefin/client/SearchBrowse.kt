@@ -6,10 +6,12 @@ import app.zelefin.core.MediaKind
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class SearchScope(val title: String, val prompt: String) {
-    Library("Library", "Shows, Movies, and More"),
-    Discover("Discover", "Request movies and shows"),
+enum class SearchScope(val title: String, @androidx.annotation.StringRes val promptRes: Int) {
+    Library("Library", R.string.search_placeholder),
+    Discover("Discover", R.string.search_placeholder),
 }
+
+fun SearchScope.prompt(context: Context): String = context.getString(promptRes)
 
 enum class SearchHitKind { Title, Person, Genre, Studio }
 

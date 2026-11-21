@@ -3,6 +3,7 @@ import UIKit
 
 struct MainTabView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.appLanguage) private var appLanguage
     @AppStorage(AppTab.customizationStorageKey) private var tabCustomization = AppTab.defaultCustomization()
     @AppStorage(AppTab.orderStorageKey) private var tabOrderRaw = AppTab.defaultOrderRaw
     @AppStorage(AppTab.hiddenDefaultsAppliedKey) private var hiddenDefaultsApplied = false
@@ -26,6 +27,7 @@ struct MainTabView: View {
     }
 
     var body: some View {
+        let _ = appLanguage
         #if targetEnvironment(macCatalyst)
         macSplitView
         #else
@@ -45,12 +47,12 @@ struct MainTabView: View {
                 // The TV app's layout: Search, Home, and Discover, then everything the iPhone's Library
                 // page holds under a Library heading. There's no Library page on the Mac.
                 VStack(spacing: 2) {
-                    macSidebarRow("Search", systemImage: "magnifyingglass", assetName: "IconsaxSearch", selection: .search)
+                    macSidebarRow(AppLanguage.string("common.search", default: "Search"), systemImage: "magnifyingglass", assetName: "IconsaxSearch", selection: .search)
                     macSidebarRow(AppTab.home.title, systemImage: AppTab.home.systemImage, assetName: AppTab.home.iconAsset, selection: .tab(.home))
-                    macSidebarRow("Discover", systemImage: "sparkles", assetName: nil, selection: .discover)
+                    macSidebarRow(AppLanguage.string("search.discover", default: "Discover"), systemImage: "sparkles", assetName: nil, selection: .discover)
 
-                    macSidebarHeading("Library")
-                    macSidebarRow("Recently Added", systemImage: "clock", assetName: nil, selection: .recentlyAdded)
+                    macSidebarHeading(AppLanguage.string("library.title", default: "Library"))
+                    macSidebarRow(AppLanguage.string("home.recently_added", default: "Recently Added"), systemImage: "clock", assetName: nil, selection: .recentlyAdded)
                     ForEach(macLibraries) { library in
                         let icon = macIcon(for: library)
                         macSidebarRow(library.name, systemImage: icon.system, assetName: icon.asset, selection: .library(library.id))
@@ -69,7 +71,7 @@ struct MainTabView: View {
                         macSidebarRow(LibraryPageBlock.genres.title, systemImage: "square.grid.2x2", assetName: nil, selection: .genres)
                     }
                     if !macHiddenBlocks.contains(.downloaded) {
-                        macSidebarRow("Downloads", systemImage: "arrow.down.circle", assetName: nil, selection: .downloads)
+                        macSidebarRow(AppLanguage.string("library.downloads", default: "Downloads"), systemImage: "arrow.down.circle", assetName: nil, selection: .downloads)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -159,7 +161,7 @@ struct MainTabView: View {
             .flatMap(\.items)
             .filter { seen.insert($0.id).inserted }
             .sorted { ($0.dateCreated ?? .distantPast) > ($1.dateCreated ?? .distantPast) }
-        return HomeSection(id: "mac-recently-added", title: "Recently Added", style: .portrait, items: items)
+        return HomeSection(id: "mac-recently-added", title: AppLanguage.string("home.recently_added", default: "Recently Added"), style: .portrait, items: items)
     }
 
     private func macSidebarHeading(_ title: String) -> some View {
@@ -287,7 +289,7 @@ struct MainTabView: View {
                 .zelefinSidebarLayout()
             } label: {
                 dockLabel(
-                    "Search",
+                    AppLanguage.string("common.search", default: "Search"),
                     systemImage: "magnifyingglass",
                     assetName: "IconsaxSearch",
                     isSelected: dockSelection == .search
@@ -435,17 +437,17 @@ struct MainTabView: View {
         case .home:
             HomeView()
         case .movies:
-            CatalogBrowseView(title: "Movies", libraryKind: .movies)
+            CatalogBrowseView(title: AppLanguage.string("tab.movies", default: "Movies"), libraryKind: .movies)
         case .shows:
-            CatalogBrowseView(title: "Shows", libraryKind: .shows)
+            CatalogBrowseView(title: AppLanguage.string("tab.shows", default: "Shows"), libraryKind: .shows)
         case .liveTV:
             LiveTVView()
         case .collections:
-            CatalogBrowseView(title: "Collections", libraryKind: .collections)
+            CatalogBrowseView(title: AppLanguage.string("library.collections", default: "Collections"), libraryKind: .collections)
         case .library:
             LibraryView()
         case .favorites:
-            CatalogBrowseView(title: "Favorites", libraryKind: .favorites)
+            CatalogBrowseView(title: AppLanguage.string("library.favorites", default: "Favorites"), libraryKind: .favorites)
         }
     }
 }
@@ -782,7 +784,7 @@ enum ProfilePresentation {
         return await withCheckedContinuation { continuation in
             let alert = UIAlertController(
                 title: "PIN for \(name)",
-                message: "This profile is locked.",
+                message: AppLanguage.string("settings.profile_locked", default: "This profile is locked."),
                 preferredStyle: .alert
             )
             alert.addTextField { field in
@@ -790,10 +792,10 @@ enum ProfilePresentation {
                 field.keyboardType = .numberPad
                 field.placeholder = "PIN"
             }
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            alert.addAction(UIAlertAction(title: AppLanguage.string("common.cancel", default: "Cancel"), style: .cancel) { _ in
                 continuation.resume(returning: nil)
             })
-            alert.addAction(UIAlertAction(title: "Switch", style: .default) { _ in
+            alert.addAction(UIAlertAction(title: AppLanguage.string("common.switch", default: "Switch"), style: .default) { _ in
                 continuation.resume(returning: alert.textFields?.first?.text)
             })
             presenter.present(alert, animated: true)
@@ -805,7 +807,7 @@ enum ProfilePresentation {
         guard let presenter = topViewController() else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            alert.addAction(UIAlertAction(title: AppLanguage.string("common.ok", default: "OK"), style: .default) { _ in
                 continuation.resume()
             })
             presenter.present(alert, animated: true)
@@ -847,6 +849,7 @@ enum ProfilePresentation {
 
 struct ProfileMenu: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.appLanguage) private var appLanguage
     var diameter: CGFloat = 45
     var showsName = false
     var nameFont: Font = .body.weight(.semibold)
@@ -854,20 +857,21 @@ struct ProfileMenu: View {
     var showsGlassRing = true
 
     /// Thin glass outline; photo fills most of the circle.
-    private var glassInset: CGFloat { showsGlassRing ? max(3, (diameter * 0.08).rounded()) : 0 }
+    private var glassInset: CGFloat { showsGlassRing ? max(2, (diameter * 0.07).rounded()) : 0 }
     private var photoDiameter: CGFloat { diameter - glassInset * 2 }
     private var displayName: String {
         let name = session.session?.userName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? "Account" : name
+        return name.isEmpty ? AppLanguage.string("settings.account", default: "Account") : name
     }
 
     var body: some View {
+        let _ = appLanguage
         labelContent
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .overlay {
                 ProfileSystemMenuButton(
-                    accessibilityLabel: showsName ? displayName : "Profile",
+                    accessibilityLabel: showsName ? displayName : AppLanguage.string("settings.profile", default: "Profile"),
                     otherAccounts: session.otherAccounts,
                     isSiloServer: session.isSiloServer,
                     siloProfiles: session.siloProfiles,
@@ -977,7 +981,10 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
         button.preferredMenuElementOrder = .fixed
         button.backgroundColor = .clear
         button.accessibilityLabel = accessibilityLabel
-        button.accessibilityHint = "Shows profile, sessions, settings, and account options"
+        button.accessibilityHint = AppLanguage.string(
+            "ui.profile_menu_hint",
+            default: "Shows profile, sessions, settings, and account options"
+        )
         context.coordinator.attachMenu(to: button)
         return button
     }
@@ -985,6 +992,10 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
     func updateUIView(_ button: ProfileMenuHitButton, context: Context) {
         context.coordinator.parent = self
         button.accessibilityLabel = accessibilityLabel
+        button.accessibilityHint = AppLanguage.string(
+            "ui.profile_menu_hint",
+            default: "Shows profile, sessions, settings, and account options"
+        )
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ProfileMenuHitButton, context: Context) -> CGSize? {
@@ -1015,7 +1026,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
 
         func menuChildren() -> [UIMenuElement] {
             var rows: [UIMenuElement] = [
-                Self.action("Profile", "person.crop.circle") { [parent] in
+                Self.action(AppLanguage.string("account.profile", default: "Profile"), "person.crop.circle") { [parent] in
                     parent.onProfile()
                 }
             ]
@@ -1024,8 +1035,8 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                 let switchProfile = parent.onSwitchToProfile
                 let items = otherProfiles.map { profile in
                     var parts: [String] = []
-                    if profile.isChild { parts.append("Kids") }
-                    if profile.hasPin { parts.append("PIN") }
+                    if profile.isChild { parts.append(AppLanguage.string("connect.kids", default: "Kids")) }
+                    if profile.hasPin { parts.append(AppLanguage.string("connect.pin", default: "PIN")) }
                     let work = ProfileMenuAction { switchProfile(profile) }
                     nonisolated(unsafe) let handler: (UIAction) -> Void = { _ in
                         work.run()
@@ -1038,7 +1049,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                 }
                 rows.append(
                     UIMenu(
-                        title: "Switch Profile",
+                        title: AppLanguage.string("settings.switch_profile", default: "Switch Profile"),
                         image: UIImage(systemName: "person.crop.rectangle.stack"),
                         children: items
                     )
@@ -1046,21 +1057,21 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
             }
             if let onSessions = parent.onSessions {
                 rows.append(
-                    Self.action("Sessions", "play.tv") {
+                    Self.action(AppLanguage.string("account.sessions", default: "Sessions"), "play.tv") {
                         onSessions()
                     }
                 )
             }
             if let onSyncPlay = parent.onSyncPlay {
                 rows.append(
-                    Self.action("SyncPlay", "person.2.wave.2") {
+                    Self.action(AppLanguage.string("account.syncplay", default: "SyncPlay"), "person.2.wave.2") {
                         onSyncPlay()
                     }
                 )
             }
             if let onScheduledTasks = parent.onScheduledTasks {
                 rows.append(
-                    Self.action("Scheduled Tasks", "clock.arrow.2.circlepath") {
+                    Self.action(AppLanguage.string("settings.scheduled_tasks", default: "Scheduled Tasks"), "clock.arrow.2.circlepath") {
                         onScheduledTasks()
                     }
                 )
@@ -1076,17 +1087,17 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                 }
                 rows.append(
                     UIMenu(
-                        title: parent.isSiloServer ? "Switch Account" : "Switch User",
+                        title: parent.isSiloServer ? AppLanguage.string("settings.switch_account", default: "Switch Account") : AppLanguage.string("settings.switch_user", default: "Switch User"),
                         image: UIImage(systemName: "person.2"),
                         children: users
                     )
                 )
             }
             rows.append(contentsOf: [
-                Self.action(parent.isSiloServer ? "Add Account" : "Add User", "person.badge.plus") { [parent] in
+                Self.action(parent.isSiloServer ? AppLanguage.string("account.add_account", default: "Add Account") : AppLanguage.string("account.add_user", default: "Add User"), "person.badge.plus") { [parent] in
                     parent.onAddUser()
                 },
-                Self.action("Settings", "gearshape") { [parent] in
+                Self.action(AppLanguage.string("common.settings", default: "Settings"), "gearshape") { [parent] in
                     parent.onSettings()
                 }
             ])
@@ -1096,7 +1107,7 @@ private struct ProfileSystemMenuButton: UIViewRepresentable {
                     options: .displayInline,
                     children: [
                         Self.action(
-                            "Sign Out",
+                            AppLanguage.string("common.sign_out", default: "Sign Out"),
                             "rectangle.portrait.and.arrow.right",
                             attributes: .destructive
                         ) { [parent] in
@@ -1151,31 +1162,31 @@ struct ProfileSheetContainer: View {
             switch destination {
             case .profile:
                 ProfileView()
-                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                    .profileSheetToolbar(AppLanguage.string("common.done", default: "Done")) { ProfilePresentation.dismiss() }
             case .sessions:
                 SessionsView()
-                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                    .profileSheetToolbar(AppLanguage.string("common.done", default: "Done")) { ProfilePresentation.dismiss() }
             case .syncplay:
                 SyncPlayView()
-                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                    .profileSheetToolbar(AppLanguage.string("common.done", default: "Done")) { ProfilePresentation.dismiss() }
             case .scheduledTasks:
                 ScheduledTasksView()
-                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                    .profileSheetToolbar(AppLanguage.string("common.done", default: "Done")) { ProfilePresentation.dismiss() }
             case .settings:
                 SettingsView()
-                    .profileSheetToolbar("Done") { ProfilePresentation.dismiss() }
+                    .profileSheetToolbar(AppLanguage.string("common.done", default: "Done")) { ProfilePresentation.dismiss() }
             case .addUser:
                 AddAccountView()
-                    .profileSheetToolbar("Cancel") { ProfilePresentation.dismiss() }
+                    .profileSheetToolbar(AppLanguage.string("common.cancel", default: "Cancel"), cancellation: true) { ProfilePresentation.dismiss() }
             }
         }
     }
 }
 
 private extension View {
-    func profileSheetToolbar(_ title: String, action: @escaping () -> Void) -> some View {
+    func profileSheetToolbar(_ title: String, cancellation: Bool = false, action: @escaping () -> Void) -> some View {
         toolbar {
-            ToolbarItem(placement: title == "Cancel" || title == "Close" ? .cancellationAction : .confirmationAction) {
+            ToolbarItem(placement: cancellation ? .cancellationAction : .confirmationAction) {
                 Button(title, action: action)
             }
         }

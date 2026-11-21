@@ -26,7 +26,7 @@ extension LibraryAlert {
     static func streamStarted(user: String, title: String, itemID: String?, key: String) -> LibraryAlert {
         LibraryAlert(
             kind: .streamStarted,
-            title: "Now playing",
+            title: AppLanguage.string("ui.now_playing_2", default: "Now playing"),
             body: "\(user) started \(title).",
             itemID: itemID,
             id: "stream-\(key)"

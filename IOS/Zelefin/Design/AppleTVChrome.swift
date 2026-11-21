@@ -306,7 +306,7 @@ struct SectionHeader: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.white)
             if showsChevron {
-                Image(systemName: "chevron.right")
+                Image(systemName: "chevron.forward")
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(.white.opacity(0.45))
             }
@@ -1356,11 +1356,11 @@ struct FeaturedHero: View {
             ItemDetailView(item: item)
         }
         .presentsPlayerFromRoot($playingItem)
-        .alert("Playback", isPresented: Binding(
+        .alert(AppLanguage.string("settings.playback", default: "Playback"), isPresented: Binding(
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(playbackError ?? "")
         }
@@ -1395,7 +1395,7 @@ struct FeaturedHero: View {
         }
         .animation(.easeInOut(duration: 0.28), value: currentSlide?.id)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Featured titles")
+        .accessibilityLabel(AppLanguage.string("ui.featured_titles", default: "Featured titles"))
         .accessibilityValue(pageAccessibilityValue)
     }
 
@@ -1465,7 +1465,7 @@ struct FeaturedHero: View {
                     Button {
                         play(item)
                     } label: {
-                        Label("Play", systemImage: "play.fill")
+                        Label(AppLanguage.string("common.play", default: "Play"), systemImage: "play.fill")
                             .font(.headline.weight(.semibold))
                             .labelStyle(.titleAndIcon)
                             .foregroundStyle(.black)
@@ -1474,7 +1474,7 @@ struct FeaturedHero: View {
                             .background(Color.white, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Play")
+                    .accessibilityLabel(AppLanguage.string("common.play", default: "Play"))
 
                     PlaybackQueueOverflowButton(
                         item: item,
@@ -1618,7 +1618,7 @@ struct CloseButton: View {
         Button(action: action) {
             Image(systemName: "xmark")
         }
-        .accessibilityLabel("Close")
+        .accessibilityLabel(AppLanguage.string("common.close", default: "Close"))
     }
 }
 
@@ -2332,7 +2332,7 @@ struct ZelefinPadBackButton: View {
         }
         .buttonStyle(.plain)
         .zelefinLiquidGlassCircle()
-        .accessibilityLabel("Back")
+        .accessibilityLabel(AppLanguage.string("common.back", default: "Back"))
     }
 }
 

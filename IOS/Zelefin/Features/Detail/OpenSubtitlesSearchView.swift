@@ -17,15 +17,15 @@ struct OpenSubtitlesSearchView: View {
     var body: some View {
         List {
             Section {
-                Picker("Language", selection: $language) {
+                Picker(AppLanguage.string("settings.language.header", default: "Language"), selection: $language) {
                     ForEach(SubtitleSearchLanguage.choices) { choice in
                         Text(choice.name).tag(choice)
                     }
                 }
-                Toggle("Perfect match only", isOn: $perfectMatch)
+                Toggle(AppLanguage.string("ui.perfect_match_only", default: "Perfect match only"), isOn: $perfectMatch)
                     .tint(AccentPreferences.current)
             } footer: {
-                Text("Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash.")
+                Text(AppLanguage.string("Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash.", default: "Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash."))
             }
             .zelefinRowBackground()
 
@@ -66,27 +66,27 @@ struct OpenSubtitlesSearchView: View {
                     }
                 }
             } header: {
-                Text("Results")
+                Text(AppLanguage.string("ui.results", default: "Results"))
             }
             .zelefinRowBackground()
         }
-        .zelefinSettingsChrome(title: session.isEmbyServer ? "Find Subtitles" : "Add Subtitles")
+        .zelefinSettingsChrome(title: session.isEmbyServer ? AppLanguage.string("ui.find_subtitles", default: "Find Subtitles") : AppLanguage.string("search.add_subtitles", default: "Add Subtitles"))
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 CloseButton { dismiss() }
             }
         }
         .task(id: searchKey) { await search() }
-        .alert("Subtitles", isPresented: Binding(
+        .alert(AppLanguage.string("player.subtitles", default: "Subtitles"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("Subtitles saved", isPresented: $didSave) {
-            Button("OK") { dismiss() }
+        .alert(AppLanguage.string("ui.subtitles_saved", default: "Subtitles saved"), isPresented: $didSave) {
+            Button(AppLanguage.string("common.ok", default: "OK")) { dismiss() }
         } message: {
             Text("\(session.isEmbyServer ? "Emby" : "Jellyfin") stored the file on the server. The subtitle list on this title is updated.")
         }

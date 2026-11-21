@@ -20,13 +20,13 @@ struct TitleMoreInfoView: View {
                     }
                     TitleSpecsRow(item: item)
                     if !info.information.isEmpty {
-                        moreSection(title: "Information", rows: info.information)
+                        moreSection(title: AppLanguage.string("detail.information", default: "Information"), rows: info.information)
                     }
                     if !info.languages.isEmpty {
-                        moreSection(title: "Languages", rows: info.languages)
+                        moreSection(title: AppLanguage.string("detail.languages", default: "Languages"), rows: info.languages)
                     }
                     if !info.file.isEmpty {
-                        moreSection(title: "File", rows: info.file)
+                        moreSection(title: AppLanguage.string("detail.file", default: "File"), rows: info.file)
                     }
                     if !info.links.isEmpty {
                         linksSection
@@ -75,7 +75,7 @@ struct TitleMoreInfoView: View {
             }
             .buttonStyle(.plain)
             .zelefinLiquidGlassCircle()
-            .accessibilityLabel("Close")
+            .accessibilityLabel(AppLanguage.string("common.close", default: "Close"))
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -93,7 +93,7 @@ struct TitleMoreInfoView: View {
 
     private var linksSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Links")
+            Text(AppLanguage.string("detail.links", default: "Links"))
                 .font(.title2.bold())
                 .foregroundStyle(.white)
             VStack(alignment: .leading, spacing: 12) {
@@ -114,11 +114,11 @@ struct TitleMoreInfoView: View {
 
     private func accessibilitySection(_ note: String) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Accessibility")
+            Text(AppLanguage.string("detail.accessibility", default: "Accessibility"))
                 .font(.title2.bold())
                 .foregroundStyle(.white)
             HStack(alignment: .top, spacing: 10) {
-                Text("CC")
+                Text(AppLanguage.string("detail.cc", default: "CC"))
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 3)

@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -85,7 +87,7 @@ internal fun LogTopic(state: ZelefinUiState, plugins: PluginsController) {
         )
     }
     SettingsFooter(
-        "Zelefin notes what it does and what goes wrong: sign-ins, playback, downloads, and requests that fail. Passwords, tokens, and API keys are never written down. Report a problem to email help@randll.com or open a GitHub issue with the log attached.",
+        stringResource(R.string.ui_zelefin_notes_what_it_does_and_what_goes_wrong_s),
     )
 
     SettingsCard {
@@ -160,7 +162,7 @@ internal fun ReportIssueTopic(state: ZelefinUiState, plugins: PluginsController)
             modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp).padding(vertical = 12.dp),
         )
     }
-    SettingsFooter("Describe the problem in a sentence or two. The device log and diagnostics are included automatically.")
+    SettingsFooter(stringResource(R.string.ui_describe_the_problem_in_a_sentence_or_two_the_de))
 
     SettingsCard {
         SettingsActionRow("Email help@randll.com", enabled = canSubmit) {
@@ -172,7 +174,7 @@ internal fun ReportIssueTopic(state: ZelefinUiState, plugins: PluginsController)
             openGitHubIssue(context, trimmed, diagnostics)
         }
     }
-    SettingsFooter("Email attaches the full log. GitHub opens a prefilled issue; attach the log there if the form is too short, or send it by email.")
+    SettingsFooter(stringResource(R.string.ui_email_attaches_the_full_log_github_opens_a_prefi))
     notice?.let { message ->
         Spacer(Modifier.height(14.dp))
         SettingsCard {

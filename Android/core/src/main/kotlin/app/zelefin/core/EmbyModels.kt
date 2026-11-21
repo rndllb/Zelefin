@@ -251,14 +251,17 @@ data class EmbyItem(
                 val personName = person.name?.trim().orEmpty()
                 val personId = person.id?.trim().orEmpty()
                 if (personName.isEmpty() || personId.isEmpty()) return@mapNotNull null
+                val typeName = person.type.orEmpty()
                 CreditPerson(
                     id = personId,
                     name = personName,
-                    roleLabel = person.role?.trim()?.ifEmpty { null } ?: CreditRoles.label(person.type.orEmpty()),
+                    roleLabel = CreditRoles.displayLabel(typeName, person.role),
                     imageTag = person.primaryImageTag,
+                    rank = CreditRoles.rank(typeName),
                 )
             }
-            .distinctBy { it.id },
+            // Keep actor + director rows for the same person (id alone dropped directors).
+            .distinctBy { "${it.id}#${it.rank}" },
         streams = streams.map { stream ->
             JellyfinStreamSnapshot(
                 type = stream.type.orEmpty(),

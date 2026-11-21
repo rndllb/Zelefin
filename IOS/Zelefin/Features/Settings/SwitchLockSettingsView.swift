@@ -14,7 +14,7 @@ struct AccountPINControls: View {
     var body: some View {
         Group {
             if hasPIN {
-                LabeledContent("Account PIN", value: "On")
+                LabeledContent(AppLanguage.string("ui.account_pin", default: "Account PIN"), value: "On")
                 if AccountSwitchPIN.canUseBiometrics {
                     Toggle("Unlock with \(AccountSwitchPIN.biometricsName)", isOn: $unlockWithBiometrics)
                         .onChange(of: unlockWithBiometrics) { _, enabled in
@@ -22,7 +22,7 @@ struct AccountPINControls: View {
                             AccountSwitchPIN.setBiometricsEnabled(enabled, for: id)
                         }
                 }
-                Button("Change PIN") {
+                Button(AppLanguage.string("ui.change_pin", default: "Change PIN")) {
                     Task {
                         guard let current = session.session else { return }
                         guard await AccountSwitchUnlock.unlockIfNeeded(account: current) else { return }
@@ -30,11 +30,11 @@ struct AccountPINControls: View {
                         pinEditor = .change
                     }
                 }
-                Button("Remove PIN", role: .destructive) {
+                Button(AppLanguage.string("ui.remove_pin", default: "Remove PIN"), role: .destructive) {
                     Task { await removePIN() }
                 }
             } else {
-                Button("Create Account PIN") {
+                Button(AppLanguage.string("ui.create_account_pin", default: "Create Account PIN")) {
                     pinError = nil
                     pinEditor = .create
                 }
@@ -116,10 +116,10 @@ private struct AccountPINEditorSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    SecureField("PIN", text: $pin)
+                    SecureField(AppLanguage.string("connect.pin", default: "PIN"), text: $pin)
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
-                    SecureField("Confirm PIN", text: $confirm)
+                    SecureField(AppLanguage.string("ui.confirm_pin", default: "Confirm PIN"), text: $confirm)
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
                     if let errorMessage {
@@ -128,17 +128,17 @@ private struct AccountPINEditorSheet: View {
                             .foregroundStyle(.red)
                     }
                 } footer: {
-                    Text("Use 4 to 6 digits. This PIN stays on this device and is asked before someone can sign into this account.")
+                    Text(AppLanguage.string("Use 4 to 6 digits. This PIN stays on this device and is asked before someone can sign into this account.", default: "Use 4 to 6 digits. This PIN stays on this device and is asked before someone can sign into this account."))
                 }
                 .zelefinRowBackground()
             }
             .zelefinSettingsChrome(title: mode.title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onCancel)
+                    Button(AppLanguage.string("common.cancel", default: "Cancel"), action: onCancel)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button(AppLanguage.string("common.save", default: "Save")) { save() }
                         .disabled(!canSave)
                 }
             }

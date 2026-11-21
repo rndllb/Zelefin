@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Lock
@@ -36,6 +40,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -114,14 +120,14 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
         Spacer(Modifier.height(12.dp))
     }
     state.syncPlayGroupName?.takeIf { state.syncPlayGroupId != null }?.let { joined ->
-        SettingsHeader("This Device")
+        SettingsHeader(stringResource(R.string.settings_this_device))
         SettingsCard {
             SettingsInfoRow("Joined", joined)
             SettingsCardDivider()
             SettingsSecondaryButton("Leave Group", enabled = !working) { run { model.leaveSyncPlayGroup() } }
         }
     }
-    SettingsHeader("New Group")
+    SettingsHeader(stringResource(R.string.ui_new_group))
     SettingsCard {
         SettingsTextField(
             label = "NAME",
@@ -137,13 +143,13 @@ internal fun SyncPlayTopic(state: ZelefinUiState) {
             run { model.createSyncPlayGroup(name); name = "" }
         }
     }
-    SettingsHeader("Groups")
+    SettingsHeader(stringResource(R.string.ui_groups))
     SettingsCard {
         when {
             loading && groups.isEmpty() -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
                 IOSSpinner(Modifier.size(22.dp))
             }
-            groups.isEmpty() -> Text("No SyncPlay groups are running.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 16.sp)
+            groups.isEmpty() -> Text(stringResource(R.string.ui_no_syncplay_groups_are_running), color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 16.sp)
             else -> groups.forEachIndexed { index, group ->
                 if (index > 0) SettingsCardDivider()
                 val joined = state.syncPlayGroupId == group.id
@@ -211,11 +217,11 @@ internal fun UsersTopic() {
                             Text(account.name, style = SettingsRowText)
                             Text(account.statusSubtitle, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 13.sp)
                         }
-                        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = AdminCaption)
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = AdminCaption)
                     }
                 }
             }
-            SettingsFooter("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.")
+            SettingsFooter(stringResource(R.string.ui_administrators_can_change_photos_permissions_lib))
         }
     }
 }
@@ -388,7 +394,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         if (current.primaryImageTag != null) {
             Spacer(Modifier.height(10.dp))
             Text(
-                "Remove Photo",
+                stringResource(R.string.ui_remove_photo),
                 color = AdminError,
                 fontFamily = ZelefinFont,
                 fontWeight = FontWeight.SemiBold,
@@ -405,7 +411,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             )
         }
     }
-    SettingsFooter("Administrators can change this user's profile picture on the server.")
+    SettingsFooter(stringResource(R.string.ui_administrators_can_change_this_users_profile_pic))
 
     SettingsCard {
         SettingsTextField(label = "USERNAME", value = username, icon = Icons.Outlined.Person, onChange = { username = it }, placeholder = "Username")
@@ -415,21 +421,21 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         }
     }
 
-    SettingsHeader("Permissions")
+    SettingsHeader(stringResource(R.string.Permissions))
     SettingsCard {
-        SettingsToggleRow("Administrator", policy.isAdministrator, {
+        SettingsToggleRow(stringResource(R.string.ui_administrator), policy.isAdministrator, {
             if (!it && policy.isAdministrator) confirmDemote = true else savePolicy(policy.copy(isAdministrator = it))
         })
         SettingsCardDivider()
-        SettingsToggleRow("Edit Subtitles", policy.enableSubtitleManagement, { savePolicy(policy.copy(enableSubtitleManagement = it)) })
+        SettingsToggleRow(stringResource(R.string.ui_edit_subtitles), policy.enableSubtitleManagement, { savePolicy(policy.copy(enableSubtitleManagement = it)) })
         SettingsCardDivider()
-        SettingsToggleRow("Disable Account", policy.isDisabled, {
+        SettingsToggleRow(stringResource(R.string.ui_disable_account), policy.isDisabled, {
             if (it && !policy.isDisabled) confirmDisable = true else savePolicy(policy.copy(isDisabled = it))
         })
     }
-    SettingsFooter("Administrators can manage users, sessions, and server settings. Edit Subtitles lets this user search and download subtitles onto the server, same as an administrator.")
+    SettingsFooter(stringResource(R.string.ui_administrators_can_manage_users_sessions_and_ser))
 
-    SettingsHeader("Streaming")
+    SettingsHeader(stringResource(R.string.Streaming))
     val bitrateChoices = remember(policy.remoteClientBitrateLimit) {
         val values = (RemoteBitrateLimit.bits + policy.remoteClientBitrateLimit).distinct().sorted()
         values.map { SettingsChoice(it, RemoteBitrateLimit.title(it)) }
@@ -437,15 +443,15 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
     SettingsCard {
         SettingsMenuPicker("Remote Bitrate", bitrateChoices, policy.remoteClientBitrateLimit) { savePolicy(policy.copy(remoteClientBitrateLimit = it)) }
     }
-    SettingsFooter("Caps how fast this user can pull video from outside the local network. Unlimited leaves the client in charge.")
+    SettingsFooter(stringResource(R.string.ui_caps_how_fast_this_user_can_pull_video_from_outs))
 
-    SettingsHeader("Password")
+    SettingsHeader(stringResource(R.string.connect_password))
     SettingsCard {
         SettingsTextField(label = "New Password", value = newPassword, icon = Icons.Outlined.Lock, onChange = { newPassword = it }, placeholder = "New Password", password = true, keyboard = KeyboardType.Password)
         SettingsCardDivider()
         SettingsTextField(label = "Confirm Password", value = confirmPassword, icon = Icons.Outlined.Lock, onChange = { confirmPassword = it }, placeholder = "Confirm Password", password = true, keyboard = KeyboardType.Password)
         if (confirmPassword.isNotEmpty() && newPassword != confirmPassword) {
-            Text("The new passwords do not match.", color = AdminError, fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
+            Text(stringResource(R.string.ui_the_new_passwords_do_not_match), color = AdminError, fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         }
         SettingsCardDivider()
         SettingsPrimaryButton("Set Password", busy = saving, enabled = newPassword.isNotEmpty() && newPassword == confirmPassword) {
@@ -458,9 +464,9 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
         SettingsCardDivider()
         SettingsSecondaryButton("Reset Password", enabled = !saving) { confirmReset = true }
     }
-    SettingsFooter("Reset clears the password on the server. Set Password stores the new one now.")
+    SettingsFooter(stringResource(R.string.ui_reset_clears_the_password_on_the_server_set_pass))
 
-    SettingsHeader("Parental Controls")
+    SettingsHeader(stringResource(R.string.ui_parental_controls))
     val ratingChoices = listOf(SettingsChoice("none", "None")) + ratings.map { SettingsChoice(it.id, it.name) }
     SettingsCard {
         SettingsMenuPicker("Maximum Rating", ratingChoices, ratingId) { selected ->
@@ -476,11 +482,11 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             })
         }
     }
-    SettingsFooter("Maximum rating hides titles above that score. Blocked types stay hidden even when they have no rating.")
+    SettingsFooter(stringResource(R.string.ui_maximum_rating_hides_titles_above_that_score_blo))
 
-    SettingsHeader("Library Access")
+    SettingsHeader(stringResource(R.string.ui_library_access))
     SettingsCard {
-        SettingsToggleRow("All Libraries", policy.enableAllFolders, { savePolicy(policy.copy(enableAllFolders = it)) })
+        SettingsToggleRow(stringResource(R.string.ui_all_libraries), policy.enableAllFolders, { savePolicy(policy.copy(enableAllFolders = it)) })
         if (!policy.enableAllFolders) {
             folders.forEach { folder ->
                 SettingsCardDivider()
@@ -490,7 +496,7 @@ internal fun UserEditorTopic(userId: String, state: ZelefinUiState) {
             }
         }
     }
-    SettingsFooter("Turn off All Libraries to pick which folders this user can see.")
+    SettingsFooter(stringResource(R.string.ui_turn_off_all_libraries_to_pick_which_folders_thi))
 
     status?.let { (text, isError) ->
         SettingsCard { Text(text, color = if (isError) AdminError else AdminSecondary, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) }
@@ -554,7 +560,7 @@ internal fun ScheduledTasksTopic() {
             val running = tasks.filter { it.isActive }
             val idle = tasks.filter { !it.isActive && !it.isHidden }.groupBy { it.category }.toSortedMap(String.CASE_INSENSITIVE_ORDER)
             if (running.isNotEmpty()) {
-                SettingsHeader("Running")
+                SettingsHeader(stringResource(R.string.ui_running))
                 SettingsCard {
                     running.forEachIndexed { index, task ->
                         if (index > 0) SettingsCardDivider()
@@ -590,10 +596,10 @@ private fun ScheduledTaskRow(task: ScheduledTask, isBusy: Boolean, onOpen: () ->
             }
             when {
                 isBusy -> IOSSpinner(Modifier.size(18.dp))
-                task.canCancel -> Text("Cancel", color = AdminError, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onCancel).padding(8.dp))
-                task.canStart -> Text("Start", color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onStart).padding(8.dp))
+                task.canCancel -> Text(stringResource(R.string.common_cancel), color = AdminError, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onCancel).padding(8.dp))
+                task.canStart -> Text(stringResource(R.string.ui_start), color = ZelefinCyan, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onStart).padding(8.dp))
             }
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = AdminCaption)
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = AdminCaption)
         }
         if (task.isActive) {
             if (task.progressFraction != null) IOSProgressBar(task.progressFraction!!)
@@ -660,11 +666,11 @@ internal fun ScheduledTaskDetailTopic(taskId: String) {
         }
     }
     if (current.summary.isNotEmpty()) {
-        SettingsHeader("About")
+        SettingsHeader(stringResource(R.string.detail_about))
         SettingsCard { Text(current.summary, color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp)) }
     }
     if (current.lastStatus != null || current.lastEnded != null) {
-        SettingsHeader("Last run")
+        SettingsHeader(stringResource(R.string.ui_last_run))
         SettingsCard {
             current.lastStatusLabel?.let { SettingsInfoRow("Result", it) }
             current.lastEnded?.let {
@@ -782,8 +788,8 @@ internal fun BackupsTopic() {
             }
         }
     }
-    SettingsFooter("A backup archives this server’s database and metadata. Restoring one restarts Jellyfin.")
-    SettingsHeader("Archives")
+    SettingsFooter(stringResource(R.string.ui_a_backup_archives_this_servers_database_and_meta))
+    SettingsHeader(stringResource(R.string.Archives))
     SettingsCard {
         if (backups.isEmpty()) {
             Text("No backups on this server yet.", color = AdminSecondary, fontFamily = ZelefinFont, fontSize = 16.sp)
@@ -831,7 +837,7 @@ internal fun BrandingTopic(state: ZelefinUiState) {
     val serverLabel = state.session?.displayServer?.takeIf { it.isNotBlank() } ?: "This server"
     SettingsCard { SettingsInfoRow("Server", serverLabel) }
     error?.let { Spacer(Modifier.height(12.dp)); SettingsCard { Text(it, color = AdminError, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp)) } }
-    SettingsHeader("Sign-In")
+    SettingsHeader(stringResource(R.string.ui_sign_in))
     SettingsCard {
         AdminMultilineField(
             branding.loginDisclaimer,
@@ -841,11 +847,11 @@ internal fun BrandingTopic(state: ZelefinUiState) {
         )
         if (canEdit) {
             SettingsCardDivider()
-            SettingsToggleRow("Show Splashscreen", branding.splashscreenEnabled, { on -> branding = branding.copy(splashscreenEnabled = on) })
+            SettingsToggleRow(stringResource(R.string.ui_show_splashscreen), branding.splashscreenEnabled, { on -> branding = branding.copy(splashscreenEnabled = on) })
         }
     }
-    if (!canEdit) SettingsFooter("Emby's branding is read-only here. Change it in Emby's web dashboard.")
-    SettingsHeader("Custom CSS")
+    if (!canEdit) SettingsFooter(stringResource(R.string.ui_embys_branding_is_read_only_here_change_it_in_em))
+    SettingsHeader(stringResource(R.string.ui_custom_css))
     SettingsCard {
         AdminMultilineField(
             branding.customCss,
@@ -856,7 +862,7 @@ internal fun BrandingTopic(state: ZelefinUiState) {
         )
     }
     if (!canEdit) return
-    SettingsHeader("Splash Image")
+    SettingsHeader(stringResource(R.string.ui_splash_image))
     SettingsCard {
         SettingsPrimaryButton("Upload Splashscreen", enabled = !loading) {
             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))

@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -73,11 +75,12 @@ private val PickerWarning = Color(1f, 0.8f, 0.45f)
 private val ProfileSwatches = floatArrayOf(0.22f, 0.30f, 0.38f, 0.46f, 0.28f, 0.34f)
 
 /** Kids, Primary, and PIN, in the order the picker badges show them. */
+@Composable
 fun siloProfileCaption(profile: SiloProfile): String = listOfNotNull(
-    "Kids".takeIf { profile.isChild },
-    "Primary".takeIf { profile.isPrimary },
-    "PIN".takeIf { profile.hasPin },
-).joinToString(" · ").ifEmpty { "Profile" }
+    stringResource(R.string.connect_kids).takeIf { profile.isChild },
+    stringResource(R.string.ui_primary).takeIf { profile.isPrimary },
+    stringResource(R.string.connect_pin).takeIf { profile.hasPin },
+).joinToString(" · ").ifEmpty { stringResource(R.string.account_profile) }
 
 /** Up to two letters, matching iOS `HouseholdProfileAvatar`. */
 private fun profileInitials(name: String): String {
@@ -141,7 +144,7 @@ fun SiloProfilePickerScreen(picker: SiloProfilePicker, onChoose: (SiloProfile) -
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(24.dp))
-            Text("Who’s watching?", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 30.sp)
+            Text(stringResource(R.string.connect_who_is_watching), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 30.sp)
             picker.warning?.let { warning ->
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -154,7 +157,7 @@ fun SiloProfilePickerScreen(picker: SiloProfilePicker, onChoose: (SiloProfile) -
             }
             if (picker.profiles.isEmpty()) {
                 Text(
-                    "This account has no household profiles yet.",
+                    stringResource(R.string.connect_no_profiles),
                     color = PickerCaption,
                     fontFamily = ZelefinFont,
                     fontSize = 15.sp,
@@ -254,7 +257,7 @@ private fun ProfileTile(profile: SiloProfile, busy: Boolean, enabled: Boolean, o
             overflow = TextOverflow.Ellipsis,
         )
         if (profile.isChild) {
-            Text("Kids", color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+            Text(stringResource(R.string.connect_kids), color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
         }
     }
 }
@@ -308,7 +311,7 @@ internal fun HouseholdProfileTile(
             textAlign = TextAlign.Center,
         )
         if (profile.isChild) {
-            Text("Kids", color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+            Text(stringResource(R.string.connect_kids), color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
         }
     }
 }

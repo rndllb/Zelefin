@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -115,7 +117,7 @@ internal fun OpenSubtitlesSheet(
                 if (emby) {
                     "Searches this Emby server’s subtitle providers and saves the file onto the server. Perfect match uses the file hash."
                 } else {
-                    "Downloads from Open Subtitles onto this Jellyfin server. Perfect match uses the file hash."
+                    stringResource(R.string.ui_downloads_from_open_subtitles_onto_this_jellyfin)
                 },
                 color = SubtitleCaption,
                 fontFamily = ZelefinFont,
@@ -123,7 +125,7 @@ internal fun OpenSubtitlesSheet(
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
             Text(
-                "Results",
+                stringResource(R.string.ui_results),
                 color = SubtitleCaption,
                 fontFamily = ZelefinFont,
                 fontSize = 13.sp,

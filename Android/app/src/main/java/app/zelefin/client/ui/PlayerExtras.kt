@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -112,7 +114,7 @@ internal fun PlaybackStatsPanel(
                 ),
             ),
             StatSection(
-                "Network",
+                stringResource(R.string.settings_network),
                 listOfNotNull(
                     StatLine("Host", if (local) "This device" else host ?: "—"),
                     StatLine("Buffer", String.format(Locale.US, "%.1f s", buffered)),

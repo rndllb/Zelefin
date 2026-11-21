@@ -1,5 +1,7 @@
 package app.zelefin.client.ui
 
+import app.zelefin.client.R
+import androidx.compose.ui.res.stringResource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -317,7 +319,7 @@ private fun SessionDetail(
                     }
                 }
             } else {
-                Text("This client does not accept remote control.", color = IOSColors.secondaryLabel, fontSize = 14.sp)
+                Text(stringResource(R.string.ui_this_client_does_not_accept_remote_control), color = IOSColors.secondaryLabel, fontSize = 14.sp)
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -387,7 +389,7 @@ private fun SessionMessageDialog(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .padding(20.dp),
         ) {
-            Text("Message", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+            Text(stringResource(R.string.ui_message), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             Spacer(Modifier.height(6.dp))
             Text("To $recipient", color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 15.sp)
             Spacer(Modifier.height(12.dp))

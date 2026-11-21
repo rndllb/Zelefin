@@ -53,7 +53,7 @@ struct TitleAboutPage: View {
             }
             .buttonStyle(.plain)
             .zelefinLiquidGlassCircle()
-            .accessibilityLabel("Close")
+            .accessibilityLabel(AppLanguage.string("common.close", default: "Close"))
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)

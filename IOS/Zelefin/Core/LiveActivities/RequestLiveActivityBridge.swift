@@ -39,8 +39,8 @@ enum RequestLiveActivityBridge {
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
         RequestActivityPresenter.start(
             id: alertID,
-            title: title.isEmpty ? "Request" : title,
-            subtitle: "Request",
+            title: title.isEmpty ? AppLanguage.string("ui.request", default: "Request") : title,
+            subtitle: AppLanguage.string("ui.request", default: "Request"),
             statusLine: "Pending",
             badgeLabel: "PENDING"
         )

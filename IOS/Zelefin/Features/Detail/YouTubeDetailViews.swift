@@ -156,7 +156,7 @@ private struct YouTubeChannelPage: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if sorted.isEmpty {
-                Text(sort == .unwatched ? "You’ve watched every video." : "No videos yet.")
+                Text(sort == .unwatched ? AppLanguage.string("ui.youve_watched_every_video", default: "You’ve watched every video.") : AppLanguage.string("ui.no_videos_yet", default: "No videos yet."))
                     .font(.subheadline)
                     .foregroundStyle(YouTubeText.muted)
                     .padding(.horizontal, 16)
@@ -390,7 +390,7 @@ private struct YouTubeVideoPage: View {
                                 .foregroundStyle(.white.opacity(0.88))
                                 .lineLimit(descriptionExpanded ? nil : 3)
                                 .multilineTextAlignment(.leading)
-                            Text(descriptionExpanded ? "Show less" : "more")
+                            Text(descriptionExpanded ? AppLanguage.string("ui.show_less", default: "Show less") : "more")
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.white)
                         }
@@ -565,7 +565,7 @@ struct YouTubeUserActions: View {
             NavigationLink {
                 ItemDetailView(item: channel)
             } label: {
-                Label("Go to Channel", systemImage: "person.crop.circle")
+                Label(AppLanguage.string("ui.go_to_channel", default: "Go to Channel"), systemImage: "person.crop.circle")
             }
         }
         Button(watchedTitle, systemImage: item.isWatched ? "eye.slash" : "checkmark.circle") {
@@ -595,19 +595,19 @@ struct YouTubeUserActions: View {
             }
         }
         if let url = item.youTubeURL {
-            Button("Open in YouTube", systemImage: "arrow.up.right.square") {
+            Button(AppLanguage.string("ui.open_in_youtube", default: "Open in YouTube"), systemImage: "arrow.up.right.square") {
                 openURL(url)
             }
         }
         if !isChannel, let onPlayElsewhere, !session.isSiloServer {
-            Button("Play on Another Device…", systemImage: "tv.badge.wifi", action: onPlayElsewhere)
+            Button(AppLanguage.string("ui.play_on_another_device", default: "Play on Another Device…"), systemImage: "tv.badge.wifi", action: onPlayElsewhere)
         }
         if !isChannel, let onSyncPlay, !session.lacksJellyfinOnlyFeatures {
-            Button("Watch Together…", systemImage: "person.2.wave.2", action: onSyncPlay)
+            Button(AppLanguage.string("ui.watch_together", default: "Watch Together…"), systemImage: "person.2.wave.2", action: onSyncPlay)
         }
         if let onRefreshMetadata {
             Divider()
-            Button("Refresh from TubeArchivist", systemImage: "arrow.clockwise", action: onRefreshMetadata)
+            Button(AppLanguage.string("ui.refresh_from_tubearchivist", default: "Refresh from TubeArchivist"), systemImage: "arrow.clockwise", action: onRefreshMetadata)
         }
     }
 

@@ -11,6 +11,8 @@ struct LibraryView: View {
     @State private var headerVisible = true
     @State private var showsOrganize = false
     @State private var randomItem: MediaItem?
+    @State private var randomDiceFace = 5
+    @State private var isRollingRandom = false
 
     private var page: LibraryPageCache { session.libraryPage }
     private var covers: [String: [MediaItem]] { page.covers }
@@ -47,7 +49,7 @@ struct LibraryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let errorMessage, libraries.isEmpty {
                 ContentUnavailableView(
-                    "Couldn’t Load Library",
+                    AppLanguage.string("alert.couldnt_load_library", default: "Couldn’t Load Library"),
                     systemImage: "rectangle.stack",
                     description: Text(errorMessage)
                 )
@@ -81,7 +83,7 @@ struct LibraryView: View {
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
             FloatingPageHeader(
-                title: "Library",
+                title: AppLanguage.string("library.title", default: "Library"),
                 isVisible: RootPageChrome.showsTitle ? headerVisible : true,
                 liftsIntoPadTabBar: true
             ) {
@@ -89,18 +91,17 @@ struct LibraryView: View {
                     Button {
                         Task { await pickRandom() }
                     } label: {
-                        Image("IconsaxDiceFive")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 22, height: 22)
+                        RandomDiceIcon(face: randomDiceFace)
+                            .frame(width: 28, height: 28)
                             .foregroundStyle(.white)
+                            .randomDiceSpin(rolling: isRollingRandom)
                             .frame(width: 45, height: 45)
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                     .zelefinLiquidGlassCircle()
-                    .accessibilityLabel("Random Title")
+                    .disabled(isRollingRandom)
+                    .accessibilityLabel(AppLanguage.string("library.random", default: "Random Title"))
                     Button {
                         showsOrganize = true
                     } label: {
@@ -112,7 +113,7 @@ struct LibraryView: View {
                     }
                     .buttonStyle(.plain)
                     .zelefinLiquidGlassCircle()
-                    .accessibilityLabel("Arrange Library")
+                    .accessibilityLabel(AppLanguage.string("library.arrange", default: "Arrange Library"))
                 }
             }
         }
@@ -156,12 +157,28 @@ struct LibraryView: View {
     }
 
     private func pickRandom() async {
+        guard !isRollingRandom else { return }
+        isRollingRandom = true
+        let ticker = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled else { return }
+                randomDiceFace = RandomDiceIcon.nextFace(excluding: randomDiceFace)
+            }
+        }
+        defer {
+            ticker.cancel()
+        }
         if let title = await session.library?.randomTitle() {
             randomItem = title
         } else {
             let pool = (session.cachedCatalog(kind: .movies) ?? []) + (session.cachedCatalog(kind: .shows) ?? [])
             randomItem = pool.randomElement()
         }
+        ticker.cancel()
+        try? await Task.sleep(for: .milliseconds(500))
+        randomDiceFace = RandomDiceIcon.nextFace(excluding: randomDiceFace)
+        isRollingRandom = false
     }
 
     private var rooms: some View {
@@ -208,11 +225,11 @@ struct LibraryView: View {
         switch block {
         case .favorites:
             jumpLink(block.title, systemImage: block.systemImage) {
-                CatalogBrowseView(title: "Favorites", libraryKind: .favorites, showsBackButton: true)
+                CatalogBrowseView(title: AppLanguage.string("library.favorites", default: "Favorites"), libraryKind: .favorites, showsBackButton: true)
             }
         case .watchlist:
             jumpLink(block.title, systemImage: block.systemImage) {
-                CatalogBrowseView(title: "Watchlist", libraryKind: .watchlist, showsBackButton: true)
+                CatalogBrowseView(title: AppLanguage.string("library.watchlist", default: "Watchlist"), libraryKind: .watchlist, showsBackButton: true)
             }
         case .downloaded:
             jumpLink(block.title, systemImage: block.systemImage) {
@@ -242,7 +259,7 @@ struct LibraryView: View {
 
     private var collections: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Collections", showsChevron: false)
+            SectionHeader(title: AppLanguage.string("library.collections", default: "Collections"), showsChevron: false)
             LazyVGrid(columns: PosterGridLayout.columns(for: sidebarLayout), spacing: 20) {
                 ForEach(collectionCovers.prefix(12)) { item in
                     NavigationLink {
@@ -674,7 +691,7 @@ private struct LibraryOrganizeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                Text("Hold a room and drag it up or down. The eye hides it from Library.")
+                Text(AppLanguage.string("library.arrange_footer", default: "Hold a room and drag it up or down. The eye hides it from Library."))
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.72))
                     .fixedSize(horizontal: false, vertical: true)
@@ -686,10 +703,10 @@ private struct LibraryOrganizeView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Also on Library")
+                    Text(AppLanguage.string("library.also_on_library", default: "Also on Library"))
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.white)
-                    Text("These stay under your rooms. Hide any you don’t need.")
+                    Text(AppLanguage.string("library.also_on_library_footer", default: "These stay under your rooms. Hide any you don’t need."))
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.72))
                         .fixedSize(horizontal: false, vertical: true)
@@ -701,7 +718,7 @@ private struct LibraryOrganizeView: View {
                     .padding(.top, 4)
                 }
 
-                Button("Reset arrangement") {
+                Button(AppLanguage.string("library.reset_arrangement", default: "Reset arrangement")) {
                     orderRaw = ""
                     hiddenRaw = ""
                     pageHiddenRaw = ""
@@ -715,12 +732,12 @@ private struct LibraryOrganizeView: View {
             .padding(.bottom, 28)
         }
         .background(Color.zelefinPage.ignoresSafeArea())
-        .navigationTitle("Arrange")
+        .navigationTitle(AppLanguage.string("library.arrange_title", default: "Arrange"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
+                Button(AppLanguage.string("common.done", default: "Done")) { dismiss() }
                     .fontWeight(.semibold)
             }
         }
@@ -764,7 +781,7 @@ private struct LibraryOrganizeView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 if !shown {
-                    Text("Hidden")
+                    Text(AppLanguage.string("library.hidden", default: "Hidden"))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.72))
                 }
@@ -797,10 +814,10 @@ private struct LibraryOrganizeView: View {
         .animation(isDragging ? nil : .smooth(duration: 0.22), value: neighborOffset(for: index))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(shown ? library.name : "\(library.name), hidden")
-        .accessibilityHint("Drag to change order")
-        .accessibilityAction(named: Text("Move up")) { move(library.id, by: -1) }
-        .accessibilityAction(named: Text("Move down")) { move(library.id, by: 1) }
-        .accessibilityAction(named: Text(shown ? "Hide" : "Show")) { setShown(!shown, id: library.id) }
+        .accessibilityHint(AppLanguage.string("ui.drag_to_change_order", default: "Drag to change order"))
+        .accessibilityAction(named: Text(AppLanguage.string("library.move_up", default: "Move up"))) { move(library.id, by: -1) }
+        .accessibilityAction(named: Text(AppLanguage.string("library.move_down", default: "Move down"))) { move(library.id, by: 1) }
+        .accessibilityAction(named: Text(shown ? AppLanguage.string("ui.hide", default: "Hide") : "Show")) { setShown(!shown, id: library.id) }
     }
 
     private func shortcutRow(_ block: LibraryPageBlock) -> some View {
@@ -833,7 +850,7 @@ private struct LibraryOrganizeView: View {
         .posterCard(cornerRadius: 16)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(shown ? block.title : "\(block.title), hidden")
-        .accessibilityAction(named: Text(shown ? "Hide" : "Show")) { setBlockShown(!shown, block) }
+        .accessibilityAction(named: Text(shown ? AppLanguage.string("ui.hide", default: "Hide") : "Show")) { setBlockShown(!shown, block) }
     }
 
     private func dragGesture(for id: String) -> some Gesture {
@@ -936,9 +953,9 @@ struct LibraryGenresView: View {
                         PageLoadingIndicator()
                     } else if genres.isEmpty {
                         ContentUnavailableView(
-                            "No Genres",
+                            AppLanguage.string("library.no_genres", default: "No Genres"),
                             systemImage: "square.grid.2x2",
-                            description: Text("Genres from your libraries will show up here.")
+                            description: Text(AppLanguage.string("library.no_genres_body", default: "Genres from your libraries will show up here."))
                         )
                         .padding(.top, 40)
                     } else {
@@ -977,7 +994,7 @@ struct LibraryGenresView: View {
         .background(Color.zelefinPage.ignoresSafeArea())
         .zelefinScrollEdgeBlur()
         .zelefinPinnedBottomEdge()
-        .catalogPushedChrome(title: "Genres") { EmptyView() }
+        .catalogPushedChrome(title: AppLanguage.string("library.genres", default: "Genres")) { EmptyView() }
         .task { await load() }
     }
 
@@ -1037,16 +1054,16 @@ struct LibraryItemsView: View {
                         PageLoadingIndicator()
                     } else if !items.isEmpty, shownItems.isEmpty {
                         ContentUnavailableView(
-                            "No Results",
+                            AppLanguage.string("library.no_results", default: "No Results"),
                             systemImage: "magnifyingglass",
-                            description: Text("Nothing in \(library.name) matches “\(trimmedSearch)”.")
+                            description: Text(String(format: AppLanguage.string("library.search_no_match", default: "Nothing in %@ matches “%@”."), library.name, trimmedSearch))
                         )
                         .padding(.top, 40)
                     } else if items.isEmpty {
                         ContentUnavailableView(
-                            query.isDefault ? "No Titles Yet" : "No Matches",
+                            query.isDefault ? AppLanguage.string("library.no_titles", default: "No Titles Yet") : "No Matches",
                             systemImage: "rectangle.stack",
-                            description: Text(query.isDefault ? "Titles from this library will show up here." : "No titles match these filters.")
+                            description: Text(query.isDefault ? AppLanguage.string("library.no_titles_body", default: "Titles from this library will show up here.") : AppLanguage.string("library.no_matches_body", default: "No titles match these filters."))
                         )
                         .padding(.top, 40)
                     } else {
@@ -1105,8 +1122,11 @@ struct LibraryItemsView: View {
             showSort: $showSort
         )
         .task { await loadOptions() }
-        .task {
-            query = CatalogQueryStore.load(key: CatalogQueryStore.key(kind: library.libraryKind, libraryID: library.id))
+        .task(id: library.id) {
+            let stored = CatalogQueryStore.load(key: CatalogQueryStore.key(kind: library.libraryKind, libraryID: library.id))
+            if query != stored {
+                query = stored
+            }
             await load()
         }
         .onChange(of: query) { _, next in
@@ -1129,18 +1149,47 @@ struct LibraryItemsView: View {
 
     private func load() async {
         guard let client = session.library else {
-            items = []
-            isLoading = false
+            if items.isEmpty {
+                items = []
+                isLoading = false
+            }
             indexProgress = nil
             return
         }
-        items = (try? await client.items(in: library, query: query) { update in
-            indexProgress = .listing(loaded: update.items.count, total: update.totalCount)
-            CatalogIndexLiveActivity.sync(indexProgress)
-            guard !update.items.isEmpty else { return }
-            items = update.items
+        if items.isEmpty, query.isDefault,
+           let remembered = session.rememberedLibraryItems(libraryID: library.id), !remembered.isEmpty {
+            items = remembered
             isLoading = false
-        }) ?? []
+        }
+        let protectingCached = !items.isEmpty
+        if !protectingCached {
+            isLoading = true
+        }
+        do {
+            let fresh = try await client.items(in: library, query: query) { update in
+                if !protectingCached {
+                    indexProgress = .listing(loaded: update.items.count, total: update.totalCount)
+                    CatalogIndexLiveActivity.sync(indexProgress)
+                }
+                guard !update.items.isEmpty else { return }
+                if protectingCached, update.items.count < items.count { return }
+                items = update.items
+                isLoading = false
+            }
+            if !fresh.isEmpty || !query.isDefault {
+                items = fresh
+                if query.isDefault {
+                    session.rememberLibraryItems(fresh, libraryID: library.id)
+                }
+            }
+        } catch is CancellationError {
+            // Keep the grid when a push cancels this task.
+            return
+        } catch {
+            if items.isEmpty {
+                items = []
+            }
+        }
         isLoading = false
         await finishArtwork(for: items, client: client)
     }

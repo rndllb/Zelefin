@@ -2,6 +2,7 @@ package app.zelefin.client.ui
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -11,6 +12,7 @@ import app.zelefin.client.CustomHomeRows
 import app.zelefin.client.HomeRowSlot
 import app.zelefin.client.LibraryKind
 import app.zelefin.client.LibraryRoom
+import app.zelefin.client.R
 import app.zelefin.core.FeaturedHero
 import app.zelefin.core.MediaItem
 import kotlin.math.roundToInt
@@ -104,17 +106,19 @@ object AccentPreferences {
 }
 
 /** Same raw values and order as iOS `HomeRowKind`. */
-enum class HomeRowKind(val raw: String, val title: String) {
-    Featured("featured", "Featured"),
-    ContinueWatching("continueWatching", "Continue Watching"),
-    NextUp("nextUp", "Next Up"),
-    Upcoming("upcoming", "Upcoming Episodes"),
-    Recommendations("recommendations", "Recommendations"),
-    RecentlyAddedMovies("recentlyAddedMovies", "Recently Added Movies"),
-    RecentlyAddedShows("recentlyAddedShows", "Recently Added Shows"),
-    Collections("collections", "Collections"),
-    Genres("genres", "Genres"),
-    RecentlyWatched("recentlyWatched", "Recently Watched");
+enum class HomeRowKind(val raw: String, @StringRes val titleRes: Int) {
+    Featured("featured", R.string.home_featured),
+    ContinueWatching("continueWatching", R.string.home_continue_watching),
+    NextUp("nextUp", R.string.home_next_up),
+    Upcoming("upcoming", R.string.home_upcoming),
+    Recommendations("recommendations", R.string.home_recommendations),
+    RecentlyAddedMovies("recentlyAddedMovies", R.string.home_recently_added_movies),
+    RecentlyAddedShows("recentlyAddedShows", R.string.home_recently_added_shows),
+    Collections("collections", R.string.library_collections),
+    Genres("genres", R.string.library_genres),
+    RecentlyWatched("recentlyWatched", R.string.home_recently_watched);
+
+    fun title(context: Context): String = context.getString(titleRes)
 
     companion object {
         val defaultOrderRaw: String = entries.joinToString(",") { it.raw }
@@ -139,14 +143,16 @@ enum class HomeRowKind(val raw: String, val title: String) {
 }
 
 /** Same raw values as iOS `FeaturedHeroContent`. */
-enum class FeaturedHeroContent(val raw: String, val title: String) {
-    RecentlyAdded("recentlyAdded", "Recently Added"),
-    Random("random", "Random"),
-    ContinueWatching("continueWatching", "Continue Watching"),
-    NextUp("nextUp", "Next Up"),
-    Recommendations("recommendations", "Recommendations"),
-    RecentlyWatched("recentlyWatched", "Recently Watched"),
-    Favorites("favorites", "Favorites");
+enum class FeaturedHeroContent(val raw: String, @StringRes val titleRes: Int) {
+    RecentlyAdded("recentlyAdded", R.string.home_recently_added),
+    Random("random", R.string.hero_random),
+    ContinueWatching("continueWatching", R.string.home_continue_watching),
+    NextUp("nextUp", R.string.home_next_up),
+    Recommendations("recommendations", R.string.home_recommendations),
+    RecentlyWatched("recentlyWatched", R.string.home_recently_watched),
+    Favorites("favorites", R.string.library_favorites);
+
+    fun title(context: Context): String = context.getString(titleRes)
 
     companion object {
         fun from(raw: String?): FeaturedHeroContent = entries.firstOrNull { it.raw == raw } ?: RecentlyAdded
@@ -154,9 +160,11 @@ enum class FeaturedHeroContent(val raw: String, val title: String) {
 }
 
 /** Same raw values as iOS `HeroSizePreferences`. Compact shows more of a landscape backdrop. */
-enum class HeroSizePreference(val raw: String, val title: String, val heightFactor: Float, val minimumDp: Float) {
-    Compact("compact", "Compact", 0.58f, 480f),
-    Tall("tall", "Tall", 0.82f, 560f);
+enum class HeroSizePreference(val raw: String, @StringRes val titleRes: Int, val heightFactor: Float, val minimumDp: Float) {
+    Compact("compact", R.string.hero_compact, 0.58f, 480f),
+    Tall("tall", R.string.hero_tall, 0.82f, 560f);
+
+    fun title(context: Context): String = context.getString(titleRes)
 
     companion object {
         fun from(raw: String?): HeroSizePreference = entries.firstOrNull { it.raw == raw } ?: Compact
@@ -371,14 +379,16 @@ object HomeLayoutPreferences {
 }
 
 /** Same raw values and default order as iOS `AppTab`. Live TV stays in the order so it syncs with iOS. */
-enum class DockTab(val raw: String, val title: String, val appTab: AppTab?) {
-    Home("home", "Home", AppTab.Home),
-    Movies("movies", "Movies", AppTab.Movies),
-    Shows("shows", "Shows", AppTab.Shows),
-    LiveTV("liveTV", "Live TV", null),
-    Collections("collections", "Collections", AppTab.Collections),
-    Library("library", "Library", AppTab.Library),
-    Favorites("favorites", "Favorites", AppTab.Favorites);
+enum class DockTab(val raw: String, @StringRes val titleRes: Int, val appTab: AppTab?) {
+    Home("home", R.string.tab_home, AppTab.Home),
+    Movies("movies", R.string.tab_movies, AppTab.Movies),
+    Shows("shows", R.string.tab_shows, AppTab.Shows),
+    LiveTV("liveTV", R.string.tab_live_tv, null),
+    Collections("collections", R.string.tab_collections, AppTab.Collections),
+    Library("library", R.string.tab_library, AppTab.Library),
+    Favorites("favorites", R.string.tab_favorites, AppTab.Favorites);
+
+    fun title(context: Context): String = context.getString(titleRes)
 
     val canHide: Boolean get() = this != Home
 
@@ -483,12 +493,12 @@ object TabPreferences {
     fun enabledLibraryCount(rooms: List<LibraryRoom>): Int = pinnable(rooms).count { it.id in dockLibraryIds }
 
     /** Enabled tabs in order, then pinned libraries, trimmed to the phone dock. */
-    fun dockEntries(rooms: List<LibraryRoom>): List<DockEntry> {
+    fun dockEntries(context: Context, rooms: List<LibraryRoom>): List<DockEntry> {
         var room = PhoneDockLimit.CAPACITY - 1
         val result = mutableListOf<DockEntry>()
         order.filter { it.availableOnAndroid && isShown(it) }.forEach { tab ->
             if (room <= 0) return@forEach
-            result += DockEntry(tab.appTab ?: return@forEach, tab.title)
+            result += DockEntry(tab.appTab ?: return@forEach, tab.title(context))
             room -= 1
         }
         pinnable(rooms).filter { it.id in dockLibraryIds }.forEach { library ->
@@ -496,15 +506,17 @@ object TabPreferences {
             result += DockEntry(AppTab.Room, library.name, library)
             room -= 1
         }
-        result += DockEntry(AppTab.Search, "Search")
+        result += DockEntry(AppTab.Search, context.getString(R.string.tab_search))
         return result
     }
 
     /** Like iPad: every enabled tab and pinned library, with no phone dock limit. */
-    fun tabletEntries(rooms: List<LibraryRoom>): List<DockEntry> =
-        order.filter { it.availableOnAndroid && isShown(it) }.mapNotNull { tab -> tab.appTab?.let { DockEntry(it, tab.title) } } +
+    fun tabletEntries(context: Context, rooms: List<LibraryRoom>): List<DockEntry> =
+        order.filter { it.availableOnAndroid && isShown(it) }.mapNotNull { tab ->
+            tab.appTab?.let { DockEntry(it, tab.title(context)) }
+        } +
             pinnable(rooms).filter { it.id in dockLibraryIds }.map { DockEntry(AppTab.Room, it.name, it) } +
-            DockEntry(AppTab.Search, "Search")
+            DockEntry(AppTab.Search, context.getString(R.string.tab_search))
 
     private const val ORDER = "zelefin.tab-order"
     private const val HIDDEN = "zelefin.tab-hidden"
@@ -559,6 +571,7 @@ fun loadInterfacePreferences(context: Context) {
     LibraryIcons.load(context)
     StartPagePreferences.load(context)
     GlassPreferences.load(context)
+    AppLanguage.load(context)
 }
 
 private fun prefs(context: Context) = context.getSharedPreferences("zelefin.interface", Context.MODE_PRIVATE)

@@ -48,13 +48,13 @@ struct UserManagementView: View {
                             }
                         }
                     } footer: {
-                        Text("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.")
+                        Text(AppLanguage.string("Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server.", default: "Administrators can change photos, permissions, library access, and parental controls on this Jellyfin server."))
                     }
                     .zelefinRowBackground()
                 }
             }
         }
-        .zelefinSettingsChrome(title: "Users")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.users", default: "Users"))
         .task { await reload() }
         .refreshable { await reload() }
     }
@@ -150,27 +150,27 @@ struct UserAccountEditorView: View {
             isPresented: $confirmDisable,
             titleVisibility: .visible
         ) {
-            Button("Disable Account", role: .destructive) {
+            Button(AppLanguage.string("ui.disable_account", default: "Disable Account"), role: .destructive) {
                 draft.isDisabled = true
                 Task { await savePolicy() }
             }
-            Button("Cancel", role: .cancel) {
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {
                 draft.isDisabled = false
             }
         } message: {
-            Text("They will not be able to sign in until you turn the account back on.")
+            Text(AppLanguage.string("They will not be able to sign in until you turn the account back on.", default: "They will not be able to sign in until you turn the account back on."))
         }
         .confirmationDialog(
             "Reset this password?",
             isPresented: $confirmResetPassword,
             titleVisibility: .visible
         ) {
-            Button("Reset Password", role: .destructive) {
+            Button(AppLanguage.string("ui.reset_password", default: "Reset Password"), role: .destructive) {
                 Task { await resetPassword() }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {}
         } message: {
-            Text("Jellyfin clears the password. They set a new one the next time they sign in.")
+            Text(AppLanguage.string("Jellyfin clears the password. They set a new one the next time they sign in.", default: "Jellyfin clears the password. They set a new one the next time they sign in."))
         }
         .confirmationDialog(
             "Remove administrator access?",
@@ -180,12 +180,12 @@ struct UserAccountEditorView: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Remove Access", role: .destructive) {
+            Button(AppLanguage.string("ui.remove_access", default: "Remove Access"), role: .destructive) {
                 draft.isAdministrator = false
                 pendingAdministrator = nil
                 Task { await savePolicy() }
             }
-            Button("Cancel", role: .cancel) {
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {
                 draft.isAdministrator = true
                 pendingAdministrator = nil
             }
@@ -221,7 +221,7 @@ struct UserAccountEditorView: View {
                     }
                     .disabled(isUpdatingPhoto)
                     .offset(x: 2, y: 2)
-                    .accessibilityLabel("Change Profile Picture")
+                    .accessibilityLabel(AppLanguage.string("ui.change_profile_picture", default: "Change Profile Picture"))
                 }
 
                 VStack(spacing: 4) {
@@ -234,7 +234,7 @@ struct UserAccountEditorView: View {
                 }
 
                 if account.primaryImageTag != nil || localAvatar != nil {
-                    Button("Remove Photo", role: .destructive) {
+                    Button(AppLanguage.string("ui.remove_photo", default: "Remove Photo"), role: .destructive) {
                         Task { await removePhoto() }
                     }
                     .disabled(isSaving || isUpdatingPhoto)
@@ -243,7 +243,7 @@ struct UserAccountEditorView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         } footer: {
-            Text("Administrators can change this user's profile picture on the server.")
+            Text(AppLanguage.string("Administrators can change this user's profile picture on the server.", default: "Administrators can change this user's profile picture on the server."))
         }
         .zelefinRowBackground()
     }
@@ -253,7 +253,7 @@ struct UserAccountEditorView: View {
             TextField("Username", text: $username)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            Button("Save Username") {
+            Button(AppLanguage.string("ui.save_username", default: "Save Username")) {
                 Task { await saveUsername() }
             }
             .disabled(!canSaveUsername || isUpdatingPhoto || isSaving)
@@ -263,20 +263,20 @@ struct UserAccountEditorView: View {
 
     private var permissionsSection: some View {
         Section {
-            Toggle("Administrator", isOn: administratorBinding)
-            Toggle("Edit Subtitles", isOn: subtitleManagementBinding)
-            Toggle("Disable Account", isOn: disabledBinding)
+            Toggle(AppLanguage.string("ui.administrator", default: "Administrator"), isOn: administratorBinding)
+            Toggle(AppLanguage.string("ui.edit_subtitles", default: "Edit Subtitles"), isOn: subtitleManagementBinding)
+            Toggle(AppLanguage.string("ui.disable_account", default: "Disable Account"), isOn: disabledBinding)
         } header: {
-            Text("Permissions")
+            Text(AppLanguage.string("Permissions", default: "Permissions"))
         } footer: {
-            Text("Administrators can manage users, sessions, and server settings. Edit Subtitles lets this user search and download subtitles onto the server, same as an administrator.")
+            Text(AppLanguage.string("Administrators can manage users, sessions, and server settings. Edit Subtitles lets this user search and download subtitles onto the server, same as an administrator.", default: "Administrators can manage users, sessions, and server settings. Edit Subtitles lets this user search and download subtitles onto the server, same as an administrator."))
         }
         .zelefinRowBackground()
     }
 
     private var bitrateSection: some View {
         Section {
-            Picker("Remote Bitrate", selection: $draft.remoteClientBitrateLimit) {
+            Picker(AppLanguage.string("ui.remote_bitrate", default: "Remote Bitrate"), selection: $draft.remoteClientBitrateLimit) {
                 ForEach(bitrateOptions, id: \.self) { limit in
                     Text(bitrateTitle(limit)).tag(limit)
                 }
@@ -285,21 +285,21 @@ struct UserAccountEditorView: View {
                 Task { await savePolicy() }
             }
         } header: {
-            Text("Streaming")
+            Text(AppLanguage.string("Streaming", default: "Streaming"))
         } footer: {
-            Text("Caps how fast this user can pull video from outside the local network. Unlimited leaves the client in charge.")
+            Text(AppLanguage.string("Caps how fast this user can pull video from outside the local network. Unlimited leaves the client in charge.", default: "Caps how fast this user can pull video from outside the local network. Unlimited leaves the client in charge."))
         }
         .zelefinRowBackground()
     }
 
     private var passwordSection: some View {
         Section {
-            SecureField("New Password", text: $newPassword)
+            SecureField(AppLanguage.string("ui.new_password", default: "New Password"), text: $newPassword)
                 .textContentType(.newPassword)
                 .focused($passwordField, equals: .newPassword)
                 .submitLabel(.next)
                 .onSubmit { passwordField = .confirm }
-            SecureField("Confirm Password", text: $confirmPassword)
+            SecureField(AppLanguage.string("ui.confirm_password", default: "Confirm Password"), text: $confirmPassword)
                 .textContentType(.newPassword)
                 .focused($passwordField, equals: .confirm)
                 .submitLabel(.go)
@@ -308,30 +308,30 @@ struct UserAccountEditorView: View {
                     Task { await setPassword() }
                 }
             if !confirmPassword.isEmpty && newPassword != confirmPassword {
-                Text("The new passwords do not match.")
+                Text(AppLanguage.string("The new passwords do not match.", default: "The new passwords do not match."))
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
-            Button("Set Password") {
+            Button(AppLanguage.string("ui.set_password", default: "Set Password")) {
                 Task { await setPassword() }
             }
             .disabled(!canSetPassword || isSaving)
-            Button("Reset Password", role: .destructive) {
+            Button(AppLanguage.string("ui.reset_password", default: "Reset Password"), role: .destructive) {
                 confirmResetPassword = true
             }
             .disabled(isSaving)
         } header: {
-            Text("Password")
+            Text(AppLanguage.string("connect.password", default: "Password"))
         } footer: {
-            Text("Reset clears the password on the server. Set Password stores the new one now.")
+            Text(AppLanguage.string("Reset clears the password on the server. Set Password stores the new one now.", default: "Reset clears the password on the server. Set Password stores the new one now."))
         }
         .zelefinRowBackground()
     }
 
     private var parentalSection: some View {
         Section {
-            Picker("Maximum Rating", selection: $ratingID) {
-                Text("None").tag("none")
+            Picker(AppLanguage.string("ui.maximum_rating", default: "Maximum Rating"), selection: $ratingID) {
+                Text(AppLanguage.string("None", default: "None")).tag("none")
                 ForEach(ratings) { rating in
                     Text(rating.name).tag(rating.id)
                 }
@@ -340,25 +340,25 @@ struct UserAccountEditorView: View {
                 Toggle(item.settingsTitle, isOn: unratedBinding(item))
             }
         } header: {
-            Text("Parental Controls")
+            Text(AppLanguage.string("Parental Controls", default: "Parental Controls"))
         } footer: {
-            Text("Maximum rating hides titles above that score. Blocked types stay hidden even when they have no rating.")
+            Text(AppLanguage.string("Maximum rating hides titles above that score. Blocked types stay hidden even when they have no rating.", default: "Maximum rating hides titles above that score. Blocked types stay hidden even when they have no rating."))
         }
         .zelefinRowBackground()
     }
 
     private var librarySection: some View {
         Section {
-            Toggle("All Libraries", isOn: allFoldersBinding)
+            Toggle(AppLanguage.string("ui.all_libraries", default: "All Libraries"), isOn: allFoldersBinding)
             if !draft.enableAllFolders {
                 ForEach(folders) { folder in
                     Toggle(folder.name, isOn: folderBinding(folder.id))
                 }
             }
         } header: {
-            Text("Library Access")
+            Text(AppLanguage.string("Library Access", default: "Library Access"))
         } footer: {
-            Text("Turn off All Libraries to pick which folders this user can see.")
+            Text(AppLanguage.string("Turn off All Libraries to pick which folders this user can see.", default: "Turn off All Libraries to pick which folders this user can see."))
         }
         .zelefinRowBackground()
     }

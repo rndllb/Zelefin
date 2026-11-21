@@ -44,11 +44,11 @@ struct TitleEnhancedExtras: View {
                     onClose: { showsEditor = false }
                 )
             }
-            .alert("Reviews", isPresented: Binding(
+            .alert(AppLanguage.string("ui.reviews", default: "Reviews"), isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
-                Button("OK", role: .cancel) {}
+                Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
             } message: {
                 Text(errorMessage ?? "")
             }
@@ -129,7 +129,7 @@ struct TitleTMDBReviewsSection: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.72))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("TMDB Reviews")
+                        Text(AppLanguage.string("detail.tmdb_reviews", default: "TMDB Reviews"))
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.white)
                         Text(summary)
@@ -150,7 +150,7 @@ struct TitleTMDBReviewsSection: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(headerAccessibility)
-            .accessibilityHint(expanded ? "Collapse" : "Show reviews")
+            .accessibilityHint(expanded ? AppLanguage.string("ui.collapse", default: "Collapse") : AppLanguage.string("ui.show_reviews", default: "Show reviews"))
 
             if expanded {
                 VStack(alignment: .leading, spacing: 12) {
@@ -205,7 +205,7 @@ struct TitleTMDBReviewsSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint(isOpen ? "Collapse review" : "Show full review")
+        .accessibilityHint(isOpen ? AppLanguage.string("ui.collapse_review", default: "Collapse review") : AppLanguage.string("ui.show_full_review", default: "Show full review"))
     }
 }
 
@@ -225,7 +225,7 @@ struct TitleAwardsSection: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.72))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Awards")
+                        Text(AppLanguage.string("detail.awards", default: "Awards"))
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.white)
                         Text(awards.summary)
@@ -243,7 +243,7 @@ struct TitleAwardsSection: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Awards, \(awards.summary)")
-            .accessibilityHint(expanded ? "Collapse" : "Show award list")
+            .accessibilityHint(expanded ? AppLanguage.string("ui.collapse", default: "Collapse") : AppLanguage.string("ui.show_award_list", default: "Show award list"))
 
             if expanded {
                 VStack(alignment: .leading, spacing: 14) {
@@ -254,7 +254,7 @@ struct TitleAwardsSection: View {
                                     .font(.body)
                                     .foregroundStyle(.white)
                                 Spacer(minLength: 8)
-                                Text(award.isWin ? "Won" : "Nominated")
+                                Text(award.isWin ? AppLanguage.string("ui.won", default: "Won") : AppLanguage.string("ui.nominated", default: "Nominated"))
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.white.opacity(0.55))
                             }
@@ -293,7 +293,7 @@ struct TitleReviewsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Reviews", showsChevron: false)
+            SectionHeader(title: AppLanguage.string("ui.reviews", default: "Reviews"), showsChevron: false)
 
             HStack(spacing: 12) {
                 if let average = JellyfinEnhancedReview.averageRating(in: reviews) {
@@ -309,12 +309,12 @@ struct TitleReviewsSection: View {
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.48))
                 } else {
-                    Text("No reviews yet")
+                    Text(AppLanguage.string("detail.no_reviews", default: "No reviews yet"))
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.48))
                 }
                 Spacer(minLength: 8)
-                Button(mine == nil ? "Write a Review" : "Edit Your Review") {
+                Button(mine == nil ? AppLanguage.string("ui.write_a_review", default: "Write a Review") : AppLanguage.string("ui.edit_your_review", default: "Edit Your Review")) {
                     onWrite()
                 }
                 .font(.footnote.weight(.semibold))
@@ -351,7 +351,7 @@ struct TitleReviewsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if review.isAuthored(by: currentUserID) || isAdministrator {
-                Button("Delete", role: .destructive) {
+                Button(AppLanguage.string("common.delete", default: "Delete"), role: .destructive) {
                     onDelete(review)
                 }
                 .font(.footnote.weight(.semibold))
@@ -408,14 +408,14 @@ struct TitleReviewEditor: View {
 
     var body: some View {
         TitleSheet(
-            title: existing == nil ? "Write a Review" : "Edit Review",
+            title: existing == nil ? AppLanguage.string("ui.write_a_review", default: "Write a Review") : AppLanguage.string("ui.edit_review", default: "Edit Review"),
             confirmTitle: "Save",
             confirmDisabled: !JellyfinEnhancedReviewPayload.isValid(content: content, rating: rating),
             onConfirm: { onSave(content, rating) },
             onClose: onClose
         ) {
             List {
-                Section("Rating") {
+                Section(AppLanguage.string("ui.rating", default: "Rating")) {
                     HStack {
                         ForEach(1...5, id: \.self) { star in
                             Button {
@@ -438,15 +438,15 @@ struct TitleReviewEditor: View {
                     }
                 }
                 .zelefinRowBackground()
-                Section("Review") {
-                    TextField("What did you think?", text: $content, axis: .vertical)
+                Section(AppLanguage.string("ui.review", default: "Review")) {
+                    TextField(AppLanguage.string("ui.what_did_you_think", default: "What did you think?"), text: $content, axis: .vertical)
                         .textFieldStyle(.plain)
                         .lineLimit(4...12)
                 }
                 .zelefinRowBackground()
                 if existing != nil, onDelete != nil {
                     Section {
-                        Button("Delete Review", role: .destructive) {
+                        Button(AppLanguage.string("ui.delete_review", default: "Delete Review"), role: .destructive) {
                             onDelete?()
                         }
                     }

@@ -1,5 +1,8 @@
 package app.zelefin.client.ui
 
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
+
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +45,7 @@ fun ZelefinGlassAlert(
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("OK") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_ok)) }
         },
     )
 }

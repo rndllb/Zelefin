@@ -4,11 +4,13 @@ struct RootView: View {
     @Environment(SessionStore.self) private var session
     @Environment(DownloadStore.self) private var downloads
     @Environment(DeepLinkStore.self) private var deepLinks
+    @Environment(\.appLanguage) private var appLanguage
     @Environment(\.openURL) private var openURL
     @State private var profileSheet: ProfileSheet?
     @Namespace private var nowPlayingTransition
 
     var body: some View {
+        let _ = appLanguage
         rootContent
             .environment(\.nowPlayingTransition, nowPlayingTransition)
             .sheet(item: $profileSheet) { destination in
@@ -27,7 +29,7 @@ struct RootView: View {
                     ItemDetailView(itemID: item.id)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") { deepLinks.dismissPresentedItem() }
+                                Button(AppLanguage.string("common.done", default: "Done")) { deepLinks.dismissPresentedItem() }
                             }
                         }
                 }
@@ -65,9 +67,9 @@ struct RootView: View {
                 )
             ) {
                 if let url = deepLinks.browserFallbackURL {
-                    Button("Open in Browser") { openURL(url) }
+                    Button(AppLanguage.string("ui.open_in_browser", default: "Open in Browser")) { openURL(url) }
                 }
-                Button("OK", role: .cancel) {}
+                Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
             } message: {
                 Text(deepLinks.errorMessage ?? "")
             }
@@ -78,7 +80,7 @@ struct RootView: View {
                     set: { if !$0 { session.authNotice = nil } }
                 )
             ) {
-                Button("OK", role: .cancel) {}
+                Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
             } message: {
                 Text(session.authNotice ?? "")
             }
@@ -89,7 +91,7 @@ struct RootView: View {
                     set: { if !$0 { session.incomingSessionMessage = nil } }
                 )
             ) {
-                Button("OK", role: .cancel) { session.incomingSessionMessage = nil }
+                Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) { session.incomingSessionMessage = nil }
             } message: {
                 if let body = session.incomingSessionMessage?.alertBody {
                     Text(body)

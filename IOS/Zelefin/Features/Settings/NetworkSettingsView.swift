@@ -8,26 +8,26 @@ struct NetworkSettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Remote URL", value: session.session?.serverURL.absoluteString ?? "—")
-                LabeledContent("Active URL", value: session.activeServerURL?.absoluteString ?? "—")
-                LabeledContent("Wi-Fi", value: session.currentSSID ?? unavailableWiFi)
-                LabeledContent("Using", value: session.activeRoute.title)
+                LabeledContent(AppLanguage.string("ui.remote_url", default: "Remote URL"), value: session.session?.serverURL.absoluteString ?? "—")
+                LabeledContent(AppLanguage.string("ui.active_url", default: "Active URL"), value: session.activeServerURL?.absoluteString ?? "—")
+                LabeledContent(AppLanguage.string("ui.wi_fi", default: "Wi-Fi"), value: session.currentSSID ?? unavailableWiFi)
+                LabeledContent(AppLanguage.string("ui.using", default: "Using"), value: session.activeRoute.title)
             } header: {
-                Text("This Connection")
+                Text(AppLanguage.string("ui.this_connection", default: "This Connection"))
             }
             .zelefinRowBackground()
 
             Section {
-                Toggle("Auto-switch on home Wi-Fi", isOn: autoSwitchBinding)
+                Toggle(AppLanguage.string("ui.auto_switch_on_home_wi_fi", default: "Auto-switch on home Wi-Fi"), isOn: autoSwitchBinding)
                 TextField(localURLPlaceholder, text: $localURLText)
                     .textContentType(.URL)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             } header: {
-                Text("Home Network")
+                Text(AppLanguage.string("ui.home_network", default: "Home Network"))
             } footer: {
-                Text("When you join a saved home network, Zelefin uses the local URL instead of the remote one.")
+                Text(AppLanguage.string("When you join a saved home network, Zelefin uses the local URL instead of the remote one.", default: "When you join a saved home network, Zelefin uses the local URL instead of the remote one."))
             }
             .zelefinRowBackground()
 
@@ -35,7 +35,7 @@ struct NetworkSettingsView: View {
 
             AccessGatewaySection()
         }
-        .zelefinSettingsChrome(title: "Network")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.network", default: "Network"))
         .task {
             localURLText = session.homeNetworkProfile.localURLString
             await session.requestHomeNetworkAccess()
@@ -49,13 +49,13 @@ struct NetworkSettingsView: View {
     private var homeWiFiSection: some View {
         Section {
             if profile.homeSSIDs.isEmpty {
-                Text("No networks configured")
+                Text(AppLanguage.string("ui.no_networks_configured", default: "No networks configured"))
             } else {
                 ForEach(profile.homeSSIDs, id: \.self) { ssid in
                     HStack {
                         Text(ssid)
                         Spacer(minLength: 8)
-                        Button("Remove", role: .destructive) {
+                        Button(AppLanguage.string("common.remove", default: "Remove"), role: .destructive) {
                             updateProfile { profile in
                                 profile.homeSSIDs.removeAll { $0 == ssid }
                             }
@@ -69,19 +69,19 @@ struct NetworkSettingsView: View {
                     addSSID(current)
                 }
             } else if session.currentSSID == nil {
-                TextField("Network name", text: $manualSSID)
+                TextField(AppLanguage.string("ui.network_name", default: "Network name"), text: $manualSSID)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Button("Add Network") {
+                Button(AppLanguage.string("ui.add_network", default: "Add Network")) {
                     addSSID(manualSSID)
                     manualSSID = ""
                 }
                 .disabled(manualSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         } header: {
-            Text("Home Wi-Fi")
+            Text(AppLanguage.string("ui.home_wi_fi", default: "Home Wi-Fi"))
         } footer: {
-            Text("Add the networks that should use the local URL.")
+            Text(AppLanguage.string("Add the networks that should use the local URL.", default: "Add the networks that should use the local URL."))
         }
         .zelefinRowBackground()
     }

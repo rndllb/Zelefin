@@ -34,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.zelefin.client.R
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
@@ -399,8 +401,7 @@ fun SettingsTextField(
         )
         if (forgot != null) {
             Spacer(Modifier.width(12.dp))
-            Text(
-                "Forgot",
+            Text(stringResource(R.string.connect_forgot),
                 style = SettingsRowText.copy(color = ZelefinCyan),
                 modifier = Modifier.clickable(role = Role.Button, onClick = forgot),
             )

@@ -23,7 +23,7 @@ struct PersonDetailView: View {
                         .padding(.horizontal, 16)
                 }
                 if items.isEmpty, !isLoading {
-                    ContentUnavailableView("No Titles", systemImage: "person", description: Text("Nothing for this person in your library."))
+                    ContentUnavailableView(AppLanguage.string("detail.no_titles", default: "No Titles"), systemImage: "person", description: Text(AppLanguage.string("detail.no_titles_person", default: "Nothing for this person in your library.")))
                         .padding(.top, 24)
                 } else {
                     LazyVGrid(columns: PosterGridLayout.columns(for: sidebarLayout), spacing: 20) {
@@ -45,7 +45,7 @@ struct PersonDetailView: View {
             .padding(.bottom, 32)
         }
         .background(Color.zelefinPage.ignoresSafeArea())
-        .navigationTitle(profile?.name ?? name)
+        // Name lives in the page header beside the photo — not again in the nav bar.
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Color.zelefinPage, for: .navigationBar)
@@ -113,7 +113,7 @@ struct CollectionEditSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        TitleSheet(title: "Collections", onClose: onClose) {
+        TitleSheet(title: AppLanguage.string("library.collections", default: "Collections"), onClose: onClose) {
             List {
                 if let errorMessage {
                     Section {
@@ -121,11 +121,11 @@ struct CollectionEditSheet: View {
                     }
                     .zelefinRowBackground()
                 }
-                Section("New Collection") {
+                Section(AppLanguage.string("ui.new_collection", default: "New Collection")) {
                     HStack {
-                        TextField("Name", text: $newName)
+                        TextField(AppLanguage.string("ui.name", default: "Name"), text: $newName)
                             .textFieldStyle(.plain)
-                        Button("Create") {
+                        Button(AppLanguage.string("common.create", default: "Create")) {
                             Task { await create() }
                         }
                         .fontWeight(.semibold)
@@ -135,7 +135,7 @@ struct CollectionEditSheet: View {
                 .zelefinRowBackground()
                 Section {
                     if collections.isEmpty {
-                        Text("No collections yet.").foregroundStyle(.secondary)
+                        Text(AppLanguage.string("detail.no_collections", default: "No collections yet.")).foregroundStyle(.secondary)
                     }
                     ForEach(collections) { collection in
                         Button {
@@ -156,7 +156,7 @@ struct CollectionEditSheet: View {
                         .buttonStyle(.plain)
                     }
                 } header: {
-                    Text("Collections")
+                    Text(AppLanguage.string("library.collections", default: "Collections"))
                 } footer: {
                     Text("Checked collections include \(item.name).")
                         .font(TitleSheetFont.note)
@@ -257,34 +257,34 @@ struct TitleUserActions: View {
             }
         }
         if let onCollections {
-            Button("Add to Collection…", systemImage: "folder.badge.plus", action: onCollections)
+            Button(AppLanguage.string("ui.add_to_collection", default: "Add to Collection…"), systemImage: "folder.badge.plus", action: onCollections)
         }
         if let onPlaylists {
-            Button("Add to Playlist…", systemImage: "list.bullet.rectangle", action: onPlaylists)
+            Button(AppLanguage.string("ui.add_to_playlist_2", default: "Add to Playlist…"), systemImage: "list.bullet.rectangle", action: onPlaylists)
         }
         if let onPlayElsewhere, !session.isSiloServer {
-            Button("Play on Another Device…", systemImage: "tv.badge.wifi", action: onPlayElsewhere)
+            Button(AppLanguage.string("ui.play_on_another_device", default: "Play on Another Device…"), systemImage: "tv.badge.wifi", action: onPlayElsewhere)
         }
         if let onSyncPlay, !session.lacksJellyfinOnlyFeatures {
-            Button("Play in SyncPlay…", systemImage: "person.2.wave.2", action: onSyncPlay)
+            Button(AppLanguage.string("ui.play_in_syncplay", default: "Play in SyncPlay…"), systemImage: "person.2.wave.2", action: onSyncPlay)
         }
         if onRefreshMetadata != nil || onRemoteImage != nil || onDelete != nil {
             Divider()
         }
         if let onRefreshMetadata {
-            Button("Refresh Metadata", systemImage: "arrow.clockwise", action: onRefreshMetadata)
+            Button(AppLanguage.string("ui.refresh_metadata", default: "Refresh Metadata"), systemImage: "arrow.clockwise", action: onRefreshMetadata)
         }
         if let onIdentify {
-            Button("Identify…", systemImage: "magnifyingglass", action: onIdentify)
+            Button(AppLanguage.string("ui.identify_2", default: "Identify…"), systemImage: "magnifyingglass", action: onIdentify)
         }
         if let onEditMetadata {
-            Button("Edit Metadata…", systemImage: "pencil", action: onEditMetadata)
+            Button(AppLanguage.string("ui.edit_metadata_2", default: "Edit Metadata…"), systemImage: "pencil", action: onEditMetadata)
         }
         if let onRemoteImage {
-            Button("Edit Images…", systemImage: "photo.on.rectangle", action: onRemoteImage)
+            Button(AppLanguage.string("ui.edit_images_2", default: "Edit Images…"), systemImage: "photo.on.rectangle", action: onRemoteImage)
         }
         if let onDelete {
-            Button("Delete from Library…", systemImage: "trash", role: .destructive, action: onDelete)
+            Button(AppLanguage.string("ui.delete_from_library", default: "Delete from Library…"), systemImage: "trash", role: .destructive, action: onDelete)
         }
     }
 
@@ -317,7 +317,7 @@ struct PlayOnDeviceSheet: View {
     }
 
     var body: some View {
-        TitleSheet(title: "Play On", onClose: onClose) {
+        TitleSheet(title: AppLanguage.string("ui.play_on", default: "Play On"), onClose: onClose) {
             List {
                 if let errorMessage {
                     Section {
@@ -327,7 +327,7 @@ struct PlayOnDeviceSheet: View {
                 }
                 Section {
                     if targets.isEmpty {
-                        Text("No other devices are connected right now.")
+                        Text(AppLanguage.string("detail.no_devices", default: "No other devices are connected right now."))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(targets) { target in
@@ -340,7 +340,7 @@ struct PlayOnDeviceSheet: View {
                         }
                     }
                 } header: {
-                    Text("Devices")
+                    Text(AppLanguage.string("detail.devices", default: "Devices"))
                 }
                 .zelefinRowBackground()
             }

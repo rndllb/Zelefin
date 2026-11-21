@@ -186,7 +186,7 @@ struct PlaybackQueueMenuContent: View {
             }
         }
         if actions.contains(.removeFromRecentlyWatched), let onRemoveFromRecentlyWatched {
-            Button("Remove from Recently Watched", systemImage: "eye.slash", role: .destructive) {
+            Button(AppLanguage.string("ui.remove_from_recently_watched", default: "Remove from Recently Watched"), systemImage: "eye.slash", role: .destructive) {
                 onRemoveFromRecentlyWatched()
             }
         }
@@ -228,9 +228,9 @@ struct TitlePlaybackMenus: View {
                     session.updateLaunchOptions(for: item.id) { $0.skipCinemaIntros.toggle() }
                 } label: {
                     if options.skipCinemaIntros {
-                        Label("Skip Cinema Intros", systemImage: "checkmark")
+                        Label(AppLanguage.string("ui.skip_cinema_intros", default: "Skip Cinema Intros"), systemImage: "checkmark")
                     } else {
-                        Text("Skip Cinema Intros")
+                        Text(AppLanguage.string("ui.skip_cinema_intros", default: "Skip Cinema Intros"))
                     }
                 }
             }
@@ -249,7 +249,7 @@ struct TitlePlaybackMenus: View {
             }
             Menu("Select Audio") {
                 if audio.isEmpty {
-                    Text(didLoadTracks ? "No audio tracks" : "Loading…")
+                    Text(didLoadTracks ? AppLanguage.string("player.no_audio", default: "No audio tracks") : AppLanguage.string("common.loading", default: "Loading…"))
                 } else {
                     ForEach(audio) { track in
                         Button {
@@ -272,13 +272,13 @@ struct TitlePlaybackMenus: View {
                     }
                 } label: {
                     if options.subtitlesDisabled {
-                        Label("Off", systemImage: "checkmark")
+                        Label(AppLanguage.string("player.subtitles_off", default: "Off"), systemImage: "checkmark")
                     } else {
-                        Text("Off")
+                        Text(AppLanguage.string("player.subtitles_off", default: "Off"))
                     }
                 }
                 if subtitles.isEmpty {
-                    Text(didLoadTracks ? "No subtitles" : "Loading…")
+                    Text(didLoadTracks ? AppLanguage.string("ui.no_subtitles", default: "No subtitles") : AppLanguage.string("common.loading", default: "Loading…"))
                 } else {
                     ForEach(subtitles) { track in
                         Button {
@@ -298,7 +298,7 @@ struct TitlePlaybackMenus: View {
                 }
             }
             if session.shouldShowAddSubtitles(for: item), let onAddSubtitles {
-                Button("Add Subtitles", systemImage: "captions.bubble") {
+                Button(AppLanguage.string("search.add_subtitles", default: "Add Subtitles"), systemImage: "captions.bubble") {
                     onAddSubtitles()
                 }
             }
@@ -379,7 +379,7 @@ struct TitleVersionPicker: View {
                 }
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .accessibilityLabel("Version")
+                .accessibilityLabel(AppLanguage.string("player.version", default: "Version"))
                 .accessibilityValue(selectedTitle)
             }
         }
@@ -427,7 +427,7 @@ struct TitleVersionMenuItems: View {
 
     var body: some View {
         if versions.isEmpty {
-            Text("Loading…")
+            Text(AppLanguage.string("common.loading", default: "Loading…"))
         } else {
             ForEach(versions) { version in
                 TitleVersionOption(version: version, isSelected: version.id == selectedID) {
@@ -497,16 +497,16 @@ struct PlaybackQueueOverflowButton: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("More")
+        .accessibilityLabel(AppLanguage.string("common.more", default: "More"))
         .task(id: item.id) {
             guard item.hasVersions, item.kind == .movie || item.kind == .episode else { return }
             await session.loadVersions(for: item.id)
         }
-        .alert("Library", isPresented: Binding(
+        .alert(AppLanguage.string("library.title", default: "Library"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }

@@ -30,12 +30,12 @@ struct SiloAvatarPickerView: View {
                     if session.siloAvatarUploadEnabled {
                         photosRow
                     } else {
-                        Text("This server only keeps preset avatars. Custom photos need avatar storage on the Silo host.")
+                        Text(AppLanguage.string("This server only keeps preset avatars. Custom photos need avatar storage on the Silo host.", default: "This server only keeps preset avatars. Custom photos need avatar storage on the Silo host."))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     if profile?.hasAvatar == true {
-                        Button("Remove Picture", role: .destructive) {
+                        Button(AppLanguage.string("ui.remove_picture", default: "Remove Picture"), role: .destructive) {
                             Task { await remove() }
                         }
                         .frame(maxWidth: .infinity)
@@ -80,9 +80,9 @@ struct SiloAvatarPickerView: View {
             )
             .id(session.avatarRevision)
             VStack(alignment: .leading, spacing: 4) {
-                Text(profile?.name ?? "Profile")
+                Text(profile?.name ?? AppLanguage.string("settings.profile", default: "Profile"))
                     .font(.headline)
-                Text("Shown for this household profile.")
+                Text(AppLanguage.string("Shown for this household profile.", default: "Shown for this household profile."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -113,7 +113,7 @@ struct SiloAvatarPickerView: View {
                 Button {
                     batch += 1
                 } label: {
-                    Label("More", systemImage: "arrow.triangle.2.circlepath")
+                    Label(AppLanguage.string("common.more", default: "More"), systemImage: "arrow.triangle.2.circlepath")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -148,7 +148,7 @@ struct SiloAvatarPickerView: View {
 
     private var photosRow: some View {
         PhotosPicker(selection: $pickerItem, matching: .images, preferredItemEncoding: .compatible) {
-            Label("Choose Photo", systemImage: "photo.on.rectangle")
+            Label(AppLanguage.string("ui.choose_photo", default: "Choose Photo"), systemImage: "photo.on.rectangle")
                 .font(.body.weight(.medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)

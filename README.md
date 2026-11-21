@@ -159,7 +159,7 @@ Jellyfin and Emby administrators: users, libraries, plugins, scheduled tasks, ac
 
 ### ⚙️ Settings
 
-Appearance, home rows, playback languages, downloads, notifications, which tabs sit in the dock, and the page the app opens to. Theme and poster text. The accent color defaults to the sign-in screen's periwinkle and tints controls and surfaces throughout. A built-in **Log** shows what Zelefin did and what failed, to read, search, or send; passwords and tokens are never written to it.
+Appearance, home rows, app language, playback languages, downloads, notifications, which tabs sit in the dock, and the page the app opens to. Theme and poster text. The accent color defaults to the sign-in screen's periwinkle and tints controls and surfaces throughout. A built-in **Log** shows what Zelefin did and what failed, to read, search, or send; passwords and tokens are never written to it.
 
 </td>
 <td width="33%" valign="top">
@@ -197,6 +197,7 @@ Randomize in the library. Show tab names on the dock (on by default on Android).
 | Seerr · Ombi requests | ✅ | ✅ | ✅ |
 | Version and debrid source picking | ✅ | ✅ | ✅ |
 | Built-in log | ✅ | ✅ | ✅ |
+| App language | ✅ | ✅ | ✅ |
 | Keyboard playback controls | iPad | ✅ | — |
 | Tablet sidebar layout | ✅ | — | ✅ |
 | Live TV guide | ✅ | ✅ | — |
@@ -276,6 +277,14 @@ Server, Seerr, and Ombi addresses take any capitalization of `http://` or `https
 cd IOS
 xcodebuild test -scheme Zelefin -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
+
+---
+
+## Languages
+
+Settings → Interface → App Language follows the device, or you can pick one. Menus, tabs, settings, and empty states use that language on iPhone, iPad, Mac, and Android. Library folder names, movie and show titles, and genres stay as the server sends them.
+
+English, Simplified Chinese, Hindi, Spanish, Arabic (right to left), French, Brazilian Portuguese, Russian, German, Japanese, and Indonesian.
 
 ---
 

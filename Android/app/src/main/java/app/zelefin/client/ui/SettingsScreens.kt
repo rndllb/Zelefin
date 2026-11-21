@@ -91,6 +91,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.ClosedCaption
@@ -172,6 +173,7 @@ import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.zelefin.client.R
@@ -257,7 +259,7 @@ fun SettingsScreen(
             ArtworkCacheStore.usage(context).total.bytes + CacheInventory.metadataUsage(root).total.bytes
         }
     }
-    SettingsPage(title = "Settings", onBack = onBack, bar = bar) {
+    SettingsPage(title = stringResource(R.string.settings_title), onBack = onBack, bar = bar) {
         SettingsGroup {
             SettingsProfileRow(session, onClick = onProfile)
             SettingsGroupDivider()
@@ -273,8 +275,7 @@ fun SettingsScreen(
             )
             if (jellyfin) {
                 SettingsGroupDivider()
-                SettingsNavRow(
-                    "SyncPlay",
+                SettingsNavRow(stringResource(R.string.account_syncplay),
                     Icons.Outlined.Groups,
                     summary = "Watch together in a group",
                     onClick = { onTopic("syncplay") },
@@ -284,27 +285,39 @@ fun SettingsScreen(
         if (session != null && !state.isEmbyServer) {
             QuickConnectAuthorizeSection(session.userName)
         }
-        SettingsHeader("Account")
+        SettingsHeader(stringResource(R.string.settings_account))
         SettingsNavGroup(
             listOf(
                 SettingsHubItem("Notifications", "Alerts from your server", Icons.Outlined.Notifications) { onTopic("notifications") },
             ),
         )
-        SettingsHeader("Playback")
+        SettingsHeader(stringResource(R.string.settings_playback))
         SettingsNavGroup(
             listOf(
-                SettingsHubItem("Playback", "Languages, quality, speed, skipping", Icons.Outlined.PlayArrow) { onTopic("playback") },
-                SettingsHubItem("Subtitles", "Size, color, and background", Icons.Outlined.ClosedCaption) { onTopic("subtitles") },
+                SettingsHubItem(
+                    stringResource(R.string.settings_playback),
+                    stringResource(R.string.settings_playback_subtitle),
+                    Icons.Outlined.PlayArrow,
+                ) { onTopic("playback") },
+                SettingsHubItem(stringResource(R.string.player_subtitles), "Size, color, and background", Icons.Outlined.ClosedCaption) {
+                    onTopic("subtitles")
+                },
                 SettingsHubItem("Plugins", "Intro Skipper, Seerr, Ombi, server plugins", Icons.Outlined.Extension) { onTopic("plugins") },
                 SettingsHubItem("Metadata", "Ratings and title details", Icons.Outlined.Description) { onTopic("metadata") },
             ),
         )
         if (showServer) {
-            SettingsHeader("Server")
+            SettingsHeader(stringResource(R.string.settings_server))
             SettingsNavGroup(
                 buildList {
                     if (!state.isSiloServer) {
-                        add(SettingsHubItem("Sessions", "Devices signed in to $serverType", Icons.Outlined.Devices) { onTopic("sessions") })
+                        add(
+                            SettingsHubItem(
+                                stringResource(R.string.account_sessions),
+                                "Devices signed in to $serverType",
+                                Icons.Outlined.Devices,
+                            ) { onTopic("sessions") },
+                        )
                     }
                     add(SettingsHubItem("User Access", "Permissions, libraries, and parental controls", Icons.Outlined.ManageAccounts) { onTopic("users") })
                     add(SettingsHubItem("Scheduled Tasks", "Start, cancel, and watch progress", Icons.Outlined.Schedule) { onTopic("scheduled-tasks") })
@@ -318,19 +331,39 @@ fun SettingsScreen(
             )
             SettingsFooter("Administer this $serverType server.")
         }
-        SettingsHeader("This Device")
+        SettingsHeader(stringResource(R.string.settings_this_device))
         SettingsNavGroup(
             listOf(
-                SettingsHubItem("Server Info", "Name, version, OS, and address", Icons.Outlined.Dns) { onTopic("server") },
-                SettingsHubItem("Network", session?.displayServer?.takeIf { it.isNotBlank() } ?: "How this device reaches the server", Icons.Outlined.Wifi) { onTopic("network") },
-                SettingsHubItem("Cache", cacheSize?.takeIf { it > 0 }?.let(::formatBytes) ?: "Posters and saved home data", Icons.Outlined.Storage) { onTopic("cache") },
-                SettingsHubItem("Interface", "Home, tabs, accent color", Icons.Outlined.Dashboard) { onTopic("interface") },
-                SettingsHubItem("Log", "What Zelefin did, to read or send", Icons.Outlined.Description) { onTopic("log") },
+                SettingsHubItem(
+                    stringResource(R.string.settings_server_info),
+                    stringResource(R.string.settings_server_info_subtitle),
+                    Icons.Outlined.Dns,
+                ) { onTopic("server") },
+                SettingsHubItem(
+                    stringResource(R.string.settings_network),
+                    session?.displayServer?.takeIf { it.isNotBlank() } ?: stringResource(R.string.settings_network_subtitle),
+                    Icons.Outlined.Wifi,
+                ) { onTopic("network") },
+                SettingsHubItem(
+                    stringResource(R.string.settings_cache),
+                    cacheSize?.takeIf { it > 0 }?.let(::formatBytes) ?: stringResource(R.string.settings_cache_subtitle),
+                    Icons.Outlined.Storage,
+                ) { onTopic("cache") },
+                SettingsHubItem(
+                    stringResource(R.string.settings_interface),
+                    stringResource(R.string.settings_interface_subtitle_phone),
+                    Icons.Outlined.Dashboard,
+                ) { onTopic("interface") },
+                SettingsHubItem(
+                    stringResource(R.string.settings_log),
+                    stringResource(R.string.settings_log_subtitle),
+                    Icons.Outlined.Description,
+                ) { onTopic("log") },
             ),
         )
-        SettingsHeader("Zelefin")
+        SettingsHeader(stringResource(R.string.settings_zelefin_section))
         SettingsNavGroup(
-            listOf(SettingsHubItem("About", AppVersionLabel, Icons.Outlined.Info) { onTopic("about") }),
+            listOf(SettingsHubItem(stringResource(R.string.settings_about), AppVersionLabel, Icons.Outlined.Info) { onTopic("about") }),
         )
     }
 }
@@ -361,7 +394,7 @@ private fun QuickConnectAuthorizeSection(userName: String) {
             busy = false
         }
     }
-    SettingsHeader("Quick Connect")
+    SettingsHeader(stringResource(R.string.connect_quick_connect))
     SettingsCard {
         SettingsTextField(
             label = "",
@@ -565,7 +598,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
     }
     val identitySubtitle = if (serverAddress.isNotEmpty()) serverAddress else "$serverType · $serverLabel"
     SettingsPage(
-        title = "Profile",
+        title = stringResource(R.string.account_profile),
         onBack = onBack,
         bar = bar,
         refreshing = refreshingOverview,
@@ -633,7 +666,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                     )
                     if (canRemovePhoto) {
                         Text(
-                            "Remove Photo",
+                            stringResource(R.string.ui_remove_photo),
                             style = SettingsRowText.copy(color = IOSColors.red, fontSize = 13.sp),
                             modifier = Modifier
                                 .padding(top = 4.dp)
@@ -655,7 +688,7 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             }
         }
         if (siloLink != null && household.profiles.isNotEmpty()) {
-            SettingsHeader("Who’s watching")
+            SettingsHeader(stringResource(R.string.connect_who_is_watching))
             SettingsCard {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -678,14 +711,14 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                     Text(message, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
                 }
             }
-            SettingsFooter("Continue Watching, recommendations, and watched flags follow the selected profile.")
+            SettingsFooter(stringResource(R.string.ui_continue_watching_recommendations_and_watched_fl))
         }
         if (loadingOverview && overview == null) {
             SettingsCard {
                 Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     IOSSpinner()
                     Spacer(Modifier.width(12.dp))
-                    Text("Loading account…", color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 16.sp)
+                    Text(stringResource(R.string.ui_loading_account), color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 16.sp)
                 }
             }
         }
@@ -695,10 +728,10 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             }
         }
         if (session != null) {
-            SettingsHeader("Account")
+            SettingsHeader(stringResource(R.string.settings_account))
             SettingsCard {
                 if (hasPin) {
-                    InfoLine("Account PIN", "On")
+                    InfoLine(stringResource(R.string.ui_account_pin), "On")
                     if (biometricsName != null) {
                         SettingsCardDivider()
                         SettingsToggleRow("Unlock with $biometricsName", biometricsOn, { enabled ->
@@ -721,15 +754,15 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                 }
                 overview?.let { account ->
                     SettingsCardDivider()
-                    InfoLine("Name", account.displayName)
+                    InfoLine(stringResource(R.string.ui_name), account.displayName)
                     SettingsCardDivider()
-                    InfoLine("Role", account.role)
+                    InfoLine(stringResource(R.string.ui_role), account.role)
                     SettingsCardDivider()
-                    InfoLine("Password", if (account.hasPassword) "Set" else "Not set")
+                    InfoLine(stringResource(R.string.connect_password), if (account.hasPassword) "Set" else "Not set")
                     SettingsCardDivider()
-                    InfoLine("Last sign-in", account.lastLoginLabel)
+                    InfoLine(stringResource(R.string.ui_last_sign_in), account.lastLoginLabel)
                     SettingsCardDivider()
-                    InfoLine("Last active", account.lastActivityLabel)
+                    InfoLine(stringResource(R.string.ui_last_active), account.lastActivityLabel)
                 }
                 status?.let { (text, error) ->
                     SettingsCardDivider()
@@ -745,18 +778,18 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
             SettingsFooter(pinFooter)
         }
         overview?.let { account ->
-            SettingsHeader("Libraries")
-            SettingsCard { InfoLine("Access", account.librariesSummary) }
-            SettingsHeader("Limits")
+            SettingsHeader(stringResource(R.string.settings_libraries))
+            SettingsCard { InfoLine(stringResource(R.string.ui_access), account.librariesSummary) }
+            SettingsHeader(stringResource(R.string.ui_limits))
             SettingsCard {
-                InfoLine("Maximum rating", account.maxRatingLabel)
+                InfoLine(stringResource(R.string.ui_maximum_rating), account.maxRatingLabel)
                 SettingsCardDivider()
-                InfoLine("Unrated titles", account.unratedLabel)
+                InfoLine(stringResource(R.string.ui_unrated_titles), account.unratedLabel)
                 SettingsCardDivider()
-                InfoLine("Allowed time", account.accessScheduleLabel)
+                InfoLine(stringResource(R.string.ui_allowed_time), account.accessScheduleLabel)
             }
             SettingsFooter(account.limitsFooter)
-            SettingsHeader("Capabilities")
+            SettingsHeader(stringResource(R.string.ui_capabilities))
             SettingsCard {
                 account.capabilities.forEachIndexed { index, capability ->
                     if (index > 0) SettingsCardDivider()
@@ -764,15 +797,15 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                 }
             }
             SettingsFooter("What this login is allowed to do on $serverLabel.")
-            SettingsHeader("Preferences")
+            SettingsHeader(stringResource(R.string.ui_preferences))
             SettingsCard {
-                InfoLine("Audio language", account.audioLanguageLabel)
+                InfoLine(stringResource(R.string.ui_audio_language), account.audioLanguageLabel)
                 SettingsCardDivider()
                 ProfileCapabilityRow("Play the default audio track", account.playDefaultAudio)
                 SettingsCardDivider()
-                InfoLine("Subtitle language", account.subtitleLanguageLabel)
+                InfoLine(stringResource(R.string.ui_subtitle_language), account.subtitleLanguageLabel)
                 SettingsCardDivider()
-                InfoLine("Subtitles", account.subtitleModeLabel)
+                InfoLine(stringResource(R.string.player_subtitles), account.subtitleModeLabel)
                 SettingsCardDivider()
                 ProfileCapabilityRow("Play next episode automatically", account.autoPlayNextEpisode)
                 SettingsCardDivider()
@@ -791,15 +824,15 @@ fun ProfileScreen(state: ZelefinUiState, onBack: () -> Unit, bar: SettingsBarAct
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("Edit in Playback", style = SettingsRowText, modifier = Modifier.weight(1f))
-                    Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
                 }
             }
-            SettingsFooter("Language and autoplay defaults live on the server. Caps and library access are changed from the dashboard.")
+            SettingsFooter(stringResource(R.string.ui_language_and_autoplay_defaults_live_on_the_serve))
         }
         if (accessToken.isNotEmpty()) {
-            SettingsHeader("Device Token")
+            SettingsHeader(stringResource(R.string.ui_device_token))
             SettingsCard {
-                InfoLine("Device Token", if (tokenVisible) accessToken else "•".repeat(accessToken.length.coerceIn(12, 28)))
+                InfoLine(stringResource(R.string.ui_device_token), if (tokenVisible) accessToken else "•".repeat(accessToken.length.coerceIn(12, 28)))
                 SettingsCardDivider()
                 SettingsActionRow(if (tokenVisible) "Hide Token" else "Show Token") { tokenVisible = !tokenVisible }
                 SettingsCardDivider()
@@ -857,7 +890,7 @@ private fun DeviceAccountsTopic(state: ZelefinUiState) {
         ) {
             Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(22.dp))
             Text(addTitle, style = SettingsRowText, modifier = Modifier.weight(1f))
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
         }
     }
     SettingsFooter(deviceAccountsFooter(state))
@@ -881,7 +914,7 @@ private fun DeviceAccountRow(account: SavedSession, subtitle: String, current: B
         if (current) {
             Icon(Icons.Outlined.Check, contentDescription = "Signed in", tint = ZelefinCyan, modifier = Modifier.size(20.dp))
         } else {
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = IOSColors.tertiaryLabel)
         }
     }
 }
@@ -942,7 +975,7 @@ fun AccountPinUnlockDialog(
                 .background(IOSColors.alert)
                 .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 18.dp),
         ) {
-            Text("Account PIN", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+            Text(stringResource(R.string.ui_account_pin), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             Spacer(Modifier.height(6.dp))
             Text(
                 "Enter the PIN to unlock $name’s account on this device.",
@@ -1040,7 +1073,7 @@ private fun AccountPinEditorDialog(
             Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Use 4 to 6 digits. This PIN stays on this device and is asked before someone can sign into this account.",
+                stringResource(R.string.ui_use_4_to_6_digits_this_pin_stays_on_this_device),
                 color = Color.White.copy(alpha = 0.82f),
                 fontFamily = ZelefinFont,
                 fontSize = 15.sp,
@@ -1123,15 +1156,15 @@ private fun AddAccountTopic(state: ZelefinUiState) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     DisposableEffect(Unit) { onDispose { model.resetAddAccount() } }
-    SettingsHeader("Server")
+    SettingsHeader(stringResource(R.string.settings_server))
     SettingsCard {
-        InfoLine("Server", serverLabel)
+        InfoLine(stringResource(R.string.settings_server), serverLabel)
     }
     SettingsFooter(
         if (state.isSiloServer) "Sign in as username#profile to add another household profile on this Silo server."
         else "New users are added on the server you’re already using.",
     )
-    SettingsHeader("Sign In")
+    SettingsHeader(stringResource(R.string.connect_sign_in))
     val canSubmit = serverUrl.isNotBlank() && username.isNotBlank() && password.isNotEmpty() && !add.busy
     SettingsCard {
         SettingsTextField(
@@ -1293,9 +1326,9 @@ private fun PlaybackTopic(state: ZelefinUiState) {
 
     JellyfinPlaybackPreferencesSections(model, languages, serverName = if (state.isEmbyServer) "Emby" else "Jellyfin")
 
-    SettingsHeader("Quality")
+    SettingsHeader(stringResource(R.string.player_quality))
     SettingsCard {
-        SettingsToggleRow("Adaptive Bitrate", adaptive, {
+        SettingsToggleRow(stringResource(R.string.ui_adaptive_bitrate), adaptive, {
             adaptive = it
             PlaybackPreferences.setAdaptiveBitrate(context, it)
         })
@@ -1320,7 +1353,7 @@ private fun PlaybackTopic(state: ZelefinUiState) {
         },
     )
 
-    SettingsHeader("Watching")
+    SettingsHeader(stringResource(R.string.Watching))
     SettingsCard {
         SettingsMenuPicker(
             label = "Playback Speed",
@@ -1332,19 +1365,19 @@ private fun PlaybackTopic(state: ZelefinUiState) {
             },
         )
         SettingsCardDivider()
-        SettingsToggleRow("Auto Play Next Episode", autoplay, {
+        SettingsToggleRow(stringResource(R.string.ui_auto_play_next_episode), autoplay, {
             autoplay = it
             PlaybackPreferences.setAutoplayNext(context, it)
         })
         if (autoplay) {
             SettingsCardDivider()
-            SettingsToggleRow("Ask If Still Watching", stillWatching, {
+            SettingsToggleRow(stringResource(R.string.ui_ask_if_still_watching), stillWatching, {
                 stillWatching = it
                 PlaybackPreferences.setStillWatchingEnabled(context, it)
             })
         }
         SettingsCardDivider()
-        SettingsToggleRow("Picture in Picture When Leaving", autoPip, {
+        SettingsToggleRow(stringResource(R.string.ui_picture_in_picture_when_leaving), autoPip, {
             autoPip = it
             PlaybackPreferences.setAutoPipOnLeave(context, it)
         })
@@ -1382,7 +1415,7 @@ private fun PlaybackTopic(state: ZelefinUiState) {
             },
         )
         SettingsCardDivider()
-        SettingsToggleRow("Wi-Fi Only Downloads", wifiOnly, {
+        SettingsToggleRow(stringResource(R.string.ui_wi_fi_only_downloads), wifiOnly, {
             wifiOnly = it
             PlaybackPreferences.setDownloadWifiOnly(context, it)
         })
@@ -1399,21 +1432,21 @@ private fun PlaybackTopic(state: ZelefinUiState) {
             playerFooter,
     )
 
-    SettingsHeader("Theme Media")
+    SettingsHeader(stringResource(R.string.ui_theme_media))
     SettingsCard {
-        SettingsToggleRow("Theme Songs", themeSongs, {
+        SettingsToggleRow(stringResource(R.string.ui_theme_songs), themeSongs, {
             themeSongs = it
             PlaybackPreferences.setThemeSongs(context, it)
         })
         if (!silo) {
             SettingsCardDivider()
-            SettingsToggleRow("Theme Videos", themeVideos, {
+            SettingsToggleRow(stringResource(R.string.ui_theme_videos), themeVideos, {
                 themeVideos = it
                 PlaybackPreferences.setThemeVideos(context, it)
             })
             if (themeVideos) {
                 SettingsCardDivider()
-                SettingsToggleRow("Theme Video Sound", themeVideoSound, {
+                SettingsToggleRow(stringResource(R.string.ui_theme_video_sound), themeVideoSound, {
                     themeVideoSound = it
                     PlaybackPreferences.setThemeVideoSound(context, it)
                 })
@@ -1441,7 +1474,7 @@ private fun SubtitleAppearanceTopic() {
         (style.positionLift.coerceIn(0, 100) / 100f * 72f).dp,
         label = "subtitle-preview-lift",
     )
-    SettingsHeader("Style")
+    SettingsHeader(stringResource(R.string.Style))
     SettingsCard {
         Box(
             Modifier
@@ -1530,7 +1563,7 @@ private fun SubtitleAppearanceTopic() {
             },
         )
     }
-    SettingsFooter("Raise captions from the bottom of the picture. Style applies to text subtitles in Zelefin’s player. Positive sync shows captions later; negative shows them earlier.")
+    SettingsFooter(stringResource(R.string.ui_raise_captions_from_the_bottom_of_the_picture_st))
 }
 
 /** Preview line with the same drop shadow, outline, and highlight as iOS `SubtitleTextChrome`. */
@@ -1634,7 +1667,7 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
                 onSelect = { code -> if (ready) update { it.copy(audioLanguage = code) } },
             )
             SettingsCardDivider()
-            SettingsToggleRow("Play Default Audio Track", shown.playDefaultAudioTrack, { on -> if (ready) update { it.copy(playDefaultAudioTrack = on) } })
+            SettingsToggleRow(stringResource(R.string.ui_play_default_audio_track), shown.playDefaultAudioTrack, { on -> if (ready) update { it.copy(playDefaultAudioTrack = on) } })
         }
         error?.let {
             Text(it, color = IOSColors.red, fontFamily = ZelefinFont, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
@@ -1648,7 +1681,7 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
         },
     )
 
-    SettingsHeader("Subtitles")
+    SettingsHeader(stringResource(R.string.player_subtitles))
     SettingsCard {
         LockedUntilReady(ready) {
             SettingsMenuPicker(
@@ -1665,7 +1698,7 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
                 onSelect = { mode -> if (ready) update { it.copy(subtitleMode = mode) } },
             )
             SettingsCardDivider()
-            SettingsToggleRow("Prefer SDH Subtitles", preferSdh, { on ->
+            SettingsToggleRow(stringResource(R.string.ui_prefer_sdh_subtitles), preferSdh, { on ->
                 if (!ready) return@SettingsToggleRow
                 preferSdh = on
                 PlaybackPreferences.setPreferSdh(context, on)
@@ -1679,14 +1712,14 @@ private fun JellyfinPlaybackPreferencesSections(model: ZelefinModel, languages: 
                     .padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Style & Sync", style = SettingsRowText, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.ui_style_sync), style = SettingsRowText, modifier = Modifier.weight(1f))
                 Text(
                     SubtitleAppearance.current(context).sizeTitle(),
                     style = SettingsRowText.copy(color = IOSColors.secondaryLabel),
                     maxLines = 1,
                 )
                 Icon(
-                    Icons.Outlined.ChevronRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     tint = IOSColors.tertiaryLabel,
                     modifier = Modifier.padding(start = 4.dp).size(20.dp),
@@ -1852,12 +1885,12 @@ private fun WebhookNotificationsTopic(state: ZelefinUiState, pluginState: Plugin
     if (on) NotificationDeliverySections()
 
     pluginState.alertsAdminAddress?.let { address ->
-        SettingsHeader("Ask an Administrator")
+        SettingsHeader(stringResource(R.string.ui_ask_an_administrator))
         SettingsCard {
             Text(address, color = Secondary, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
             SettingsCardDivider()
             SettingsButton(
-                "Copy Address",
+                stringResource(R.string.ui_copy_address),
                 primary = false,
                 destructive = false,
                 enabled = true,
@@ -1871,7 +1904,7 @@ private fun WebhookNotificationsTopic(state: ZelefinUiState, pluginState: Plugin
     }
 
     if (on && !waitingForAdmin && pluginState.alertOptions.isNotEmpty()) {
-        SettingsHeader("Alert Me About")
+        SettingsHeader(stringResource(R.string.ui_alert_me_about))
         SettingsCard {
             pluginState.alertOptions.forEachIndexed { index, (id, title) ->
                 if (index > 0) CardDivider()
@@ -1893,7 +1926,7 @@ private fun NotificationDeliverySections() {
     var startMinutes by remember { mutableIntStateOf(NotificationPreferences.quietHoursStartMinutes(context)) }
     var endMinutes by remember { mutableIntStateOf(NotificationPreferences.quietHoursEndMinutes(context)) }
 
-    SettingsHeader("When Not to Notify")
+    SettingsHeader(stringResource(R.string.ui_when_not_to_notify))
     SettingsCard {
         SettingsToggle("Mute while Zelefin is open", muteOpen) { next ->
             muteOpen = next
@@ -1906,10 +1939,10 @@ private fun NotificationDeliverySections() {
         }
     }
     SettingsFooter(
-        "Hold banners back while you are using Zelefin or watching something in the app. Alerts still arrive when the app is closed, outside quiet hours.",
+        stringResource(R.string.ui_hold_banners_back_while_you_are_using_zelefin_or),
     )
 
-    SettingsHeader("Quiet Hours")
+    SettingsHeader(stringResource(R.string.ui_quiet_hours))
     SettingsCard {
         SettingsToggle("Quiet Hours", quiet) { next ->
             quiet = next
@@ -1928,7 +1961,7 @@ private fun NotificationDeliverySections() {
             }
         }
     }
-    SettingsFooter("No lock-screen alerts during this window. Overnight ranges are fine (for example 10:00 PM to 7:00 AM).")
+    SettingsFooter(stringResource(R.string.ui_no_lock_screen_alerts_during_this_window_overnig))
 }
 
 @Composable
@@ -2084,7 +2117,7 @@ private fun NotificationsTopic(state: ZelefinUiState, plugins: PluginsController
                 }
             } else if (!silo && !emby && !pluginState.detecting) {
                 Text(
-                    "Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account.",
+                    stringResource(R.string.ui_ask_a_server_administrator_to_install_the_zelefi),
                     color = Caption,
                     fontFamily = ZelefinFont,
                     fontSize = 13.sp,
@@ -2156,7 +2189,7 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
     val jellyfin = pluginState.jellyfin
     val silo = state.isSiloServer
     val emby = state.isEmbyServer
-    SettingsHeader("Skip Recaps, Intros, Credits and Previews")
+    SettingsHeader(stringResource(R.string.ui_skip_recaps_intros_credits_and_previews))
     SettingsCard {
         if (!silo && !emby) {
             SkipPluginRow("Intro Skipper", jellyfin.introSkipper, "TheIntroDB", jellyfin.theIntroDB)
@@ -2183,14 +2216,14 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
     )
     if (!silo && !emby) JellyfinServerPlugins(state, jellyfin)
     if (emby) {
-        SettingsHeader("Open Subtitles")
+        SettingsHeader(stringResource(R.string.ui_open_subtitles))
         SettingsCard { PluginStatusRow("Open Subtitles", jellyfin.openSubtitles) }
         SettingsFooter(
-            "When this Emby plugin is installed and signed in to an Open Subtitles account, use More on a movie or episode to search for subtitles and save a file to the server.",
+            stringResource(R.string.ui_when_this_emby_plugin_is_installed_and_signed_in),
         )
     }
 
-    SettingsHeader("Requests")
+    SettingsHeader(stringResource(R.string.ui_requests))
     SeerrSignInCard(state, pluginState, plugins)
     SettingsFooter(
         if (pluginState.requestService == RequestService.Ombi) {
@@ -2200,10 +2233,10 @@ private fun PluginsTopic(state: ZelefinUiState, plugins: PluginsController) {
         },
     )
 
-    SettingsHeader("TMDB")
+    SettingsHeader(stringResource(R.string.TMDB))
     TmdbKeyCard(pluginState, plugins)
     SettingsFooter(
-        "Discover title pages show a title's logo when it's in your library. With a free TMDB key, from Settings → API on themoviedb.org, every other title shows its logo too.",
+        stringResource(R.string.ui_discover_title_pages_show_a_titles_logo_when_its),
     )
 }
 
@@ -2248,28 +2281,28 @@ private fun TmdbKeyCard(pluginState: PluginsUiState, plugins: PluginsController)
 @Composable
 private fun JellyfinServerPlugins(state: ZelefinUiState, jellyfin: JellyfinPluginState) {
 
-    SettingsHeader("Jellyfin Enhanced")
+    SettingsHeader(stringResource(R.string.ui_jellyfin_enhanced))
     SettingsCard { PluginStatusRow("Jellyfin Enhanced", jellyfin.enhanced) }
     SettingsFooter(
-        "When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and write reviews or see awards on the title page.",
+        stringResource(R.string.ui_when_this_plugin_is_installed_you_can_remove_tit),
     )
 
-    SettingsHeader("Notifications plugin")
+    SettingsHeader(stringResource(R.string.ui_notifications_plugin))
     SettingsCard { PluginStatusRow("Zelefin", jellyfin.companion) }
     SettingsFooter(
         if (jellyfin.companion) {
             "This server can push lock-screen alerts. Quiet hours and mute options in Notifications hold banners back while Zelefin is open, while something is playing, or during the hours you choose. Restart Jellyfin after you install or remove the plugin."
         } else {
-            "Notifications need this plugin. Open Settings → Notifications to install it on this server, or add the Zelefin catalog in Jellyfin. Restart Jellyfin after install."
+            stringResource(R.string.ui_notifications_need_this_plugin_open_settings_not)
         },
     )
 
-    SettingsHeader("Open Subtitles")
+    SettingsHeader(stringResource(R.string.ui_open_subtitles))
     SettingsCard { PluginStatusRow("Open Subtitles", jellyfin.openSubtitles) }
-    SettingsFooter("When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server.")
+    SettingsFooter(stringResource(R.string.ui_when_this_plugin_is_installed_use_more_on_a_movi))
 
     val youTubeRooms = state.libraries.filter { it.kind == LibraryKind.YouTube }
-    SettingsHeader("TubeArchivist")
+    SettingsHeader(stringResource(R.string.TubeArchivist))
     SettingsCard {
         PluginStatusRow(
             "TubeArchivist Metadata",
@@ -2282,7 +2315,7 @@ private fun JellyfinServerPlugins(state: ZelefinUiState, jellyfin: JellyfinPlugi
         if (youTubeRooms.isNotEmpty()) {
             "${youTubeRooms.joinToString { it.name }} appears as its own YouTube library, with channels and videos kept apart from your movies and shows."
         } else {
-            "When this plugin fills a Shows library, Zelefin lists it as its own YouTube library, with channels and videos kept apart from your movies and shows."
+            stringResource(R.string.ui_when_this_plugin_fills_a_shows_library_zelefin_l)
         },
     )
 }
@@ -2296,11 +2329,11 @@ private fun SeerrSignInCard(state: ZelefinUiState, pluginState: PluginsUiState, 
     LaunchedEffect(signedIn) { if (signedIn != null) password = "" }
     SettingsCard {
         if (signedIn != null) {
-            InfoLine("Service", pluginState.requestService.title)
+            InfoLine(stringResource(R.string.connect_service), pluginState.requestService.title)
             CardDivider()
-            InfoLine("Server", pluginState.seerrUrl)
+            InfoLine(stringResource(R.string.settings_server), pluginState.seerrUrl)
             CardDivider()
-            InfoLine("Signed in as", signedIn)
+            InfoLine(stringResource(R.string.ui_signed_in_as), signedIn)
             SettingsCardDivider()
             SettingsButton("Sign Out", primary = false, destructive = true, enabled = true, busy = false, onClick = plugins::signOutSeerr)
         } else {
@@ -2490,9 +2523,9 @@ private fun CacheTopic() {
             onDismiss = { confirmAll = false },
         )
     }
-    SettingsHeader("Images")
+    SettingsHeader(stringResource(R.string.ui_images))
     SettingsCard {
-        InfoLine("Total", formatBytes(usage.total.bytes))
+        InfoLine(stringResource(R.string.ui_total), formatBytes(usage.total.bytes))
         ArtworkImageKind.entries.forEach { kind ->
             SettingsCardDivider()
             CacheBucketRow(kind.title, usage.bucket(kind)) { confirmKind = kind }
@@ -2504,12 +2537,12 @@ private fun CacheTopic() {
             enabled = !usage.total.isEmpty,
         ) { confirmAll = true }
         SettingsCardDivider()
-        SettingsToggleRow("Auto-refresh missing images", autoRefresh, { enabled ->
+        SettingsToggleRow(stringResource(R.string.ui_auto_refresh_missing_images), autoRefresh, { enabled ->
             autoRefresh = enabled
             CachePreferences.setAutoRefreshMissingImages(context, enabled)
         })
     }
-    SettingsFooter("Posters, backdrops, and logos stay on this device. Auto-refresh retries artwork this server previously returned as missing.")
+    SettingsFooter(stringResource(R.string.ui_posters_backdrops_and_logos_stay_on_this_device))
 }
 
 @Composable
@@ -2568,9 +2601,9 @@ private fun MetadataTopic() {
             onDismiss = { confirmAll = false },
         )
     }
-    SettingsHeader("Saved Home Data")
+    SettingsHeader(stringResource(R.string.ui_saved_home_data))
     SettingsCard {
-        InfoLine("Total", formatBytes(usage.total.bytes))
+        InfoLine(stringResource(R.string.ui_total), formatBytes(usage.total.bytes))
         MetadataCacheFolder.entries.forEach { folder ->
             SettingsCardDivider()
             CacheBucketRow(folder.title, usage.bucket(folder)) { confirmFolder = folder }
@@ -2582,7 +2615,7 @@ private fun MetadataTopic() {
             enabled = !usage.total.isEmpty,
         ) { confirmAll = true }
         SettingsCardDivider()
-        SettingsToggleRow("Auto-refresh missing metadata", autoRefresh, { enabled ->
+        SettingsToggleRow(stringResource(R.string.ui_auto_refresh_missing_metadata), autoRefresh, { enabled ->
             autoRefresh = enabled
             CachePreferences.setAutoRefreshMissingMetadata(context, enabled)
             if (enabled) refresh()
@@ -2590,7 +2623,7 @@ private fun MetadataTopic() {
         SettingsCardDivider()
         SettingsActionRow("Refresh Missing Metadata", busy = refreshing, enabled = !refreshing) { refresh() }
     }
-    SettingsFooter("Home rows, library catalogs, and title pages. Auto-refresh pulls anything this device has not cached yet.")
+    SettingsFooter(stringResource(R.string.ui_home_rows_library_catalogs_and_title_pages_auto))
 }
 
 @Composable
@@ -2601,8 +2634,7 @@ private fun CacheBucketRow(title: String, bucket: CacheBucket, onClear: () -> Un
             Text(title, style = SettingsRowText)
             Text(formatBytes(bucket.bytes), color = IOSColors.secondaryLabel, fontFamily = ZelefinFont, fontSize = 15.sp)
         }
-        Text(
-            "Clear",
+        Text(stringResource(R.string.common_clear),
             color = if (enabled) IOSColors.red else IOSColors.tertiaryLabel,
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.Bold,
@@ -2622,9 +2654,9 @@ private fun SessionsTopic(state: ZelefinUiState) {
         return
     }
     SettingsCard {
-        InfoLine("User", session?.userName ?: "—")
-        InfoLine("Server", session?.displayServer ?: "—")
-        InfoLine("Device", Build.MODEL ?: "Android")
+        InfoLine(stringResource(R.string.ui_user), session?.userName ?: "—")
+        InfoLine(stringResource(R.string.settings_server), session?.displayServer ?: "—")
+        InfoLine(stringResource(R.string.ui_device), Build.MODEL ?: "Android")
         InfoLine("App", "Zelefin $AppVersionLabel")
     }
     Text(
@@ -2671,14 +2703,14 @@ private fun ServerInfoTopic(state: ZelefinUiState) {
         return
     }
     SettingsCard {
-        InfoLine("Server name", snapshot.serverName.orDash())
-        InfoLine("Product", snapshot.product.orDash())
-        InfoLine("Version", snapshot.version.orDash())
-        InfoLine("Operating system", snapshot.operatingSystem.orDash())
-        InfoLine("Active URL", snapshot.activeUrl.orDash())
-        InfoLine("Local address", snapshot.localAddress.orDash())
+        InfoLine(stringResource(R.string.ui_server_name), snapshot.serverName.orDash())
+        InfoLine(stringResource(R.string.ui_product), snapshot.product.orDash())
+        InfoLine(stringResource(R.string.player_version), snapshot.version.orDash())
+        InfoLine(stringResource(R.string.ui_operating_system), snapshot.operatingSystem.orDash())
+        InfoLine(stringResource(R.string.ui_active_url), snapshot.activeUrl.orDash())
+        InfoLine(stringResource(R.string.ui_local_address), snapshot.localAddress.orDash())
     }
-    SettingsFooter("Pulled from this device’s connection and the server’s public system info. Some servers hide OS or local address.")
+    SettingsFooter(stringResource(R.string.ui_pulled_from_this_devices_connection_and_the_serv))
     loadError?.let { message ->
         Spacer(Modifier.height(14.dp))
         SettingsCard {
@@ -2742,7 +2774,7 @@ private fun AboutHero() {
                 contentScale = ContentScale.Fit,
             )
         }
-        Text("Zelefin", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 34.sp)
+        Text(stringResource(R.string.settings_zelefin_section), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 34.sp)
         Spacer(Modifier.height(10.dp))
         Text(
             buildAnnotatedString {
@@ -2758,7 +2790,7 @@ private fun AboutHero() {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            "A native client for Jellyfin, Silo, and Emby — free, with no subscription and no ads.",
+            stringResource(R.string.settings_about_body),
             color = IOSColors.secondaryLabel,
             fontFamily = ZelefinFont,
             fontSize = 15.sp,
@@ -2836,9 +2868,9 @@ private fun AboutCredits() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Credits", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text(stringResource(R.string.settings_credits), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
         Text(
-            "Tab icons are from Iconsax. Anime library icons are from PlainIcon’s Anime characters pack, licensed under CC BY 4.0.",
+            stringResource(R.string.settings_credits_body),
             color = IOSColors.tertiaryLabel,
             fontFamily = ZelefinFont,
             fontSize = 13.sp,
@@ -2886,15 +2918,15 @@ private fun NetworkTopic(state: ZelefinUiState) {
         }
     }
 
-    SettingsHeader("This Connection")
+    SettingsHeader(stringResource(R.string.ui_this_connection))
     SettingsCard {
-        InfoLine("Remote URL", session?.serverUrl ?: "—")
-        InfoLine("Active URL", state.localServerUrl ?: session?.serverUrl ?: "—")
-        InfoLine("Wi-Fi", ssid ?: "Unavailable")
-        InfoLine("Using", if (state.localServerUrl != null) "Local URL" else "Remote URL")
+        InfoLine(stringResource(R.string.ui_remote_url), session?.serverUrl ?: "—")
+        InfoLine(stringResource(R.string.ui_active_url), state.localServerUrl ?: session?.serverUrl ?: "—")
+        InfoLine(stringResource(R.string.ui_wi_fi), ssid ?: "Unavailable")
+        InfoLine(stringResource(R.string.ui_using), if (state.localServerUrl != null) "Local URL" else "Remote URL")
     }
 
-    SettingsHeader("Home Network")
+    SettingsHeader(stringResource(R.string.ui_home_network))
     SettingsCard {
         SettingsToggle("Auto-switch on home Wi-Fi", profile.autoSwitch) { on ->
             save(profile.copy(autoSwitch = on, localUrl = localText.trim()))
@@ -2911,12 +2943,12 @@ private fun NetworkTopic(state: ZelefinUiState) {
             ime = ImeAction.Done,
         )
     }
-    SettingsFooter("When you join a saved home network, Zelefin uses the local URL instead of the remote one.")
+    SettingsFooter(stringResource(R.string.ui_when_you_join_a_saved_home_network_zelefin_uses))
 
-    SettingsHeader("Home Wi-Fi")
+    SettingsHeader(stringResource(R.string.ui_home_wi_fi))
     SettingsCard {
         if (profile.homeSsids.isEmpty()) {
-            Text("No networks configured", style = SettingsRowText)
+            Text(stringResource(R.string.ui_no_networks_configured), style = SettingsRowText)
         } else {
             profile.homeSsids.forEachIndexed { index, name ->
                 if (index > 0) CardDivider()
@@ -2924,8 +2956,7 @@ private fun NetworkTopic(state: ZelefinUiState) {
                     Icon(Icons.Outlined.Wifi, contentDescription = null, tint = ZelefinCyan, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(12.dp))
                     Text(name, style = SettingsRowText, modifier = Modifier.weight(1f))
-                    Text(
-                        "Remove",
+                    Text(stringResource(R.string.common_remove),
                         color = IOSColors.red,
                         fontFamily = ZelefinFont,
                         fontWeight = FontWeight.Bold,
@@ -2957,9 +2988,9 @@ private fun NetworkTopic(state: ZelefinUiState) {
             }
         }
     }
-    SettingsFooter("Add the networks that should use the local URL.")
+    SettingsFooter(stringResource(R.string.ui_add_the_networks_that_should_use_the_local_url))
 
-    SettingsHeader("Access Gateway")
+    SettingsHeader(stringResource(R.string.ui_access_gateway))
     SettingsCard {
         SettingsTextField(
             label = "CLIENT ID",
@@ -2979,7 +3010,7 @@ private fun NetworkTopic(state: ZelefinUiState) {
             password = true,
         )
     }
-    SettingsFooter("Needed when this server sits behind Cloudflare Zero Trust or Pangolin. Use a Cloudflare Access service token, or a Pangolin share-link token ID and token. Zelefin sends these on every request, including artwork and playback.")
+    SettingsFooter(stringResource(R.string.ui_needed_when_this_server_sits_behind_cloudflare_z))
 }
 
 /** Mirrors iOS `TabCustomizationView`. */
@@ -3076,10 +3107,10 @@ private fun SettingsPage(
                         GlassBackChevron()
                     }
                     SettingsBarAction.Cancel -> SettingsGlassButton("Cancel", onBack, circle = false, modifier = Modifier.align(Alignment.CenterStart)) {
-                        Text("Cancel", color = Color.White, fontFamily = ZelefinFont, fontSize = 17.sp)
+                        Text(stringResource(R.string.common_cancel), color = Color.White, fontFamily = ZelefinFont, fontSize = 17.sp)
                     }
                     SettingsBarAction.Done -> SettingsGlassButton("Done", onBack, circle = false, modifier = Modifier.align(Alignment.CenterEnd)) {
-                        Text("Done", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                        Text(stringResource(R.string.common_done), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     }
                 }
                 if (trailing != null) {

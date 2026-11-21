@@ -26,7 +26,7 @@ struct NotificationSettingsView: View {
                 pluginRequiredSection
             }
         }
-        .zelefinSettingsChrome(title: "Notifications")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.notifications", default: "Notifications"))
         .task {
             await session.detectPlugins()
             await refreshAuthorization()
@@ -40,7 +40,7 @@ struct NotificationSettingsView: View {
 
     private var configuredSection: some View {
         Section {
-            Toggle("Notifications", isOn: $isEnabled)
+            Toggle(AppLanguage.string("settings.notifications", default: "Notifications"), isOn: $isEnabled)
             if canSendTest {
                 Button(isSendingTest ? "Sending…" : "Send Test Alert") {
                     Task { await sendTestAlert() }
@@ -58,7 +58,7 @@ struct NotificationSettingsView: View {
 
     private var pluginRequiredSection: some View {
         Section {
-            LabeledContent("Zelefin plugin") {
+            LabeledContent(AppLanguage.string("ui.zelefin_plugin", default: "Zelefin plugin")) {
                 Text(pluginStatusLabel)
                     .foregroundStyle(pluginNeedsRestart ? Color.orange : Color.red)
             }
@@ -74,7 +74,7 @@ struct NotificationSettingsView: View {
                     .disabled(isRestarting)
                 }
             } else if !session.lacksJellyfinOnlyFeatures, !session.isAdministrator, !session.isReviewDemo {
-                Text("Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account.")
+                Text(AppLanguage.string("Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account.", default: "Ask a server administrator to install the Zelefin plugin from Settings → Notifications, or sign in with an admin account."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -203,17 +203,17 @@ private struct AlertSuppressionSections: View {
 
     var body: some View {
         Section {
-            Toggle("Mute while Zelefin is open", isOn: $muteWhileOpen)
-            Toggle("Mute while playing", isOn: $muteWhilePlaying)
+            Toggle(AppLanguage.string("ui.mute_while_zelefin_is_open", default: "Mute while Zelefin is open"), isOn: $muteWhileOpen)
+            Toggle(AppLanguage.string("ui.mute_while_playing", default: "Mute while playing"), isOn: $muteWhilePlaying)
         } header: {
-            Text("When Not to Notify")
+            Text(AppLanguage.string("ui.when_not_to_notify", default: "When Not to Notify"))
         } footer: {
-            Text("Hold banners back while you are using Zelefin or watching something in the app. Alerts still arrive when the app is closed, outside quiet hours.")
+            Text(AppLanguage.string("Hold banners back while you are using Zelefin or watching something in the app. Alerts still arrive when the app is closed, outside quiet hours.", default: "Hold banners back while you are using Zelefin or watching something in the app. Alerts still arrive when the app is closed, outside quiet hours."))
         }
         .zelefinRowBackground()
 
         Section {
-            Toggle("Quiet Hours", isOn: $quietHoursEnabled)
+            Toggle(AppLanguage.string("ui.quiet_hours", default: "Quiet Hours"), isOn: $quietHoursEnabled)
             if quietHoursEnabled {
                 DatePicker(
                     "Start",
@@ -227,9 +227,9 @@ private struct AlertSuppressionSections: View {
                 )
             }
         } header: {
-            Text("Quiet Hours")
+            Text(AppLanguage.string("ui.quiet_hours", default: "Quiet Hours"))
         } footer: {
-            Text("No lock-screen alerts during this window. Overnight ranges are fine (for example 10:00 PM to 7:00 AM).")
+            Text(AppLanguage.string("No lock-screen alerts during this window. Overnight ranges are fine (for example 10:00 PM to 7:00 AM).", default: "No lock-screen alerts during this window. Overnight ranges are fine (for example 10:00 PM to 7:00 AM)."))
         }
         .zelefinRowBackground()
     }
@@ -343,7 +343,7 @@ private struct WebhookAlertSections: View {
             if isAvailable == false {
                 Section {
                     LabeledContent(setup.unavailableTitle) {
-                        Text("Not on this server").foregroundStyle(.red)
+                        Text(AppLanguage.string("ui.not_on_this_server", default: "Not on this server")).foregroundStyle(.red)
                     }
                 } footer: {
                     Text(setup.unavailableFooter)
@@ -361,7 +361,7 @@ private struct WebhookAlertSections: View {
     @ViewBuilder
     private var availableSections: some View {
         Section {
-            Toggle("Notifications", isOn: Binding(get: { isOn }, set: { next in Task { await setOn(next) } }))
+            Toggle(AppLanguage.string("settings.notifications", default: "Notifications"), isOn: Binding(get: { isOn }, set: { next in Task { await setOn(next) } }))
                 .disabled(isWorking)
             if isOn, adminAddress == nil {
                 Button(isWorking ? "Sending…" : "Send Test Alert") {
@@ -382,9 +382,9 @@ private struct WebhookAlertSections: View {
                 Text(adminAddress)
                     .font(.footnote.monospaced())
                     .textSelection(.enabled)
-                Button("Copy Address") { UIPasteboard.general.string = adminAddress }
+                Button(AppLanguage.string("ui.copy_address", default: "Copy Address")) { UIPasteboard.general.string = adminAddress }
             } header: {
-                Text("Ask an Administrator")
+                Text(AppLanguage.string("ui.ask_an_administrator", default: "Ask an Administrator"))
             } footer: {
                 Text(setup.adminFooter)
             }
@@ -401,7 +401,7 @@ private struct WebhookAlertSections: View {
                     .disabled(isWorking)
                 }
             } header: {
-                Text("Alert Me About")
+                Text(AppLanguage.string("ui.alert_me_about", default: "Alert Me About"))
             }
             .zelefinRowBackground()
         }

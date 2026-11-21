@@ -164,7 +164,7 @@ struct CustomAccentColorControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ColorPicker(selection: pickerColor, supportsOpacity: false) {
-                Text("Mix your own")
+                Text(AppLanguage.string("Mix your own", default: "Mix your own"))
                     .font(.subheadline.weight(.medium))
             }
             .tint(activeColor)

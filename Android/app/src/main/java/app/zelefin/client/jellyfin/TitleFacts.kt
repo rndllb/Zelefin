@@ -1,8 +1,11 @@
 package app.zelefin.client.jellyfin
 
+import app.zelefin.core.CreditPerson
+import app.zelefin.core.CreditRoles
 import app.zelefin.core.EmbyItem
 import app.zelefin.core.LanguageNames
 import app.zelefin.core.MediaItem
+import app.zelefin.core.TitleDirectors
 import app.zelefin.core.TitleMoreInfo
 import app.zelefin.core.TitleMoreLink
 import app.zelefin.core.TitleMoreRow
@@ -35,6 +38,7 @@ internal data class FactInput(
     val sources: List<FactSource> = emptyList(),
     val links: List<TitleMoreLink> = emptyList(),
     val studios: List<String> = emptyList(),
+    val people: List<CreditPerson> = emptyList(),
     val originalTitle: String? = null,
     val premiereDate: String? = null,
     val officialRating: String? = null,
@@ -99,6 +103,21 @@ internal object TitleFacts {
             sources = mediaSources.orEmpty().map { FactSource(it.container, it.bitrate) },
             links = externalUrls.orEmpty().map { TitleMoreLink(it.name.orEmpty(), it.url.orEmpty()) },
             studios = studios.orEmpty().mapNotNull { it.name },
+            people = people.orEmpty()
+                .sortedBy { CreditRoles.rank(it.type.serialName) }
+                .mapNotNull { person ->
+                    val personName = person.name?.trim().orEmpty()
+                    if (personName.isEmpty()) return@mapNotNull null
+                    val typeName = person.type.serialName
+                    CreditPerson(
+                        id = person.id.toString(),
+                        name = personName,
+                        roleLabel = CreditRoles.displayLabel(typeName, person.role),
+                        imageTag = person.primaryImageTag,
+                        rank = CreditRoles.rank(typeName),
+                    )
+                }
+                .distinctBy { "${it.id}#${it.rank}" },
             originalTitle = originalTitle,
             premiereDate = premiereDate?.toString(),
             officialRating = officialRating,
@@ -135,6 +154,22 @@ internal object TitleFacts {
         sources = mediaSources.map { FactSource(it.container, it.bitrate) },
         links = externalUrls.map { TitleMoreLink(it.name.orEmpty(), it.url.orEmpty()) },
         studios = studios.mapNotNull { it.name },
+        people = people
+            .sortedBy { CreditRoles.rank(it.type.orEmpty()) }
+            .mapNotNull { person ->
+                val personName = person.name?.trim().orEmpty()
+                val personId = person.id?.trim().orEmpty()
+                if (personName.isEmpty() || personId.isEmpty()) return@mapNotNull null
+                val typeName = person.type.orEmpty()
+                CreditPerson(
+                    id = personId,
+                    name = personName,
+                    roleLabel = CreditRoles.displayLabel(typeName, person.role),
+                    imageTag = person.primaryImageTag,
+                    rank = CreditRoles.rank(typeName),
+                )
+            }
+            .distinctBy { "${it.id}#${it.rank}" },
         originalTitle = originalTitle,
         premiereDate = premiereDate,
         officialRating = officialRating,
@@ -148,6 +183,7 @@ internal object TitleFacts {
     private fun information(input: FactInput, item: MediaItem): List<TitleMoreRow> = buildList {
         val studios = input.studios.mapNotNull { it.trim().ifEmpty { null } }
         if (studios.isNotEmpty()) add(TitleMoreRow("Studio", studios.joinToString(", ")))
+        addAll(peopleRows(input.people))
         val original = input.originalTitle?.trim()?.ifEmpty { null }
         if (original != null && original != item.name) add(TitleMoreRow("Original Title", original))
         released(input.premiereDate, item.year)?.let { add(TitleMoreRow("Released", it)) }
@@ -160,6 +196,44 @@ internal object TitleFacts {
         if (regions.isNotEmpty()) add(TitleMoreRow("Regions of Origin", regions.joinToString(", ")))
         input.status?.trim()?.ifEmpty { null }?.let { add(TitleMoreRow("Status", it.replaceFirstChar { char -> char.uppercase() })) }
         input.airTime?.trim()?.ifEmpty { null }?.let { add(TitleMoreRow("Airs", it)) }
+    }
+
+    /** Creator / Director / Writer lines from People, matching jellyfin-web’s metadata list. */
+    private fun peopleRows(people: List<CreditPerson>): List<TitleMoreRow> = buildList {
+        val creators = TitleDirectors.creators(people)
+        if (creators.isNotEmpty()) {
+            add(
+                TitleMoreRow(
+                    if (creators.size == 1) "Creator" else "Creators",
+                    creators.joinToString(", ") { it.name },
+                ),
+            )
+        }
+        val directors = TitleDirectors.directors(people)
+        if (directors.isNotEmpty()) {
+            add(
+                TitleMoreRow(
+                    if (directors.size == 1) "Director" else "Directors",
+                    directors.joinToString(", ") { it.name },
+                ),
+            )
+        }
+        val writers = people.filter {
+            it.rank == 3 || it.roleLabel.trim().lowercase().startsWith("writer")
+        }
+        val writerNames = linkedSetOf<String>()
+        writers.forEach { person ->
+            val name = person.name.trim()
+            if (name.isNotEmpty()) writerNames += name
+        }
+        if (writerNames.isNotEmpty()) {
+            add(
+                TitleMoreRow(
+                    if (writerNames.size == 1) "Writer" else "Writers",
+                    writerNames.joinToString(", "),
+                ),
+            )
+        }
     }
 
     private fun languages(audio: List<FactStream>, subtitles: List<FactStream>): List<TitleMoreRow> = buildList {

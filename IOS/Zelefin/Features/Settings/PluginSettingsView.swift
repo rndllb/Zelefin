@@ -40,7 +40,7 @@ struct PluginSettingsView: View {
             seerrSignInSection
             tmdbSection
         }
-        .zelefinSettingsChrome(title: "Plugins")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.plugins", default: "Plugins"))
         .task {
             if seerrUsername.isEmpty {
                 seerrUsername = session.session?.userName ?? ""
@@ -57,30 +57,30 @@ struct PluginSettingsView: View {
             skipPluginRow("TheIntroDB", session.theIntroDBPresence, other: ("Intro Skipper", session.introSkipperPresence))
             skipToggles
         } header: {
-            Text("Skip Recaps, Intros, Credits and Previews")
+            Text(AppLanguage.string("Skip Recaps, Intros, Credits and Previews", default: "Skip Recaps, Intros, Credits and Previews"))
         } footer: {
-            Text("Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly.")
+            Text(AppLanguage.string("Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly.", default: "Skip buttons come from Jellyfin's media segments, which Intro Skipper and the TheIntroDB plugin fill in once the Media Segment Scan task has run. For titles with none, Zelefin can ask TheIntroDB directly."))
         }
         .zelefinRowBackground()
 
         Section {
             pluginStatusRow("Jellyfin Enhanced", installed: session.jellyfinEnhancedAvailable)
         } header: {
-            Text("Jellyfin Enhanced")
+            Text(AppLanguage.string("Jellyfin Enhanced", default: "Jellyfin Enhanced"))
         } footer: {
-            Text("When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and write reviews or see awards on the title page.")
+            Text(AppLanguage.string("When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and write reviews or see awards on the title page.", default: "When this plugin is installed, you can remove titles from Continue Watching or Next Up without losing progress, and write reviews or see awards on the title page."))
         }
         .zelefinRowBackground()
 
         Section {
             pluginStatusRow("Zelefin", installed: session.companionAvailable)
         } header: {
-            Text("Notifications plugin")
+            Text(AppLanguage.string("Notifications plugin", default: "Notifications plugin"))
         } footer: {
             if session.companionAvailable {
-                Text("This server can push lock-screen alerts while Zelefin is open or closed. Restart Jellyfin after you install or remove the plugin.")
+                Text(AppLanguage.string("This server can push lock-screen alerts while Zelefin is open or closed. Restart Jellyfin after you install or remove the plugin.", default: "This server can push lock-screen alerts while Zelefin is open or closed. Restart Jellyfin after you install or remove the plugin."))
             } else {
-                Text("Notifications need this plugin. Open Settings → Notifications to install it on this server, or add the Zelefin catalog in Jellyfin. Restart Jellyfin after install.")
+                Text(AppLanguage.string("Notifications need this plugin. Open Settings → Notifications to install it on this server, or add the Zelefin catalog in Jellyfin. Restart Jellyfin after install.", default: "Notifications need this plugin. Open Settings → Notifications to install it on this server, or add the Zelefin catalog in Jellyfin. Restart Jellyfin after install."))
             }
         }
         .zelefinRowBackground()
@@ -90,12 +90,12 @@ struct PluginSettingsView: View {
         Section {
             pluginStatusRow("Open Subtitles", installed: session.openSubtitlesAvailable)
         } header: {
-            Text("Open Subtitles")
+            Text(AppLanguage.string("Open Subtitles", default: "Open Subtitles"))
         } footer: {
             if session.isEmbyServer {
-                Text("When this Emby plugin is installed and signed in to an Open Subtitles account, use More on a movie or episode to search for subtitles and save a file to the server.")
+                Text(AppLanguage.string("When this Emby plugin is installed and signed in to an Open Subtitles account, use More on a movie or episode to search for subtitles and save a file to the server.", default: "When this Emby plugin is installed and signed in to an Open Subtitles account, use More on a movie or episode to search for subtitles and save a file to the server."))
             } else {
-                Text("When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server.")
+                Text(AppLanguage.string("When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server.", default: "When this plugin is installed, use More on a movie or episode to search Open Subtitles and save a file to the server."))
             }
         }
         .zelefinRowBackground()
@@ -113,10 +113,10 @@ struct PluginSettingsView: View {
         return Section {
             pluginStatusRow("TubeArchivist Metadata", installed: installed)
         } header: {
-            Text("TubeArchivist")
+            Text(AppLanguage.string("TubeArchivist", default: "TubeArchivist"))
         } footer: {
             if rooms.isEmpty {
-                Text("When this plugin fills a Shows library, Zelefin lists it as its own YouTube library, with channels and videos kept apart from your movies and shows.")
+                Text(AppLanguage.string("When this plugin fills a Shows library, Zelefin lists it as its own YouTube library, with channels and videos kept apart from your movies and shows.", default: "When this plugin fills a Shows library, Zelefin lists it as its own YouTube library, with channels and videos kept apart from your movies and shows."))
             } else {
                 Text("\(rooms.map(\.name).joined(separator: ", ")) appears as its own YouTube library, with channels and videos kept apart from your movies and shows.")
             }
@@ -129,9 +129,9 @@ struct PluginSettingsView: View {
         Section {
             skipToggles
         } header: {
-            Text("Skip Recaps, Intros, Credits and Previews")
+            Text(AppLanguage.string("Skip Recaps, Intros, Credits and Previews", default: "Skip Recaps, Intros, Credits and Previews"))
         } footer: {
-            Text("Skip buttons appear when Silo has found a recap, intro, credits or preview, including from its built-in TheIntroDB support. For titles with none, Zelefin can ask TheIntroDB directly.")
+            Text(AppLanguage.string("Skip buttons appear when Silo has found a recap, intro, credits or preview, including from its built-in TheIntroDB support. For titles with none, Zelefin can ask TheIntroDB directly.", default: "Skip buttons appear when Silo has found a recap, intro, credits or preview, including from its built-in TheIntroDB support. For titles with none, Zelefin can ask TheIntroDB directly."))
         }
         .zelefinRowBackground()
     }
@@ -140,20 +140,20 @@ struct PluginSettingsView: View {
         Section {
             skipToggles
         } header: {
-            Text("Skip Recaps, Intros, Credits and Previews")
+            Text(AppLanguage.string("Skip Recaps, Intros, Credits and Previews", default: "Skip Recaps, Intros, Credits and Previews"))
         } footer: {
-            Text("Skip buttons appear when Emby has marked an intro or credits, or the file has chapters named Intro or Credits. Emby has no TheIntroDB plugin, so for everything else Zelefin can ask TheIntroDB directly.")
+            Text(AppLanguage.string("Skip buttons appear when Emby has marked an intro or credits, or the file has chapters named Intro or Credits. Emby has no TheIntroDB plugin, so for everything else Zelefin can ask TheIntroDB directly.", default: "Skip buttons appear when Emby has marked an intro or credits, or the file has chapters named Intro or Credits. Emby has no TheIntroDB plugin, so for everything else Zelefin can ask TheIntroDB directly."))
         }
         .zelefinRowBackground()
     }
 
     @ViewBuilder
     private var skipToggles: some View {
-        Toggle("Automatically Skip Recaps", isOn: $autoSkipRecap)
-        Toggle("Automatically Skip Intros", isOn: $autoSkipIntro)
-        Toggle("Automatically Skip Credits", isOn: $autoSkipCredits)
-        Toggle("Automatically Skip Previews", isOn: $autoSkipPreview)
-        Toggle("Look Up Skip Times on TheIntroDB", isOn: $usesTheIntroDB)
+        Toggle(AppLanguage.string("ui.automatically_skip_recaps", default: "Automatically Skip Recaps"), isOn: $autoSkipRecap)
+        Toggle(AppLanguage.string("ui.automatically_skip_intros", default: "Automatically Skip Intros"), isOn: $autoSkipIntro)
+        Toggle(AppLanguage.string("ui.automatically_skip_credits", default: "Automatically Skip Credits"), isOn: $autoSkipCredits)
+        Toggle(AppLanguage.string("ui.automatically_skip_previews", default: "Automatically Skip Previews"), isOn: $autoSkipPreview)
+        Toggle(AppLanguage.string("ui.look_up_skip_times_on_theintrodb", default: "Look Up Skip Times on TheIntroDB"), isOn: $usesTheIntroDB)
     }
 
     @ViewBuilder
@@ -162,35 +162,35 @@ struct PluginSettingsView: View {
             if isSeerrSignedIn {
                 LabeledContent("Service", value: requestService.name)
                 LabeledContent("Server", value: seerrURL)
-                LabeledContent("Signed in as", value: seerrDisplayName ?? "")
-                Button("Sign Out", role: .destructive, action: signOutSeerr)
+                LabeledContent(AppLanguage.string("ui.signed_in_as", default: "Signed in as"), value: seerrDisplayName ?? "")
+                Button(AppLanguage.string("common.sign_out", default: "Sign Out"), role: .destructive, action: signOutSeerr)
             } else {
-                Picker("Service", selection: $requestServiceRaw) {
+                Picker(AppLanguage.string("connect.service", default: "Service"), selection: $requestServiceRaw) {
                     ForEach(RequestService.allCases) { service in
                         Text(service.name).tag(service.rawValue)
                     }
                 }
-                TextField("Server", text: $seerrURL)
+                TextField(AppLanguage.string("settings.server", default: "Server"), text: $seerrURL)
                     .textContentType(.URL)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                TextField("Username or email", text: $seerrUsername)
+                TextField(AppLanguage.string("connect.username_or_email", default: "Username or email"), text: $seerrUsername)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                SecureField("Password", text: $seerrPassword)
+                SecureField(AppLanguage.string("connect.password", default: "Password"), text: $seerrPassword)
                     .textContentType(.password)
-                Button("Sign In") {
+                Button(AppLanguage.string("connect.sign_in", default: "Sign In")) {
                     Task { await signInToSeerr() }
                 }
                 .disabled(!canSignInToSeerr || isSigningInToSeerr)
             }
             if let seerrStatus {
-                SettingsStatusText(text: seerrStatus, isError: !seerrStatus.contains("Signed in"))
+                SettingsStatusText(text: seerrStatus, isError: !seerrStatus.contains(AppLanguage.string("ui.signed_in", default: "Signed in")))
             }
         } header: {
-            Text("Requests")
+            Text(AppLanguage.string("ui.requests", default: "Requests"))
         } footer: {
             Text(requestFooter)
         }
@@ -199,7 +199,7 @@ struct PluginSettingsView: View {
 
     private var tmdbSection: some View {
         Section {
-            SecureField("API Key or Read Access Token", text: $tmdbKey)
+            SecureField(AppLanguage.string("ui.api_key_or_read_access_token", default: "API Key or Read Access Token"), text: $tmdbKey)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .onSubmit { Task { await saveTMDBKey() } }
@@ -211,9 +211,9 @@ struct PluginSettingsView: View {
                 SettingsStatusText(text: tmdbStatus, isError: !tmdbStatus.hasPrefix("Saved") && !tmdbStatus.hasPrefix("Removed"))
             }
         } header: {
-            Text("TMDB")
+            Text(AppLanguage.string("TMDB", default: "TMDB"))
         } footer: {
-            Text("Discover title pages show a title's logo when it's in your library. With a free TMDB key, from Settings → API on themoviedb.org, every other title shows its logo too.")
+            Text(AppLanguage.string("Discover title pages show a title's logo when it's in your library. With a free TMDB key, from Settings → API on themoviedb.org, every other title shows its logo too.", default: "Discover title pages show a title's logo when it's in your library. With a free TMDB key, from Settings → API on themoviedb.org, every other title shows its logo too."))
         }
         .zelefinRowBackground()
     }
@@ -269,7 +269,7 @@ struct PluginSettingsView: View {
 
     private func pluginStatusRow(_ title: String, installed: Bool) -> some View {
         LabeledContent(title) {
-            Text(installed ? "Installed" : "Not on this server")
+            Text(installed ? "Installed" : AppLanguage.string("ui.not_on_this_server", default: "Not on this server"))
                 .foregroundStyle(installed ? Color.green : Color.red)
         }
         .accessibilityLabel("\(title), \(installed ? "Installed" : "Not on this server")")

@@ -38,11 +38,11 @@ struct LiveTVView: View {
             LiveTVFilterSheet(selection: $programFilters)
         }
         .presentsPlayerFromRoot($playingItem)
-        .alert("Library", isPresented: Binding(
+        .alert(AppLanguage.string("library.title", default: "Library"), isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(actionError ?? "")
         }
@@ -124,7 +124,7 @@ struct LiveTVView: View {
     private var onNowPage: some View {
         channelListPage(
             rows: onNowRows,
-            emptyTitle: "Nothing On",
+            emptyTitle: AppLanguage.string("ui.nothing_on", default: "Nothing On"),
             emptySymbol: "dot.radiowaves.left.and.right",
             emptyMessage: programFilters.isEmpty
                 ? "Channels that are airing something will show up here."
@@ -226,13 +226,13 @@ struct LiveTVView: View {
                 ContentUnavailableView(
                     "No Guide",
                     systemImage: "list.bullet.rectangle",
-                    description: Text(errorMessage ?? "Program listings from this tuner will show up here.")
+                    description: Text(errorMessage ?? AppLanguage.string("ui.program_listings_from_this_tuner_will_show", default: "Program listings from this tuner will show up here."))
                 )
             } else if filteredGuide.isEmpty {
                 ContentUnavailableView(
                     "No Matches",
                     systemImage: "line.3.horizontal.decrease",
-                    description: Text("No programs match these filters.")
+                    description: Text(AppLanguage.string("ui.no_programs_match_these_filters", default: "No programs match these filters."))
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -255,9 +255,9 @@ struct LiveTVView: View {
         Group {
             if recordings.isEmpty {
                 ContentUnavailableView {
-                    Label("No Recordings", image: LibraryIcon.recording)
+                    Label(AppLanguage.string("ui.no_recordings", default: "No Recordings"), image: LibraryIcon.recording)
                 } description: {
-                    Text("Saved recordings from this server will show up here.")
+                    Text(AppLanguage.string("ui.saved_recordings_from_this_server_will_sho", default: "Saved recordings from this server will show up here."))
                 }
             } else {
                 ScrollView {
@@ -401,7 +401,7 @@ private extension View {
     ) -> some View {
         if isPushed {
             self
-                .zelefinPushedChrome(title: RootPageChrome.showsTitle ? "Live TV" : "") {
+                .zelefinPushedChrome(title: RootPageChrome.showsTitle ? AppLanguage.string("tab.live_tv", default: "Live TV") : "") {
                     if showsFilter {
                         filterButton()
                     }
@@ -412,7 +412,7 @@ private extension View {
                 .toolbar(.hidden, for: .navigationBar)
                 .overlay(alignment: .top) {
                     FloatingPageHeader(
-                        title: RootPageChrome.showsTitle ? "Live TV" : "",
+                        title: RootPageChrome.showsTitle ? AppLanguage.string("tab.live_tv", default: "Live TV") : "",
                         isVisible: true,
                         liftsIntoPadTabBar: true
                     ) {
@@ -476,7 +476,7 @@ private struct LiveTVFilterSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Program Type") {
+                Section(AppLanguage.string("ui.program_type", default: "Program Type")) {
                     ForEach(LiveTVProgramFilter.allCases) { filter in
                         Button {
                             if selection.contains(filter) {
@@ -503,16 +503,16 @@ private struct LiveTVFilterSheet: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Color.zelefinPage.ignoresSafeArea())
-            .navigationTitle("Filters")
+            .navigationTitle(AppLanguage.string("settings.filters", default: "Filters"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Clear") { selection.removeAll() }
+                    Button(AppLanguage.string("common.clear", default: "Clear")) { selection.removeAll() }
                         .disabled(selection.isEmpty)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(AppLanguage.string("common.done", default: "Done")) { dismiss() }
                         .fontWeight(.semibold)
                 }
             }
@@ -557,7 +557,7 @@ private struct LiveTVNowRow: View {
                         if channel.currentProgram?.isOnNow(at: now) == true {
                             LiveTVOnNowBadge()
                         }
-                        Text(channel.currentProgram?.startTimeLabel(at: now) ?? "Live")
+                        Text(channel.currentProgram?.startTimeLabel(at: now) ?? AppLanguage.string("ui.live", default: "Live"))
                             .font(.footnote)
                             .foregroundStyle(.white.opacity(0.62))
                             .lineLimit(1)
@@ -599,7 +599,7 @@ private struct LiveTVOnNowBadge: View {
     @AppStorage(AccentPreferences.customHexKey) private var customAccentHex = AccentPreferences.defaultCustomHex
 
     var body: some View {
-        Text("On Now")
+        Text(AppLanguage.string("ui.on_now", default: "On Now"))
             .font(.caption2.weight(.bold))
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
@@ -772,11 +772,11 @@ private struct LiveTVGuideGrid: View {
                 ItemDetailView(item: channel.playItem)
             }
         }
-        .alert("Live TV", isPresented: Binding(
+        .alert(AppLanguage.string("tab.live_tv", default: "Live TV"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
@@ -1021,7 +1021,7 @@ private struct LiveTVGuideCanvasRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(row.channel.name)
-        .accessibilityHint("Shows this channel")
+        .accessibilityHint(AppLanguage.string("ui.shows_this_channel", default: "Shows this channel"))
     }
 
     private func accessibilityLabel(for program: LiveProgram) -> String {
@@ -1082,7 +1082,7 @@ private struct LiveTVGuideCanvasRow: View {
             )
             if textRect.height > 28 {
                 let caption = airing
-                    ? (program.remainingLabel(at: now) ?? "On Now")
+                    ? (program.remainingLabel(at: now) ?? AppLanguage.string("ui.on_now", default: "On Now"))
                     : program.startTimeLabel(at: now)
                 context.draw(
                     Text(caption)
@@ -1188,7 +1188,7 @@ private struct LiveTVRecordingCard: View {
             .padding(6)
             .background(.red, in: Circle())
             .padding(8)
-            .accessibilityLabel("Recording")
+            .accessibilityLabel(AppLanguage.string("ui.recording", default: "Recording"))
     }
 
     private var accessibilityCaption: String {
@@ -1209,7 +1209,7 @@ private struct LiveTVCoverOverflowButton: View {
     var body: some View {
         Menu {
             if showsPlay, let onPlay {
-                Button("Play", systemImage: "play.fill", action: onPlay)
+                Button(AppLanguage.string("common.play", default: "Play"), systemImage: "play.fill", action: onPlay)
             }
             TitleUserActions(item: item, onChange: onItemChange, onDelete: onDelete)
         } label: {
@@ -1220,7 +1220,7 @@ private struct LiveTVCoverOverflowButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("More")
+        .accessibilityLabel(AppLanguage.string("common.more", default: "More"))
     }
 }
 
@@ -1284,7 +1284,7 @@ struct LiveTVProgramDetailView: View {
         .zelefinPushedChrome(contentIgnoresTopSafeArea: true, hidesToolbarBackground: true) {
             Menu {
                 if restartItem != nil {
-                    Button("Restart", systemImage: "gobackward") {
+                    Button(AppLanguage.string("ui.restart", default: "Restart"), systemImage: "gobackward") {
                         playingItem = restartItem
                     }
                 }
@@ -1304,7 +1304,7 @@ struct LiveTVProgramDetailView: View {
             }
             .buttonStyle(.plain)
             .zelefinLiquidGlassCircle()
-            .accessibilityLabel("More")
+            .accessibilityLabel(AppLanguage.string("common.more", default: "More"))
         }
         .tint(.white)
         .presentsPlayerFromRoot($playingItem)
@@ -1320,11 +1320,11 @@ struct LiveTVProgramDetailView: View {
             }
             .presentationBackground(TitleMoreInfoView.sheetBackground)
         }
-        .alert("Live TV", isPresented: Binding(
+        .alert(AppLanguage.string("tab.live_tv", default: "Live TV"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
@@ -1431,7 +1431,7 @@ struct LiveTVProgramDetailView: View {
         }
         .buttonStyle(.plain)
         .disabled(isWorking)
-        .accessibilityLabel("Watch Live")
+        .accessibilityLabel(AppLanguage.string("ui.watch_live", default: "Watch Live"))
         .accessibilityValue(program.remainingLabel(at: now) ?? "")
     }
 
@@ -1467,7 +1467,7 @@ struct LiveTVProgramDetailView: View {
                     Button {
                         showsMoreInfo = true
                     } label: {
-                        Text("MORE")
+                        Text(AppLanguage.string("detail.more_caps", default: "MORE"))
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10)
@@ -1475,7 +1475,7 @@ struct LiveTVProgramDetailView: View {
                             .background(.ultraThinMaterial, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("More information")
+                    .accessibilityLabel(AppLanguage.string("detail.more_information", default: "More information"))
                 }
             }
         }

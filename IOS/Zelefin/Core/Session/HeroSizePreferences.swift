@@ -12,8 +12,8 @@ enum HeroSizePreferences: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .compact: "Compact"
-        case .tall: "Tall"
+        case .compact: AppLanguage.string("settings.hero_compact", default: "Compact")
+        case .tall: AppLanguage.string("settings.hero_tall", default: "Tall")
         }
     }
 

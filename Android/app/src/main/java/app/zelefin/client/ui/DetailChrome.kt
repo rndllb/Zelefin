@@ -43,7 +43,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -343,7 +344,7 @@ fun DetailPage(
                 }
                 if (detail.trailers.isNotEmpty()) {
                     item(key = "trailers") {
-                        SectionTitle("Trailers") { actions.onBrowse(BrowsePage.Trailers(detail.trailers, item)) }
+                        SectionTitle(stringResource(R.string.detail_trailers)) { actions.onBrowse(BrowsePage.Trailers(detail.trailers, item)) }
                         LazyRow(
                             contentPadding = shelfPadding(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -365,7 +366,9 @@ fun DetailPage(
                 }
                 if (detail.related.isNotEmpty()) {
                     item(key = "related") {
-                        SectionTitle("Related") { actions.onBrowse(BrowsePage.Shelf("Related", detail.related)) }
+                        SectionTitle(stringResource(R.string.detail_related)) {
+                            actions.onBrowse(BrowsePage.Shelf(context.getString(R.string.detail_related), detail.related))
+                        }
                         LazyRow(
                             contentPadding = shelfPadding(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -379,7 +382,7 @@ fun DetailPage(
                 }
                 if (item.people.isNotEmpty()) {
                     item(key = "cast") {
-                        SectionTitle("Cast & Crew") { actions.onBrowse(BrowsePage.Cast(item.people)) }
+                        SectionTitle(stringResource(R.string.detail_cast_crew)) { actions.onBrowse(BrowsePage.Cast(item.people)) }
                         LazyRow(
                             contentPadding = shelfPadding(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -396,7 +399,11 @@ fun DetailPage(
                     }
                 }
                 items(detail.collections, key = { it.collection.id }) { membership ->
-                    val title = if (detail.collections.size > 1) membership.collection.name else "Collection"
+                    val title = if (detail.collections.size > 1) {
+                        membership.collection.name
+                    } else {
+                        stringResource(R.string.detail_collection)
+                    }
                     SectionTitle(title) { onOpen(membership.collection) }
                     LazyRow(
                         contentPadding = shelfPadding(),
@@ -425,9 +432,21 @@ fun DetailPage(
                         }
                     }
                 }
-                item(key = "information") { Box(Modifier.besideSidebar()) { FactsBlock("Information", detail.moreInfo.information) } }
-                item(key = "languages") { Box(Modifier.besideSidebar()) { FactsBlock("Languages", detail.moreInfo.languages) } }
-                item(key = "file") { Box(Modifier.besideSidebar()) { FactsBlock("File", detail.moreInfo.file) } }
+                item(key = "information") {
+                    Box(Modifier.besideSidebar()) {
+                        FactsBlock(stringResource(R.string.detail_information), detail.moreInfo.information)
+                    }
+                }
+                item(key = "languages") {
+                    Box(Modifier.besideSidebar()) {
+                        FactsBlock(stringResource(R.string.detail_languages), detail.moreInfo.languages)
+                    }
+                }
+                item(key = "file") {
+                    Box(Modifier.besideSidebar()) {
+                        FactsBlock(stringResource(R.string.detail_file), detail.moreInfo.file)
+                    }
+                }
             }
             }
             var chromeShown by remember(item.id) { mutableStateOf(true) }
@@ -767,7 +786,7 @@ private fun DetailHero(
                     }
                 }
                 SpecsRow(item)
-                DirectorsLine(item.people, onPerson)
+                DirectorsLine(item.people, item.kind, onPerson)
                 if (overview == null && showMore) {
                     MoreCapsule(Modifier, onMore)
                 }
@@ -936,27 +955,29 @@ private fun DetailPlayButton(item: MediaItem, onClick: () -> Unit) {
 @Composable
 private fun DirectorsLine(
     people: List<app.zelefin.core.CreditPerson>,
+    itemKind: MediaKind,
     onPerson: (app.zelefin.core.CreditPerson) -> Unit,
 ) {
-    val directors = TitleDirectors.people(people)
-    if (directors.isEmpty()) return
+    val byline = TitleDirectors.byline(people, itemKind) ?: return
+    val credited = byline.people
+    if (credited.isEmpty()) return
     FlowRow(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            "Directed by",
+            byline.label,
             color = Color.White.copy(alpha = 0.88f),
             fontFamily = ZelefinFont,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
         )
-        directors.forEachIndexed { index, person ->
+        credited.forEachIndexed { index, person ->
             if (index > 0) {
                 val sep = when {
-                    directors.size == 2 -> "and"
-                    index == directors.lastIndex -> ", and"
+                    credited.size == 2 -> "and"
+                    index == credited.lastIndex -> ", and"
                     else -> ","
                 }
                 Text(
@@ -1077,7 +1098,7 @@ private fun SeasonMenu(
                 ) {
                     Box(Modifier.width(22.dp)) {
                         if (selected) {
-                            Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = ZelefinCyan, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Rounded.Check, contentDescription = stringResource(R.string.common_selected), tint = ZelefinCyan, modifier = Modifier.size(16.dp))
                         }
                     }
                     Text(
@@ -1093,7 +1114,7 @@ private fun SeasonMenu(
 @Composable
 internal fun MoreCapsule(modifier: Modifier, onClick: () -> Unit) {
     Text(
-        "MORE",
+        stringResource(R.string.detail_more_caps),
         color = Color.White,
         fontFamily = ZelefinFont,
         fontWeight = FontWeight.Bold,
@@ -1155,8 +1176,7 @@ private fun AboutRow(item: MediaItem, onMore: () -> Unit) {
     val age = item.ageGateLabel
     if (overview == null && genres == null && critic == null && audience == null && age == null) return
     Spacer(Modifier.height(8.dp))
-    Text(
-        "About",
+    Text(stringResource(R.string.detail_about),
         color = Color.White,
         fontFamily = ZelefinFont,
         fontWeight = FontWeight.SemiBold,
@@ -1248,7 +1268,7 @@ private fun AboutSynopsisCard(title: String, genres: String?, overview: String?,
                             .height(18.dp)
                             .background(Brush.horizontalGradient(listOf(Color.Transparent, AboutCardColor))),
                     )
-                    Text("MORE", color = Color.White.copy(alpha = 0.55f), fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text(stringResource(R.string.common_more).uppercase(), color = Color.White.copy(alpha = 0.55f), fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
@@ -1363,12 +1383,12 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
                 Text(it, color = Color.White, fontFamily = ZelefinFont, fontSize = 16.sp)
             }
             SpecsRow(item)
-            MoreInfoBlock("Information", info.information)
-            MoreInfoBlock("Languages", info.languages)
-            MoreInfoBlock("File", info.file)
+            MoreInfoBlock(stringResource(R.string.detail_information), info.information)
+            MoreInfoBlock(stringResource(R.string.detail_languages), info.languages)
+            MoreInfoBlock(stringResource(R.string.detail_file), info.file)
             if (info.links.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Links", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                    Text(stringResource(R.string.detail_links), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     info.links.forEach { link ->
                         val context = LocalContext.current
                         Text(
@@ -1386,7 +1406,7 @@ private fun MoreInfoSheet(item: MediaItem, info: app.zelefin.core.TitleMoreInfo,
             }
             info.accessibilityNote?.let { note ->
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Accessibility", color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                    Text(stringResource(R.string.detail_accessibility), color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         SpecBadge("CC")
                         Text(note, color = Color.White.copy(alpha = 0.72f), fontFamily = ZelefinFont, fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -1569,7 +1589,7 @@ private fun EpisodeCard(
                 Spacer(Modifier.weight(1f))
                 Icon(
                     Icons.Filled.MoreHoriz,
-                    contentDescription = "More",
+                    contentDescription = stringResource(R.string.common_more),
                     tint = Color.White.copy(alpha = 0.72f),
                     modifier = Modifier
                         .size(28.dp)
@@ -1639,7 +1659,7 @@ private fun SectionTitle(title: String, onClick: (() -> Unit)? = null) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(title, color = Color.White, fontFamily = ZelefinFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-        Icon(Icons.Outlined.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.45f))
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.45f))
     }
 }
 

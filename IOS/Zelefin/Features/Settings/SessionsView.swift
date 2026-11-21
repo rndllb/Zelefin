@@ -24,7 +24,7 @@ struct SessionsView: View {
                         ContentUnavailableView(
                             "No Sessions",
                             systemImage: "play.tv",
-                            description: Text(errorMessage ?? "No one is connected to this server right now.")
+                            description: Text(errorMessage ?? AppLanguage.string("ui.no_one_is_connected_to_this_server_right_n", default: "No one is connected to this server right now."))
                         )
                     }
                     .zelefinRowBackground()
@@ -40,7 +40,7 @@ struct SessionsView: View {
                         .zelefinRowBackground()
                     }
                     if !playing.isEmpty {
-                        Section("Now Playing") {
+                        Section(AppLanguage.string("ui.now_playing", default: "Now Playing")) {
                             ForEach(playing) { item in
                                 NavigationLink {
                                     SessionDetailView(sessionID: item.id)
@@ -53,7 +53,7 @@ struct SessionsView: View {
                         .zelefinRowBackground()
                     }
                     if !idle.isEmpty {
-                        Section("Connected") {
+                        Section(AppLanguage.string("ui.connected", default: "Connected")) {
                             ForEach(idle) { item in
                                 NavigationLink {
                                     SessionDetailView(sessionID: item.id)
@@ -70,7 +70,7 @@ struct SessionsView: View {
                 .refreshable { await load(showProgress: false) }
             }
         }
-        .zelefinSettingsChrome(title: "Sessions")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.sessions", default: "Sessions"))
         .task { await monitor() }
         .onChange(of: liveActivityRemoteSessions) { _, enabled in
             RemoteSessionsLiveActivityMonitor.isEnabled = enabled
@@ -88,9 +88,9 @@ struct SessionsView: View {
 
     private var remoteActivitySection: some View {
         Section {
-            Toggle("Live Activity for other sessions", isOn: $liveActivityRemoteSessions)
+            Toggle(AppLanguage.string("ui.live_activity_for_other_sessions", default: "Live Activity for other sessions"), isOn: $liveActivityRemoteSessions)
         } footer: {
-            Text("When on, shows other devices’ Now Playing on the Lock Screen. Off by default.")
+            Text(AppLanguage.string("When on, shows other devices’ Now Playing on the Lock Screen. Off by default.", default: "When on, shows other devices’ Now Playing on the Lock Screen. Off by default."))
         }
         .zelefinRowBackground()
     }
@@ -153,7 +153,7 @@ private struct SessionRow: View {
                 if item.isPlaying {
                     HStack(spacing: 8) {
                         Text(item.methodLabel)
-                        if item.isPaused { Text("Paused") }
+                        if item.isPaused { Text(AppLanguage.string("ui.paused", default: "Paused")) }
                         Text(item.positionLabel)
                     }
                     .font(.caption2.weight(.semibold))
@@ -222,17 +222,17 @@ struct SessionDetailView: View {
                             .settingsHeroRow()
                     }
                     if item.isPlaying {
-                        Section("Playback") {
+                        Section(AppLanguage.string("settings.playback", default: "Playback")) {
                             playbackCard(item)
                         }
                         .zelefinRowBackground()
                     }
-                    Section("Device") {
+                    Section(AppLanguage.string("ui.device", default: "Device")) {
                         deviceCard(item)
                     }
                     .zelefinRowBackground()
                     if let transcoding = item.transcoding {
-                        Section("Transcoding") {
+                        Section(AppLanguage.string("ui.transcoding", default: "Transcoding")) {
                             transcodingCard(transcoding)
                         }
                         .zelefinRowBackground()
@@ -270,7 +270,7 @@ struct SessionDetailView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(LoginPalette.secondaryText)
                 }
-                TextField("Write a message", text: $messageText, axis: .vertical)
+                TextField(AppLanguage.string("ui.write_a_message", default: "Write a message"), text: $messageText, axis: .vertical)
                     .lineLimit(2...4)
                     .padding(14)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -278,14 +278,14 @@ struct SessionDetailView: View {
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.zelefinPage.ignoresSafeArea())
-            .navigationTitle("Message")
+            .navigationTitle(AppLanguage.string("ui.message", default: "Message"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     CloseButton { isComposingMessage = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Send") { Task { await sendMessage() } }
+                    Button(AppLanguage.string("ui.send", default: "Send")) { Task { await sendMessage() } }
                         .disabled(isBusy || messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -316,7 +316,7 @@ struct SessionDetailView: View {
                 Text(item.title)
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(item.isPlaying ? (item.isPaused ? "Paused" : "Playing") : "Connected")
+                Text(item.isPlaying ? (item.isPaused ? AppLanguage.string("ui.paused", default: "Paused") : AppLanguage.string("ui.playing", default: "Playing")) : AppLanguage.string("ui.connected", default: "Connected"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Text(item.deviceLabel)
@@ -336,7 +336,7 @@ struct SessionDetailView: View {
                     if item.canControl {
                         SessionControlBar(item: item, isBusy: isBusy, send: send)
                     } else {
-                        Text("This client does not accept remote control.")
+                        Text(AppLanguage.string("This client does not accept remote control.", default: "This client does not accept remote control."))
                             .font(.caption)
                             .foregroundStyle(LoginPalette.captionText)
                             .multilineTextAlignment(.center)
@@ -354,7 +354,7 @@ struct SessionDetailView: View {
             messageText = ""
             isComposingMessage = true
         } label: {
-            Label("Message", systemImage: "text.bubble")
+            Label(AppLanguage.string("ui.message", default: "Message"), systemImage: "text.bubble")
         }
     }
 

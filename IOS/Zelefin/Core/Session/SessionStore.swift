@@ -132,6 +132,9 @@ final class SessionStore {
         self.catalogStore = catalogStore
     }
 
+    /// In-memory title lists for library rooms, so push/pop does not flash empty and re-index.
+    private var libraryRoomCatalogs: [String: [MediaItem]] = [:]
+
     /// Cached full catalog for a Movies/Shows tab, so the grid paints instantly on a cold launch.
     func cachedCatalog(kind: LibraryKind) -> [MediaItem]? {
         guard let session else { return nil }
@@ -151,6 +154,15 @@ final class SessionStore {
                 items: items
             )
         )
+    }
+
+    func rememberedLibraryItems(libraryID: String) -> [MediaItem]? {
+        libraryRoomCatalogs[libraryID]
+    }
+
+    func rememberLibraryItems(_ items: [MediaItem], libraryID: String) {
+        guard !items.isEmpty else { return }
+        libraryRoomCatalogs[libraryID] = items
     }
 
     func launchOptions(for itemID: String) -> PlaybackLaunchOptions {
@@ -1130,6 +1142,7 @@ final class SessionStore {
         needsFirstRunSetup = false
         tmdbCatalog = JellyfinTmdbCatalog()
         itemDetailMemory = [:]
+        libraryRoomCatalogs = [:]
         libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
         mediaVersions = [:]
@@ -1237,6 +1250,7 @@ final class SessionStore {
         embyWebhooksAvailable = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
+        libraryRoomCatalogs = [:]
         libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
         mediaVersions = [:]
@@ -1341,6 +1355,7 @@ final class SessionStore {
         embyWebhooksAvailable = false
         enableSubtitleManagement = false
         itemDetailMemory = [:]
+        libraryRoomCatalogs = [:]
         libraryPage = LibraryPageCache()
         playbackLaunchOptions = [:]
         mediaVersions = [:]
@@ -1913,6 +1928,7 @@ final class SessionStore {
         if folder == nil || folder == .home {
             homeLayout = HomeLayout(featured: [], sections: [])
             libraries = []
+            libraryRoomCatalogs = [:]
             libraryPage = LibraryPageCache()
         }
     }

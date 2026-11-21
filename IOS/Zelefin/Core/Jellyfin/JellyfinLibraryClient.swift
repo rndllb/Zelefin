@@ -1298,8 +1298,8 @@ class JellyfinLibraryClient: @unchecked Sendable {
         }
         guard !items.isEmpty else { return nil }
         return kind == .movie
-            ? HomeSection(id: "library-movies", title: "Recently Added Movies", style: .portrait, items: items)
-            : HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+            ? HomeSection(id: "library-movies", title: AppLanguage.string("home.recently_added_movies", default: "Recently Added Movies"), style: .portrait, items: items)
+            : HomeSection(id: "library-shows", title: AppLanguage.string("home.recently_added_shows", default: "Recently Added Shows"), style: .portrait, items: items)
     }
 
     private func latestSections(for libraries: [MediaLibrary]) async -> [HomeSection] {
@@ -1339,7 +1339,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
     private func recentlyAddedShows(parentID: String?) async throws -> HomeSection? {
         let items = try await itemsByDateCreated(include: .series, wanted: .series, parentID: parentID, limit: 12)
         guard !items.isEmpty else { return nil }
-        return HomeSection(id: "library-shows", title: "Recently Added Shows", style: .portrait, items: items)
+        return HomeSection(id: "library-shows", title: AppLanguage.string("home.recently_added_shows", default: "Recently Added Shows"), style: .portrait, items: items)
     }
 
     /// Date-added catalog when `Items/Latest` returns nothing. Matches Android `latestByDateAdded`.
@@ -1392,7 +1392,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         ).value
         let items = (result.items ?? []).compactMap(ItemMapper.mediaItem(from:))
         guard !items.isEmpty else { return nil }
-        return HomeSection(id: "collections", title: "Browse by Collection", style: .labeledPortrait, items: items)
+        return HomeSection(id: "collections", title: AppLanguage.string("ui.browse_by_collection", default: "Browse by Collection"), style: .labeledPortrait, items: items)
     }
 
     private func genresSection() async throws -> HomeSection? {
@@ -1417,7 +1417,7 @@ class JellyfinLibraryClient: @unchecked Sendable {
         let assigned = HomeLayoutPreferences.applyGenreCovers(genres, covers: covers)
         return HomeSection(
             id: "genres",
-            title: "Browse by Genre",
+            title: AppLanguage.string("ui.browse_by_genre", default: "Browse by Genre"),
             style: .labeledPortrait,
             items: assigned
         )

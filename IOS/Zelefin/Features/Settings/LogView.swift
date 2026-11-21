@@ -37,14 +37,14 @@ struct LogView: View {
     var body: some View {
         List {
             Section {
-                Picker("Show", selection: $filter) {
+                Picker(AppLanguage.string("ui.show", default: "Show"), selection: $filter) {
                     ForEach(Filter.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Text("Zelefin notes what it does and what goes wrong: sign-ins, playback, downloads, and requests that fail. Passwords, tokens, and API keys are never written down. Report a problem to email help@randll.com or open a GitHub issue with the log attached.")
+                Text(AppLanguage.string("Zelefin notes what it does and what goes wrong: sign-ins, playback, downloads, and requests that fail. Passwords, tokens, and API keys are never written down. Report a problem to email help@randll.com or open a GitHub issue with the log attached.", default: "Zelefin notes what it does and what goes wrong: sign-ins, playback, downloads, and requests that fail. Passwords, tokens, and API keys are never written down. Report a problem to email help@randll.com or open a GitHub issue with the log attached."))
             }
             .zelefinRowBackground()
 
@@ -52,14 +52,14 @@ struct LogView: View {
                 Button {
                     showsReportIssue = true
                 } label: {
-                    Label("Report Issue", systemImage: "exclamationmark.bubble")
+                    Label(AppLanguage.string("ui.report_issue", default: "Report Issue"), systemImage: "exclamationmark.bubble")
                 }
             }
             .zelefinRowBackground()
 
             Section {
                 if shown.isEmpty {
-                    Text(lines.isEmpty ? "Nothing logged yet." : "No entries match.")
+                    Text(lines.isEmpty ? AppLanguage.string("ui.nothing_logged_yet", default: "Nothing logged yet.") : "No entries match.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(shown) { line in
@@ -70,7 +70,7 @@ struct LogView: View {
             .zelefinRowBackground()
         }
         .searchable(text: $search, prompt: "Search the log")
-        .zelefinSettingsChrome(title: "Log")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.log", default: "Log"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -78,24 +78,24 @@ struct LogView: View {
                 } label: {
                     Image(systemName: "exclamationmark.bubble")
                 }
-                .accessibilityLabel("Report Issue")
+                .accessibilityLabel(AppLanguage.string("ui.report_issue", default: "Report Issue"))
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Report Issue", systemImage: "exclamationmark.bubble") {
+                    Button(AppLanguage.string("ui.report_issue", default: "Report Issue"), systemImage: "exclamationmark.bubble") {
                         showsReportIssue = true
                     }
                     if let exportURL {
                         ShareLink(item: exportURL) {
-                            Label("Send Log", systemImage: "square.and.arrow.up")
+                            Label(AppLanguage.string("ui.send_log", default: "Send Log"), systemImage: "square.and.arrow.up")
                         }
                     }
-                    Button("Copy Log", systemImage: "doc.on.doc") {
+                    Button(AppLanguage.string("ui.copy_log", default: "Copy Log"), systemImage: "doc.on.doc") {
                         UIPasteboard.general.string = ZelefinLog.header(session: session) + "\n\n" + ZelefinLog.shared.contents()
                     }
-                    Button("Refresh", systemImage: "arrow.clockwise", action: reload)
+                    Button(AppLanguage.string("common.refresh", default: "Refresh"), systemImage: "arrow.clockwise", action: reload)
                     Divider()
-                    Button("Clear Log", systemImage: "trash", role: .destructive) {
+                    Button(AppLanguage.string("ui.clear_log", default: "Clear Log"), systemImage: "trash", role: .destructive) {
                         confirmsClear = true
                     }
                 } label: {
@@ -104,14 +104,14 @@ struct LogView: View {
                 .accessibilityLabel("Log actions")
             }
         }
-        .confirmationDialog("Clear the log?", isPresented: $confirmsClear, titleVisibility: .visible) {
-            Button("Clear Log", role: .destructive) {
+        .confirmationDialog(AppLanguage.string("ui.clear_the_log", default: "Clear the log?"), isPresented: $confirmsClear, titleVisibility: .visible) {
+            Button(AppLanguage.string("ui.clear_log", default: "Clear Log"), role: .destructive) {
                 ZelefinLog.shared.clear()
                 ZelefinLog.info("Log", "Cleared the log")
                 reload()
             }
         } message: {
-            Text("Everything Zelefin has noted so far is removed from this device.")
+            Text(AppLanguage.string("Everything Zelefin has noted so far is removed from this device.", default: "Everything Zelefin has noted so far is removed from this device."))
         }
         .sheet(isPresented: $showsReportIssue) {
             ReportIssueView()

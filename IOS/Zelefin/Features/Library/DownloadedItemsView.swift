@@ -28,7 +28,7 @@ struct DownloadedItemsView: View {
                 ContentUnavailableView(
                     "No Downloads",
                     systemImage: "arrow.down.circle",
-                    description: Text("Movies and episodes you download will show up here for offline playback.")
+                    description: Text(AppLanguage.string("ui.movies_and_episodes_you_download_will_show", default: "Movies and episodes you download will show up here for offline playback."))
                 )
             } else {
                 ScrollView {
@@ -68,7 +68,7 @@ struct DownloadedItemsView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
-                                    Button("Remove Download", systemImage: "trash", role: .destructive) {
+                                    Button(AppLanguage.string("ui.remove_download", default: "Remove Download"), systemImage: "trash", role: .destructive) {
                                         pendingRemoval = row
                                         removalPrompt = .make(row: row)
                                     }
@@ -82,7 +82,7 @@ struct DownloadedItemsView: View {
             }
         }
         .background(Color.zelefinPage.ignoresSafeArea())
-        .navigationTitle("Downloaded")
+        .navigationTitle(AppLanguage.string("library.downloaded", default: "Downloaded"))
         .navigationBarTitleDisplayMode(.inline)
         .downloadRemovalConfirmation($removalPrompt) {
             if let pendingRemoval {

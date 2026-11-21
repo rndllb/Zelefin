@@ -216,7 +216,7 @@ struct PlayerView: View {
                 set: { if !$0 { sharePlay.notice = nil } }
             )
         ) {
-            Button("OK", role: .cancel) { sharePlay.notice = nil }
+            Button(AppLanguage.string("common.ok", default: "OK"), role: .cancel) { sharePlay.notice = nil }
         } message: {
             Text(sharePlay.notice ?? "")
         }
@@ -264,7 +264,7 @@ struct PlayerView: View {
                         .background(.ultraThinMaterial, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Close")
+                .accessibilityLabel(AppLanguage.string("common.close", default: "Close"))
                 Spacer()
             }
             Spacer()
@@ -279,7 +279,7 @@ struct PlayerView: View {
             ProgressView()
                 .controlSize(.large)
                 .tint(.white)
-                .accessibilityLabel("Loading")
+                .accessibilityLabel(AppLanguage.string("player.loading", default: "Loading"))
             loadingClose
         }
     }
@@ -751,10 +751,10 @@ struct PlayerView: View {
         ZStack {
             Color.black.opacity(0.72).ignoresSafeArea()
             VStack(spacing: 20) {
-                Text("Are you still watching?")
+                Text(AppLanguage.string("player.still_watching", default: "Are you still watching?"))
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
-                Text("You’ve auto-played \(PlaybackPreferences.stillWatchingEpisodeThreshold) episodes.")
+                Text(String(format: AppLanguage.string("player.still_watching_body", default: "You’ve auto-played %d episodes."), PlaybackPreferences.stillWatchingEpisodeThreshold))
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.72))
                     .multilineTextAlignment(.center)
@@ -762,7 +762,7 @@ struct PlayerView: View {
                     Button {
                         Task { await stopAfterStillWatching() }
                     } label: {
-                        Text("Stop")
+                        Text(AppLanguage.string("player.stop", default: "Stop"))
                             .font(.body.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -771,7 +771,7 @@ struct PlayerView: View {
                     Button {
                         Task { await continueAfterStillWatching() }
                     } label: {
-                        Text("Continue")
+                        Text(AppLanguage.string("common.continue", default: "Continue"))
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
@@ -907,7 +907,7 @@ struct PlayerView: View {
                     VStack(spacing: 10) {
                         Image(systemName: "airplayvideo")
                             .font(.system(size: 36, weight: .semibold))
-                        Text("AirPlaying")
+                        Text(AppLanguage.string("player.airplaying", default: "AirPlaying"))
                             .font(.title3.weight(.semibold))
                     }
                     .foregroundStyle(.white)
@@ -1276,7 +1276,7 @@ struct PlayerView: View {
 
     private func errorOverlay(_ message: String) -> some View {
         VStack(spacing: 16) {
-            Text("Playback failed")
+            Text(AppLanguage.string("player.playback_failed", default: "Playback failed"))
                 .font(.title2.weight(.semibold))
             Text(message)
                 .font(.body)
@@ -1290,7 +1290,7 @@ struct PlayerView: View {
                     .background(.white, in: Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            .accessibilityLabel(AppLanguage.string("common.close", default: "Close"))
         }
         .padding(24)
         .frame(maxWidth: 480)

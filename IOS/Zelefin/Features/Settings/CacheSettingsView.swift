@@ -11,7 +11,7 @@ struct CacheSettingsView: View {
     var body: some View {
         List {
             Section {
-                LabeledContent("Total", value: CacheInventory.formatBytes(artwork.total.bytes))
+                LabeledContent(AppLanguage.string("ui.total", default: "Total"), value: CacheInventory.formatBytes(artwork.total.bytes))
                 ForEach(ArtworkImageKind.allCases) { kind in
                     cacheBucketRow(
                         title: kind.title,
@@ -21,19 +21,19 @@ struct CacheSettingsView: View {
                         confirmArtwork = kind
                     }
                 }
-                Button("Clear All Images", role: .destructive) {
+                Button(AppLanguage.string("ui.clear_all_images", default: "Clear All Images"), role: .destructive) {
                     confirmAllArtwork = true
                 }
                 .disabled(artwork.total.isEmpty)
-                Toggle("Auto-refresh missing images", isOn: $autoRefreshMissingImages)
+                Toggle(AppLanguage.string("ui.auto_refresh_missing_images", default: "Auto-refresh missing images"), isOn: $autoRefreshMissingImages)
             } header: {
-                Text("Images")
+                Text(AppLanguage.string("ui.images", default: "Images"))
             } footer: {
-                Text("Posters, backdrops, and logos stay on this device. Auto-refresh retries artwork this server previously returned as missing.")
+                Text(AppLanguage.string("Posters, backdrops, and logos stay on this device. Auto-refresh retries artwork this server previously returned as missing.", default: "Posters, backdrops, and logos stay on this device. Auto-refresh retries artwork this server previously returned as missing."))
             }
             .zelefinRowBackground()
         }
-        .zelefinSettingsChrome(title: "Cache")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.cache", default: "Cache"))
         .task { artwork = ArtworkCache.shared.usage() }
         .confirmationDialog(
             "Clear this image cache?",
@@ -43,14 +43,14 @@ struct CacheSettingsView: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Clear", role: .destructive) {
+            Button(AppLanguage.string("common.clear", default: "Clear"), role: .destructive) {
                 if let confirmArtwork {
                     session.purgeArtworkCache(confirmArtwork)
                     artwork = ArtworkCache.shared.usage()
                 }
                 confirmArtwork = nil
             }
-            Button("Cancel", role: .cancel) {
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {
                 confirmArtwork = nil
             }
         }
@@ -59,11 +59,11 @@ struct CacheSettingsView: View {
             isPresented: $confirmAllArtwork,
             titleVisibility: .visible
         ) {
-            Button("Clear All Images", role: .destructive) {
+            Button(AppLanguage.string("ui.clear_all_images", default: "Clear All Images"), role: .destructive) {
                 session.purgeArtworkCache(nil)
                 artwork = ArtworkCache.shared.usage()
             }
-            Button("Cancel", role: .cancel) {}
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {}
         }
     }
 }
@@ -80,7 +80,7 @@ struct MetadataSettingsView: View {
     var body: some View {
         List {
             Section {
-                LabeledContent("Total", value: CacheInventory.formatBytes(metadata.total.bytes))
+                LabeledContent(AppLanguage.string("ui.total", default: "Total"), value: CacheInventory.formatBytes(metadata.total.bytes))
                 ForEach(MetadataCacheFolder.allCases) { folder in
                     cacheBucketRow(
                         title: folder.title,
@@ -90,23 +90,23 @@ struct MetadataSettingsView: View {
                         confirmMetadata = folder
                     }
                 }
-                Button("Clear All Metadata", role: .destructive) {
+                Button(AppLanguage.string("ui.clear_all_metadata", default: "Clear All Metadata"), role: .destructive) {
                     confirmAllMetadata = true
                 }
                 .disabled(metadata.total.isEmpty)
-                Toggle("Auto-refresh missing metadata", isOn: $autoRefreshMissingMetadata)
-                Button("Refresh Missing Metadata") {
+                Toggle(AppLanguage.string("ui.auto_refresh_missing_metadata", default: "Auto-refresh missing metadata"), isOn: $autoRefreshMissingMetadata)
+                Button(AppLanguage.string("ui.refresh_missing_metadata", default: "Refresh Missing Metadata")) {
                     Task { await refreshMetadata() }
                 }
                 .disabled(isRefreshingMetadata)
             } header: {
-                Text("Saved Home Data")
+                Text(AppLanguage.string("Saved Home Data", default: "Saved Home Data"))
             } footer: {
-                Text("Home rows, library catalogs, and title pages. Auto-refresh pulls anything this device has not cached yet.")
+                Text(AppLanguage.string("Home rows, library catalogs, and title pages. Auto-refresh pulls anything this device has not cached yet.", default: "Home rows, library catalogs, and title pages. Auto-refresh pulls anything this device has not cached yet."))
             }
             .zelefinRowBackground()
         }
-        .zelefinSettingsChrome(title: "Metadata")
+        .zelefinSettingsChrome(title: AppLanguage.string("settings.metadata", default: "Metadata"))
         .task { metadata = CacheInventory.metadataUsage() }
         .onChange(of: autoRefreshMissingMetadata) { _, isOn in
             if isOn {
@@ -121,14 +121,14 @@ struct MetadataSettingsView: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Clear", role: .destructive) {
+            Button(AppLanguage.string("common.clear", default: "Clear"), role: .destructive) {
                 if let confirmMetadata {
                     session.purgeMetadataCache(confirmMetadata)
                     metadata = CacheInventory.metadataUsage()
                 }
                 confirmMetadata = nil
             }
-            Button("Cancel", role: .cancel) {
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {
                 confirmMetadata = nil
             }
         }
@@ -137,11 +137,11 @@ struct MetadataSettingsView: View {
             isPresented: $confirmAllMetadata,
             titleVisibility: .visible
         ) {
-            Button("Clear All Metadata", role: .destructive) {
+            Button(AppLanguage.string("ui.clear_all_metadata", default: "Clear All Metadata"), role: .destructive) {
                 session.purgeMetadataCache(nil)
                 metadata = CacheInventory.metadataUsage()
             }
-            Button("Cancel", role: .cancel) {}
+            Button(AppLanguage.string("common.cancel", default: "Cancel"), role: .cancel) {}
         }
     }
 
@@ -167,7 +167,7 @@ private func cacheBucketRow(
                 .foregroundStyle(.secondary)
         }
         Spacer(minLength: 8)
-        Button("Clear", role: .destructive, action: clear)
+        Button(AppLanguage.string("common.clear", default: "Clear"), role: .destructive, action: clear)
             .font(.caption.weight(.bold))
             .disabled(!clearEnabled)
     }
